@@ -12,10 +12,17 @@ use skia_safe::{
 
 use crate::graphics::env::{self, Env};
 use crate::pages::{PageId, PageManager};
+use crate::pages::home::render as home_render;
+use crate::ui::back_button;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
-use crate::ui::layout::{BUTTON_COUNT, PANEL_BG, TOOLBAR_HEIGHT};
-use crate::ui::toolbar;
+use crate::ui::layout::{BACK_BTN_X, BACK_BTN_Y, BACK_BTN_SIZE, HOME_BG, PANEL_BG};
+
+#[derive(Clone, Copy, PartialEq)]
+enum AppState {
+    Home,
+    InPage(PageId),
+}
 
 pub struct Application {
     pub env: Env,
@@ -28,12 +35,14 @@ pub struct Application {
     pending_dirty: DirtyRegion,
     pages: PageManager,
     cursor_pos: (f32, f32),
-    hovered_button: Option<usize>,
+    app_state: AppState,
+    back_hovered: bool,
     // GPU-backed retained surface for partial redraws
     retained_surface: Option<Surface>,
     retained_size: (i32, i32),
-    // Cached toolbar Picture (display list)
-    toolbar_picture: Option<Picture>,
+    // Cached pictures
+    home_picture: Option<Picture>,
+    back_picture: Option<Picture>,
 }
 
 impl Application {
@@ -55,10 +64,12 @@ impl Application {
             pending_dirty: DirtyRegion::All,
             pages: PageManager::new(),
             cursor_pos: (0.0, 0.0),
-            hovered_button: None,
+            app_state: AppState::Home,
+            back_hovered: false,
             retained_surface: None,
             retained_size: (0, 0),
-            toolbar_picture: None,
+            home_picture: None,
+            back_picture: None,
         }
     }
 
@@ -77,45 +88,21 @@ impl Application {
         self.pending_dirty = self.pending_dirty.merge(region);
     }
 
-    fn handle_button_click(&mut self, idx: usize) {
-        match idx {
-            0 => {
-                self.pages.set_active(PageId::Daily);
-                self.toolbar_picture = None;
-                self.mark_dirty(DirtyRegion::All);
-            }
-            1 => {
-                self.pages.set_active(PageId::Planning);
-                self.toolbar_picture = None;
-                self.mark_dirty(DirtyRegion::All);
-            }
-            2 => {
-                self.pages.set_active(PageId::Settings);
-                self.toolbar_picture = None;
-                self.mark_dirty(DirtyRegion::All);
-            }
-            3 => println!("Undo"),
-            4 => println!("Redo"),
-            _ => {}
-        }
+    fn navigate_to(&mut self, page: PageId) {
+        self.app_state = AppState::InPage(page);
+        self.pages.set_active(page);
+        self.home_picture = None;
+        self.back_picture = None;
+        self.mark_dirty(DirtyRegion::All);
     }
-}
 
-fn record_toolbar_picture(
-    width: f32,
-    active_page: PageId,
-    hovered_button: Option<usize>,
-    icon_paths: &[skia_safe::Path; BUTTON_COUNT],
-) -> Picture {
-    let bounds = Rect::from_wh(width, TOOLBAR_HEIGHT);
-    let mut recorder = PictureRecorder::new();
-    {
-        let canvas = recorder.begin_recording(bounds, false);
-        toolbar::draw_toolbar(canvas, width, active_page, hovered_button, icon_paths);
+    fn navigate_home(&mut self) {
+        self.app_state = AppState::Home;
+        self.pages.set_active(PageId::Home);
+        self.home_picture = None;
+        self.back_picture = None;
+        self.mark_dirty(DirtyRegion::All);
     }
-    recorder
-        .finish_recording_as_picture(None)
-        .expect("Failed to record toolbar picture")
 }
 
 fn create_retained_surface(
@@ -146,8 +133,6 @@ impl ApplicationHandler for Application {
         event: WindowEvent,
     ) {
         let (width, height) = self.logical_size();
-        let page_top = TOOLBAR_HEIGHT;
-        let page_height = height - page_top;
 
         match event {
             WindowEvent::CloseRequested => {
@@ -156,7 +141,8 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 self.scale_factor = scale_factor;
-                self.toolbar_picture = None;
+                self.home_picture = None;
+                self.back_picture = None;
                 self.mark_dirty(DirtyRegion::All);
             }
             WindowEvent::Resized(_physical_size) => {
@@ -166,7 +152,8 @@ impl ApplicationHandler for Application {
                     self.num_samples,
                     self.stencil_size,
                 );
-                self.toolbar_picture = None;
+                self.home_picture = None;
+                self.back_picture = None;
                 self.mark_dirty(DirtyRegion::All);
             }
             WindowEvent::ModifiersChanged(new_modifiers) => self.modifiers = new_modifiers,
@@ -182,22 +169,27 @@ impl ApplicationHandler for Application {
                 let (x, y) = self.to_logical(position.x, position.y);
                 self.cursor_pos = (x, y);
 
-                // Toolbar hover
-                let new_hovered = toolbar::hit_test_button(x, y);
-                if new_hovered != self.hovered_button {
-                    self.hovered_button = new_hovered;
-                    self.toolbar_picture = None;
-                    self.mark_dirty(DirtyRegion::ToolbarOnly);
-                }
+                match self.app_state {
+                    AppState::Home => {
+                        let dirty = self.pages.active_page_mut().on_cursor_moved(x, y, width, height);
+                        if dirty != DirtyRegion::None {
+                            self.home_picture = None;
+                        }
+                        self.mark_dirty(dirty);
+                    }
+                    AppState::InPage(_) => {
+                        // Back button hover
+                        let new_back_hovered = back_button::hit_test_back_button(x, y);
+                        if new_back_hovered != self.back_hovered {
+                            self.back_hovered = new_back_hovered;
+                            self.back_picture = None;
+                            self.mark_dirty(DirtyRegion::BackButtonOnly);
+                        }
 
-                // Page cursor events (only below toolbar)
-                if y > page_top {
-                    let page_y = y - page_top;
-                    let dirty = self
-                        .pages
-                        .active_page_mut()
-                        .on_cursor_moved(x, page_y, width, page_height);
-                    self.mark_dirty(dirty);
+                        // Forward to active page
+                        let dirty = self.pages.active_page_mut().on_cursor_moved(x, y, width, height);
+                        self.mark_dirty(dirty);
+                    }
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -206,29 +198,33 @@ impl ApplicationHandler for Application {
 
                     match state {
                         ElementState::Pressed => {
-                            if let Some(idx) = toolbar::hit_test_button(x, y) {
-                                self.handle_button_click(idx);
-                            } else if y > page_top {
-                                let page_y = y - page_top;
-                                let dirty = self.pages.active_page_mut().on_mouse_input(
-                                    x,
-                                    page_y,
-                                    true,
-                                    width,
-                                    page_height,
-                                );
-                                self.mark_dirty(dirty);
+                            match self.app_state {
+                                AppState::Home => {
+                                    if let Some(idx) = home_render::hit_test_card(x, y, width, height) {
+                                        match idx {
+                                            0 => self.navigate_to(PageId::Daily),
+                                            1 => self.navigate_to(PageId::Planning),
+                                            2 => self.navigate_to(PageId::Settings),
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                                AppState::InPage(_) => {
+                                    if back_button::hit_test_back_button(x, y) {
+                                        self.navigate_home();
+                                    } else {
+                                        let dirty = self.pages.active_page_mut().on_mouse_input(
+                                            x, y, true, width, height,
+                                        );
+                                        self.mark_dirty(dirty);
+                                    }
+                                }
                             }
                         }
                         ElementState::Released => {
-                            if y > page_top {
-                                let page_y = y - page_top;
+                            if let AppState::InPage(_) = self.app_state {
                                 let dirty = self.pages.active_page_mut().on_mouse_input(
-                                    x,
-                                    page_y,
-                                    false,
-                                    width,
-                                    page_height,
+                                    x, y, false, width, height,
                                 );
                                 self.mark_dirty(dirty);
                             }
@@ -249,74 +245,94 @@ impl ApplicationHandler for Application {
                         phys_size.1,
                     );
                     self.retained_size = phys_size;
-                    self.toolbar_picture = None;
+                    self.home_picture = None;
+                    self.back_picture = None;
                     self.pending_dirty = DirtyRegion::All;
                 }
 
                 let dirty = self.pending_dirty;
                 self.pending_dirty = DirtyRegion::None;
 
-                // Ensure toolbar picture is current
-                if self.toolbar_picture.is_none() {
-                    self.toolbar_picture = Some(record_toolbar_picture(
-                        width,
-                        self.pages.active,
-                        self.hovered_button,
-                        &self.cache.icon_paths,
-                    ));
-                }
-
-                // Re-render only dirty regions to retained surface
-                if dirty != DirtyRegion::None {
-                    if let Some(retained) = &mut self.retained_surface {
+                if dirty != DirtyRegion::None
+                    && let Some(retained) = &mut self.retained_surface {
                         let canvas = retained.canvas();
                         canvas.save();
                         canvas.scale((sf, sf));
 
-                        match dirty {
-                            DirtyRegion::All => {
-                                canvas.clear(Color::from(PANEL_BG));
-                                if let Some(pic) = &self.toolbar_picture {
+                        match self.app_state {
+                            AppState::Home => {
+                                // Rebuild home picture if invalidated
+                                if self.home_picture.is_none() {
+                                    let bounds = Rect::from_wh(width, height);
+                                    let mut recorder = PictureRecorder::new();
+                                    {
+                                        let rec_canvas = recorder.begin_recording(bounds, false);
+                                        home_render::draw_home(
+                                            rec_canvas,
+                                            width,
+                                            height,
+                                            self.pages.home.state.hovered_card,
+                                            &self.cache,
+                                        );
+                                    }
+                                    self.home_picture = recorder.finish_recording_as_picture(None);
+                                }
+
+                                canvas.clear(Color::from(HOME_BG));
+                                if let Some(pic) = &self.home_picture {
                                     canvas.draw_picture(pic, None, None);
                                 }
-                                canvas.save();
-                                canvas.translate((0.0, page_top));
-                                self.pages
-                                    .active_page()
-                                    .render(canvas, width, page_height, &self.cache);
-                                canvas.restore();
                             }
-                            DirtyRegion::ToolbarOnly => {
-                                canvas.save();
-                                canvas.clip_rect(
-                                    Rect::from_xywh(0.0, 0.0, width, TOOLBAR_HEIGHT),
-                                    ClipOp::Intersect,
-                                    false,
-                                );
-                                if let Some(pic) = &self.toolbar_picture {
-                                    canvas.draw_picture(pic, None, None);
+                            AppState::InPage(_) => {
+                                // Rebuild back button picture if invalidated
+                                if self.back_picture.is_none() {
+                                    let bounds = Rect::from_wh(
+                                        BACK_BTN_X + BACK_BTN_SIZE + 1.0,
+                                        BACK_BTN_Y + BACK_BTN_SIZE + 1.0,
+                                    );
+                                    let mut recorder = PictureRecorder::new();
+                                    {
+                                        let rec_canvas = recorder.begin_recording(bounds, false);
+                                        back_button::draw_back_button(rec_canvas, self.back_hovered);
+                                    }
+                                    self.back_picture = recorder.finish_recording_as_picture(None);
                                 }
-                                canvas.restore();
+
+                                match dirty {
+                                    DirtyRegion::All => {
+                                        canvas.clear(Color::from(PANEL_BG));
+                                        self.pages.active_page().render(canvas, width, height, &self.cache);
+                                        if let Some(pic) = &self.back_picture {
+                                            canvas.draw_picture(pic, None, None);
+                                        }
+                                    }
+                                    DirtyRegion::PageOnly => {
+                                        canvas.clear(Color::from(PANEL_BG));
+                                        self.pages.active_page().render(canvas, width, height, &self.cache);
+                                        if let Some(pic) = &self.back_picture {
+                                            canvas.draw_picture(pic, None, None);
+                                        }
+                                    }
+                                    DirtyRegion::BackButtonOnly => {
+                                        canvas.save();
+                                        canvas.clip_rect(
+                                            Rect::from_xywh(BACK_BTN_X, BACK_BTN_Y, BACK_BTN_SIZE, BACK_BTN_SIZE),
+                                            ClipOp::Intersect,
+                                            false,
+                                        );
+                                        self.pages.active_page().render(canvas, width, height, &self.cache);
+                                        if let Some(pic) = &self.back_picture {
+                                            canvas.draw_picture(pic, None, None);
+                                        }
+                                        canvas.restore();
+                                    }
+                                    DirtyRegion::None => {}
+                                }
                             }
-                            DirtyRegion::PageOnly => {
-                                canvas.save();
-                                canvas.clip_rect(
-                                    Rect::from_xywh(0.0, page_top, width, page_height),
-                                    ClipOp::Intersect,
-                                    false,
-                                );
-                                canvas.translate((0.0, page_top));
-                                self.pages
-                                    .active_page()
-                                    .render(canvas, width, page_height, &self.cache);
-                                canvas.restore();
-                            }
-                            DirtyRegion::None => {}
                         }
 
                         canvas.restore();
                     }
-                }
 
                 // Composite retained surface to framebuffer (cheap GPU blit)
                 if let Some(retained) = &mut self.retained_surface {

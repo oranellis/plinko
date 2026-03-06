@@ -2,7 +2,7 @@
 pub enum DirtyRegion {
     None,
     All,
-    ToolbarOnly,
+    BackButtonOnly,
     PageOnly,
 }
 

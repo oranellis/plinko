@@ -1,14 +1,13 @@
 use skia_safe::{Font, FontMgr, FontStyle, Path, TextBlob};
 
-use super::layout::{BUTTON_COUNT, ICON_SIZE};
-use super::toolbar::{
-    build_icon_daily, build_icon_planning, build_icon_settings, build_icon_undo, build_icon_redo,
-};
+use super::icons::{build_icon_daily, build_icon_planning, build_icon_settings};
+use super::layout::HOME_CARD_ICON_SIZE;
 
 pub struct RenderCache {
     #[allow(dead_code)]
     pub font: Font,
-    pub icon_paths: [Path; BUTTON_COUNT],
+    pub home_icon_paths: [Path; 3],
+    pub home_card_labels: [TextBlob; 3],
     pub daily_label: TextBlob,
     pub left_panel_label: TextBlob,
     pub right_panel_label: TextBlob,
@@ -21,17 +20,25 @@ impl RenderCache {
         let typeface = font_mgr
             .match_family_style("sans-serif", FontStyle::normal())
             .or_else(|| font_mgr.legacy_make_typeface(None, FontStyle::normal()));
-        let font = match typeface {
-            Some(tf) => Font::from_typeface(tf, 16.0),
+        let font = match &typeface {
+            Some(tf) => Font::from_typeface(tf.clone(), 16.0),
+            None => Font::default(),
+        };
+        let card_font = match typeface {
+            Some(tf) => Font::from_typeface(tf, 14.0),
             None => Font::default(),
         };
 
-        let icon_paths = [
-            build_icon_daily(ICON_SIZE, ICON_SIZE),
-            build_icon_planning(ICON_SIZE, ICON_SIZE),
-            build_icon_settings(ICON_SIZE, ICON_SIZE),
-            build_icon_undo(ICON_SIZE, ICON_SIZE),
-            build_icon_redo(ICON_SIZE, ICON_SIZE),
+        let home_icon_paths = [
+            build_icon_daily(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
+            build_icon_planning(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
+            build_icon_settings(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
+        ];
+
+        let home_card_labels = [
+            TextBlob::new("Daily", &card_font).expect("text blob"),
+            TextBlob::new("Planning", &card_font).expect("text blob"),
+            TextBlob::new("Settings", &card_font).expect("text blob"),
         ];
 
         let daily_label = TextBlob::new("Daily", &font).expect("text blob");
@@ -41,7 +48,8 @@ impl RenderCache {
 
         Self {
             font,
-            icon_paths,
+            home_icon_paths,
+            home_card_labels,
             daily_label,
             left_panel_label,
             right_panel_label,

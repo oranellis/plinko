@@ -1,4 +1,5 @@
 pub mod daily;
+pub mod home;
 pub mod planning;
 pub mod settings;
 
@@ -9,6 +10,7 @@ use crate::ui::dirty::DirtyRegion;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum PageId {
+    Home,
     Daily,
     Planning,
     Settings,
@@ -22,6 +24,7 @@ pub trait Page {
 
 pub struct PageManager {
     pub active: PageId,
+    pub home: home::HomePage,
     pub daily: daily::DailyPage,
     pub planning: planning::PlanningPage,
     pub settings: settings::SettingsPage,
@@ -30,7 +33,8 @@ pub struct PageManager {
 impl PageManager {
     pub fn new() -> Self {
         Self {
-            active: PageId::Daily,
+            active: PageId::Home,
+            home: home::HomePage::new(),
             daily: daily::DailyPage::new(),
             planning: planning::PlanningPage::new(),
             settings: settings::SettingsPage::new(),
@@ -39,6 +43,7 @@ impl PageManager {
 
     pub fn active_page(&self) -> &dyn Page {
         match self.active {
+            PageId::Home => &self.home,
             PageId::Daily => &self.daily,
             PageId::Planning => &self.planning,
             PageId::Settings => &self.settings,
@@ -47,6 +52,7 @@ impl PageManager {
 
     pub fn active_page_mut(&mut self) -> &mut dyn Page {
         match self.active {
+            PageId::Home => &mut self.home,
             PageId::Daily => &mut self.daily,
             PageId::Planning => &mut self.planning,
             PageId::Settings => &mut self.settings,

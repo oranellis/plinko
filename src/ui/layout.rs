@@ -1,22 +1,30 @@
 // Layout constants
-pub const TOOLBAR_HEIGHT: f32 = 40.0;
-pub const BUTTON_SIZE: f32 = 32.0;
-pub const BUTTON_PADDING: f32 = 4.0;
-pub const BUTTON_MARGIN: f32 = 4.0;
 pub const DIVIDER_WIDTH: f32 = 6.0;
-pub const BUTTON_COUNT: usize = 5;
-pub const ICON_SIZE: f32 = BUTTON_SIZE - 2.0 * BUTTON_PADDING;
 
-// Colors
-pub const TOOLBAR_BG: u32 = 0xff_2d2d2d;
-pub const TOOLBAR_BORDER: u32 = 0xff_1a1a1a;
-pub const BUTTON_HOVER_BG: u32 = 0xff_444444;
-pub const BUTTON_ACTIVE_BG: u32 = 0xff_505050;
-pub const ICON_COLOR: u32 = 0xff_cccccc;
-pub const ICON_ACTIVE_COLOR: u32 = 0xff_ffffff;
+// Colors (used by page renders)
 pub const PANEL_BG: u32 = 0xff_ffffff;
 pub const PANEL_TEXT: u32 = 0xff_888888;
 pub const DIVIDER_COLOR: u32 = 0xff_e0e0e0;
 pub const DIVIDER_ACTIVE_COLOR: u32 = 0xff_aaaaaa;
 pub const DIVIDER_GRIP_COLOR: u32 = 0xff_999999;
 pub const DIVIDER_GRIP_ACTIVE_COLOR: u32 = 0xff_666666;
+
+// Home page
+pub const HOME_CARD_SIZE: f32 = 160.0;
+pub const HOME_CARD_GAP: f32 = 32.0;
+pub const HOME_CARD_CORNER: f32 = 12.0;
+pub const HOME_CARD_ICON_SIZE: f32 = 48.0;
+pub const HOME_BG: u32 = 0xff_f5f5f5;
+pub const HOME_CARD_BG: u32 = 0xff_ffffff;
+pub const HOME_CARD_HOVER_BG: u32 = 0xff_e8e8e8;
+pub const HOME_CARD_BORDER: u32 = 0xff_e0e0e0;
+pub const HOME_CARD_LABEL_COLOR: u32 = 0xff_333333;
+pub const HOME_ICON_COLOR: u32 = 0xff_555555;
+
+// Back button
+pub const BACK_BTN_X: f32 = 16.0;
+pub const BACK_BTN_Y: f32 = 16.0;
+pub const BACK_BTN_SIZE: f32 = 36.0;
+pub const BACK_BTN_CORNER: f32 = 6.0;
+pub const BACK_BTN_HOVER_BG: u32 = 0xff_e8e8e8;
+pub const BACK_BTN_ICON_COLOR: u32 = 0xff_555555;
