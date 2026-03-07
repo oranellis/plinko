@@ -1,7 +1,13 @@
+//! Drawing and hit-testing for the back-navigation button shown on all pages.
+
 use skia_safe::{Canvas, Color, Paint, PaintStyle, PathBuilder, RRect, Rect};
 
 use super::layout::*;
 
+/// Draws the back button at the fixed position defined in [`layout`](super::layout).
+///
+/// Renders a rounded-rect hover background when `hovered` is `true`, and
+/// always renders a left-pointing chevron arrow.
 pub fn draw_back_button(canvas: &Canvas, hovered: bool) {
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
@@ -35,6 +41,8 @@ pub fn draw_back_button(canvas: &Canvas, hovered: bool) {
     canvas.draw_path(&path, &paint);
 }
 
+/// Returns `true` if the logical cursor position `(x, y)` is inside the back
+/// button's bounding rectangle.
 pub fn hit_test_back_button(x: f32, y: f32) -> bool {
     (BACK_BTN_X..=BACK_BTN_X + BACK_BTN_SIZE).contains(&x)
         && (BACK_BTN_Y..=BACK_BTN_Y + BACK_BTN_SIZE).contains(&y)

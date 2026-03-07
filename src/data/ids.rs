@@ -1,12 +1,20 @@
+//! Newtype wrappers around [`uuid::Uuid`] for domain entity identifiers.
+//!
+//! Using distinct types for [`TaskId`], [`MilestoneId`], and [`UserId`] lets
+//! the compiler catch accidental mix-ups at compile time.
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Unique identifier for a [`Task`](super::Task).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TaskId(pub Uuid);
 
+/// Unique identifier for a [`Milestone`](super::Milestone).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MilestoneId(pub Uuid);
 
+/// Unique identifier for a [`User`](super::User).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UserId(pub Uuid);
 
@@ -20,18 +28,21 @@ pub enum DependencyId {
 }
 
 impl TaskId {
+    /// Generates a new random [`TaskId`].
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
 }
 
 impl MilestoneId {
+    /// Generates a new random [`MilestoneId`].
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
 }
 
 impl UserId {
+    /// Generates a new random [`UserId`].
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }

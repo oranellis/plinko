@@ -1,3 +1,5 @@
+//! Rendering functions for the planning page split-panel layout.
+
 use skia_safe::{Canvas, Color, Paint, PaintStyle, Rect, TextBlob};
 
 use crate::ui::cache::RenderCache;
@@ -5,6 +7,8 @@ use crate::ui::layout::*;
 
 use super::state::PlanningState;
 
+/// Draws the full planning page: left panel, right panel, and the divider
+/// between them.  The divider position is derived from `state.divider_ratio`.
 pub fn draw_planning(canvas: &Canvas, x: f32, y: f32, w: f32, h: f32, state: &PlanningState, cache: &RenderCache) {
     let divider_x = x + w * state.divider_ratio;
 
@@ -19,6 +23,7 @@ pub fn draw_planning(canvas: &Canvas, x: f32, y: f32, w: f32, h: f32, state: &Pl
     draw_divider(canvas, divider_x, y, y + h, active);
 }
 
+/// Fills a panel rectangle with `PANEL_BG` and draws a centred label.
 fn draw_panel(
     canvas: &Canvas,
     x: f32,
@@ -40,6 +45,8 @@ fn draw_panel(
     canvas.draw_text_blob(label, (tx, ty), &paint);
 }
 
+/// Draws the vertical divider strip and its centre grip lines.
+/// `active` is `true` when the divider is hovered or being dragged.
 fn draw_divider(canvas: &Canvas, x: f32, top: f32, bottom: f32, active: bool) {
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
@@ -73,6 +80,8 @@ fn draw_divider(canvas: &Canvas, x: f32, top: f32, bottom: f32, active: bool) {
     }
 }
 
+/// Returns `true` if `x` (logical pixels) is within the divider's interactive
+/// hit area (the visible width plus a 2-pixel tolerance on each side).
 pub fn hit_test_divider(x: f32, page_width: f32, divider_ratio: f32) -> bool {
     let divider_x = page_width * divider_ratio;
     let half = DIVIDER_WIDTH / 2.0 + 2.0;

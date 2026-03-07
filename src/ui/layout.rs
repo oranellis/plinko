@@ -1,3 +1,8 @@
+//! Layout constants and colour palette used by all page renderers.
+//!
+//! Colours are stored as `0xAA_RRGGBB` `u32` values and converted to
+//! [`skia_safe::Color`] via `Color::from(value)`.
+
 // Layout constants
 pub const DIVIDER_WIDTH: f32 = 6.0;
 

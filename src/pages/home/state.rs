@@ -1,3 +1,7 @@
+//! Mutable state for the home page.
+
+/// Tracks which navigation card (0 = Daily, 1 = Planning, 2 = Settings) is
+/// currently under the cursor, or `None` if none is hovered.
 pub struct HomeState {
     pub hovered_card: Option<usize>,
 }

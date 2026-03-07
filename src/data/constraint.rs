@@ -1,3 +1,5 @@
+//! Scheduling constraints that pin tasks and milestones to specific dates.
+
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 

@@ -1,3 +1,5 @@
+//! The [`Dependency`] edge type connecting tasks and milestones in the schedule graph.
+
 use serde::{Deserialize, Serialize};
 use crate::data::ids::DependencyId;
 

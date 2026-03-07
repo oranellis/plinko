@@ -1,8 +1,12 @@
+//! Rendering functions for the home page.
+
 use skia_safe::{Canvas, Color, Paint, PaintStyle, RRect, Rect};
 
 use crate::ui::cache::RenderCache;
 use crate::ui::layout::*;
 
+/// Computes the bounding rectangles for the three navigation cards,
+/// centred horizontally and vertically within the given logical dimensions.
 fn card_rects(width: f32, height: f32) -> [Rect; 3] {
     let total_w = 3.0 * HOME_CARD_SIZE + 2.0 * HOME_CARD_GAP;
     let start_x = (width - total_w) / 2.0;
@@ -24,6 +28,8 @@ fn card_rects(width: f32, height: f32) -> [Rect; 3] {
     ]
 }
 
+/// Draws the full home screen: background fill, three navigation cards each
+/// with a hover state, a pre-built icon path, and a centred label.
 pub fn draw_home(
     canvas: &Canvas,
     width: f32,
@@ -81,6 +87,8 @@ pub fn draw_home(
     }
 }
 
+/// Returns the index of the card under logical cursor position `(x, y)`,
+/// or `None` if the cursor is not over any card.
 pub fn hit_test_card(x: f32, y: f32, width: f32, height: f32) -> Option<usize> {
     let rects = card_rects(width, height);
     for (i, rect) in rects.iter().enumerate() {

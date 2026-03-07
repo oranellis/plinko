@@ -1,6 +1,9 @@
+//! Work schedule types — [`Weekday`] and [`WorkSchedule`].
+
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
+/// Converts a [`chrono::Weekday`] to the project's own [`Weekday`] enum.
 pub fn chrono_to_weekday(d: chrono::Weekday) -> Weekday {
     match d {
         chrono::Weekday::Mon => Weekday::Monday,
@@ -13,6 +16,7 @@ pub fn chrono_to_weekday(d: chrono::Weekday) -> Weekday {
     }
 }
 
+/// Day-of-week identifier used as a key in [`WorkSchedule`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Weekday {
     Monday,
@@ -66,14 +70,17 @@ impl WorkSchedule {
         self
     }
 
+    /// Returns `true` if `day` has a non-zero entry in this schedule.
     pub fn is_working_day(&self, day: Weekday) -> bool {
         self.days.contains_key(&day)
     }
 
+    /// Hours scheduled on `day`, or `0.0` if the day is not in the schedule.
     pub fn hours_on(&self, day: Weekday) -> f32 {
         self.days.get(&day).copied().unwrap_or(0.0)
     }
 
+    /// Sum of hours across all days in the schedule.
     pub fn total_hours_per_week(&self) -> f32 {
         self.days.values().sum()
     }

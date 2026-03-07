@@ -1,5 +1,12 @@
+//! Skia path builders for the three home-screen navigation icons.
+//!
+//! All icons are drawn in a `w × h` bounding box starting at the origin;
+//! callers translate the canvas before drawing.
+
 use skia_safe::{Path, PathBuilder, Rect};
 
+/// Builds a calendar-style icon: outline rectangle, header bar, two pin
+/// hangers at the top, and a filled circle representing a day.
 pub fn build_icon_daily(w: f32, h: f32) -> Path {
     let mut pb = PathBuilder::new();
     // Calendar outline
@@ -25,6 +32,7 @@ pub fn build_icon_daily(w: f32, h: f32) -> Path {
     pb.detach()
 }
 
+/// Builds a two-column split-view icon representing the planning layout.
 pub fn build_icon_planning(w: f32, h: f32) -> Path {
     let mut pb = PathBuilder::new();
     // Two columns representing split view
@@ -46,6 +54,8 @@ pub fn build_icon_planning(w: f32, h: f32) -> Path {
     pb.detach()
 }
 
+/// Builds a three-line slider icon (horizontal rules with circular knobs)
+/// representing settings / configuration.
 pub fn build_icon_settings(w: f32, h: f32) -> Path {
     let mut pb = PathBuilder::new();
     // Three horizontal lines with knobs (slider-settings style)

@@ -1,3 +1,5 @@
+//! The [`Task`] type and its [`TaskStatus`] enum.
+
 use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use crate::data::constraint::DateConstraint;
@@ -6,6 +8,7 @@ use crate::data::ids::UserId;
 use crate::data::ids::TaskId;
 use crate::data::user::User;
 
+/// Lifecycle state of a task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskStatus {
     NotStarted,

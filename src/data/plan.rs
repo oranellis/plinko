@@ -1,3 +1,5 @@
+//! The [`Plan`] aggregate root and its [`DependencyError`] type.
+
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;

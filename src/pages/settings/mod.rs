@@ -1,3 +1,5 @@
+//! Settings page — placeholder for application configuration UI.
+
 pub mod render;
 pub mod state;
 
@@ -7,6 +9,7 @@ use crate::pages::Page;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 
+/// Settings page stub.  Renders a centred label; full settings UI is not yet implemented.
 pub struct SettingsPage {
     #[allow(dead_code)]
     pub state: state::SettingsState,

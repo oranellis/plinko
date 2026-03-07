@@ -1,3 +1,11 @@
+//! Top-level application state and winit event handling.
+//!
+//! [`Application`] owns all runtime state — the OpenGL/Skia environment, the
+//! render cache, all page instances, dirty-region tracking, and the retained
+//! off-screen surface used for partial redraws.  It implements winit's
+//! [`ApplicationHandler`] to translate window events into render and navigation
+//! decisions.
+
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, KeyEvent, Modifiers, MouseButton, WindowEvent},
@@ -18,12 +26,25 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::layout::{BACK_BTN_X, BACK_BTN_Y, BACK_BTN_SIZE, HOME_BG, PANEL_BG};
 
+/// Tracks whether the user is on the home screen or inside a specific page.
 #[derive(Clone, Copy, PartialEq)]
 enum AppState {
+    /// The home card-grid is visible.
     Home,
+    /// A full-screen page is open.
     InPage(PageId),
 }
 
+/// Root application struct implementing the winit [`ApplicationHandler`] trait.
+///
+/// Owns every piece of mutable runtime state:
+/// - The OpenGL/Skia [`Env`] and framebuffer parameters.
+/// - A [`RenderCache`] of pre-built Skia paths and text blobs.
+/// - A [`PageManager`] holding all page instances.
+/// - [`DirtyRegion`] accumulator for the current event cycle.
+/// - A GPU-backed off-screen `retained_surface` for partial redraws.
+/// - Skia `Picture` caches for the home view and back button (invalidated on
+///   hover/navigation/resize so only changed regions are re-recorded).
 pub struct Application {
     pub env: Env,
     pub fb_info: FramebufferInfo,
@@ -37,11 +58,12 @@ pub struct Application {
     cursor_pos: (f32, f32),
     app_state: AppState,
     back_hovered: bool,
-    // GPU-backed retained surface for partial redraws
+    /// GPU-backed retained surface for partial redraws.
     retained_surface: Option<Surface>,
     retained_size: (i32, i32),
-    // Cached pictures
+    /// Cached Skia Picture for the home card grid (invalidated on hover/resize).
     home_picture: Option<Picture>,
+    /// Cached Skia Picture for the back button (invalidated on hover/navigate/resize).
     back_picture: Option<Picture>,
 }
 
@@ -73,21 +95,26 @@ impl Application {
         }
     }
 
+    /// Returns the window size in logical (DPI-independent) pixels.
     fn logical_size(&self) -> (f32, f32) {
         let phys = self.env.window.inner_size();
         let sf = self.scale_factor as f32;
         (phys.width as f32 / sf, phys.height as f32 / sf)
     }
 
+    /// Converts physical pixel coordinates to logical coordinates.
     fn to_logical(&self, px: f64, py: f64) -> (f32, f32) {
         let sf = self.scale_factor as f32;
         (px as f32 / sf, py as f32 / sf)
     }
 
+    /// Merges `region` into the pending dirty accumulator so all dirty
+    /// regions within an event cycle are coalesced before the next redraw.
     fn mark_dirty(&mut self, region: DirtyRegion) {
         self.pending_dirty = self.pending_dirty.merge(region);
     }
 
+    /// Switches to a full-screen page and invalidates all caches.
     fn navigate_to(&mut self, page: PageId) {
         self.app_state = AppState::InPage(page);
         self.pages.set_active(page);
@@ -96,6 +123,7 @@ impl Application {
         self.mark_dirty(DirtyRegion::All);
     }
 
+    /// Returns to the home card-grid and invalidates all caches.
     fn navigate_home(&mut self) {
         self.app_state = AppState::Home;
         self.pages.set_active(PageId::Home);
@@ -105,6 +133,8 @@ impl Application {
     }
 }
 
+/// Allocates a GPU-backed off-screen Skia surface at the given physical pixel
+/// dimensions.  Used as the retained intermediate buffer for partial redraws.
 fn create_retained_surface(
     gr_context: &mut gpu::DirectContext,
     width: i32,

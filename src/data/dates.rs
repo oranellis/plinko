@@ -1,3 +1,5 @@
+//! Computed start dates for tasks and milestones, stored separately from their definitions.
+
 use std::collections::HashMap;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};

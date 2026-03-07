@@ -1,33 +1,45 @@
+//! The [`User`] type — a team member with skill/role tags used for affinity matching.
+
 use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use crate::data::ids::UserId;
 
+/// A team member who can be assigned to tasks.
+///
+/// `tags` represent skills, roles, or clearances (e.g. `"rust"`, `"designer"`).
+/// Tasks declare `required_tags`; a user is eligible only if they hold every
+/// required tag.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id: UserId,
     pub name: String,
-    /// Tags representing this user's skills, roles, or clearances.
+    /// Skills, roles, or clearances this user possesses.
     pub tags: HashSet<String>,
 }
 
 impl User {
+    /// Creates a user with no tags.
     pub fn new(name: impl Into<String>) -> Self {
         Self { id: UserId::new(), name: name.into(), tags: HashSet::new() }
     }
 
+    /// Builder: adds a tag and returns `self`.  Useful for chained construction.
     pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
         self.tags.insert(tag.into());
         self
     }
 
+    /// Inserts a tag into this user's tag set.
     pub fn add_tag(&mut self, tag: impl Into<String>) {
         self.tags.insert(tag.into());
     }
 
+    /// Removes a tag from this user's tag set.
     pub fn remove_tag(&mut self, tag: &str) {
         self.tags.remove(tag);
     }
 
+    /// Returns `true` if this user possesses the given tag.
     pub fn has_tag(&self, tag: &str) -> bool {
         self.tags.contains(tag)
     }

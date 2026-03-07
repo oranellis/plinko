@@ -1,3 +1,5 @@
+//! Daily page — placeholder for the day-view schedule UI.
+
 pub mod render;
 pub mod state;
 
@@ -7,6 +9,7 @@ use crate::pages::Page;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 
+/// Daily page stub.  Currently renders a centred label; full day-view UI is not yet implemented.
 pub struct DailyPage {
     #[allow(dead_code)]
     pub state: state::DailyState,

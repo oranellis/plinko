@@ -1,8 +1,12 @@
+//! Rendering functions for the daily page.
+
 use skia_safe::{Canvas, Color, Paint, PaintStyle, Rect};
 
 use crate::ui::cache::RenderCache;
 use crate::ui::layout::{PANEL_BG, PANEL_TEXT};
 
+/// Fills the panel area with `PANEL_BG` and draws a centred "Daily" label.
+/// `(x, y)` is the top-left origin; `(w, h)` are the logical dimensions.
 pub fn draw_daily(canvas: &Canvas, x: f32, y: f32, w: f32, h: f32, cache: &RenderCache) {
     let mut paint = Paint::default();
     paint.set_anti_alias(true);

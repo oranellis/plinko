@@ -1,3 +1,5 @@
+//! Home page — card grid that lets the user navigate to Daily, Planning, or Settings.
+
 pub mod render;
 pub mod state;
 
@@ -7,6 +9,7 @@ use crate::pages::Page;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 
+/// Home page: shows a row of navigation cards centred on screen.
 pub struct HomePage {
     pub state: state::HomeState,
 }

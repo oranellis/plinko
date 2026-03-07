@@ -1,3 +1,15 @@
+//! Domain model for project plans, tasks, milestones, users, and scheduling.
+//!
+//! The central entity is [`Plan`], which owns collections of [`Task`]s,
+//! [`Milestone`]s, and [`User`]s together with their work schedules and
+//! calendar exceptions.  Dependency edges are stored on each task/milestone
+//! and validated for cycles on every mutation.  Computed start dates live
+//! separately in [`StartDates`] so they can be recomputed without touching
+//! task definitions.
+//!
+//! Persistence is handled by [`Storage`], which saves versioned JSON snapshots
+//! under `$XDG_DATA_HOME/<binary>/plans/<plan-uuid>/`.
+
 pub mod calendar;
 pub mod constraint;
 pub mod dates;

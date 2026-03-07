@@ -1,3 +1,5 @@
+//! Runtime OpenGL/Skia environment and surface management.
+
 use std::num::NonZeroU32;
 
 use glutin::{
@@ -11,6 +13,10 @@ use skia_safe::{
 };
 use winit::window::Window;
 
+/// Owns every handle that must stay alive for the duration of the application:
+/// the winit window, the glutin GL surface and context, the Skia
+/// [`DirectContext`](skia_safe::gpu::DirectContext), and the framebuffer-backed
+/// Skia [`Surface`] that wraps the window's default framebuffer.
 pub struct Env {
     pub surface: Surface,
     pub gl_surface: GlutinSurface<WindowSurface>,
@@ -25,6 +31,10 @@ impl Drop for Env {
     }
 }
 
+/// Wraps the window's OpenGL framebuffer in a Skia [`Surface`].
+///
+/// The surface is bottom-left origin (standard OpenGL convention) and uses
+/// RGBA8888 colour.  Must be recreated whenever the window is resized.
 pub fn create_surface(
     window: &Window,
     fb_info: FramebufferInfo,
@@ -51,6 +61,8 @@ pub fn create_surface(
     .expect("Could not create skia surface")
 }
 
+/// Recreates the Skia surface and resizes the GL surface to match the current
+/// window dimensions.  Call this in response to [`WindowEvent::Resized`].
 pub fn resize_surface(env: &mut Env, fb_info: FramebufferInfo, num_samples: usize, stencil_size: usize) {
     env.surface = create_surface(&env.window, fb_info, &mut env.gr_context, num_samples, stencil_size);
     let size = env.window.inner_size();

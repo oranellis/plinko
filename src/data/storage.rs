@@ -1,3 +1,8 @@
+//! Versioned JSON persistence for [`Plan`]s.
+//!
+//! Each save call writes a new timestamped snapshot file, allowing the full
+//! history to be browsed and restored.
+
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
@@ -139,11 +144,10 @@ impl Storage {
         let mut ids = Vec::new();
         for entry in fs::read_dir(&self.base)? {
             let entry = entry?;
-            if entry.file_type()?.is_dir() {
-                if let Ok(id) = Uuid::parse_str(&entry.file_name().to_string_lossy()) {
+            if entry.file_type()?.is_dir()
+                && let Ok(id) = Uuid::parse_str(&entry.file_name().to_string_lossy()) {
                     ids.push(id);
                 }
-            }
         }
         Ok(ids)
     }

@@ -1,8 +1,12 @@
+//! Pre-built Skia render resources that are expensive to construct every frame.
+
 use skia_safe::{Font, FontMgr, FontStyle, Path, TextBlob};
 
 use super::icons::{build_icon_daily, build_icon_planning, build_icon_settings};
 use super::layout::HOME_CARD_ICON_SIZE;
 
+/// Holds Skia paths and text blobs that are built once at startup and reused
+/// every frame.  Passed as a shared reference to every page renderer.
 pub struct RenderCache {
     #[allow(dead_code)]
     pub font: Font,
@@ -15,6 +19,8 @@ pub struct RenderCache {
 }
 
 impl RenderCache {
+    /// Builds all cached resources.  Resolves a sans-serif typeface via
+    /// [`FontMgr`] and falls back to [`Font::default()`] if none is found.
     pub fn new() -> Self {
         let font_mgr = FontMgr::new();
         let typeface = font_mgr

@@ -1,3 +1,5 @@
+//! Planning page — a two-panel split view with a draggable divider.
+
 pub mod render;
 pub mod state;
 
@@ -7,6 +9,7 @@ use crate::pages::Page;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 
+/// Planning page: a horizontally split view with a draggable divider.
 pub struct PlanningPage {
     pub state: state::PlanningState,
 }

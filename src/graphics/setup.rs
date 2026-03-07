@@ -1,3 +1,8 @@
+//! One-shot OpenGL + Skia bootstrap.
+//!
+//! Call [`initialize`] once at startup with the winit [`EventLoop`] to obtain
+//! an [`InitResult`] that is passed directly into [`Application::new`](crate::app::Application::new).
+
 use std::{ffi::CString, num::NonZeroU32};
 
 use gl::types::*;
@@ -20,14 +25,30 @@ use winit::{
 
 use super::env::{Env, create_surface};
 
+/// Everything [`initialize`] produces.  Passed straight into
+/// [`Application::new`](crate::app::Application::new).
 pub struct InitResult {
+    /// All live OpenGL/Skia handles.
     pub env: Env,
+    /// Identifies the default framebuffer for Skia's GL backend.
     pub fb_info: FramebufferInfo,
+    /// MSAA sample count chosen by glutin.
     pub num_samples: usize,
+    /// Stencil buffer size chosen by glutin.
     pub stencil_size: usize,
+    /// Window DPI scale factor (physical px / logical px).
     pub scale_factor: f64,
 }
 
+/// Bootstraps the entire OpenGL + Skia stack.
+///
+/// Steps performed:
+/// 1. Creates a winit window via glutin-winit's [`DisplayBuilder`].
+/// 2. Selects the best GL config (preferring transparency, fewest samples).
+/// 3. Creates and makes current a GL context (falls back to GLES on failure).
+/// 4. Loads all GL function pointers.
+/// 5. Creates a Skia [`DirectContext`](skia_safe::gpu::DirectContext) and wraps
+///    the default framebuffer in a Skia [`Surface`](skia_safe::Surface).
 pub fn initialize(el: &EventLoop<()>) -> InitResult {
     let window_attributes = WindowAttributes::default()
         .with_title("Skia Toolbar + Split View")

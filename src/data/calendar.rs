@@ -1,3 +1,5 @@
+//! Date-specific hour overrides used to model holidays, half-days, and other exceptions.
+
 use std::collections::HashMap;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};

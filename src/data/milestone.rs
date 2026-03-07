@@ -1,8 +1,15 @@
+//! The [`Milestone`] type — a zero-duration schedule anchor with optional dependencies.
+
 use serde::{Deserialize, Serialize};
 use crate::data::constraint::DateConstraint;
 use crate::data::dependency::Dependency;
 use crate::data::ids::MilestoneId;
 
+/// A named point in time that other tasks and milestones can depend on.
+///
+/// Milestones have no workload — they are pure scheduling anchors.  Like
+/// tasks, they support an optional [`DateConstraint`] and a list of
+/// predecessor [`Dependency`] edges.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Milestone {
     pub id: MilestoneId,
@@ -15,6 +22,7 @@ pub struct Milestone {
 }
 
 impl Milestone {
+    /// Creates a milestone with no dependencies and no constraint.
     pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
             id: MilestoneId::new(),

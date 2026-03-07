@@ -1,3 +1,9 @@
+//! Application entry point.
+//!
+//! Initialises the OpenGL/Skia environment via [`graphics::setup`], constructs
+//! the [`app::Application`] state machine, and hands control to the winit event
+//! loop.
+
 mod app;
 mod data;
 mod graphics;
@@ -6,6 +12,7 @@ mod ui;
 
 use winit::event_loop::EventLoop;
 
+/// Creates the winit event loop, initialises OpenGL + Skia, then runs the app.
 fn main() {
     let el = EventLoop::new().expect("Failed to create event loop");
 
