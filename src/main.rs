@@ -4,6 +4,11 @@
 //! the [`app::Application`] state machine, and hands control to the winit event
 //! loop.
 
+// Allow unused code throughout the codebase - the data layer is fully implemented
+// but not all functionality is used by the UI layer yet.
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 mod app;
 mod data;
 mod graphics;

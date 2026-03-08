@@ -43,7 +43,7 @@ pub struct Plan {
     pub dates: StartDates,
     /// The node that the scheduler is trying to optimise for (bring as early as possible).
     /// If set to the plan start then all end nodes are brought in as much as possible
-    pub scheduler_end_id: NodeId,
+    pub scheduler_end: NodeId,
 }
 
 impl Plan {
@@ -60,6 +60,7 @@ impl Plan {
             user_calendars: HashMap::new(),
             start_date: chrono::Local::now().date_naive(),
             dates: StartDates::new(),
+            scheduler_end: NodeId::PlanStart,
         }
     }
 
@@ -94,6 +95,15 @@ impl Plan {
         // 3. Normal schedule for that weekday
         let weekday = crate::data::schedule::chrono_to_weekday(date.weekday());
         self.schedule_for(user_id).hours_on(weekday)
+    }
+
+    /// Returns all users that possess ALL of the specified tags (skills/roles/clearances).
+    /// An empty tag list matches all users.
+    pub fn users_with_tags(&self, tags: &[&str]) -> impl Iterator<Item = &User> {
+        let tag_set: std::collections::HashSet<&str> = tags.iter().copied().collect();
+        self.users
+            .values()
+            .filter(move |user| tag_set.iter().all(|tag| user.has_tag(tag)))
     }
 
     /// Add a dependency to a task. Returns `Err` if the task doesn't exist or the
@@ -266,6 +276,64 @@ mod tests {
         let id = p.add_user(u);
         assert!(p.users.contains_key(&id));
         assert_eq!(p.users[&id].name, "Alice");
+    }
+
+    #[test]
+    fn users_with_tags_returns_matching_users() {
+        let mut p = make_plan();
+        p.add_user(User::new("Alice").with_tag("rust").with_tag("frontend"));
+        p.add_user(User::new("Bob").with_tag("rust").with_tag("backend"));
+        p.add_user(User::new("Carol").with_tag("python"));
+
+        let rust_users: Vec<_> = p
+            .users_with_tags(&["rust"])
+            .map(|u| u.name.as_str())
+            .collect();
+        assert_eq!(rust_users.len(), 2);
+        assert!(rust_users.contains(&"Alice"));
+        assert!(rust_users.contains(&"Bob"));
+    }
+
+    #[test]
+    fn users_with_tags_returns_users_with_all_tags() {
+        let mut p = make_plan();
+        p.add_user(User::new("Alice").with_tag("rust").with_tag("frontend"));
+        p.add_user(User::new("Bob").with_tag("rust").with_tag("backend"));
+        p.add_user(User::new("Carol").with_tag("python"));
+
+        let users: Vec<_> = p
+            .users_with_tags(&["rust", "frontend"])
+            .map(|u| u.name.as_str())
+            .collect();
+        assert_eq!(users.len(), 1);
+        assert!(users.contains(&"Alice"));
+    }
+
+    #[test]
+    fn users_with_tags_returns_empty_when_no_matches() {
+        let mut p = make_plan();
+        p.add_user(User::new("Alice").with_tag("rust"));
+
+        let users: Vec<_> = p.users_with_tags(&["python"]).collect();
+        assert!(users.is_empty());
+    }
+
+    #[test]
+    fn users_with_tags_returns_empty_for_empty_plan() {
+        let p = make_plan();
+        let users: Vec<_> = p.users_with_tags(&["rust"]).collect();
+        assert!(users.is_empty());
+    }
+
+    #[test]
+    fn users_with_tags_empty_list_matches_all_users() {
+        let mut p = make_plan();
+        p.add_user(User::new("Alice").with_tag("rust"));
+        p.add_user(User::new("Bob").with_tag("python"));
+        p.add_user(User::new("Carol"));
+
+        let users: Vec<_> = p.users_with_tags(&[]).collect();
+        assert_eq!(users.len(), 3);
     }
 
     // ── Schedule resolution ───────────────────────────────────────────────────
