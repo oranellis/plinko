@@ -1,14 +1,16 @@
 //! The [`Plan`] aggregate root and its [`DependencyError`] type.
 
+use crate::data::dependency::Dependency;
+use crate::data::ids::NodeId;
+use crate::data::{
+    CalendarOverrides, Milestone, MilestoneId, StartDates, Task, TaskId, User, UserId, WorkSchedule,
+};
+use chrono::{Datelike, NaiveDate};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{Datelike, NaiveDate};
-use crate::data::dependency::Dependency;
-use crate::data::ids::DependencyId;
-use crate::data::{CalendarOverrides, Milestone, MilestoneId, StartDates, Task, TaskId, User, UserId, WorkSchedule};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum DependencyError {
@@ -39,6 +41,9 @@ pub struct Plan {
     /// Start dates for all tasks and milestones. Kept separate so they can be
     /// recomputed without touching task definitions.
     pub dates: StartDates,
+    /// The node that the scheduler is trying to optimise for (bring as early as possible).
+    /// If set to the plan start then all end nodes are brought in as much as possible
+    pub scheduler_end_id: NodeId,
 }
 
 impl Plan {
@@ -60,7 +65,9 @@ impl Plan {
 
     /// Returns the effective schedule for a user, falling back to the plan default.
     pub fn schedule_for(&self, user_id: &UserId) -> &WorkSchedule {
-        self.user_schedules.get(user_id).unwrap_or(&self.default_schedule)
+        self.user_schedules
+            .get(user_id)
+            .unwrap_or(&self.default_schedule)
     }
 
     /// Override the schedule for a specific user.
@@ -100,7 +107,7 @@ impl Plan {
         if !self.tasks.contains_key(&task_id) {
             return Err(DependencyError::NotFound);
         }
-        if self.has_path(dep.id, DependencyId::Task(task_id)) {
+        if self.has_path(dep.id, NodeId::Task(task_id)) {
             return Err(DependencyError::Cycle);
         }
         let task = self.tasks.get_mut(&task_id).unwrap();
@@ -123,7 +130,7 @@ impl Plan {
         if !self.milestones.contains_key(&milestone_id) {
             return Err(DependencyError::NotFound);
         }
-        if self.has_path(dep.id, DependencyId::Milestone(milestone_id)) {
+        if self.has_path(dep.id, NodeId::Milestone(milestone_id)) {
             return Err(DependencyError::Cycle);
         }
         let milestone = self.milestones.get_mut(&milestone_id).unwrap();
@@ -136,7 +143,7 @@ impl Plan {
     }
 
     /// Returns true if `target` is reachable from `start` by following existing dependency edges.
-    fn has_path(&self, start: DependencyId, target: DependencyId) -> bool {
+    fn has_path(&self, start: NodeId, target: NodeId) -> bool {
         let mut visited = HashSet::new();
         let mut stack = vec![start];
         while let Some(current) = stack.pop() {
@@ -147,18 +154,18 @@ impl Plan {
                 continue;
             }
             match current {
-                DependencyId::Task(id) => {
+                NodeId::Task(id) => {
                     if let Some(task) = self.tasks.get(&id) {
                         stack.extend(task.dependencies.iter().map(|d| d.id));
                     }
                 }
-                DependencyId::Milestone(id) => {
+                NodeId::Milestone(id) => {
                     if let Some(milestone) = self.milestones.get(&id) {
                         stack.extend(milestone.dependencies.iter().map(|d| d.id));
                     }
                 }
                 // PlanStart is the root — it has no dependencies of its own.
-                DependencyId::PlanStart => {}
+                NodeId::PlanStart => {}
             }
         }
         false
@@ -166,11 +173,11 @@ impl Plan {
 
     /// Resolve the start date of any dependency. Returns `None` if the task or
     /// milestone has no date assigned yet.
-    pub fn start_of(&self, dep: DependencyId) -> Option<NaiveDate> {
+    pub fn start_of(&self, dep: NodeId) -> Option<NaiveDate> {
         match dep {
-            DependencyId::PlanStart => Some(self.start_date),
-            DependencyId::Task(id) => self.dates.task(&id),
-            DependencyId::Milestone(id) => self.dates.milestone(&id),
+            NodeId::PlanStart => Some(self.start_date),
+            NodeId::Task(id) => self.dates.task(&id),
+            NodeId::Milestone(id) => self.dates.milestone(&id),
         }
     }
 
@@ -322,7 +329,10 @@ mod tests {
         let mut p = make_plan();
         let uid = p.add_user(User::new("Alice"));
         p.calendar.set(date(MON.0, MON.1, MON.2), 3.0);
-        p.user_calendars.entry(uid).or_default().set(date(MON.0, MON.1, MON.2), 1.0);
+        p.user_calendars
+            .entry(uid)
+            .or_default()
+            .set(date(MON.0, MON.1, MON.2), 1.0);
         assert_eq!(p.hours_available(&uid, date(MON.0, MON.1, MON.2)), 1.0);
     }
 
@@ -331,7 +341,10 @@ mod tests {
         let mut p = make_plan();
         let alice = p.add_user(User::new("Alice"));
         let bob = p.add_user(User::new("Bob"));
-        p.user_calendars.entry(alice).or_default().set(date(MON.0, MON.1, MON.2), 2.0);
+        p.user_calendars
+            .entry(alice)
+            .or_default()
+            .set(date(MON.0, MON.1, MON.2), 2.0);
         assert_eq!(p.hours_available(&bob, date(MON.0, MON.1, MON.2)), 8.0);
     }
 
@@ -353,7 +366,7 @@ mod tests {
 
     // ── Dependency management ─────────────────────────────────────────────────
 
-    fn has_dep(deps: &[Dependency], id: DependencyId) -> bool {
+    fn has_dep(deps: &[Dependency], id: NodeId) -> bool {
         deps.iter().any(|d| d.id == id)
     }
 
@@ -362,8 +375,11 @@ mod tests {
         let mut p = make_plan();
         let a = p.add_task(Task::new("A", ""));
         let b = p.add_task(Task::new("B", ""));
-        assert!(p.add_task_dependency(b, Dependency::new(DependencyId::Task(a))).is_ok());
-        assert!(has_dep(&p.tasks[&b].dependencies, DependencyId::Task(a)));
+        assert!(
+            p.add_task_dependency(b, Dependency::new(NodeId::Task(a)))
+                .is_ok()
+        );
+        assert!(has_dep(&p.tasks[&b].dependencies, NodeId::Task(a)));
     }
 
     #[test]
@@ -372,7 +388,7 @@ mod tests {
         let unknown = TaskId::new();
         let other = p.add_task(Task::new("Other", ""));
         assert_eq!(
-            p.add_task_dependency(unknown, Dependency::new(DependencyId::Task(other))),
+            p.add_task_dependency(unknown, Dependency::new(NodeId::Task(other))),
             Err(DependencyError::NotFound)
         );
     }
@@ -382,9 +398,10 @@ mod tests {
         let mut p = make_plan();
         let a = p.add_task(Task::new("A", ""));
         let b = p.add_task(Task::new("B", ""));
-        p.add_task_dependency(a, Dependency::new(DependencyId::Task(b))).unwrap();
+        p.add_task_dependency(a, Dependency::new(NodeId::Task(b)))
+            .unwrap();
         assert_eq!(
-            p.add_task_dependency(b, Dependency::new(DependencyId::Task(a))),
+            p.add_task_dependency(b, Dependency::new(NodeId::Task(a))),
             Err(DependencyError::Cycle)
         );
     }
@@ -395,10 +412,12 @@ mod tests {
         let a = p.add_task(Task::new("A", ""));
         let b = p.add_task(Task::new("B", ""));
         let c = p.add_task(Task::new("C", ""));
-        p.add_task_dependency(a, Dependency::new(DependencyId::Task(b))).unwrap();
-        p.add_task_dependency(b, Dependency::new(DependencyId::Task(c))).unwrap();
+        p.add_task_dependency(a, Dependency::new(NodeId::Task(b)))
+            .unwrap();
+        p.add_task_dependency(b, Dependency::new(NodeId::Task(c)))
+            .unwrap();
         assert_eq!(
-            p.add_task_dependency(c, Dependency::new(DependencyId::Task(a))),
+            p.add_task_dependency(c, Dependency::new(NodeId::Task(a))),
             Err(DependencyError::Cycle)
         );
     }
@@ -408,8 +427,10 @@ mod tests {
         let mut p = make_plan();
         let a = p.add_task(Task::new("A", ""));
         let b = p.add_task(Task::new("B", ""));
-        p.add_task_dependency(b, Dependency::new(DependencyId::Task(a))).unwrap();
-        p.add_task_dependency(b, Dependency::with_lag(DependencyId::Task(a), 3.0)).unwrap();
+        p.add_task_dependency(b, Dependency::new(NodeId::Task(a)))
+            .unwrap();
+        p.add_task_dependency(b, Dependency::with_lag(NodeId::Task(a), 3.0))
+            .unwrap();
         assert_eq!(p.tasks[&b].dependencies.len(), 1);
         assert_eq!(p.tasks[&b].dependencies[0].lag_days, 3.0);
     }
@@ -419,7 +440,8 @@ mod tests {
         let mut p = make_plan();
         let a = p.add_task(Task::new("A", ""));
         let b = p.add_task(Task::new("B", ""));
-        p.add_task_dependency(b, Dependency::with_lag(DependencyId::Task(a), 5.0)).unwrap();
+        p.add_task_dependency(b, Dependency::with_lag(NodeId::Task(a), 5.0))
+            .unwrap();
         assert_eq!(p.tasks[&b].dependencies[0].lag_days, 5.0);
     }
 
@@ -428,7 +450,8 @@ mod tests {
         let mut p = make_plan();
         let a = p.add_task(Task::new("A", ""));
         let b = p.add_task(Task::new("B", ""));
-        p.add_task_dependency(b, Dependency::with_lead(DependencyId::Task(a), 2.0)).unwrap();
+        p.add_task_dependency(b, Dependency::with_lead(NodeId::Task(a), 2.0))
+            .unwrap();
         assert_eq!(p.tasks[&b].dependencies[0].lag_days, -2.0);
     }
 
@@ -437,8 +460,11 @@ mod tests {
         let mut p = make_plan();
         let t = p.add_task(Task::new("T", ""));
         let m = p.add_milestone(Milestone::new("M", ""));
-        assert!(p.add_milestone_dependency(m, Dependency::new(DependencyId::Task(t))).is_ok());
-        assert!(has_dep(&p.milestones[&m].dependencies, DependencyId::Task(t)));
+        assert!(
+            p.add_milestone_dependency(m, Dependency::new(NodeId::Task(t)))
+                .is_ok()
+        );
+        assert!(has_dep(&p.milestones[&m].dependencies, NodeId::Task(t)));
     }
 
     #[test]
@@ -446,7 +472,7 @@ mod tests {
         let mut p = make_plan();
         let unknown = MilestoneId::new();
         assert_eq!(
-            p.add_milestone_dependency(unknown, Dependency::new(DependencyId::PlanStart)),
+            p.add_milestone_dependency(unknown, Dependency::new(NodeId::PlanStart)),
             Err(DependencyError::NotFound)
         );
     }
@@ -456,9 +482,10 @@ mod tests {
         let mut p = make_plan();
         let m1 = p.add_milestone(Milestone::new("M1", ""));
         let m2 = p.add_milestone(Milestone::new("M2", ""));
-        p.add_milestone_dependency(m1, Dependency::new(DependencyId::Milestone(m2))).unwrap();
+        p.add_milestone_dependency(m1, Dependency::new(NodeId::Milestone(m2)))
+            .unwrap();
         assert_eq!(
-            p.add_milestone_dependency(m2, Dependency::new(DependencyId::Milestone(m1))),
+            p.add_milestone_dependency(m2, Dependency::new(NodeId::Milestone(m1))),
             Err(DependencyError::Cycle)
         );
     }
@@ -468,8 +495,10 @@ mod tests {
         let mut p = make_plan();
         let m1 = p.add_milestone(Milestone::new("M1", ""));
         let m2 = p.add_milestone(Milestone::new("M2", ""));
-        p.add_milestone_dependency(m1, Dependency::new(DependencyId::Milestone(m2))).unwrap();
-        p.add_milestone_dependency(m1, Dependency::with_lag(DependencyId::Milestone(m2), 1.0)).unwrap();
+        p.add_milestone_dependency(m1, Dependency::new(NodeId::Milestone(m2)))
+            .unwrap();
+        p.add_milestone_dependency(m1, Dependency::with_lag(NodeId::Milestone(m2), 1.0))
+            .unwrap();
         assert_eq!(p.milestones[&m1].dependencies.len(), 1);
         assert_eq!(p.milestones[&m1].dependencies[0].lag_days, 1.0);
     }
@@ -479,9 +508,10 @@ mod tests {
         let mut p = make_plan();
         let t = p.add_task(Task::new("T", ""));
         let m = p.add_milestone(Milestone::new("M", ""));
-        p.add_task_dependency(t, Dependency::new(DependencyId::Milestone(m))).unwrap();
+        p.add_task_dependency(t, Dependency::new(NodeId::Milestone(m)))
+            .unwrap();
         assert_eq!(
-            p.add_milestone_dependency(m, Dependency::new(DependencyId::Task(t))),
+            p.add_milestone_dependency(m, Dependency::new(NodeId::Task(t))),
             Err(DependencyError::Cycle)
         );
     }
@@ -490,17 +520,25 @@ mod tests {
     fn plan_start_can_be_added_as_task_dependency() {
         let mut p = make_plan();
         let t = p.add_task(Task::new("T", ""));
-        assert!(p.add_task_dependency(t, Dependency::new(DependencyId::PlanStart)).is_ok());
+        assert!(
+            p.add_task_dependency(t, Dependency::new(NodeId::PlanStart))
+                .is_ok()
+        );
     }
 
     #[test]
     fn plan_start_cannot_create_a_cycle() {
         let mut p = make_plan();
         let t = p.add_task(Task::new("T", ""));
-        p.add_task_dependency(t, Dependency::new(DependencyId::PlanStart)).unwrap();
+        p.add_task_dependency(t, Dependency::new(NodeId::PlanStart))
+            .unwrap();
         let t2 = p.add_task(Task::new("T2", ""));
-        p.add_task_dependency(t2, Dependency::new(DependencyId::Task(t))).unwrap();
-        assert!(p.add_task_dependency(t2, Dependency::new(DependencyId::PlanStart)).is_ok());
+        p.add_task_dependency(t2, Dependency::new(NodeId::Task(t)))
+            .unwrap();
+        assert!(
+            p.add_task_dependency(t2, Dependency::new(NodeId::PlanStart))
+                .is_ok()
+        );
     }
 
     // ── start_of ──────────────────────────────────────────────────────────────
@@ -508,7 +546,7 @@ mod tests {
     #[test]
     fn start_of_plan_start_returns_plan_start_date() {
         let p = make_plan();
-        assert_eq!(p.start_of(DependencyId::PlanStart), Some(date(2026, 1, 1)));
+        assert_eq!(p.start_of(NodeId::PlanStart), Some(date(2026, 1, 1)));
     }
 
     #[test]
@@ -516,14 +554,14 @@ mod tests {
         let mut p = make_plan();
         let t = p.add_task(Task::new("T", ""));
         p.dates.set_task(t, date(2026, 3, 9));
-        assert_eq!(p.start_of(DependencyId::Task(t)), Some(date(2026, 3, 9)));
+        assert_eq!(p.start_of(NodeId::Task(t)), Some(date(2026, 3, 9)));
     }
 
     #[test]
     fn start_of_unscheduled_task_is_none() {
         let mut p = make_plan();
         let t = p.add_task(Task::new("T", ""));
-        assert_eq!(p.start_of(DependencyId::Task(t)), None);
+        assert_eq!(p.start_of(NodeId::Task(t)), None);
     }
 
     #[test]
@@ -531,14 +569,14 @@ mod tests {
         let mut p = make_plan();
         let m = p.add_milestone(Milestone::new("M", ""));
         p.dates.set_milestone(m, date(2026, 6, 1));
-        assert_eq!(p.start_of(DependencyId::Milestone(m)), Some(date(2026, 6, 1)));
+        assert_eq!(p.start_of(NodeId::Milestone(m)), Some(date(2026, 6, 1)));
     }
 
     #[test]
     fn start_of_unscheduled_milestone_is_none() {
         let mut p = make_plan();
         let m = p.add_milestone(Milestone::new("M", ""));
-        assert_eq!(p.start_of(DependencyId::Milestone(m)), None);
+        assert_eq!(p.start_of(NodeId::Milestone(m)), None);
     }
 
     // ── Serialization round-trip ──────────────────────────────────────────────
@@ -549,7 +587,8 @@ mod tests {
         let uid = p.add_user(User::new("Alice"));
         let tid = p.add_task(Task::new("Build", "Core work"));
         let mid = p.add_milestone(Milestone::new("Launch", ""));
-        p.add_task_dependency(tid, Dependency::new(DependencyId::PlanStart)).unwrap();
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
         p.calendar.set(date(2026, 3, 9), 3.0);
         p.dates.set_task(tid, date(2026, 3, 9));
         p.set_user_schedule(uid, WorkSchedule::full_week());
@@ -567,6 +606,6 @@ mod tests {
         assert_eq!(loaded.calendar.get(date(2026, 3, 9)), Some(3.0));
         assert_eq!(loaded.dates.task(&tid), Some(date(2026, 3, 9)));
         assert_eq!(loaded.schedule_for(&uid).total_hours_per_week(), 56.0);
-        assert!(has_dep(&loaded.tasks[&tid].dependencies, DependencyId::PlanStart));
+        assert!(has_dep(&loaded.tasks[&tid].dependencies, NodeId::PlanStart));
     }
 }

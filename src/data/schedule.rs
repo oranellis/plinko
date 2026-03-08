@@ -1,7 +1,7 @@
 //! Work schedule types — [`Weekday`] and [`WorkSchedule`].
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Converts a [`chrono::Weekday`] to the project's own [`Weekday`] enum.
 pub fn chrono_to_weekday(d: chrono::Weekday) -> Weekday {
@@ -116,7 +116,13 @@ mod tests {
     #[test]
     fn weekdays_is_eight_hours_per_day() {
         let s = WorkSchedule::weekdays();
-        for day in [Weekday::Monday, Weekday::Tuesday, Weekday::Wednesday, Weekday::Thursday, Weekday::Friday] {
+        for day in [
+            Weekday::Monday,
+            Weekday::Tuesday,
+            Weekday::Wednesday,
+            Weekday::Thursday,
+            Weekday::Friday,
+        ] {
             assert_eq!(s.hours_on(day), 8.0);
         }
     }

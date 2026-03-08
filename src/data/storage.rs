@@ -3,12 +3,12 @@
 //! Each save call writes a new timestamped snapshot file, allowing the full
 //! history to be browsed and restored.
 
+use crate::data::plan::Plan;
+use chrono::Local;
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
-use chrono::Local;
 use uuid::Uuid;
-use crate::data::plan::Plan;
 
 /// Returns the name of the running binary, used as the data directory name.
 fn binary_name() -> String {
@@ -51,8 +51,16 @@ impl std::error::Error for StorageError {
     }
 }
 
-impl From<std::io::Error> for StorageError { fn from(e: std::io::Error) -> Self { Self::Io(e) } }
-impl From<serde_json::Error> for StorageError { fn from(e: serde_json::Error) -> Self { Self::Json(e) } }
+impl From<std::io::Error> for StorageError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+impl From<serde_json::Error> for StorageError {
+    fn from(e: serde_json::Error) -> Self {
+        Self::Json(e)
+    }
+}
 
 // ── Storage ───────────────────────────────────────────────────────────────────
 
@@ -92,7 +100,9 @@ impl Storage {
         if base.as_os_str().is_empty() {
             return Err(StorageError::NoHomeDir);
         }
-        Ok(Self { base: base.join(binary_name()).join("plans") })
+        Ok(Self {
+            base: base.join(binary_name()).join("plans"),
+        })
     }
 
     // ── Paths ─────────────────────────────────────────────────────────────────
@@ -145,9 +155,10 @@ impl Storage {
         for entry in fs::read_dir(&self.base)? {
             let entry = entry?;
             if entry.file_type()?.is_dir()
-                && let Ok(id) = Uuid::parse_str(&entry.file_name().to_string_lossy()) {
-                    ids.push(id);
-                }
+                && let Ok(id) = Uuid::parse_str(&entry.file_name().to_string_lossy())
+            {
+                ids.push(id);
+            }
         }
         Ok(ids)
     }
@@ -297,7 +308,10 @@ mod tests {
     #[test]
     fn load_latest_errors_when_no_versions() {
         let (_tmp, s) = storage();
-        assert!(matches!(s.load_latest(Uuid::new_v4()), Err(StorageError::NoVersions)));
+        assert!(matches!(
+            s.load_latest(Uuid::new_v4()),
+            Err(StorageError::NoVersions)
+        ));
     }
 
     #[test]

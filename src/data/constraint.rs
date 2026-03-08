@@ -24,15 +24,24 @@ pub struct DateConstraint {
 
 impl DateConstraint {
     pub fn fixed(date: NaiveDate) -> Self {
-        Self { date, kind: ConstraintKind::Fixed }
+        Self {
+            date,
+            kind: ConstraintKind::Fixed,
+        }
     }
 
     pub fn earliest(date: NaiveDate) -> Self {
-        Self { date, kind: ConstraintKind::Earliest }
+        Self {
+            date,
+            kind: ConstraintKind::Earliest,
+        }
     }
 
     pub fn latest(date: NaiveDate) -> Self {
-        Self { date, kind: ConstraintKind::Latest }
+        Self {
+            date,
+            kind: ConstraintKind::Latest,
+        }
     }
 }
 

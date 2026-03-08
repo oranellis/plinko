@@ -1,9 +1,9 @@
 //! The [`Milestone`] type — a zero-duration schedule anchor with optional dependencies.
 
-use serde::{Deserialize, Serialize};
 use crate::data::constraint::DateConstraint;
 use crate::data::dependency::Dependency;
 use crate::data::ids::MilestoneId;
+use serde::{Deserialize, Serialize};
 
 /// A named point in time that other tasks and milestones can depend on.
 ///

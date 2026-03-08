@@ -18,9 +18,9 @@ pub struct MilestoneId(pub Uuid);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UserId(pub Uuid);
 
-/// A dependency can point to a Task, a Milestone, or the Plan's own start date.
+/// A node can point to a Task, a Milestone, or the Plan's own start date. Used for dependencies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum DependencyId {
+pub enum NodeId {
     Task(TaskId),
     Milestone(MilestoneId),
     /// The plan's start date — acts as the root anchor for the whole schedule.
@@ -74,13 +74,13 @@ mod tests {
     }
 
     #[test]
-    fn dependency_id_equality() {
+    fn node_id_equality() {
         let tid = TaskId::new();
         let mid = MilestoneId::new();
-        assert_eq!(DependencyId::Task(tid), DependencyId::Task(tid));
-        assert_eq!(DependencyId::Milestone(mid), DependencyId::Milestone(mid));
-        assert_ne!(DependencyId::Task(tid), DependencyId::Milestone(mid));
-        assert_ne!(DependencyId::PlanStart, DependencyId::Task(tid));
-        assert_eq!(DependencyId::PlanStart, DependencyId::PlanStart);
+        assert_eq!(NodeId::Task(tid), NodeId::Task(tid));
+        assert_eq!(NodeId::Milestone(mid), NodeId::Milestone(mid));
+        assert_ne!(NodeId::Task(tid), NodeId::Milestone(mid));
+        assert_ne!(NodeId::PlanStart, NodeId::Task(tid));
+        assert_eq!(NodeId::PlanStart, NodeId::PlanStart);
     }
 }
