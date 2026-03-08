@@ -55,9 +55,74 @@ impl Plan {
             })
     }
 
+    /// Returns the critical path from an end node to the root (PlanStart).
+    /// The critical path is the longest path in terms of total duration
+    /// (task durations + dependency lags).
     pub fn get_critical_path_to_root(&self) -> NodeChain {
-        self.get_all_paths_to_root(vec![self.get_end_nodes().last().unwrap().clone()])
-        todo!("implement getting the critical path to root using the number of days in each task and the lag/lead to build the chain with number of days")
+        let end_nodes = self.get_end_nodes();
+        if end_nodes.is_empty() {
+            return vec![NodeId::PlanStart];
+        }
+
+        // Get all paths from all end nodes to root
+        let all_paths: Vec<NodeChain> = end_nodes
+            .iter()
+            .flat_map(|end_node| {
+                self.get_all_paths_to_root(vec![*end_node])
+                    .unwrap_or_default()
+            })
+            .collect();
+
+        if all_paths.is_empty() {
+            return vec![NodeId::PlanStart];
+        }
+
+        // Find the path with maximum duration (the critical path)
+        all_paths
+            .into_iter()
+            .max_by(|a, b| {
+                let dur_a = self.calculate_path_duration(a);
+                let dur_b = self.calculate_path_duration(b);
+                dur_a
+                    .partial_cmp(&dur_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap() // Safe because we checked all_paths is not empty
+    }
+
+    /// Calculates the total duration of a path in working days.
+    /// Sums up task durations (milestones = 0) and dependency lags.
+    fn calculate_path_duration(&self, path: &NodeChain) -> f32 {
+        let mut total_days = 0.0;
+
+        for i in 0..path.len() {
+            let current_node = path[i];
+
+            // Add the duration of the current node
+            match current_node {
+                NodeId::Task(id) => {
+                    if let Some(task) = self.tasks.get(&id) {
+                        total_days += task.effective_duration_days();
+                    }
+                }
+                NodeId::Milestone(_) | NodeId::PlanStart => {
+                    // Milestones and PlanStart have zero duration
+                }
+            }
+
+            // If there's a next node in the path, add the lag from the dependency
+            if i + 1 < path.len() {
+                let next_node = path[i + 1];
+
+                // Find the dependency edge from current to next and add its lag
+                let deps = self.get_dependencies(&current_node);
+                if let Some(dep) = deps.iter().find(|d| d.id == next_node) {
+                    total_days += dep.lag_days;
+                }
+            }
+        }
+
+        total_days
     }
 
     /// Returns all nodes (tasks and milestones) that have no successors —
@@ -222,5 +287,176 @@ mod tests {
         let end_nodes = p.get_end_nodes();
         assert_eq!(end_nodes.len(), 1);
         assert!(end_nodes.contains(&NodeId::Task(t4)));
+    }
+
+    // ── Critical Path Tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn critical_path_empty_plan() {
+        let p = Plan::new("Empty");
+        let path = p.get_critical_path_to_root();
+        assert_eq!(path, vec![NodeId::PlanStart]);
+    }
+
+    #[test]
+    fn critical_path_single_task() {
+        let mut p = Plan::new("Single");
+        let t = p.add_task(Task::new("T", "").with_duration(5.0));
+        p.add_task_dependency(t, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        let path = p.get_critical_path_to_root();
+        assert_eq!(path, vec![NodeId::Task(t), NodeId::PlanStart]);
+    }
+
+    #[test]
+    fn critical_path_linear_chain() {
+        let mut p = Plan::new("Chain");
+        let t1 = p.add_task(Task::new("T1", "").with_duration(3.0));
+        let t2 = p.add_task(Task::new("T2", "").with_duration(5.0));
+        let t3 = p.add_task(Task::new("T3", "").with_duration(2.0));
+
+        // PlanStart -> T1 -> T2 -> T3
+        p.add_task_dependency(t1, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.add_task_dependency(t2, Dependency::new(NodeId::Task(t1)))
+            .unwrap();
+        p.add_task_dependency(t3, Dependency::new(NodeId::Task(t2)))
+            .unwrap();
+
+        let path = p.get_critical_path_to_root();
+        assert_eq!(
+            path,
+            vec![
+                NodeId::Task(t3),
+                NodeId::Task(t2),
+                NodeId::Task(t1),
+                NodeId::PlanStart
+            ]
+        );
+
+        // Duration should be 3 + 5 + 2 = 10 days
+        let duration = p.calculate_path_duration(&path);
+        assert!((duration - 10.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn critical_path_with_lag() {
+        let mut p = Plan::new("WithLag");
+        let t1 = p.add_task(Task::new("T1", "").with_duration(5.0));
+        let t2 = p.add_task(Task::new("T2", "").with_duration(3.0));
+
+        // PlanStart -> T1 -> (2 day lag) -> T2
+        p.add_task_dependency(t1, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.add_task_dependency(t2, Dependency::with_lag(NodeId::Task(t1), 2.0))
+            .unwrap();
+
+        let path = p.get_critical_path_to_root();
+        // Duration should be 5 + 2 (lag) + 3 = 10 days
+        let duration = p.calculate_path_duration(&path);
+        assert!((duration - 10.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn critical_path_with_lead() {
+        let mut p = Plan::new("WithLead");
+        let t1 = p.add_task(Task::new("T1", "").with_duration(5.0));
+        let t2 = p.add_task(Task::new("T2", "").with_duration(3.0));
+
+        // PlanStart -> T1 -> (1 day lead/overlap) -> T2
+        p.add_task_dependency(t1, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.add_task_dependency(t2, Dependency::with_lead(NodeId::Task(t1), 1.0))
+            .unwrap();
+
+        let path = p.get_critical_path_to_root();
+        // Duration should be 5 + (-1) (lead) + 3 = 7 days
+        let duration = p.calculate_path_duration(&path);
+        assert!((duration - 7.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn critical_path_chooses_longest_path() {
+        let mut p = Plan::new("MultiplePaths");
+        let t1 = p.add_task(Task::new("T1", "").with_duration(10.0)); // Long path
+        let t2 = p.add_task(Task::new("T2", "").with_duration(2.0)); // Short path
+        let t3 = p.add_task(Task::new("T3", "").with_duration(1.0)); // Convergence point
+
+        // PlanStart -> T1 (10d) -> T3 (1d) = 11 days total
+        // PlanStart -> T2 (2d)  -> T3 (1d) = 3 days total
+        p.add_task_dependency(t1, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.add_task_dependency(t2, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.add_task_dependency(t3, Dependency::new(NodeId::Task(t1)))
+            .unwrap();
+        p.add_task_dependency(t3, Dependency::new(NodeId::Task(t2)))
+            .unwrap();
+
+        let path = p.get_critical_path_to_root();
+        // Should choose the longer path through T1
+        assert!(path.contains(&NodeId::Task(t1)));
+        assert!(!path.contains(&NodeId::Task(t2)));
+
+        let duration = p.calculate_path_duration(&path);
+        assert!((duration - 11.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn critical_path_with_milestone() {
+        let mut p = Plan::new("WithMilestone");
+        let t1 = p.add_task(Task::new("T1", "").with_duration(5.0));
+        let m = p.add_milestone(Milestone::new("Launch", ""));
+
+        // PlanStart -> T1 -> Milestone (0 duration)
+        p.add_task_dependency(t1, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.add_milestone_dependency(m, Dependency::new(NodeId::Task(t1)))
+            .unwrap();
+
+        let path = p.get_critical_path_to_root();
+        assert_eq!(
+            path,
+            vec![NodeId::Milestone(m), NodeId::Task(t1), NodeId::PlanStart]
+        );
+
+        // Duration should be 5 (milestone has 0 duration)
+        let duration = p.calculate_path_duration(&path);
+        assert!((duration - 5.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn critical_path_diamond_pattern() {
+        let mut p = Plan::new("Diamond");
+        let t1 = p.add_task(Task::new("T1", "").with_duration(2.0));
+        let t2 = p.add_task(Task::new("T2", "").with_duration(5.0)); // Longer branch
+        let t3 = p.add_task(Task::new("T3", "").with_duration(1.0)); // Shorter branch
+        let t4 = p.add_task(Task::new("T4", "").with_duration(3.0));
+
+        //       T1 (2d)
+        //      /      \
+        //   T2 (5d)  T3 (1d)
+        //      \      /
+        //       T4 (3d)
+        p.add_task_dependency(t1, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.add_task_dependency(t2, Dependency::new(NodeId::Task(t1)))
+            .unwrap();
+        p.add_task_dependency(t3, Dependency::new(NodeId::Task(t1)))
+            .unwrap();
+        p.add_task_dependency(t4, Dependency::new(NodeId::Task(t2)))
+            .unwrap();
+        p.add_task_dependency(t4, Dependency::new(NodeId::Task(t3)))
+            .unwrap();
+
+        let path = p.get_critical_path_to_root();
+        // Should go through T2 (longer): T4 -> T2 -> T1 -> PlanStart
+        assert!(path.contains(&NodeId::Task(t2)));
+        assert!(!path.contains(&NodeId::Task(t3)));
+
+        // Duration: 3 + 5 + 2 = 10 days
+        let duration = p.calculate_path_duration(&path);
+        assert!((duration - 10.0).abs() < f32::EPSILON);
     }
 }
