@@ -1,12 +1,12 @@
-//! The [`Task`] type and its [`TaskStatus`] enum.
+//! The [`Task`] type and its [`TaskStatus`] and [`WorkerSlot`] types.
 
-use std::collections::{HashMap, HashSet};
-use serde::{Deserialize, Serialize};
 use crate::data::constraint::DateConstraint;
 use crate::data::dependency::Dependency;
-use crate::data::ids::UserId;
 use crate::data::ids::TaskId;
+use crate::data::ids::UserId;
 use crate::data::user::User;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// Lifecycle state of a task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,6 +18,42 @@ pub enum TaskStatus {
     Dropped,
 }
 
+/// A worker assignment on a task — either a named person or an open role.
+///
+/// `Specific` pins a known user to the task for `workload_days` of effort.
+/// `Placeholder` describes an unfilled role: any user holding all `required_tags`
+/// can satisfy it.  The scheduler uses placeholders to check completability and
+/// to assign the best-fit user when computing the optimised plan.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WorkerSlot {
+    /// A specific team member assigned to this task.
+    Specific { user_id: UserId, workload_days: f32 },
+    /// An open role filled by whoever holds all the required tags.
+    Placeholder { required_tags: HashSet<String>, workload_days: f32 },
+}
+
+impl WorkerSlot {
+    /// Workload effort in days for this slot.
+    pub fn workload_days(&self) -> f32 {
+        match self {
+            WorkerSlot::Specific { workload_days, .. }
+            | WorkerSlot::Placeholder { workload_days, .. } => *workload_days,
+        }
+    }
+
+    /// Returns `true` if `user` is eligible to fill this slot.
+    /// A `Specific` slot only matches the pinned user; a `Placeholder` matches
+    /// any user who holds every required tag.
+    pub fn is_satisfied_by(&self, user: &User) -> bool {
+        match self {
+            WorkerSlot::Specific { user_id, .. } => user.id == *user_id,
+            WorkerSlot::Placeholder { required_tags, .. } => {
+                required_tags.is_subset(&user.tags)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: TaskId,
@@ -25,22 +61,17 @@ pub struct Task {
     pub description: String,
     pub status: TaskStatus,
     pub dependencies: Vec<Dependency>,
-    /// Per-user workload in days. Keys are the assigned users.
-    /// Use `Task::with_equal_split` to construct with automatic splitting.
-    pub workload_days: HashMap<UserId, f32>,
-    /// Optional scheduling constraint. When set, the auto-scheduler respects
-    /// the pinned date according to the constraint kind (fixed, earliest, latest).
+    /// Worker slots for this task — each is either a named person or an open
+    /// role placeholder. Workload effort is stored per slot.
+    pub workers: Vec<WorkerSlot>,
+    /// Optional scheduling constraint.
     pub constraint: Option<DateConstraint>,
-    /// Tags a user must possess all of to be eligible to work on this task.
-    /// An empty set means any user can be assigned.
-    pub required_tags: HashSet<String>,
-    /// Calendar span of the task in working days, independent of workload effort.
-    /// Set explicitly by the user; 0.0 means "not yet set / use workload as default".
-    pub duration_days: f32,
+    /// Calendar span in working days. 0.0 means derive from workload.
+    pub duration_days_target: f32,
 }
 
 impl Task {
-    /// Create a task with no users assigned yet.
+    /// Create a task with no workers assigned yet.
     pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
             id: TaskId::new(),
@@ -48,78 +79,89 @@ impl Task {
             description: description.into(),
             status: TaskStatus::NotStarted,
             dependencies: Vec::new(),
-            workload_days: HashMap::new(),
+            workers: Vec::new(),
             constraint: None,
-            required_tags: HashSet::new(),
-            duration_days: 0.0,
+            duration_days_target: 0.0,
         }
     }
 
-    /// Create a task with `total_days` split equally across the given users.
+    /// Create a task with `total_days` split equally across the given specific users.
     pub fn with_equal_split(
         name: impl Into<String>,
         description: impl Into<String>,
         total_days: f32,
         users: &[UserId],
     ) -> Self {
-        let per_user = if users.is_empty() { 0.0 } else { total_days / users.len() as f32 };
+        let per_user = if users.is_empty() {
+            0.0
+        } else {
+            total_days / users.len() as f32
+        };
         Self {
             id: TaskId::new(),
             name: name.into(),
             description: description.into(),
             status: TaskStatus::NotStarted,
             dependencies: Vec::new(),
-            workload_days: users.iter().map(|&u| (u, per_user)).collect(),
+            workers: users
+                .iter()
+                .map(|&user_id| WorkerSlot::Specific { user_id, workload_days: per_user })
+                .collect(),
             constraint: None,
-            required_tags: HashSet::new(),
-            duration_days: 0.0,
+            duration_days_target: 0.0,
         }
     }
 
-    /// Total workload across all assigned users.
+    /// Assign a specific user to this task with the given workload in days.
+    pub fn add_specific_worker(&mut self, user_id: UserId, workload_days: f32) {
+        self.workers
+            .push(WorkerSlot::Specific { user_id, workload_days });
+    }
+
+    /// Add an open-role placeholder that any user with the given tags can fill.
+    pub fn add_placeholder_worker(
+        &mut self,
+        required_tags: impl IntoIterator<Item = impl Into<String>>,
+        workload_days: f32,
+    ) {
+        self.workers.push(WorkerSlot::Placeholder {
+            required_tags: required_tags.into_iter().map(Into::into).collect(),
+            workload_days,
+        });
+    }
+
+    /// Total workload across all slots.
     pub fn total_workload_days(&self) -> f32 {
-        self.workload_days.values().sum()
+        self.workers.iter().map(WorkerSlot::workload_days).sum()
     }
 
-    /// Assigned users (derived from workload_days keys — no separate Vec to keep in sync).
-    pub fn assigned_users(&self) -> impl Iterator<Item = &UserId> {
-        self.workload_days.keys()
-    }
-
-    pub fn require_tag(&mut self, tag: impl Into<String>) {
-        self.required_tags.insert(tag.into());
-    }
-
-    pub fn remove_required_tag(&mut self, tag: &str) {
-        self.required_tags.remove(tag);
+    /// Yields the `UserId` for every `Specific` slot.
+    pub fn assigned_users(&self) -> impl Iterator<Item = UserId> + '_ {
+        self.workers.iter().filter_map(|slot| match slot {
+            WorkerSlot::Specific { user_id, .. } => Some(*user_id),
+            WorkerSlot::Placeholder { .. } => None,
+        })
     }
 
     /// Set the calendar duration in days. Negative values are clamped to 0.
     pub fn with_duration(mut self, days: f32) -> Self {
-        self.duration_days = days.max(0.0);
+        self.duration_days_target = days.max(0.0);
         self
     }
 
-    /// Effective calendar duration: the explicit `duration_days` if set (> 0),
-    /// otherwise defaults to `(total_workload_days / num_assigned_users) * 2.0`.
-    /// This assumes each person works at 50% focus by default — 2 days of workload
-    /// takes 4 calendar days for 1 person, or 2 calendar days for 2 people, etc.
-    /// Returns 0.0 if no users are assigned and duration is unset.
+    /// Effective calendar duration: the explicit `duration_days_target` if set (> 0),
+    /// otherwise twice the workload of the heaviest-loaded worker slot.
+    /// Returns 0.0 if no workers are assigned and duration is unset.
     pub fn effective_duration_days(&self) -> f32 {
-        if self.duration_days > 0.0 {
-            return self.duration_days;
+        if self.duration_days_target > 0.0 {
+            return self.duration_days_target;
         }
-        let n = self.workload_days.len();
-        if n == 0 {
-            return 0.0;
-        }
-        (self.total_workload_days() / n as f32) * 2.0
-    }
-
-    /// Returns true if the user holds every tag required by this task.
-    /// A task with no required tags accepts any user.
-    pub fn is_user_eligible(&self, user: &User) -> bool {
-        self.required_tags.is_subset(&user.tags)
+        let max = self
+            .workers
+            .iter()
+            .map(WorkerSlot::workload_days)
+            .fold(0.0_f32, f32::max);
+        max * 2.0
     }
 }
 
@@ -141,7 +183,7 @@ mod tests {
         assert_eq!(t.description, "Create wireframes");
         assert_eq!(t.status, TaskStatus::NotStarted);
         assert!(t.dependencies.is_empty());
-        assert!(t.workload_days.is_empty());
+        assert!(t.workers.is_empty());
         assert!(t.constraint.is_none());
     }
 
@@ -156,8 +198,8 @@ mod tests {
     fn equal_split_divides_workload() {
         let users = vec![UserId::new(), UserId::new(), UserId::new()];
         let t = Task::with_equal_split("Build", "", 9.0, &users);
-        for u in &users {
-            assert!((t.workload_days[u] - 3.0).abs() < f32::EPSILON);
+        for slot in &t.workers {
+            assert!((slot.workload_days() - 3.0).abs() < f32::EPSILON);
         }
         assert!((t.total_workload_days() - 9.0).abs() < f32::EPSILON);
     }
@@ -165,28 +207,30 @@ mod tests {
     #[test]
     fn equal_split_with_no_users_is_zero() {
         let t = Task::with_equal_split("Build", "", 10.0, &[]);
-        assert!(t.workload_days.is_empty());
+        assert!(t.workers.is_empty());
         assert_eq!(t.total_workload_days(), 0.0);
     }
 
     #[test]
-    fn assigned_users_matches_workload_keys() {
-        let users = vec![UserId::new(), UserId::new()];
-        let t = Task::with_equal_split("X", "", 4.0, &users);
-        let mut assigned: Vec<_> = t.assigned_users().copied().collect();
-        assigned.sort_by_key(|u| u.0);
-        let mut expected = users.clone();
-        expected.sort_by_key(|u| u.0);
-        assert_eq!(assigned, expected);
-    }
-
-    #[test]
-    fn total_workload_sums_all_users() {
+    fn assigned_users_returns_only_specific_slots() {
         let u1 = UserId::new();
         let u2 = UserId::new();
         let mut t = Task::new("X", "");
-        t.workload_days.insert(u1, 3.0);
-        t.workload_days.insert(u2, 5.0);
+        t.add_specific_worker(u1, 2.0);
+        t.add_specific_worker(u2, 3.0);
+        t.add_placeholder_worker(["rust"], 1.0);
+        let assigned: Vec<_> = t.assigned_users().collect();
+        assert_eq!(assigned.len(), 2);
+        assert!(assigned.contains(&u1));
+        assert!(assigned.contains(&u2));
+    }
+
+    #[test]
+    fn total_workload_sums_all_slots() {
+        let u = UserId::new();
+        let mut t = Task::new("X", "");
+        t.add_specific_worker(u, 3.0);
+        t.add_placeholder_worker(["rust"], 5.0);
         assert!((t.total_workload_days() - 8.0).abs() < f32::EPSILON);
     }
 
@@ -219,64 +263,47 @@ mod tests {
         assert!(t.constraint.is_none());
     }
 
-    // ── Affinity / required tags ──────────────────────────────────────────────
+    // ── WorkerSlot ────────────────────────────────────────────────────────────
 
     #[test]
-    fn new_task_has_no_required_tags() {
-        let t = Task::new("T", "");
-        assert!(t.required_tags.is_empty());
+    fn specific_slot_satisfied_only_by_pinned_user() {
+        let u1 = UserId::new();
+        let u2 = UserId::new();
+        let slot = WorkerSlot::Specific { user_id: u1, workload_days: 2.0 };
+        let alice = User { id: u1, name: "Alice".into(), tags: Default::default() };
+        let bob = User { id: u2, name: "Bob".into(), tags: Default::default() };
+        assert!(slot.is_satisfied_by(&alice));
+        assert!(!slot.is_satisfied_by(&bob));
     }
 
     #[test]
-    fn task_with_no_required_tags_accepts_any_user() {
-        let t = Task::new("T", "");
-        let u = User::new("Alice"); // no tags
-        assert!(t.is_user_eligible(&u));
+    fn placeholder_satisfied_by_user_with_all_tags() {
+        let slot = WorkerSlot::Placeholder {
+            required_tags: ["rust", "skia"].iter().map(|s| s.to_string()).collect(),
+            workload_days: 3.0,
+        };
+        let eligible = User::new("Alice").with_tag("rust").with_tag("skia").with_tag("extra");
+        let missing_one = User::new("Bob").with_tag("rust");
+        let no_tags = User::new("Carol");
+        assert!(slot.is_satisfied_by(&eligible));
+        assert!(!slot.is_satisfied_by(&missing_one));
+        assert!(!slot.is_satisfied_by(&no_tags));
     }
 
     #[test]
-    fn user_with_all_required_tags_is_eligible() {
+    fn placeholder_with_no_tags_accepts_any_user() {
+        let slot =
+            WorkerSlot::Placeholder { required_tags: HashSet::new(), workload_days: 1.0 };
+        let u = User::new("Anyone");
+        assert!(slot.is_satisfied_by(&u));
+    }
+
+    #[test]
+    fn add_placeholder_worker_builder() {
         let mut t = Task::new("T", "");
-        t.require_tag("rust");
-        t.require_tag("skia");
-        let u = User::new("Alice").with_tag("rust").with_tag("skia").with_tag("extra");
-        assert!(t.is_user_eligible(&u));
-    }
-
-    #[test]
-    fn user_missing_one_tag_is_not_eligible() {
-        let mut t = Task::new("T", "");
-        t.require_tag("rust");
-        t.require_tag("skia");
-        let u = User::new("Alice").with_tag("rust"); // missing "skia"
-        assert!(!t.is_user_eligible(&u));
-    }
-
-    #[test]
-    fn user_with_no_tags_is_not_eligible_when_tags_required() {
-        let mut t = Task::new("T", "");
-        t.require_tag("rust");
-        let u = User::new("Alice");
-        assert!(!t.is_user_eligible(&u));
-    }
-
-    #[test]
-    fn removing_required_tag_makes_user_eligible() {
-        let mut t = Task::new("T", "");
-        t.require_tag("rust");
-        t.require_tag("skia");
-        let u = User::new("Alice").with_tag("rust");
-        assert!(!t.is_user_eligible(&u));
-        t.remove_required_tag("skia");
-        assert!(t.is_user_eligible(&u));
-    }
-
-    #[test]
-    fn duplicate_required_tags_are_deduplicated() {
-        let mut t = Task::new("T", "");
-        t.require_tag("rust");
-        t.require_tag("rust");
-        assert_eq!(t.required_tags.len(), 1);
+        t.add_placeholder_worker(["rust", "skia"], 4.0);
+        assert_eq!(t.workers.len(), 1);
+        assert!((t.total_workload_days() - 4.0).abs() < f32::EPSILON);
     }
 
     // ── duration_days ─────────────────────────────────────────────────────────
@@ -284,19 +311,19 @@ mod tests {
     #[test]
     fn default_duration_days_is_zero() {
         let t = Task::new("T", "");
-        assert_eq!(t.duration_days, 0.0);
+        assert_eq!(t.duration_days_target, 0.0);
     }
 
     #[test]
     fn with_duration_stores_value() {
         let t = Task::new("T", "").with_duration(5.0);
-        assert_eq!(t.duration_days, 5.0);
+        assert_eq!(t.duration_days_target, 5.0);
     }
 
     #[test]
     fn with_duration_clamps_negative_to_zero() {
         let t = Task::new("T", "").with_duration(-1.0);
-        assert_eq!(t.duration_days, 0.0);
+        assert_eq!(t.duration_days_target, 0.0);
     }
 
     #[test]
@@ -307,32 +334,44 @@ mod tests {
     }
 
     #[test]
-    fn effective_duration_no_users_no_duration_is_zero() {
+    fn effective_duration_no_workers_no_duration_is_zero() {
         let t = Task::new("T", "");
         assert_eq!(t.effective_duration_days(), 0.0);
     }
 
     #[test]
-    fn effective_duration_one_user_two_days_workload() {
+    fn effective_duration_one_worker_two_days_workload() {
         let u = UserId::new();
         let t = Task::with_equal_split("T", "", 2.0, &[u]);
         assert!((t.effective_duration_days() - 4.0).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn effective_duration_two_users_two_days_each() {
-        // total = 4, n = 2 → average = 2.0 → effective = 4.0
+    fn effective_duration_two_workers_two_days_each() {
+        // max slot = 2.0 → effective = 4.0
         let users = vec![UserId::new(), UserId::new()];
         let t = Task::with_equal_split("T", "", 4.0, &users);
         assert!((t.effective_duration_days() - 4.0).abs() < f32::EPSILON);
     }
 
     #[test]
-    fn effective_duration_two_users_one_day_each() {
-        // total = 2, n = 2 → average = 1.0 → effective = 2.0
+    fn effective_duration_two_workers_one_day_each() {
+        // max slot = 1.0 → effective = 2.0
         let users = vec![UserId::new(), UserId::new()];
         let t = Task::with_equal_split("T", "", 2.0, &users);
         assert!((t.effective_duration_days() - 2.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn effective_duration_uses_heaviest_slot_not_average() {
+        // Two workers with unequal load: max = 6.0 → effective = 12.0
+        // (average would be 4.0 → 8.0, which is wrong)
+        let u1 = UserId::new();
+        let u2 = UserId::new();
+        let mut t = Task::new("T", "");
+        t.add_specific_worker(u1, 2.0);
+        t.add_specific_worker(u2, 6.0);
+        assert!((t.effective_duration_days() - 12.0).abs() < f32::EPSILON);
     }
 
     #[test]

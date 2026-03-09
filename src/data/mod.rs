@@ -32,5 +32,5 @@ pub use milestone::Milestone;
 pub use plan::{DependencyError, Plan};
 pub use schedule::{Weekday, WorkSchedule};
 pub use storage::{Storage, StorageError};
-pub use task::{Task, TaskStatus};
+pub use task::{Task, TaskStatus, WorkerSlot};
 pub use user::User;
