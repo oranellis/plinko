@@ -5,6 +5,7 @@ use crate::data::dependency::Dependency;
 use crate::data::ids::TaskId;
 use crate::data::ids::UserId;
 use crate::data::user::User;
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -69,6 +70,12 @@ pub struct Task {
     pub constraint: Option<DateConstraint>,
     /// Calendar span in working days. 0.0 means derive from workload.
     pub duration_days_target: f32,
+    /// Recorded actual end date. Set when a task is completed or when an
+    /// overrunning in-progress task is stretched to today. Used by the
+    /// scheduler as the authoritative end date for non-NotStarted tasks,
+    /// taking priority over the derived value.
+    #[serde(default)]
+    pub actual_end_date: Option<NaiveDate>,
 }
 
 impl Task {
@@ -83,6 +90,7 @@ impl Task {
             workers: Vec::new(),
             constraint: None,
             duration_days_target: 0.0,
+            actual_end_date: None,
         }
     }
 
@@ -113,6 +121,7 @@ impl Task {
                 .collect(),
             constraint: None,
             duration_days_target: 0.0,
+            actual_end_date: None,
         }
     }
 

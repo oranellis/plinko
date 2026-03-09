@@ -1,7 +1,7 @@
 use crate::data::allocation::{
     MilestoneAllocation, PlanAllocation, SlotAllocation, TaskAllocation, WorkSegment,
 };
-use crate::data::task::WorkerSlot;
+use crate::data::task::{TaskStatus, WorkerSlot};
 use crate::data::{Dependency, MilestoneId, NodeId, Plan, TaskId, UserId, constraint};
 use chrono::NaiveDate;
 use std::{
@@ -92,14 +92,17 @@ struct SchedulerState {
     allocation: PlanAllocation,
     /// Set of nodes that have been fully inserted into `allocation`.
     inserted: HashSet<NodeId>,
+    /// Today's date — used to floor freshly-scheduled tasks so they never start in the past.
+    today: NaiveDate,
 }
 
 impl SchedulerState {
-    fn new() -> Self {
+    fn new(today: NaiveDate) -> Self {
         Self {
             capacity: HashMap::new(),
             allocation: PlanAllocation::new(),
             inserted: HashSet::new(),
+            today,
         }
     }
 }
@@ -110,11 +113,45 @@ impl Plan {
     /// Run the time-optimised scheduler, storing the result in `self.allocation`
     /// and updating `self.dates` for UI back-compat.
     pub fn compute_time_optimised_plan(&mut self) -> Result<(), SchedulerError> {
+        let today = chrono::Local::now().date_naive();
+
+        // Stretch any overrunning InProgress tasks so dependent NotStarted
+        // tasks never schedule around a stale past end date. We do this
+        // inline (without clearing the allocation) so that pre_insert can
+        // still use the existing allocation's end dates for on-track tasks.
+        let in_progress_ids: Vec<TaskId> = self
+            .tasks
+            .values()
+            .filter(|t| t.status == TaskStatus::InProgress)
+            .map(|t| t.id)
+            .collect();
+        for id in in_progress_ids {
+            let scheduled_end = {
+                let task = &self.tasks[&id];
+                task.actual_end_date
+                    .or_else(|| {
+                        self.allocation
+                            .as_ref()
+                            .and_then(|a| a.tasks.get(&id))
+                            .map(|a| a.end_date)
+                    })
+                    .unwrap_or_else(|| {
+                        let start = self.dates.task(&id).unwrap_or(today);
+                        let d = task.effective_duration_days().ceil() as i64;
+                        start + chrono::Duration::days(d.max(0))
+                    })
+            };
+            if scheduled_end < today {
+                self.tasks.get_mut(&id).unwrap().actual_end_date = Some(today);
+            }
+        }
+
         // Stage 1 – Validate
         self.all_tasks_completable()?;
         self.check_all_nodes_connected()?;
         let dependents_map = self.build_dependents_map();
-        let mut state = SchedulerState::new();
+        let mut state = SchedulerState::new(today);
+        self.pre_insert_anchored_tasks(&mut state);
 
         // Stage 2 – Time-constrained nodes (soonest Fixed/Latest first)
         let time_constrained = self.get_time_constrained_nodes();
@@ -204,6 +241,43 @@ impl Plan {
             .or_insert_with(|| self.hours_available(&user_id, date))
     }
 
+    /// Seed all non-NotStarted tasks into state as fixed allocations.
+    /// They consume no future capacity (work already happened) but appear in
+    /// `state.inserted` so the main loop skips them, and their `end_date` is
+    /// visible to dependent tasks.
+    fn pre_insert_anchored_tasks(&self, state: &mut SchedulerState) {
+        for (&id, task) in &self.tasks {
+            if task.status == TaskStatus::NotStarted {
+                continue;
+            }
+
+            let start = self.dates.task(&id).unwrap_or(state.today);
+            let end = task
+                .actual_end_date
+                .or_else(|| {
+                    self.allocation
+                        .as_ref()
+                        .and_then(|a| a.tasks.get(&id))
+                        .map(|a| a.end_date)
+                })
+                .unwrap_or_else(|| {
+                    let d = task.effective_duration_days().ceil() as i64;
+                    start + chrono::Duration::days(d.max(0))
+                });
+
+            state.allocation.tasks.insert(
+                id,
+                TaskAllocation {
+                    task_id: id,
+                    slot_allocations: vec![],
+                    start_date: start,
+                    end_date: end,
+                },
+            );
+            state.inserted.insert(NodeId::Task(id));
+        }
+    }
+
     /// Compute the earliest calendar date on which `node_id` can start, given
     /// the current `state` (predecessor end dates + lags). Also applies the
     /// `Earliest` constraint if present.
@@ -213,7 +287,7 @@ impl Plan {
         state: &SchedulerState,
     ) -> NaiveDate {
         let deps = self.get_dependencies(&node_id);
-        let mut earliest = self.start_date;
+        let mut earliest = state.today;
 
         for dep in deps {
             let pred_end = self.node_end_date_in_state(dep.id, state);
@@ -261,7 +335,7 @@ impl Plan {
     /// Falls back to `self.start_date` if not yet allocated.
     fn node_end_date_in_state(&self, node_id: NodeId, state: &SchedulerState) -> NaiveDate {
         match node_id {
-            NodeId::PlanStart => self.start_date,
+            NodeId::PlanStart => state.today.max(self.start_date),
             NodeId::Milestone(mid) => state
                 .allocation
                 .milestones
@@ -597,6 +671,17 @@ impl Plan {
     ) -> Result<(), SchedulerError> {
         if Some(node_id) == protect_node {
             return Ok(()); // Never move the protected node
+        }
+
+        // Never move anchored (non-NotStarted) tasks
+        if let NodeId::Task(tid) = node_id
+            && self
+                .tasks
+                .get(&tid)
+                .map(|t| t.status != TaskStatus::NotStarted)
+                .unwrap_or(false)
+        {
+            return Ok(());
         }
 
         // Undo existing allocation and re-credit capacity
@@ -1690,5 +1775,550 @@ mod tests {
         let alloc = p.allocation.as_ref().unwrap();
         assert!(alloc.tasks.is_empty());
         assert!(alloc.milestones.is_empty());
+    }
+
+    // ── Anchored-task tests ───────────────────────────────────────────────────
+
+    /// A Complete task with an existing date in plan.dates must not be rescheduled.
+    #[test]
+    fn scheduler_complete_task_is_not_rescheduled() {
+        let mut p = Plan::new("Test");
+        p.start_date = date(2025, 1, 1);
+
+        let original_start = date(2025, 2, 3);
+        let mut task = Task::new("Done", "");
+        task.status = TaskStatus::Complete;
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(tid, original_start);
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        assert_eq!(
+            alloc.tasks[&tid].start_date, original_start,
+            "Complete task must retain its original start date"
+        );
+    }
+
+    /// A NotStarted task on an old plan must start no earlier than today.
+    #[test]
+    fn scheduler_not_started_task_starts_today_when_plan_is_old() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("Old plan");
+        // Set plan start far in the past
+        p.start_date = today - chrono::Duration::days(365);
+
+        let alice = p.add_user(User::new("Alice"));
+        let mut task = Task::new("T", "");
+        task.add_specific_worker(alice, 1.0);
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        assert!(
+            alloc.tasks[&tid].start_date >= today,
+            "NotStarted task must not start before today"
+        );
+    }
+
+    /// InProgress task must not be rescheduled.
+    #[test]
+    fn scheduler_in_progress_task_is_not_rescheduled() {
+        let today = chrono::Local::now().date_naive();
+        let mut p = Plan::new("Test");
+        p.start_date = today - chrono::Duration::days(30);
+
+        let original_start = today - chrono::Duration::days(5);
+        let mut task = Task::new("WIP", "");
+        task.status = TaskStatus::InProgress;
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(tid, original_start);
+
+        p.compute_time_optimised_plan().unwrap();
+
+        assert_eq!(
+            p.allocation.as_ref().unwrap().tasks[&tid].start_date,
+            original_start,
+            "InProgress task must retain its original start date"
+        );
+    }
+
+    /// OnHold task must not be rescheduled.
+    #[test]
+    fn scheduler_on_hold_task_is_not_rescheduled() {
+        let today = chrono::Local::now().date_naive();
+        let mut p = Plan::new("Test");
+        p.start_date = today - chrono::Duration::days(30);
+
+        let original_start = today - chrono::Duration::days(5);
+        let mut task = Task::new("Paused", "");
+        task.status = TaskStatus::OnHold;
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(tid, original_start);
+
+        p.compute_time_optimised_plan().unwrap();
+
+        assert_eq!(
+            p.allocation.as_ref().unwrap().tasks[&tid].start_date,
+            original_start,
+            "OnHold task must retain its original start date"
+        );
+    }
+
+    /// Dropped task must not be rescheduled.
+    #[test]
+    fn scheduler_dropped_task_is_not_rescheduled() {
+        let today = chrono::Local::now().date_naive();
+        let mut p = Plan::new("Test");
+        p.start_date = today - chrono::Duration::days(30);
+
+        let original_start = today - chrono::Duration::days(5);
+        let mut task = Task::new("Cancelled", "");
+        task.status = TaskStatus::Dropped;
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(tid, original_start);
+
+        p.compute_time_optimised_plan().unwrap();
+
+        assert_eq!(
+            p.allocation.as_ref().unwrap().tasks[&tid].start_date,
+            original_start,
+            "Dropped task must retain its original start date"
+        );
+    }
+
+    /// A Complete task's worker days must not block capacity for NotStarted tasks.
+    /// Even if the anchor nominally spans many days, Alice's time-slots remain
+    /// available because pre_insert stores empty slot_allocations.
+    #[test]
+    fn scheduler_complete_task_does_not_block_capacity() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("Capacity");
+        p.start_date = today - chrono::Duration::days(30);
+
+        let alice = p.add_user(User::new("Alice"));
+
+        // Complete task: Alice, large workload — would block Mon–Fri+ if capacity were consumed.
+        let mut anchor = Task::new("BigAnchor", "");
+        anchor.status = TaskStatus::Complete;
+        anchor.add_specific_worker(alice, 20.0); // 20 workload-days for Alice
+        let anchor_id = p.add_task(anchor);
+        p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(anchor_id, today - chrono::Duration::days(30));
+
+        // NotStarted task: Alice, depends only on PlanStart.
+        let mut follower = Task::new("Follower", "");
+        follower.add_specific_worker(alice, 1.0);
+        let follower_id = p.add_task(follower);
+        p.add_task_dependency(follower_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        // Follower must start today — Alice's capacity was never consumed by the anchor.
+        assert!(
+            alloc.tasks[&follower_id].start_date <= today + chrono::Duration::days(4),
+            "Follower should start near today; capacity was not consumed by the Complete anchor"
+        );
+    }
+
+    /// When an anchored task has no prior allocation, pre_insert falls back to
+    /// start + ceil(effective_duration_days). A dependent NotStarted task must
+    /// use this derived end_date, not the start_date alone.
+    #[test]
+    fn scheduler_not_started_dependent_uses_derived_end_date_of_anchor() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("DerivedEnd");
+        p.start_date = today - chrono::Duration::days(30);
+
+        // Complete anchor: explicit 3-day duration, starts yesterday.
+        // No prior allocation → end_date derived as anchor_start + 3.
+        let anchor_start = today - chrono::Duration::days(1);
+        let mut anchor = Task::new("Anchor", "");
+        anchor.status = TaskStatus::Complete;
+        anchor.duration_days_target = 3.0;
+        let anchor_id = p.add_task(anchor);
+        p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(anchor_id, anchor_start);
+
+        let alice = p.add_user(User::new("Alice"));
+        let mut follower = Task::new("Follower", "");
+        follower.add_specific_worker(alice, 1.0);
+        let follower_id = p.add_task(follower);
+        p.add_task_dependency(follower_id, Dependency::new(NodeId::Task(anchor_id)))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let derived_end = anchor_start + chrono::Duration::days(3);
+        assert_eq!(
+            alloc.tasks[&anchor_id].end_date, derived_end,
+            "Anchor end_date must equal start + explicit duration"
+        );
+        // Follower starts the calendar day after the anchor ends (lag+1 rule).
+        assert!(
+            alloc.tasks[&follower_id].start_date > derived_end,
+            "Follower must start after the derived anchor end_date"
+        );
+    }
+
+    /// Positive lag after a Complete anchor is respected: follower starts
+    /// anchor_end + lag + 1 days (or today, whichever is later).
+    #[test]
+    fn scheduler_lag_after_complete_anchor_is_respected() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("Lag");
+        p.start_date = today - chrono::Duration::days(30);
+
+        // Anchor ends today - 4 (start today - 5, explicit 1-day duration).
+        let anchor_start = today - chrono::Duration::days(5);
+        let mut anchor = Task::new("Anchor", "");
+        anchor.status = TaskStatus::Complete;
+        anchor.duration_days_target = 1.0;
+        let anchor_id = p.add_task(anchor);
+        p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(anchor_id, anchor_start);
+
+        let alice = p.add_user(User::new("Alice"));
+        let mut follower = Task::new("Follower", "");
+        follower.add_specific_worker(alice, 1.0);
+        let follower_id = p.add_task(follower);
+        // Lag of 14 calendar days after anchor end — pushes follower well past today.
+        p.add_task_dependency(
+            follower_id,
+            Dependency::with_lag(NodeId::Task(anchor_id), 14.0),
+        )
+        .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let anchor_end = alloc.tasks[&anchor_id].end_date; // today - 4
+        // start_after = anchor_end + lag + 1 = (today - 4) + 14 + 1 = today + 11
+        let expected_earliest = anchor_end + chrono::Duration::days(15);
+        assert!(
+            alloc.tasks[&follower_id].start_date >= expected_earliest,
+            "Follower must respect the lag after the Complete anchor"
+        );
+    }
+
+    /// Negative lag (lead) after a Complete anchor: even if the lead would push
+    /// the follower before today, the today-floor must still apply.
+    #[test]
+    fn scheduler_lead_after_complete_anchor_floored_to_today() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("Lead");
+        p.start_date = today - chrono::Duration::days(30);
+
+        // Anchor ends yesterday (start today - 10, explicit 1-day duration).
+        let anchor_start = today - chrono::Duration::days(10);
+        let mut anchor = Task::new("Anchor", "");
+        anchor.status = TaskStatus::Complete;
+        anchor.duration_days_target = 1.0;
+        let anchor_id = p.add_task(anchor);
+        p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(anchor_id, anchor_start);
+
+        let alice = p.add_user(User::new("Alice"));
+        let mut follower = Task::new("Follower", "");
+        follower.add_specific_worker(alice, 1.0);
+        let follower_id = p.add_task(follower);
+        // Lead of 3 days would nominally start follower 3 days before anchor ends — in the past.
+        p.add_task_dependency(
+            follower_id,
+            Dependency::with_lead(NodeId::Task(anchor_id), 3.0),
+        )
+        .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        assert!(
+            alloc.tasks[&follower_id].start_date >= today,
+            "Lead must not push a NotStarted task before today"
+        );
+    }
+
+    /// When plan.start_date is in the future, tasks should be anchored to
+    /// start_date rather than today.
+    #[test]
+    fn scheduler_future_plan_start_date_is_floor_not_today() {
+        let today = chrono::Local::now().date_naive();
+        let future_start = today + chrono::Duration::days(30);
+
+        let mut p = Plan::new("Future");
+        p.start_date = future_start;
+
+        let alice = p.add_user(User::new("Alice"));
+        let mut task = Task::new("T", "");
+        task.add_specific_worker(alice, 1.0);
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        assert!(
+            alloc.tasks[&tid].start_date >= future_start,
+            "Task must not start before the future plan start_date"
+        );
+        assert!(
+            alloc.tasks[&tid].start_date >= today,
+            "Task must also not start before today"
+        );
+    }
+
+    /// An anchored task with no entry in plan.dates falls back to today as its
+    /// start_date (and today + duration as its end_date).
+    #[test]
+    fn scheduler_anchored_task_with_no_date_falls_back_to_today() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("NoDate");
+        p.start_date = today - chrono::Duration::days(30);
+
+        let mut anchor = Task::new("Anchor", "");
+        anchor.status = TaskStatus::Complete;
+        anchor.duration_days_target = 2.0;
+        let anchor_id = p.add_task(anchor);
+        p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        // Deliberately do NOT call p.dates.set_task(anchor_id, ...)
+
+        let alice = p.add_user(User::new("Alice"));
+        let mut follower = Task::new("Follower", "");
+        follower.add_specific_worker(alice, 1.0);
+        let follower_id = p.add_task(follower);
+        p.add_task_dependency(follower_id, Dependency::new(NodeId::Task(anchor_id)))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        assert_eq!(
+            alloc.tasks[&anchor_id].start_date, today,
+            "Anchor with no plan.dates entry must fall back to today"
+        );
+        assert!(
+            alloc.tasks[&follower_id].start_date > alloc.tasks[&anchor_id].end_date,
+            "Follower must start after the anchor's derived end_date"
+        );
+    }
+
+    /// A chain of Complete tasks followed by a NotStarted task: the NotStarted
+    /// task must schedule after the last anchor's derived end_date.
+    #[test]
+    fn scheduler_chain_of_complete_tasks_followed_by_not_started() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("Chain");
+        p.start_date = today - chrono::Duration::days(30);
+
+        // A: Complete, ends well in the past.
+        let anchor_a_start = today - chrono::Duration::days(20);
+        let mut task_a = Task::new("A", "");
+        task_a.status = TaskStatus::Complete;
+        task_a.duration_days_target = 1.0;
+        let a_id = p.add_task(task_a);
+        p.add_task_dependency(a_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(a_id, anchor_a_start);
+
+        // B: Complete, ends in the future relative to today (start yesterday, 10-day span).
+        let anchor_b_start = today - chrono::Duration::days(1);
+        let mut task_b = Task::new("B", "");
+        task_b.status = TaskStatus::Complete;
+        task_b.duration_days_target = 10.0; // derived end = today + 9
+        let b_id = p.add_task(task_b);
+        p.add_task_dependency(b_id, Dependency::new(NodeId::Task(a_id)))
+            .unwrap();
+        p.dates.set_task(b_id, anchor_b_start);
+
+        // C: NotStarted, depends on B.
+        let alice = p.add_user(User::new("Alice"));
+        let mut task_c = Task::new("C", "");
+        task_c.add_specific_worker(alice, 1.0);
+        let c_id = p.add_task(task_c);
+        p.add_task_dependency(c_id, Dependency::new(NodeId::Task(b_id)))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let b_end = alloc.tasks[&b_id].end_date; // today + 9
+        let c_start = alloc.tasks[&c_id].start_date;
+
+        assert!(c_start > b_end, "C must start after B's derived end_date");
+        assert!(c_start >= today, "C must not start before today");
+    }
+
+    /// A milestone that depends on a Complete task must be placed after the
+    /// anchor's end_date and no earlier than today.
+    #[test]
+    fn scheduler_milestone_after_complete_anchor() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("Milestone");
+        p.start_date = today - chrono::Duration::days(30);
+
+        // Complete anchor: starts yesterday, 3-day explicit duration → ends today + 2.
+        let anchor_start = today - chrono::Duration::days(1);
+        let mut anchor = Task::new("Anchor", "");
+        anchor.status = TaskStatus::Complete;
+        anchor.duration_days_target = 3.0;
+        let anchor_id = p.add_task(anchor);
+        p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(anchor_id, anchor_start);
+
+        let m_id = p.add_milestone(Milestone::new("Launch", ""));
+        p.add_milestone_dependency(m_id, Dependency::new(NodeId::Task(anchor_id)))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let anchor_end = alloc.tasks[&anchor_id].end_date; // today + 2
+        let milestone_date = alloc.milestones[&m_id].date;
+
+        assert!(
+            milestone_date > anchor_end,
+            "Milestone must be placed after the Complete anchor's end_date"
+        );
+        assert!(
+            milestone_date >= today,
+            "Milestone must not be placed before today"
+        );
+    }
+
+    /// A NotStarted task that depends on a Complete anchor must start after the
+    /// anchor's end date, but never before today.
+    #[test]
+    fn scheduler_not_started_dependent_starts_after_complete_anchor() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("Anchored");
+        p.start_date = today - chrono::Duration::days(30);
+
+        let anchor_start = today - chrono::Duration::days(10);
+
+        // Complete task anchored to the past
+        let mut anchor = Task::new("Anchor", "");
+        anchor.status = TaskStatus::Complete;
+        let anchor_id = p.add_task(anchor);
+        p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(anchor_id, anchor_start);
+
+        // NotStarted task that depends on the anchor
+        let alice = p.add_user(User::new("Alice"));
+        let mut follower = Task::new("Follower", "");
+        follower.add_specific_worker(alice, 1.0);
+        let follower_id = p.add_task(follower);
+        p.add_task_dependency(follower_id, Dependency::new(NodeId::Task(anchor_id)))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let anchor_end = alloc.tasks[&anchor_id].end_date;
+        let follower_start = alloc.tasks[&follower_id].start_date;
+
+        assert!(
+            follower_start >= today,
+            "Follower must not start before today"
+        );
+        assert!(
+            follower_start > anchor_end,
+            "Follower must start after anchor's end date"
+        );
+    }
+
+    /// compute_time_optimised_plan automatically stretches overrunning InProgress
+    /// tasks without requiring a separate stretch_overrunning_tasks call.
+    #[test]
+    fn scheduler_auto_stretches_overrunning_in_progress_task() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("AutoStretch");
+        p.start_date = today - chrono::Duration::days(30);
+
+        // InProgress task that was supposed to end 5 days ago.
+        let mut anchor = Task::new("Running", "");
+        anchor.status = TaskStatus::InProgress;
+        anchor.duration_days_target = 1.0; // derived end = start + 1
+        let anchor_id = p.add_task(anchor);
+        p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        // Started 10 days ago → derived end = 9 days ago, clearly overdue.
+        p.dates.set_task(anchor_id, today - chrono::Duration::days(10));
+
+        let alice = p.add_user(User::new("Alice"));
+        let mut follower = Task::new("Follower", "");
+        follower.add_specific_worker(alice, 1.0);
+        let follower_id = p.add_task(follower);
+        p.add_task_dependency(follower_id, Dependency::new(NodeId::Task(anchor_id)))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        // The overrunning anchor must have been stretched to today.
+        assert_eq!(
+            alloc.tasks[&anchor_id].end_date, today,
+            "Overrunning InProgress task must be stretched to today by the scheduler"
+        );
+        // The follower must start after today (i.e. tomorrow or later).
+        assert!(
+            alloc.tasks[&follower_id].start_date > today,
+            "Follower must start after the stretched anchor end date"
+        );
+    }
+
+    /// An on-track InProgress task (end date >= today) must not be stretched.
+    #[test]
+    fn scheduler_does_not_stretch_on_track_in_progress_task() {
+        let today = chrono::Local::now().date_naive();
+
+        let mut p = Plan::new("OnTrack");
+        p.start_date = today - chrono::Duration::days(5);
+
+        let mut task = Task::new("Running", "");
+        task.status = TaskStatus::InProgress;
+        task.duration_days_target = 20.0; // ends today + 15, well in the future
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.dates.set_task(tid, today - chrono::Duration::days(5));
+
+        p.compute_time_optimised_plan().unwrap();
+
+        assert_eq!(
+            p.tasks[&tid].actual_end_date, None,
+            "On-track InProgress task must not have actual_end_date set"
+        );
     }
 }

@@ -4,7 +4,8 @@ use crate::data::allocation::PlanAllocation;
 use crate::data::dependency::Dependency;
 use crate::data::ids::NodeId;
 use crate::data::{
-    CalendarOverrides, Milestone, MilestoneId, StartDates, Task, TaskId, User, UserId, WorkSchedule,
+    CalendarOverrides, Milestone, MilestoneId, StartDates, Task, TaskId, TaskStatus, User, UserId,
+    WorkSchedule,
 };
 use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -210,6 +211,35 @@ impl Plan {
             NodeId::Task(id) => self.dates.task(&id),
             NodeId::Milestone(id) => self.dates.milestone(&id),
         }
+    }
+
+    /// Mark a task as started: sets its status to `InProgress` and records
+    /// today as its start date in `plan.dates`. Invalidates the allocation.
+    /// Does nothing if the task does not exist.
+    pub fn start_task(&mut self, id: TaskId) {
+        if !self.tasks.contains_key(&id) {
+            return;
+        }
+        let today = chrono::Local::now().date_naive();
+        self.tasks.get_mut(&id).unwrap().status = TaskStatus::InProgress;
+        self.dates.set_task(id, today);
+        self.allocation = None;
+    }
+
+    /// Mark a task as complete: sets its status to `Complete` and records
+    /// today as its `actual_end_date` (used by the scheduler as the anchor
+    /// end date for dependent tasks). The start date in `plan.dates` is
+    /// preserved. Invalidates the allocation.
+    /// Does nothing if the task does not exist.
+    pub fn complete_task(&mut self, id: TaskId) {
+        if !self.tasks.contains_key(&id) {
+            return;
+        }
+        let today = chrono::Local::now().date_naive();
+        let task = self.tasks.get_mut(&id).unwrap();
+        task.status = TaskStatus::Complete;
+        task.actual_end_date = Some(today);
+        self.allocation = None;
     }
 
     pub fn add_task(&mut self, task: Task) -> TaskId {
@@ -669,6 +699,101 @@ mod tests {
         let mut p = make_plan();
         let m = p.add_milestone(Milestone::new("M", ""));
         assert_eq!(p.start_of(NodeId::Milestone(m)), None);
+    }
+
+    // ── start_task / complete_task ────────────────────────────────────────────
+
+    #[test]
+    fn start_task_sets_status_and_date() {
+        let today = chrono::Local::now().date_naive();
+        let mut p = make_plan();
+        let tid = p.add_task(Task::new("T", ""));
+
+        p.start_task(tid);
+
+        assert_eq!(p.tasks[&tid].status, TaskStatus::InProgress);
+        assert_eq!(p.dates.task(&tid), Some(today));
+    }
+
+    #[test]
+    fn start_task_clears_allocation() {
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+        let mut t = Task::new("T", "");
+        t.add_specific_worker(alice, 1.0);
+        let tid = p.add_task(t);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.compute_time_optimised_plan().unwrap();
+        assert!(p.allocation.is_some());
+
+        p.start_task(tid);
+        assert!(p.allocation.is_none());
+    }
+
+    #[test]
+    fn start_task_unknown_id_is_noop() {
+        let mut p = make_plan();
+        let unknown = TaskId::new();
+        p.start_task(unknown); // must not panic
+    }
+
+    #[test]
+    fn start_task_overwrites_existing_date() {
+        let today = chrono::Local::now().date_naive();
+        let mut p = make_plan();
+        let tid = p.add_task(Task::new("T", ""));
+        p.dates.set_task(tid, date(2025, 1, 1));
+
+        p.start_task(tid);
+
+        assert_eq!(p.dates.task(&tid), Some(today));
+    }
+
+    #[test]
+    fn complete_task_sets_status_and_actual_end_date() {
+        let today = chrono::Local::now().date_naive();
+        let mut p = make_plan();
+        let tid = p.add_task(Task::new("T", ""));
+
+        p.complete_task(tid);
+
+        assert_eq!(p.tasks[&tid].status, TaskStatus::Complete);
+        assert_eq!(p.tasks[&tid].actual_end_date, Some(today));
+    }
+
+    #[test]
+    fn complete_task_preserves_existing_start_date() {
+        let start = date(2025, 6, 1);
+        let mut p = make_plan();
+        let tid = p.add_task(Task::new("T", ""));
+        p.dates.set_task(tid, start);
+
+        p.complete_task(tid);
+
+        assert_eq!(p.dates.task(&tid), Some(start), "start date must be unchanged");
+    }
+
+    #[test]
+    fn complete_task_clears_allocation() {
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+        let mut t = Task::new("T", "");
+        t.add_specific_worker(alice, 1.0);
+        let tid = p.add_task(t);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.compute_time_optimised_plan().unwrap();
+        assert!(p.allocation.is_some());
+
+        p.complete_task(tid);
+        assert!(p.allocation.is_none());
+    }
+
+    #[test]
+    fn complete_task_unknown_id_is_noop() {
+        let mut p = make_plan();
+        p.complete_task(TaskId::new()); // must not panic
     }
 
     // ── Serialization round-trip ──────────────────────────────────────────────
