@@ -1,15 +1,19 @@
-use crate::data::{Dependency, NodeId, Plan};
-use std::{collections::HashSet, fmt};
+use crate::data::{Dependency, NodeId, Plan, constraint};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 type NodeChain = Vec<NodeId>;
 
 #[derive(Debug, Clone)]
-enum SchedulerError {
+pub enum SchedulerError {
     EmptyChain,
     MissingTaskAffinity {
         task_name: String,
         required_tags: HashSet<String>,
     },
+    NoPathsToNode(NodeId),
 }
 
 impl fmt::Display for SchedulerError {
@@ -28,16 +32,158 @@ impl fmt::Display for SchedulerError {
                     tags.join(", ")
                 )
             }
+            SchedulerError::NoPathsToNode(node_id) => {
+                write!(f, "no path from plan start to node {node_id:?}")
+            }
         }
     }
 }
 
 impl Plan {
-    pub fn compute_time_optimised_plan() {
-        todo!("compute the time optimised plan");
-        // first check that all the tasks are completable
+    pub fn compute_time_optimised_plan(&self) -> Result<(), SchedulerError> {
+        // Ok the procedure for creating the plan is as follows
+        //
+        // Create a structure which can store tasks across person schedules. This should flexibly
+        // allow a task to be broken up by lack of time available in a person's schedule. I.e. a
+        // long running task could be broken up by weekends, mid-week holidays, or quarter days.
+        // This structure should be stored in plan.rs so need to make changes there.
+        //
+        // Check that all the nodes are somehow connected to the plan start, if not throw an error
+        // for the node that violates this
+        //
+        // for every time constrained node, starting with the soonest first, insert all the nodes
+        // from all the possible node chains (not inserting duplicate nodes) from the plan start
+        // onwards, in descending length of chain, into the plan. If it is not possible to meet a
+        // date constraint, return a SchedulerError.
+        //
+        // Once all the time constrained nodes have been inserted, insert all the nodes from all
+        // the node chains from the start to the scheduler_target node. When inserting nodes for
+        // this step and the previous one, nodes with the start before constraint can be pushed
+        // back up to their target date.
+        //
+        // Once all the scheduler_target dependent nodes have been inserted, insert all the
+        // remaining end nodes, in order of longest node chain to shortest (as with all the
+        // previous steps). Insert these nodes such that they do not impact the date of the
+        // scheduler_target node.
+        //
+        // Task insertion logic must work like this
+        // Insert the task day by day to the assigned person in the next available workdays which
+        // have workload capacity remaining. So for a task with 0.5 workload per calendar day, fill the days
+        // in the person's schedule with 0.5 workload remaining from as early as possible onwards.
+        // In instances where multiple people can complete a worker slot, assign it to the person
+        // who can finish it first. If several people can finish it at the same time then assign it to the
+        // first person in the people list.
+        // If it is not possible to insert the task before a dependent already in the plan then
+        // push the dependent back and add the task at the end (overlapping as much as possible
+        // with existing tasks) until the task fits. When shifting tasks, propogate the effects
+        // forward. There shouldn't be any changes which impact fixed date tasks but if there are
+        // then return a SchedulerError. Note that 'latest' constrained tasks can be pushed back
+        // but only up to their ascribed date.
+
+        let node_reverse_adj_map = self.build_dependents_map();
+
+        let time_constrained_nodes = self.get_time_constrained_nodes();
+
+        Ok(())
     }
 
+    /// Returns all nodes with `Fixed` or `Latest` constraints, sorted soonest-first.
+    fn get_time_constrained_nodes(&self) -> Vec<NodeId> {
+        let mut v: Vec<(NodeId, constraint::DateConstraint)> = self
+            .tasks
+            .iter()
+            .filter_map(|(&id, task)| {
+                task.constraint
+                    .filter(|c| {
+                        matches!(
+                            c.kind,
+                            constraint::ConstraintKind::Fixed | constraint::ConstraintKind::Latest
+                        )
+                    })
+                    .map(|c| (NodeId::Task(id), c))
+            })
+            .chain(self.milestones.iter().filter_map(|(&id, milestone)| {
+                milestone
+                    .constraint
+                    .filter(|c| {
+                        matches!(
+                            c.kind,
+                            constraint::ConstraintKind::Fixed | constraint::ConstraintKind::Latest
+                        )
+                    })
+                    .map(|c| (NodeId::Milestone(id), c))
+            }))
+            .collect();
+        v.sort_by_key(|(_, c)| c.date);
+        v.into_iter().map(|(id, _)| id).collect()
+    }
+
+    fn build_dependents_map(&self) -> HashMap<NodeId, Vec<NodeId>> {
+        let mut map: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+        for (&task_id, task) in &self.tasks {
+            let node = NodeId::Task(task_id);
+            for dep in &task.dependencies {
+                map.entry(dep.id).or_default().push(node);
+            }
+        }
+        for (&milestone_id, milestone) in &self.milestones {
+            let node = NodeId::Milestone(milestone_id);
+            for dep in &milestone.dependencies {
+                map.entry(dep.id).or_default().push(node);
+            }
+        }
+        map
+    }
+
+    // fn get_priority_sorted_task_list_to_node(
+    //     &self,
+    //     node_id: NodeId,
+    // ) -> Result<Vec<NodeId>, SchedulerError> {
+    //     // check if there are any nodes not connected back to the root (make a helper function for
+    //     // this and make a new error type to capture which node is not connected to the root) and
+    //     // exit early
+    //     //
+    //     // get the list of tasks from the scheduler_target to the root, reverse all the paths so
+    //     // they are from the root to the target
+    //     //
+    //     // then get the list of all the end nodes to the root, sort in order of longest calendar
+    //     // path first then reverse so it is from the root to all the node ends
+    //
+    //     let sorted_paths = self.get_paths_to_node_sorted(node_id)?;
+    //     let mut seen = HashSet::new();
+    //     let sorted_task_list = sorted_paths
+    //         .into_iter()
+    //         .flatten()
+    //         .filter(|node_id| seen.insert(*node_id))
+    //         .collect();
+    //
+    //     Ok(sorted_task_list)
+    // }
+    //
+    // fn get_priority_sorted_task_list_to_ends(&self) -> Result<Vec<NodeId>, SchedulerError> {
+    //     let end_nodes = self.get_end_nodes();
+    //     let mut all_paths_with_dur: Vec<(f32, NodeChain)> = end_nodes
+    //         .iter()
+    //         .map(|&node| self.get_all_paths_to_node(node))
+    //         .collect::<Result<Vec<_>, _>>()?
+    //         .into_iter()
+    //         .flatten()
+    //         .map(|p| (self.calculate_path_duration(&p), p))
+    //         .collect();
+    //
+    //     all_paths_with_dur
+    //         .sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+    //
+    //     let mut seen = HashSet::new();
+    //     let sorted_task_list = all_paths_with_dur
+    //         .into_iter()
+    //         .flat_map(|(_, p)| p)
+    //         .filter(|node_id| seen.insert(*node_id))
+    //         .collect();
+    //
+    //     Ok(sorted_task_list)
+    // }
+    //
     fn get_dependencies(&self, node_id: &NodeId) -> &[Dependency] {
         match node_id {
             NodeId::Task(task_id) => {
@@ -147,14 +293,15 @@ impl Plan {
         total_days
     }
 
-    /// Returns all paths from PlanStart to `target`, sorted by total duration
-    /// (shortest first). Returns `None` if `target` is `PlanStart`.
-    fn get_paths_to_node_sorted(&self, target: NodeId) -> Option<Vec<NodeChain>> {
+    /// Returns all paths from PlanStart to `target` in arbitrary order.
+    /// If `target` is `PlanStart`, returns a single chain `[PlanStart]`.
+    /// Returns `Err(NoPathsToNode)` if the target has no path to `PlanStart`.
+    fn get_all_paths_to_node(&self, target: NodeId) -> Result<Vec<NodeChain>, SchedulerError> {
         if matches!(target, NodeId::PlanStart) {
-            return None;
+            return Ok(vec![vec![NodeId::PlanStart]]);
         }
 
-        let mut paths: Vec<NodeChain> = self
+        let paths: Vec<NodeChain> = self
             .get_all_paths_to_root(vec![target])
             .unwrap_or_default()
             .into_iter()
@@ -164,13 +311,28 @@ impl Plan {
             })
             .collect();
 
-        paths.sort_by(|a, b| {
-            self.calculate_path_duration(a)
-                .partial_cmp(&self.calculate_path_duration(b))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        if paths.is_empty() {
+            return Err(SchedulerError::NoPathsToNode(target));
+        }
 
-        Some(paths)
+        Ok(paths)
+    }
+
+    /// Returns all paths from PlanStart to `target`, sorted by total duration
+    /// (longest first). If `target` is `PlanStart`, returns a single chain
+    /// containing only `PlanStart`. Returns `Err(NoPathsToNode)` if the target
+    /// has no path back to `PlanStart`.
+    fn get_paths_to_node_sorted(&self, target: NodeId) -> Result<Vec<NodeChain>, SchedulerError> {
+        let mut paths_with_dur: Vec<(f32, NodeChain)> = self
+            .get_all_paths_to_node(target)?
+            .into_iter()
+            .map(|p| (self.calculate_path_duration(&p), p))
+            .collect();
+
+        paths_with_dur
+            .sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(paths_with_dur.into_iter().map(|(_, p)| p).collect())
     }
 
     /// Returns all nodes (tasks and milestones) that have no successors —
@@ -607,9 +769,19 @@ mod tests {
     }
 
     #[test]
-    fn paths_to_node_returns_none_for_plan_start() {
+    fn paths_to_node_plan_start_returns_single_root_chain() {
         let p = Plan::new("Empty");
-        assert!(p.get_paths_to_node_sorted(NodeId::PlanStart).is_none());
+        let paths = p.get_paths_to_node_sorted(NodeId::PlanStart).unwrap();
+        assert_eq!(paths, vec![vec![NodeId::PlanStart]]);
+    }
+
+    #[test]
+    fn paths_to_node_disconnected_returns_error() {
+        let mut p = Plan::new("Disconnected");
+        let t = p.add_task(Task::new("T", "").with_duration(3.0));
+        // T has no dependency on PlanStart — no path to root
+        let err = p.get_paths_to_node_sorted(NodeId::Task(t)).unwrap_err();
+        assert!(matches!(err, SchedulerError::NoPathsToNode(_)));
     }
 
     #[test]
@@ -622,9 +794,7 @@ mod tests {
         p.add_task_dependency(t2, Dependency::new(NodeId::Task(t1)))
             .unwrap();
 
-        let paths = p
-            .get_paths_to_node_sorted(NodeId::Task(t2))
-            .expect("should return paths");
+        let paths = p.get_paths_to_node_sorted(NodeId::Task(t2)).unwrap();
         assert_eq!(paths.len(), 1);
         assert_eq!(
             paths[0],
@@ -650,18 +820,16 @@ mod tests {
         p.add_task_dependency(t3, Dependency::new(NodeId::Task(t2)))
             .unwrap();
 
-        let paths = p
-            .get_paths_to_node_sorted(NodeId::Task(t3))
-            .expect("should return paths");
+        let paths = p.get_paths_to_node_sorted(NodeId::Task(t3)).unwrap();
         assert_eq!(paths.len(), 2);
 
-        // Shortest first
+        // Longest first
         let dur0 = p.calculate_path_duration(&paths[0]);
         let dur1 = p.calculate_path_duration(&paths[1]);
-        assert!((dur0 - 3.0).abs() < f32::EPSILON);
-        assert!((dur1 - 11.0).abs() < f32::EPSILON);
-        assert!(paths[0].contains(&NodeId::Task(t2)));
-        assert!(paths[1].contains(&NodeId::Task(t1)));
+        assert!((dur0 - 11.0).abs() < f32::EPSILON);
+        assert!((dur1 - 3.0).abs() < f32::EPSILON);
+        assert!(paths[0].contains(&NodeId::Task(t1)));
+        assert!(paths[1].contains(&NodeId::Task(t2)));
     }
 
     #[test]

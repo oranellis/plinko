@@ -29,7 +29,10 @@ pub enum WorkerSlot {
     /// A specific team member assigned to this task.
     Specific { user_id: UserId, workload_days: f32 },
     /// An open role filled by whoever holds all the required tags.
-    Placeholder { required_tags: HashSet<String>, workload_days: f32 },
+    Placeholder {
+        required_tags: HashSet<String>,
+        workload_days: f32,
+    },
 }
 
 impl WorkerSlot {
@@ -47,9 +50,7 @@ impl WorkerSlot {
     pub fn is_satisfied_by(&self, user: &User) -> bool {
         match self {
             WorkerSlot::Specific { user_id, .. } => user.id == *user_id,
-            WorkerSlot::Placeholder { required_tags, .. } => {
-                required_tags.is_subset(&user.tags)
-            }
+            WorkerSlot::Placeholder { required_tags, .. } => required_tags.is_subset(&user.tags),
         }
     }
 }
@@ -105,7 +106,10 @@ impl Task {
             dependencies: Vec::new(),
             workers: users
                 .iter()
-                .map(|&user_id| WorkerSlot::Specific { user_id, workload_days: per_user })
+                .map(|&user_id| WorkerSlot::Specific {
+                    user_id,
+                    workload_days: per_user,
+                })
                 .collect(),
             constraint: None,
             duration_days_target: 0.0,
@@ -114,8 +118,10 @@ impl Task {
 
     /// Assign a specific user to this task with the given workload in days.
     pub fn add_specific_worker(&mut self, user_id: UserId, workload_days: f32) {
-        self.workers
-            .push(WorkerSlot::Specific { user_id, workload_days });
+        self.workers.push(WorkerSlot::Specific {
+            user_id,
+            workload_days,
+        });
     }
 
     /// Add an open-role placeholder that any user with the given tags can fill.
@@ -269,9 +275,20 @@ mod tests {
     fn specific_slot_satisfied_only_by_pinned_user() {
         let u1 = UserId::new();
         let u2 = UserId::new();
-        let slot = WorkerSlot::Specific { user_id: u1, workload_days: 2.0 };
-        let alice = User { id: u1, name: "Alice".into(), tags: Default::default() };
-        let bob = User { id: u2, name: "Bob".into(), tags: Default::default() };
+        let slot = WorkerSlot::Specific {
+            user_id: u1,
+            workload_days: 2.0,
+        };
+        let alice = User {
+            id: u1,
+            name: "Alice".into(),
+            tags: Default::default(),
+        };
+        let bob = User {
+            id: u2,
+            name: "Bob".into(),
+            tags: Default::default(),
+        };
         assert!(slot.is_satisfied_by(&alice));
         assert!(!slot.is_satisfied_by(&bob));
     }
@@ -282,7 +299,10 @@ mod tests {
             required_tags: ["rust", "skia"].iter().map(|s| s.to_string()).collect(),
             workload_days: 3.0,
         };
-        let eligible = User::new("Alice").with_tag("rust").with_tag("skia").with_tag("extra");
+        let eligible = User::new("Alice")
+            .with_tag("rust")
+            .with_tag("skia")
+            .with_tag("extra");
         let missing_one = User::new("Bob").with_tag("rust");
         let no_tags = User::new("Carol");
         assert!(slot.is_satisfied_by(&eligible));
@@ -292,8 +312,10 @@ mod tests {
 
     #[test]
     fn placeholder_with_no_tags_accepts_any_user() {
-        let slot =
-            WorkerSlot::Placeholder { required_tags: HashSet::new(), workload_days: 1.0 };
+        let slot = WorkerSlot::Placeholder {
+            required_tags: HashSet::new(),
+            workload_days: 1.0,
+        };
         let u = User::new("Anyone");
         assert!(slot.is_satisfied_by(&u));
     }

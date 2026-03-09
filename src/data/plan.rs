@@ -43,7 +43,7 @@ pub struct Plan {
     pub dates: StartDates,
     /// The node that the scheduler is trying to optimise for (bring as early as possible).
     /// If set to the plan start then all end nodes are brought in as much as possible
-    pub scheduler_end: NodeId,
+    pub scheduler_target: NodeId,
 }
 
 impl Plan {
@@ -60,7 +60,7 @@ impl Plan {
             user_calendars: HashMap::new(),
             start_date: chrono::Local::now().date_naive(),
             dates: StartDates::new(),
-            scheduler_end: NodeId::PlanStart,
+            scheduler_target: NodeId::PlanStart,
         }
     }
 
