@@ -1,5 +1,6 @@
 //! The [`Plan`] aggregate root and its [`DependencyError`] type.
 
+use crate::data::allocation::PlanAllocation;
 use crate::data::dependency::Dependency;
 use crate::data::ids::NodeId;
 use crate::data::{
@@ -44,9 +45,23 @@ pub struct Plan {
     /// The node that the scheduler is trying to optimise for (bring as early as possible).
     /// If set to the plan start then all end nodes are brought in as much as possible
     pub scheduler_target: NodeId,
+    /// How many standard hours one workload-day represents.
+    /// Used to convert `WorkerSlot::workload_days` → hours when filling capacity.
+    /// Defaults to 8.0. Kept at plan level so effort is consistent across users
+    /// regardless of individual schedule lengths.
+    #[serde(default = "Plan::default_hours_per_workload_day")]
+    pub hours_per_workload_day: f32,
+    /// The latest computed allocation. `None` until the scheduler has been run,
+    /// and invalidated (reset to `None`) whenever the plan is mutated.
+    #[serde(default)]
+    pub allocation: Option<PlanAllocation>,
 }
 
 impl Plan {
+    fn default_hours_per_workload_day() -> f32 {
+        8.0
+    }
+
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -61,6 +76,8 @@ impl Plan {
             start_date: chrono::Local::now().date_naive(),
             dates: StartDates::new(),
             scheduler_target: NodeId::PlanStart,
+            hours_per_workload_day: 8.0,
+            allocation: None,
         }
     }
 
@@ -74,11 +91,13 @@ impl Plan {
     /// Override the schedule for a specific user.
     pub fn set_user_schedule(&mut self, user_id: UserId, schedule: WorkSchedule) {
         self.user_schedules.insert(user_id, schedule);
+        self.allocation = None;
     }
 
     /// Remove a user's schedule override, reverting them to the plan default.
     pub fn clear_user_schedule(&mut self, user_id: &UserId) {
         self.user_schedules.remove(user_id);
+        self.allocation = None;
     }
 
     /// Effective hours available for a user on a specific date.
@@ -126,6 +145,7 @@ impl Plan {
         } else {
             task.dependencies.push(dep);
         }
+        self.allocation = None;
         Ok(())
     }
 
@@ -149,6 +169,7 @@ impl Plan {
         } else {
             milestone.dependencies.push(dep);
         }
+        self.allocation = None;
         Ok(())
     }
 
@@ -194,18 +215,21 @@ impl Plan {
     pub fn add_task(&mut self, task: Task) -> TaskId {
         let id = task.id;
         self.tasks.insert(id, task);
+        self.allocation = None;
         id
     }
 
     pub fn add_milestone(&mut self, milestone: Milestone) -> MilestoneId {
         let id = milestone.id;
         self.milestones.insert(id, milestone);
+        self.allocation = None;
         id
     }
 
     pub fn add_user(&mut self, user: User) -> UserId {
         let id = user.id;
         self.users.insert(id, user);
+        self.allocation = None;
         id
     }
 

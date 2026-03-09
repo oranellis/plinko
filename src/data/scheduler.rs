@@ -1,10 +1,22 @@
-use crate::data::{Dependency, NodeId, Plan, constraint};
+use crate::data::allocation::{
+    MilestoneAllocation, PlanAllocation, SlotAllocation, TaskAllocation, WorkSegment,
+};
+use crate::data::task::WorkerSlot;
+use crate::data::{Dependency, MilestoneId, NodeId, Plan, TaskId, UserId, constraint};
+use chrono::NaiveDate;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
 };
 
 type NodeChain = Vec<NodeId>;
+
+/// Amount of remaining work below which we consider a slot fully filled.
+const EPSILON: f32 = 1e-6;
+
+/// Maximum calendar days to search forward when filling a slot.
+/// Guards against infinite loops when a user has no working days at all.
+const MAX_FILL_DAYS: i64 = 3_650; // ~10 years
 
 #[derive(Debug, Clone)]
 pub enum SchedulerError {
@@ -14,6 +26,17 @@ pub enum SchedulerError {
         required_tags: HashSet<String>,
     },
     NoPathsToNode(NodeId),
+    FixedConstraintViolated {
+        task_name: String,
+        required_date: NaiveDate,
+        earliest_possible: NaiveDate,
+    },
+    LatestConstraintViolated {
+        task_name: String,
+        deadline: NaiveDate,
+        computed_start: NaiveDate,
+    },
+    DisconnectedNode(NodeId),
 }
 
 impl fmt::Display for SchedulerError {
@@ -35,54 +58,571 @@ impl fmt::Display for SchedulerError {
             SchedulerError::NoPathsToNode(node_id) => {
                 write!(f, "no path from plan start to node {node_id:?}")
             }
+            SchedulerError::FixedConstraintViolated {
+                task_name,
+                required_date,
+                earliest_possible,
+            } => write!(
+                f,
+                "task \"{task_name}\" has a Fixed constraint on {required_date} but \
+                 cannot start before {earliest_possible}",
+            ),
+            SchedulerError::LatestConstraintViolated {
+                task_name,
+                deadline,
+                computed_start,
+            } => write!(
+                f,
+                "task \"{task_name}\" must start by {deadline} but the earliest \
+                 possible start is {computed_start}",
+            ),
+            SchedulerError::DisconnectedNode(node_id) => {
+                write!(f, "node {node_id:?} has no path back to PlanStart")
+            }
         }
     }
 }
 
+// ── Transient scheduler state (not serialised) ────────────────────────────────
+
+struct SchedulerState {
+    /// Remaining capacity per (user, date). Seeded lazily from `Plan::hours_available`.
+    capacity: HashMap<(UserId, NaiveDate), f32>,
+    /// Allocation being built up during the run.
+    allocation: PlanAllocation,
+    /// Set of nodes that have been fully inserted into `allocation`.
+    inserted: HashSet<NodeId>,
+}
+
+impl SchedulerState {
+    fn new() -> Self {
+        Self {
+            capacity: HashMap::new(),
+            allocation: PlanAllocation::new(),
+            inserted: HashSet::new(),
+        }
+    }
+}
+
+// ── Plan impl ─────────────────────────────────────────────────────────────────
+
 impl Plan {
-    pub fn compute_time_optimised_plan(&self) -> Result<(), SchedulerError> {
-        // Ok the procedure for creating the plan is as follows
-        //
-        // Create a structure which can store tasks across person schedules. This should flexibly
-        // allow a task to be broken up by lack of time available in a person's schedule. I.e. a
-        // long running task could be broken up by weekends, mid-week holidays, or quarter days.
-        // This structure should be stored in plan.rs so need to make changes there.
-        //
-        // Check that all the nodes are somehow connected to the plan start, if not throw an error
-        // for the node that violates this
-        //
-        // for every time constrained node, starting with the soonest first, insert all the nodes
-        // from all the possible node chains (not inserting duplicate nodes) from the plan start
-        // onwards, in descending length of chain, into the plan. If it is not possible to meet a
-        // date constraint, return a SchedulerError.
-        //
-        // Once all the time constrained nodes have been inserted, insert all the nodes from all
-        // the node chains from the start to the scheduler_target node. When inserting nodes for
-        // this step and the previous one, nodes with the start before constraint can be pushed
-        // back up to their target date.
-        //
-        // Once all the scheduler_target dependent nodes have been inserted, insert all the
-        // remaining end nodes, in order of longest node chain to shortest (as with all the
-        // previous steps). Insert these nodes such that they do not impact the date of the
-        // scheduler_target node.
-        //
-        // Task insertion logic must work like this
-        // Insert the task day by day to the assigned person in the next available workdays which
-        // have workload capacity remaining. So for a task with 0.5 workload per calendar day, fill the days
-        // in the person's schedule with 0.5 workload remaining from as early as possible onwards.
-        // In instances where multiple people can complete a worker slot, assign it to the person
-        // who can finish it first. If several people can finish it at the same time then assign it to the
-        // first person in the people list.
-        // If it is not possible to insert the task before a dependent already in the plan then
-        // push the dependent back and add the task at the end (overlapping as much as possible
-        // with existing tasks) until the task fits. When shifting tasks, propogate the effects
-        // forward. There shouldn't be any changes which impact fixed date tasks but if there are
-        // then return a SchedulerError. Note that 'latest' constrained tasks can be pushed back
-        // but only up to their ascribed date.
+    /// Run the time-optimised scheduler, storing the result in `self.allocation`
+    /// and updating `self.dates` for UI back-compat.
+    pub fn compute_time_optimised_plan(&mut self) -> Result<(), SchedulerError> {
+        // Stage 1 – Validate
+        self.all_tasks_completable()?;
+        self.check_all_nodes_connected()?;
+        let dependents_map = self.build_dependents_map();
+        let mut state = SchedulerState::new();
 
-        let node_reverse_adj_map = self.build_dependents_map();
+        // Stage 2 – Time-constrained nodes (soonest Fixed/Latest first)
+        let time_constrained = self.get_time_constrained_nodes();
+        for node in time_constrained {
+            let list = self.get_priority_sorted_task_list_to_node(node)?;
+            for id in list {
+                if !state.inserted.contains(&id) {
+                    self.insert_node(id, &mut state, &dependents_map, None)?;
+                }
+            }
+        }
 
-        let time_constrained_nodes = self.get_time_constrained_nodes();
+        // Stage 3 – scheduler_target dependents (skip if target == PlanStart)
+        let target = self.scheduler_target;
+        if !matches!(target, NodeId::PlanStart) {
+            let list = self.get_priority_sorted_task_list_to_node(target)?;
+            for id in list {
+                if !state.inserted.contains(&id) {
+                    self.insert_node(id, &mut state, &dependents_map, Some(target))?;
+                }
+            }
+        }
+
+        // Stage 4 – Remaining end nodes (must not push scheduler_target)
+        let protect = if matches!(target, NodeId::PlanStart) {
+            None
+        } else {
+            Some(target)
+        };
+        let list = self.get_priority_sorted_task_list_to_ends()?;
+        for id in list {
+            if !state.inserted.contains(&id) {
+                self.insert_node(id, &mut state, &dependents_map, protect)?;
+            }
+        }
+
+        // Commit
+        self.dates = crate::data::StartDates::new();
+        for (&tid, alloc) in &state.allocation.tasks {
+            self.dates.set_task(tid, alloc.start_date);
+        }
+        for (&mid, alloc) in &state.allocation.milestones {
+            self.dates.set_milestone(mid, alloc.date);
+        }
+        self.allocation = Some(state.allocation);
+        Ok(())
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// Dispatch insertion to the correct handler based on node type.
+    fn insert_node(
+        &self,
+        node_id: NodeId,
+        state: &mut SchedulerState,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
+        protect_node: Option<NodeId>,
+    ) -> Result<(), SchedulerError> {
+        match node_id {
+            NodeId::Task(tid) => self.insert_task(tid, state, dependents_map, protect_node),
+            NodeId::Milestone(mid) => {
+                self.insert_milestone(mid, state, dependents_map, protect_node)
+            }
+            NodeId::PlanStart => Ok(()), // PlanStart is never "inserted"
+        }
+    }
+
+    /// Verify that every task/milestone has at least one path back to PlanStart.
+    fn check_all_nodes_connected(&self) -> Result<(), SchedulerError> {
+        for &id in self.tasks.keys() {
+            self.get_all_paths_to_node(NodeId::Task(id))
+                .map_err(|_| SchedulerError::DisconnectedNode(NodeId::Task(id)))?;
+        }
+        for &id in self.milestones.keys() {
+            self.get_all_paths_to_node(NodeId::Milestone(id))
+                .map_err(|_| SchedulerError::DisconnectedNode(NodeId::Milestone(id)))?;
+        }
+        Ok(())
+    }
+
+    /// Remaining available hours for `user_id` on `date`, lazily initialised
+    /// from `Plan::hours_available`.
+    fn hours_remaining(&self, state: &mut SchedulerState, user_id: UserId, date: NaiveDate) -> f32 {
+        *state
+            .capacity
+            .entry((user_id, date))
+            .or_insert_with(|| self.hours_available(&user_id, date))
+    }
+
+    /// Compute the earliest calendar date on which `node_id` can start, given
+    /// the current `state` (predecessor end dates + lags). Also applies the
+    /// `Earliest` constraint if present.
+    fn earliest_start_from_dependencies(
+        &self,
+        node_id: NodeId,
+        state: &SchedulerState,
+    ) -> NaiveDate {
+        let deps = self.get_dependencies(&node_id);
+        let mut earliest = self.start_date;
+
+        for dep in deps {
+            let pred_end = self.node_end_date_in_state(dep.id, state);
+            let lag = dep.lag_days.round() as i64;
+            // For PlanStart / milestones (point-in-time anchors) the successor
+            // starts on the same day as the anchor + lag.  For tasks (which
+            // consume real days) the successor starts the calendar day *after*
+            // the task finishes + lag.
+            let start_after = match dep.id {
+                NodeId::PlanStart | NodeId::Milestone(_) => pred_end + chrono::Duration::days(lag),
+                NodeId::Task(_) => pred_end + chrono::Duration::days(lag + 1),
+            };
+            earliest = earliest.max(start_after);
+        }
+
+        // Apply Earliest constraint
+        let earliest_constraint = match node_id {
+            NodeId::Task(id) => self
+                .tasks
+                .get(&id)
+                .and_then(|t| t.constraint)
+                .filter(|c| c.kind == constraint::ConstraintKind::Earliest)
+                .map(|c| c.date),
+            NodeId::Milestone(id) => self
+                .milestones
+                .get(&id)
+                .and_then(|m| m.constraint)
+                .filter(|c| c.kind == constraint::ConstraintKind::Earliest)
+                .map(|c| c.date),
+            NodeId::PlanStart => None,
+        };
+        if let Some(ec) = earliest_constraint {
+            earliest = earliest.max(ec);
+        }
+
+        earliest
+    }
+
+    /// Retrieve the "end date" of a node from the current state.
+    ///
+    /// - PlanStart: the plan start date
+    /// - Milestone: the allocation date
+    /// - Task: the allocation end_date
+    ///
+    /// Falls back to `self.start_date` if not yet allocated.
+    fn node_end_date_in_state(&self, node_id: NodeId, state: &SchedulerState) -> NaiveDate {
+        match node_id {
+            NodeId::PlanStart => self.start_date,
+            NodeId::Milestone(mid) => state
+                .allocation
+                .milestones
+                .get(&mid)
+                .map(|a| a.date)
+                .unwrap_or(self.start_date),
+            NodeId::Task(tid) => state
+                .allocation
+                .tasks
+                .get(&tid)
+                .map(|a| a.end_date)
+                .unwrap_or(self.start_date),
+        }
+    }
+
+    /// Fill `total_hours` worth of work for `user_id` starting from
+    /// `start_date`, deducting from `state.capacity`. Returns the resulting
+    /// `WorkSegment` list.
+    fn fill_slot(
+        &self,
+        user_id: UserId,
+        total_hours: f32,
+        start_date: NaiveDate,
+        state: &mut SchedulerState,
+    ) -> Vec<WorkSegment> {
+        let mut remaining = total_hours;
+        let mut segments: Vec<WorkSegment> = Vec::new();
+        let mut current = start_date;
+        let limit = start_date + chrono::Duration::days(MAX_FILL_DAYS);
+
+        while remaining > EPSILON && current <= limit {
+            let avail = self.hours_remaining(state, user_id, current);
+            if avail > EPSILON {
+                let take = avail.min(remaining);
+                *state
+                    .capacity
+                    .entry((user_id, current))
+                    .or_insert_with(|| self.hours_available(&user_id, current)) -= take;
+                segments.push(WorkSegment {
+                    date: current,
+                    hours_worked: take,
+                });
+                remaining -= take;
+            }
+            current += chrono::Duration::days(1);
+        }
+
+        segments
+    }
+
+    /// Simulate filling `total_hours` for `user_id` from `start_date` without
+    /// mutating state. Returns the last date that would receive work (i.e. the
+    /// simulated `end_date`).
+    fn simulate_fill(
+        &self,
+        user_id: UserId,
+        total_hours: f32,
+        start_date: NaiveDate,
+        state: &SchedulerState,
+    ) -> NaiveDate {
+        let mut remaining = total_hours;
+        let mut current = start_date;
+        let mut last_date = start_date;
+        let limit = start_date + chrono::Duration::days(MAX_FILL_DAYS);
+
+        while remaining > EPSILON && current <= limit {
+            let avail = state
+                .capacity
+                .get(&(user_id, current))
+                .copied()
+                .unwrap_or_else(|| self.hours_available(&user_id, current));
+            if avail > EPSILON {
+                let take = avail.min(remaining);
+                remaining -= take;
+                last_date = current;
+            }
+            current += chrono::Duration::days(1);
+        }
+
+        last_date
+    }
+
+    /// From among users satisfying `required_tags`, pick the one who can finish
+    /// `workload_days` of work the earliest (starting from `earliest_start`).
+    /// Ties broken by smallest `UserId` (lexicographic on the inner Uuid).
+    fn select_user_for_placeholder(
+        &self,
+        required_tags: &HashSet<String>,
+        workload_days: f32,
+        earliest_start: NaiveDate,
+        state: &SchedulerState,
+    ) -> UserId {
+        let total_hours = workload_days * self.hours_per_workload_day;
+
+        let mut best_user: Option<UserId> = None;
+        let mut best_end = NaiveDate::MAX;
+
+        // Collect and sort eligible users for deterministic tie-breaking
+        let mut eligible: Vec<UserId> = self
+            .users
+            .values()
+            .filter(|u| required_tags.is_subset(&u.tags))
+            .map(|u| u.id)
+            .collect();
+        eligible.sort_by_key(|uid| uid.0);
+
+        for uid in eligible {
+            let end = self.simulate_fill(uid, total_hours, earliest_start, state);
+            if end < best_end {
+                best_end = end;
+                best_user = Some(uid);
+            }
+        }
+
+        // Guaranteed by `all_tasks_completable` — at least one eligible user exists
+        best_user.expect("no eligible user for placeholder slot")
+    }
+
+    /// Insert a task into the allocation. Checks constraints, fills each worker
+    /// slot, and propagates forward to already-inserted dependents that need to
+    /// move.
+    fn insert_task(
+        &self,
+        id: TaskId,
+        state: &mut SchedulerState,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
+        protect_node: Option<NodeId>,
+    ) -> Result<(), SchedulerError> {
+        let task = self
+            .tasks
+            .get(&id)
+            .expect("insert_task called with unknown TaskId");
+
+        let earliest = self.earliest_start_from_dependencies(NodeId::Task(id), state);
+
+        let start_date = match task.constraint {
+            Some(c) if c.kind == constraint::ConstraintKind::Fixed => {
+                if earliest > c.date {
+                    return Err(SchedulerError::FixedConstraintViolated {
+                        task_name: task.name.clone(),
+                        required_date: c.date,
+                        earliest_possible: earliest,
+                    });
+                }
+                c.date
+            }
+            Some(c) if c.kind == constraint::ConstraintKind::Latest => {
+                if earliest > c.date {
+                    return Err(SchedulerError::LatestConstraintViolated {
+                        task_name: task.name.clone(),
+                        deadline: c.date,
+                        computed_start: earliest,
+                    });
+                }
+                earliest
+            }
+            _ => earliest,
+        };
+
+        let mut slot_allocations: Vec<SlotAllocation> = Vec::new();
+        let mut task_start: Option<NaiveDate> = None;
+        let mut task_end: Option<NaiveDate> = None;
+
+        // We need an immutable copy of workers to iterate while we mutate state
+        let workers: Vec<WorkerSlot> = task.workers.clone();
+        for slot in &workers {
+            let (user_id, workload_days) = match slot {
+                WorkerSlot::Specific {
+                    user_id,
+                    workload_days,
+                } => (*user_id, *workload_days),
+                WorkerSlot::Placeholder {
+                    required_tags,
+                    workload_days,
+                } => {
+                    let uid = self.select_user_for_placeholder(
+                        required_tags,
+                        *workload_days,
+                        start_date,
+                        state,
+                    );
+                    (uid, *workload_days)
+                }
+            };
+
+            let total_hours = workload_days * self.hours_per_workload_day;
+            let segments = self.fill_slot(user_id, total_hours, start_date, state);
+
+            if let Some(first) = segments.first() {
+                task_start = Some(task_start.map_or(first.date, |d: NaiveDate| d.min(first.date)));
+            }
+            if let Some(last) = segments.last() {
+                task_end = Some(task_end.map_or(last.date, |d: NaiveDate| d.max(last.date)));
+            }
+
+            slot_allocations.push(SlotAllocation { user_id, segments });
+        }
+
+        // Tasks with no workers are treated as zero-duration (like milestones)
+        let task_start = task_start.unwrap_or(start_date);
+        let task_end = task_end.unwrap_or(start_date);
+
+        let alloc = TaskAllocation {
+            task_id: id,
+            slot_allocations,
+            start_date: task_start,
+            end_date: task_end,
+        };
+
+        state.allocation.tasks.insert(id, alloc);
+        state.inserted.insert(NodeId::Task(id));
+
+        // Propagate forward to already-inserted dependents
+        self.propagate_to_dependents(NodeId::Task(id), state, dependents_map, protect_node)?;
+
+        Ok(())
+    }
+
+    /// Insert a milestone into the allocation. Checks constraints and propagates
+    /// forward to already-inserted dependents.
+    fn insert_milestone(
+        &self,
+        id: MilestoneId,
+        state: &mut SchedulerState,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
+        protect_node: Option<NodeId>,
+    ) -> Result<(), SchedulerError> {
+        let milestone = self
+            .milestones
+            .get(&id)
+            .expect("insert_milestone called with unknown MilestoneId");
+
+        let earliest = self.earliest_start_from_dependencies(NodeId::Milestone(id), state);
+
+        let date = match milestone.constraint {
+            Some(c) if c.kind == constraint::ConstraintKind::Fixed => {
+                if earliest > c.date {
+                    return Err(SchedulerError::FixedConstraintViolated {
+                        task_name: milestone.name.clone(),
+                        required_date: c.date,
+                        earliest_possible: earliest,
+                    });
+                }
+                c.date
+            }
+            Some(c) if c.kind == constraint::ConstraintKind::Latest => {
+                if earliest > c.date {
+                    return Err(SchedulerError::LatestConstraintViolated {
+                        task_name: milestone.name.clone(),
+                        deadline: c.date,
+                        computed_start: earliest,
+                    });
+                }
+                earliest
+            }
+            _ => earliest,
+        };
+
+        state.allocation.milestones.insert(
+            id,
+            MilestoneAllocation {
+                milestone_id: id,
+                date,
+            },
+        );
+        state.inserted.insert(NodeId::Milestone(id));
+
+        self.propagate_to_dependents(NodeId::Milestone(id), state, dependents_map, protect_node)?;
+
+        Ok(())
+    }
+
+    /// After inserting `node_id`, check whether any already-inserted dependents
+    /// need to move forward and call `propagate_forward` for each that does.
+    fn propagate_to_dependents(
+        &self,
+        node_id: NodeId,
+        state: &mut SchedulerState,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
+        protect_node: Option<NodeId>,
+    ) -> Result<(), SchedulerError> {
+        let Some(dependents) = dependents_map.get(&node_id) else {
+            return Ok(());
+        };
+
+        // Collect dependents that need moving (snapshot to avoid borrow issues)
+        let to_propagate: Vec<(NodeId, NaiveDate)> = dependents
+            .iter()
+            .filter_map(|&dep| {
+                if Some(dep) == protect_node || !state.inserted.contains(&dep) {
+                    return None;
+                }
+                let new_earliest = self.earliest_start_from_dependencies(dep, state);
+                let current_start = self.node_start_date_in_state(dep, state)?;
+                if new_earliest > current_start {
+                    Some((dep, new_earliest))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (dep, new_earliest) in to_propagate {
+            self.propagate_forward(dep, new_earliest, state, dependents_map, protect_node)?;
+        }
+
+        Ok(())
+    }
+
+    /// Get the current start date of a node from state, if it has been inserted.
+    fn node_start_date_in_state(
+        &self,
+        node_id: NodeId,
+        state: &SchedulerState,
+    ) -> Option<NaiveDate> {
+        match node_id {
+            NodeId::Task(tid) => state.allocation.tasks.get(&tid).map(|a| a.start_date),
+            NodeId::Milestone(mid) => state.allocation.milestones.get(&mid).map(|a| a.date),
+            NodeId::PlanStart => Some(self.start_date),
+        }
+    }
+
+    /// Undo the existing allocation for `node_id` (re-crediting capacity),
+    /// then re-insert it starting from `new_earliest`. Recurse to dependents
+    /// that are pushed forward as a result.
+    fn propagate_forward(
+        &self,
+        node_id: NodeId,
+        _new_earliest: NaiveDate,
+        state: &mut SchedulerState,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
+        protect_node: Option<NodeId>,
+    ) -> Result<(), SchedulerError> {
+        if Some(node_id) == protect_node {
+            return Ok(()); // Never move the protected node
+        }
+
+        // Undo existing allocation and re-credit capacity
+        match node_id {
+            NodeId::Task(tid) => {
+                if let Some(alloc) = state.allocation.tasks.remove(&tid) {
+                    for slot in &alloc.slot_allocations {
+                        for seg in &slot.segments {
+                            let entry = state
+                                .capacity
+                                .entry((slot.user_id, seg.date))
+                                .or_insert(0.0);
+                            *entry += seg.hours_worked;
+                        }
+                    }
+                }
+                state.inserted.remove(&node_id);
+                self.insert_task(tid, state, dependents_map, protect_node)?;
+            }
+            NodeId::Milestone(mid) => {
+                state.allocation.milestones.remove(&mid);
+                state.inserted.remove(&node_id);
+                self.insert_milestone(mid, state, dependents_map, protect_node)?;
+            }
+            NodeId::PlanStart => {}
+        }
 
         Ok(())
     }
@@ -135,55 +675,45 @@ impl Plan {
         map
     }
 
-    // fn get_priority_sorted_task_list_to_node(
-    //     &self,
-    //     node_id: NodeId,
-    // ) -> Result<Vec<NodeId>, SchedulerError> {
-    //     // check if there are any nodes not connected back to the root (make a helper function for
-    //     // this and make a new error type to capture which node is not connected to the root) and
-    //     // exit early
-    //     //
-    //     // get the list of tasks from the scheduler_target to the root, reverse all the paths so
-    //     // they are from the root to the target
-    //     //
-    //     // then get the list of all the end nodes to the root, sort in order of longest calendar
-    //     // path first then reverse so it is from the root to all the node ends
-    //
-    //     let sorted_paths = self.get_paths_to_node_sorted(node_id)?;
-    //     let mut seen = HashSet::new();
-    //     let sorted_task_list = sorted_paths
-    //         .into_iter()
-    //         .flatten()
-    //         .filter(|node_id| seen.insert(*node_id))
-    //         .collect();
-    //
-    //     Ok(sorted_task_list)
-    // }
-    //
-    // fn get_priority_sorted_task_list_to_ends(&self) -> Result<Vec<NodeId>, SchedulerError> {
-    //     let end_nodes = self.get_end_nodes();
-    //     let mut all_paths_with_dur: Vec<(f32, NodeChain)> = end_nodes
-    //         .iter()
-    //         .map(|&node| self.get_all_paths_to_node(node))
-    //         .collect::<Result<Vec<_>, _>>()?
-    //         .into_iter()
-    //         .flatten()
-    //         .map(|p| (self.calculate_path_duration(&p), p))
-    //         .collect();
-    //
-    //     all_paths_with_dur
-    //         .sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-    //
-    //     let mut seen = HashSet::new();
-    //     let sorted_task_list = all_paths_with_dur
-    //         .into_iter()
-    //         .flat_map(|(_, p)| p)
-    //         .filter(|node_id| seen.insert(*node_id))
-    //         .collect();
-    //
-    //     Ok(sorted_task_list)
-    // }
-    //
+    fn get_priority_sorted_task_list_to_node(
+        &self,
+        node_id: NodeId,
+    ) -> Result<Vec<NodeId>, SchedulerError> {
+        let sorted_paths = self.get_paths_to_node_sorted(node_id)?;
+        let mut seen = HashSet::new();
+        let sorted_task_list = sorted_paths
+            .into_iter()
+            .flatten()
+            .filter(|node_id| seen.insert(*node_id))
+            .collect();
+
+        Ok(sorted_task_list)
+    }
+
+    fn get_priority_sorted_task_list_to_ends(&self) -> Result<Vec<NodeId>, SchedulerError> {
+        let end_nodes = self.get_end_nodes();
+        let mut all_paths_with_dur: Vec<(f32, NodeChain)> = end_nodes
+            .iter()
+            .map(|&node| self.get_all_paths_to_node(node))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .map(|p| (self.calculate_path_duration(&p), p))
+            .collect();
+
+        all_paths_with_dur
+            .sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut seen = HashSet::new();
+        let sorted_task_list = all_paths_with_dur
+            .into_iter()
+            .flat_map(|(_, p)| p)
+            .filter(|node_id| seen.insert(*node_id))
+            .collect();
+
+        Ok(sorted_task_list)
+    }
+
     fn get_dependencies(&self, node_id: &NodeId) -> &[Dependency] {
         match node_id {
             NodeId::Task(task_id) => {
@@ -383,7 +913,20 @@ impl Plan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::{Dependency, Milestone, Task};
+    use crate::data::{Dependency, Milestone, Task, User};
+    use chrono::NaiveDate;
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn make_plan() -> Plan {
+        let mut p = Plan::new("Test");
+        p.start_date = date(2026, 3, 9); // Monday
+        p
+    }
+
+    // ── get_end_nodes tests ───────────────────────────────────────────────────
 
     #[test]
     fn get_end_nodes_empty_plan() {
@@ -864,5 +1407,288 @@ mod tests {
         // Duration: 3 + 5 + 2 = 10 days
         let duration = p.calculate_path_duration(&path);
         assert!((duration - 10.0).abs() < f32::EPSILON);
+    }
+
+    // ── compute_time_optimised_plan tests ─────────────────────────────────────
+
+    /// Plan start: 2026-03-09 (Monday). Standard 5-day week, 8 h/day.
+    /// Single task T: 1 workload-day for Alice → fills Monday 8 h.
+    #[test]
+    fn scheduler_single_task_one_user() {
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+
+        let mut task = Task::new("T", "");
+        task.add_specific_worker(alice, 1.0);
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let ta = &alloc.tasks[&tid];
+
+        assert_eq!(ta.start_date, date(2026, 3, 9));
+        assert_eq!(ta.end_date, date(2026, 3, 9));
+        assert_eq!(ta.slot_allocations.len(), 1);
+        assert_eq!(ta.slot_allocations[0].segments.len(), 1);
+        assert_eq!(ta.slot_allocations[0].segments[0].date, date(2026, 3, 9));
+        assert!((ta.slot_allocations[0].segments[0].hours_worked - 8.0).abs() < EPSILON);
+    }
+
+    /// Two sequential tasks: T1 (1 day) then T2 (1 day). T2 should start the
+    /// day after T1 ends (Tuesday).
+    #[test]
+    fn scheduler_linear_dependency_start_dates() {
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+
+        let mut t1 = Task::new("T1", "");
+        t1.add_specific_worker(alice, 1.0);
+        let t1id = p.add_task(t1);
+
+        let mut t2 = Task::new("T2", "");
+        t2.add_specific_worker(alice, 1.0);
+        let t2id = p.add_task(t2);
+
+        p.add_task_dependency(t1id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+        p.add_task_dependency(t2id, Dependency::new(NodeId::Task(t1id)))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        assert_eq!(alloc.tasks[&t1id].start_date, date(2026, 3, 9)); // Mon
+        assert_eq!(alloc.tasks[&t2id].start_date, date(2026, 3, 10)); // Tue
+    }
+
+    /// Weekend gap: 5 workload-days starting on Thursday → fills Thu, Fri,
+    /// then Mon, Tue, Wed (skipping Sat/Sun).
+    #[test]
+    fn scheduler_weekend_gap_in_work_segments() {
+        let mut p = make_plan();
+        p.start_date = date(2026, 3, 12); // Thursday
+        let alice = p.add_user(User::new("Alice"));
+
+        let mut task = Task::new("T", "");
+        task.add_specific_worker(alice, 5.0);
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let segs = &alloc.tasks[&tid].slot_allocations[0].segments;
+
+        // Must have exactly 5 work segments (no weekend)
+        assert_eq!(segs.len(), 5);
+        let seg_dates: Vec<NaiveDate> = segs.iter().map(|s| s.date).collect();
+        assert_eq!(seg_dates[0], date(2026, 3, 12)); // Thu
+        assert_eq!(seg_dates[1], date(2026, 3, 13)); // Fri
+        assert_eq!(seg_dates[2], date(2026, 3, 16)); // Mon (skipped Sat 14, Sun 15)
+        assert_eq!(seg_dates[3], date(2026, 3, 17)); // Tue
+        assert_eq!(seg_dates[4], date(2026, 3, 18)); // Wed
+    }
+
+    /// Placeholder slot: two candidates — Alice works 4 h/day (half time),
+    /// Bob works the standard 8 h/day. The slot is 1 workload-day = 8 hours.
+    /// Alice needs 2 calendar days (Mon+Tue); Bob needs 1 (Mon).
+    /// The scheduler must pick Bob (earliest finisher) regardless of UUID order.
+    #[test]
+    fn scheduler_placeholder_picks_earliest_finisher() {
+        use crate::data::{Weekday, WorkSchedule};
+
+        let mut p = make_plan();
+
+        // Alice works only 4 h/day on every weekday
+        let alice = p.add_user(User::new("Alice").with_tag("dev"));
+        let half_time = WorkSchedule::weekdays()
+            .with_day(Weekday::Monday, 4.0)
+            .with_day(Weekday::Tuesday, 4.0)
+            .with_day(Weekday::Wednesday, 4.0)
+            .with_day(Weekday::Thursday, 4.0)
+            .with_day(Weekday::Friday, 4.0);
+        p.set_user_schedule(alice, half_time);
+
+        // Bob works the default 8 h/day
+        let bob = p.add_user(User::new("Bob").with_tag("dev"));
+
+        // Placeholder task: 1 workload-day = 8 hours.
+        // Alice: 4 h Mon + 4 h Tue → finishes Tuesday.
+        // Bob:   8 h Mon            → finishes Monday.
+        // Expected: Bob is selected.
+        let mut task = Task::new("T", "");
+        task.add_placeholder_worker(["dev"], 1.0);
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let ta = &alloc.tasks[&tid];
+        assert_eq!(
+            ta.slot_allocations[0].user_id, bob,
+            "Bob should be selected because he finishes 1 workload-day one calendar day earlier"
+        );
+        // Bob finishes on Monday; task end_date should be Monday
+        assert_eq!(ta.end_date, date(2026, 3, 9));
+    }
+
+    /// Latest constraint: task must start no later than Wednesday.
+    #[test]
+    fn scheduler_latest_constraint_respected() {
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+
+        let mut task = Task::new("T", "");
+        task.add_specific_worker(alice, 1.0);
+        task.constraint = Some(crate::data::DateConstraint::latest(date(2026, 3, 11)));
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+        let alloc = p.allocation.as_ref().unwrap();
+        assert!(alloc.tasks[&tid].start_date <= date(2026, 3, 11));
+    }
+
+    /// Latest constraint violated: predecessor forces start after deadline.
+    #[test]
+    fn scheduler_latest_constraint_violated_returns_error() {
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+
+        // T1: 3 workload-days (Mon–Wed)
+        let mut t1 = Task::new("T1", "");
+        t1.add_specific_worker(alice, 3.0);
+        let t1id = p.add_task(t1);
+        p.add_task_dependency(t1id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        // T2: must start no later than Monday, but T1 doesn't finish until Wednesday
+        let mut t2 = Task::new("T2", "");
+        t2.add_specific_worker(alice, 1.0);
+        t2.constraint = Some(crate::data::DateConstraint::latest(date(2026, 3, 9)));
+        let t2id = p.add_task(t2);
+        p.add_task_dependency(t2id, Dependency::new(NodeId::Task(t1id)))
+            .unwrap();
+
+        let err = p.compute_time_optimised_plan().unwrap_err();
+        assert!(matches!(
+            err,
+            SchedulerError::LatestConstraintViolated { .. }
+        ));
+    }
+
+    /// Fixed constraint respected.
+    #[test]
+    fn scheduler_fixed_constraint_sets_exact_start() {
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+
+        let mut task = Task::new("T", "");
+        task.add_specific_worker(alice, 1.0);
+        task.constraint = Some(crate::data::DateConstraint::fixed(date(2026, 3, 11))); // Wed
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+        let alloc = p.allocation.as_ref().unwrap();
+        assert_eq!(alloc.tasks[&tid].start_date, date(2026, 3, 11));
+    }
+
+    /// Fixed constraint violated when earliest_possible > required_date.
+    #[test]
+    fn scheduler_fixed_constraint_violated_returns_error() {
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+
+        // T1 takes 3 days (Mon–Wed). T2 fixed to start Monday → impossible.
+        let mut t1 = Task::new("T1", "");
+        t1.add_specific_worker(alice, 3.0);
+        let t1id = p.add_task(t1);
+        p.add_task_dependency(t1id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        let mut t2 = Task::new("T2", "");
+        t2.add_specific_worker(alice, 1.0);
+        t2.constraint = Some(crate::data::DateConstraint::fixed(date(2026, 3, 9)));
+        let t2id = p.add_task(t2);
+        p.add_task_dependency(t2id, Dependency::new(NodeId::Task(t1id)))
+            .unwrap();
+
+        let err = p.compute_time_optimised_plan().unwrap_err();
+        assert!(matches!(
+            err,
+            SchedulerError::FixedConstraintViolated { .. }
+        ));
+    }
+
+    /// Disconnected node (no path to PlanStart) → DisconnectedNode error.
+    #[test]
+    fn scheduler_disconnected_node_returns_error() {
+        let mut p = make_plan();
+        p.add_task(Task::new("Floating", "")); // no dependency
+
+        let err = p.compute_time_optimised_plan().unwrap_err();
+        assert!(matches!(err, SchedulerError::DisconnectedNode(_)));
+    }
+
+    /// Forward propagation: inserting T1 pushes T2's start forward correctly.
+    #[test]
+    fn scheduler_propagation_pushes_dependent_forward() {
+        // Plan:
+        //   PlanStart → T1 (3 days) → T3
+        //   PlanStart → T2 (1 day)  → T3
+        //
+        // In longest-path ordering, T1 appears before T2 (path to T3 via T1
+        // is longer).  T3 is inserted after T1 ends (Thursday).  When T2 is
+        // then processed (it was already inserted by the T1 path), verify T3
+        // correctly sits after both.  The key is that T3's start date must be
+        // after the end of both T1 and T2.
+        let mut p = make_plan();
+        let alice = p.add_user(User::new("Alice"));
+        let bob = p.add_user(User::new("Bob"));
+
+        let mut t1 = Task::new("T1", "");
+        t1.add_specific_worker(alice, 3.0); // Mon–Wed
+        let t1id = p.add_task(t1);
+        p.add_task_dependency(t1id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        let mut t2 = Task::new("T2", "");
+        t2.add_specific_worker(bob, 1.0); // Mon only
+        let t2id = p.add_task(t2);
+        p.add_task_dependency(t2id, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        let mut t3 = Task::new("T3", "");
+        t3.add_specific_worker(alice, 1.0);
+        let t3id = p.add_task(t3);
+        p.add_task_dependency(t3id, Dependency::new(NodeId::Task(t1id)))
+            .unwrap();
+        p.add_task_dependency(t3id, Dependency::new(NodeId::Task(t2id)))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        // T1 ends Wed 2026-03-11; T3 must start Thu at earliest
+        assert!(alloc.tasks[&t3id].start_date >= date(2026, 3, 12));
+    }
+
+    /// Empty plan schedules successfully with empty allocation.
+    #[test]
+    fn scheduler_empty_plan_succeeds() {
+        let mut p = make_plan();
+        p.compute_time_optimised_plan().unwrap();
+        let alloc = p.allocation.as_ref().unwrap();
+        assert!(alloc.tasks.is_empty());
+        assert!(alloc.milestones.is_empty());
     }
 }

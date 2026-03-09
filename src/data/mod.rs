@@ -10,6 +10,7 @@
 //! Persistence is handled by [`Storage`], which saves versioned JSON snapshots
 //! under `$XDG_DATA_HOME/<binary>/plans/<plan-uuid>/`.
 
+pub mod allocation;
 pub mod calendar;
 pub mod constraint;
 pub mod dates;
@@ -23,6 +24,7 @@ pub mod storage;
 pub mod task;
 pub mod user;
 
+pub use allocation::{MilestoneAllocation, PlanAllocation, SlotAllocation, TaskAllocation, WorkSegment};
 pub use calendar::CalendarOverrides;
 pub use constraint::{ConstraintKind, DateConstraint};
 pub use dates::StartDates;
