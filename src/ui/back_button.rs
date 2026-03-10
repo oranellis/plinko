@@ -2,13 +2,16 @@
 
 use skia_safe::{Canvas, Color, Paint, PaintStyle, PathBuilder, RRect, Rect};
 
+use super::icon_button::{begin_blur_backdrop, end_blur_backdrop};
 use super::layout::*;
 
 /// Draws the back button at the fixed position defined in [`layout`](super::layout).
 ///
-/// Renders a rounded-rect hover background when `hovered` is `true`, and
-/// always renders a left-pointing chevron arrow.
+/// Renders a blurred backdrop, a rounded-rect hover background when `hovered`
+/// is `true`, and always renders a left-pointing chevron arrow.
 pub fn draw_back_button(canvas: &Canvas, hovered: bool) {
+    begin_blur_backdrop(canvas, BACK_BTN_X, BACK_BTN_Y);
+
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
 
@@ -39,6 +42,8 @@ pub fn draw_back_button(canvas: &Canvas, hovered: bool) {
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(2.0);
     canvas.draw_path(&path, &paint);
+
+    end_blur_backdrop(canvas, BACK_BTN_X, BACK_BTN_Y);
 }
 
 /// Returns `true` if the logical cursor position `(x, y)` is inside the back

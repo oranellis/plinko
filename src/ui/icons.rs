@@ -54,6 +54,53 @@ pub fn build_icon_planning(w: f32, h: f32) -> Path {
     pb.detach()
 }
 
+/// Builds a plus / add icon: two perpendicular lines crossing at the centre.
+pub fn build_icon_plus(w: f32, h: f32) -> Path {
+    let mut pb = PathBuilder::new();
+    // Vertical bar
+    pb.move_to((w * 0.5, 0.0));
+    pb.line_to((w * 0.5, h));
+    // Horizontal bar
+    pb.move_to((0.0, h * 0.5));
+    pb.line_to((w, h * 0.5));
+    pb.detach()
+}
+
+/// Builds a diamond icon (rotated square) used to represent a milestone.
+pub fn build_icon_diamond(w: f32, h: f32) -> Path {
+    let mut pb = PathBuilder::new();
+    pb.move_to((w * 0.5, 0.0));   // top
+    pb.line_to((w, h * 0.5));     // right
+    pb.line_to((w * 0.5, h));     // bottom
+    pb.line_to((0.0, h * 0.5));   // left
+    pb.close();
+    pb.detach()
+}
+
+/// Builds a person silhouette icon: head circle and shoulder arc.
+pub fn build_icon_person(w: f32, h: f32) -> Path {
+    let mut pb = PathBuilder::new();
+    // Head
+    let head_r = w * 0.22;
+    let head_cx = w * 0.5;
+    let head_cy = h * 0.3;
+    pb.add_arc(
+        Rect::from_xywh(head_cx - head_r, head_cy - head_r, 2.0 * head_r, 2.0 * head_r),
+        0.0,
+        360.0,
+    );
+    // Shoulders arc — large circle centred just below the icon
+    let body_r = w * 0.42;
+    let body_cx = w * 0.5;
+    let body_cy = h * 1.08;
+    pb.add_arc(
+        Rect::from_xywh(body_cx - body_r, body_cy - body_r, 2.0 * body_r, 2.0 * body_r),
+        205.0,
+        130.0,
+    );
+    pb.detach()
+}
+
 /// Builds a three-line slider icon (horizontal rules with circular knobs)
 /// representing settings / configuration.
 pub fn build_icon_settings(w: f32, h: f32) -> Path {

@@ -251,7 +251,10 @@ impl Plan {
                 continue;
             }
 
-            let start = self.dates.task(&id).unwrap_or(state.today);
+            let start = task
+                .actual_start_date
+                .or_else(|| self.dates.task(&id))
+                .unwrap_or(state.today);
             let end = task
                 .actual_end_date
                 .or_else(|| {
@@ -301,6 +304,14 @@ impl Plan {
                 NodeId::Task(_) => pred_end + chrono::Duration::days(lag + 1),
             };
             earliest = earliest.max(start_after);
+        }
+
+        // Apply actual_start_date as a floor (authoritative for non-NotStarted;
+        // acts as a pinned earliest start for NotStarted tasks that have one set).
+        if let NodeId::Task(id) = node_id
+            && let Some(asd) = self.tasks.get(&id).and_then(|t| t.actual_start_date)
+        {
+            earliest = earliest.max(asd);
         }
 
         // Apply Earliest constraint
@@ -1496,11 +1507,12 @@ mod tests {
 
     // ── compute_time_optimised_plan tests ─────────────────────────────────────
 
-    /// Plan start: 2026-03-09 (Monday). Standard 5-day week, 8 h/day.
+    /// Plan start: 2030-01-07 (Monday, future). Standard 5-day week, 8 h/day.
     /// Single task T: 1 workload-day for Alice → fills Monday 8 h.
     #[test]
     fn scheduler_single_task_one_user() {
         let mut p = make_plan();
+        p.start_date = date(2030, 1, 7); // future Monday
         let alice = p.add_user(User::new("Alice"));
 
         let mut task = Task::new("T", "");
@@ -1514,11 +1526,11 @@ mod tests {
         let alloc = p.allocation.as_ref().unwrap();
         let ta = &alloc.tasks[&tid];
 
-        assert_eq!(ta.start_date, date(2026, 3, 9));
-        assert_eq!(ta.end_date, date(2026, 3, 9));
+        assert_eq!(ta.start_date, date(2030, 1, 7));
+        assert_eq!(ta.end_date, date(2030, 1, 7));
         assert_eq!(ta.slot_allocations.len(), 1);
         assert_eq!(ta.slot_allocations[0].segments.len(), 1);
-        assert_eq!(ta.slot_allocations[0].segments[0].date, date(2026, 3, 9));
+        assert_eq!(ta.slot_allocations[0].segments[0].date, date(2030, 1, 7));
         assert!((ta.slot_allocations[0].segments[0].hours_worked - 8.0).abs() < EPSILON);
     }
 
@@ -1527,6 +1539,7 @@ mod tests {
     #[test]
     fn scheduler_linear_dependency_start_dates() {
         let mut p = make_plan();
+        p.start_date = date(2030, 1, 7); // future Monday
         let alice = p.add_user(User::new("Alice"));
 
         let mut t1 = Task::new("T1", "");
@@ -1545,8 +1558,8 @@ mod tests {
         p.compute_time_optimised_plan().unwrap();
 
         let alloc = p.allocation.as_ref().unwrap();
-        assert_eq!(alloc.tasks[&t1id].start_date, date(2026, 3, 9)); // Mon
-        assert_eq!(alloc.tasks[&t2id].start_date, date(2026, 3, 10)); // Tue
+        assert_eq!(alloc.tasks[&t1id].start_date, date(2030, 1, 7)); // Mon
+        assert_eq!(alloc.tasks[&t2id].start_date, date(2030, 1, 8)); // Tue
     }
 
     /// Weekend gap: 5 workload-days starting on Thursday → fills Thu, Fri,
@@ -1587,6 +1600,7 @@ mod tests {
         use crate::data::{Weekday, WorkSchedule};
 
         let mut p = make_plan();
+        p.start_date = date(2030, 1, 7); // future Monday
 
         // Alice works only 4 h/day on every weekday
         let alice = p.add_user(User::new("Alice").with_tag("dev"));
@@ -1620,7 +1634,7 @@ mod tests {
             "Bob should be selected because he finishes 1 workload-day one calendar day earlier"
         );
         // Bob finishes on Monday; task end_date should be Monday
-        assert_eq!(ta.end_date, date(2026, 3, 9));
+        assert_eq!(ta.end_date, date(2030, 1, 7));
     }
 
     /// Latest constraint: task must start no later than Wednesday.
@@ -1918,7 +1932,8 @@ mod tests {
         let anchor_id = p.add_task(anchor);
         p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
             .unwrap();
-        p.dates.set_task(anchor_id, today - chrono::Duration::days(30));
+        p.dates
+            .set_task(anchor_id, today - chrono::Duration::days(30));
 
         // NotStarted task: Alice, depends only on PlanStart.
         let mut follower = Task::new("Follower", "");
@@ -2274,7 +2289,8 @@ mod tests {
         p.add_task_dependency(anchor_id, Dependency::new(NodeId::PlanStart))
             .unwrap();
         // Started 10 days ago → derived end = 9 days ago, clearly overdue.
-        p.dates.set_task(anchor_id, today - chrono::Duration::days(10));
+        p.dates
+            .set_task(anchor_id, today - chrono::Duration::days(10));
 
         let alice = p.add_user(User::new("Alice"));
         let mut follower = Task::new("Follower", "");

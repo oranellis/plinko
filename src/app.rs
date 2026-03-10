@@ -15,11 +15,12 @@ use winit::{
 use glutin::prelude::GlSurface;
 use skia_safe::{
     gpu::{self, gl::FramebufferInfo},
-    ClipOp, Color, ImageInfo, Picture, PictureRecorder, Rect, Surface,
+    BlendMode, ClipOp, Color, ImageInfo, Picture, PictureRecorder, Rect, Surface,
 };
 
+use crate::engine::{PlanEngine, PlanResponse};
 use crate::graphics::env::{self, Env};
-use crate::pages::{PageId, PageManager};
+use crate::pages::{Page, PageId, PageManager};
 use crate::pages::home::render as home_render;
 use crate::ui::back_button;
 use crate::ui::cache::RenderCache;
@@ -58,6 +59,8 @@ pub struct Application {
     cursor_pos: (f32, f32),
     app_state: AppState,
     back_hovered: bool,
+    /// Plan engine: owns the live Plan and the request queue.
+    engine: PlanEngine,
     /// GPU-backed retained surface for partial redraws.
     retained_surface: Option<Surface>,
     retained_size: (i32, i32),
@@ -74,6 +77,7 @@ impl Application {
         num_samples: usize,
         stencil_size: usize,
         scale_factor: f64,
+        engine: PlanEngine,
     ) -> Self {
         Self {
             env,
@@ -88,6 +92,7 @@ impl Application {
             cursor_pos: (0.0, 0.0),
             app_state: AppState::Home,
             back_hovered: false,
+            engine,
             retained_surface: None,
             retained_size: (0, 0),
             home_picture: None,
@@ -116,8 +121,12 @@ impl Application {
 
     /// Switches to a full-screen page and invalidates all caches.
     fn navigate_to(&mut self, page: PageId) {
+        // Clear hover on the page we're leaving (home) and the one we're entering.
+        self.pages.home.reset_hover();
         self.app_state = AppState::InPage(page);
         self.pages.set_active(page);
+        self.pages.active_page_mut().reset_hover();
+        self.back_hovered = false;
         self.home_picture = None;
         self.back_picture = None;
         self.mark_dirty(DirtyRegion::All);
@@ -125,8 +134,12 @@ impl Application {
 
     /// Returns to the home card-grid and invalidates all caches.
     fn navigate_home(&mut self) {
+        // Clear hover on the page we're leaving and on home.
+        self.pages.active_page_mut().reset_hover();
         self.app_state = AppState::Home;
         self.pages.set_active(PageId::Home);
+        self.pages.home.reset_hover();
+        self.back_hovered = false;
         self.home_picture = None;
         self.back_picture = None;
         self.mark_dirty(DirtyRegion::All);
@@ -188,11 +201,18 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::ModifiersChanged(new_modifiers) => self.modifiers = new_modifiers,
             WindowEvent::KeyboardInput {
-                event: KeyEvent { logical_key, .. },
+                event: KeyEvent { logical_key, state: key_state, .. },
                 ..
             } => {
                 if self.modifiers.state().super_key() && logical_key == "q" {
                     event_loop.exit();
+                }
+                if key_state == ElementState::Pressed
+                    && let AppState::InPage(_) = self.app_state
+                {
+                    let sender = self.engine.sender();
+                    let dirty = self.pages.active_page_mut().on_key_input(&logical_key, &sender);
+                    self.mark_dirty(dirty);
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -201,24 +221,40 @@ impl ApplicationHandler for Application {
 
                 match self.app_state {
                     AppState::Home => {
-                        let dirty = self.pages.active_page_mut().on_cursor_moved(x, y, width, height);
+                        let plan = self.engine.plan();
+                        let dirty = self.pages.active_page_mut().on_cursor_moved(x, y, width, height, plan);
                         if dirty != DirtyRegion::None {
                             self.home_picture = None;
                         }
                         self.mark_dirty(dirty);
                     }
                     AppState::InPage(_) => {
-                        // Back button hover
+                        // Back button is topmost — check before forwarding to page.
+                        let prev_back_hovered = self.back_hovered;
                         let new_back_hovered = back_button::hit_test_back_button(x, y);
-                        if new_back_hovered != self.back_hovered {
+                        if new_back_hovered != prev_back_hovered {
                             self.back_hovered = new_back_hovered;
                             self.back_picture = None;
                             self.mark_dirty(DirtyRegion::BackButtonOnly);
                         }
 
-                        // Forward to active page
-                        let dirty = self.pages.active_page_mut().on_cursor_moved(x, y, width, height);
-                        self.mark_dirty(dirty);
+                        if new_back_hovered {
+                            // Back button is covering this position; don't let the page
+                            // show hover effects for content beneath it.
+                            // On the transition in, send (-1, -1) to clear any stale
+                            // page hover state left from before the cursor entered.
+                            if !prev_back_hovered {
+                                let plan = self.engine.plan();
+                                let dirty = self.pages.active_page_mut()
+                                    .on_cursor_moved(-1.0, -1.0, width, height, plan);
+                                self.mark_dirty(dirty);
+                            }
+                        } else {
+                            let plan = self.engine.plan();
+                            let dirty = self.pages.active_page_mut()
+                                .on_cursor_moved(x, y, width, height, plan);
+                            self.mark_dirty(dirty);
+                        }
                     }
                 }
             }
@@ -233,7 +269,7 @@ impl ApplicationHandler for Application {
                                     if let Some(idx) = home_render::hit_test_card(x, y, width, height) {
                                         match idx {
                                             0 => self.navigate_to(PageId::Daily),
-                                            1 => self.navigate_to(PageId::Planning),
+                                            1 => self.navigate_to(PageId::Overview),
                                             2 => self.navigate_to(PageId::Settings),
                                             _ => {}
                                         }
@@ -243,8 +279,10 @@ impl ApplicationHandler for Application {
                                     if back_button::hit_test_back_button(x, y) {
                                         self.navigate_home();
                                     } else {
+                                        let plan = self.engine.plan();
+                                        let sender = self.engine.sender();
                                         let dirty = self.pages.active_page_mut().on_mouse_input(
-                                            x, y, true, width, height,
+                                            x, y, true, width, height, plan, &sender,
                                         );
                                         self.mark_dirty(dirty);
                                     }
@@ -253,8 +291,10 @@ impl ApplicationHandler for Application {
                         }
                         ElementState::Released => {
                             if let AppState::InPage(_) = self.app_state {
+                                let plan = self.engine.plan();
+                                let sender = self.engine.sender();
                                 let dirty = self.pages.active_page_mut().on_mouse_input(
-                                    x, y, false, width, height,
+                                    x, y, false, width, height, plan, &sender,
                                 );
                                 self.mark_dirty(dirty);
                             }
@@ -328,17 +368,18 @@ impl ApplicationHandler for Application {
                                     self.back_picture = recorder.finish_recording_as_picture(None);
                                 }
 
+                                let plan = self.engine.plan();
                                 match dirty {
                                     DirtyRegion::All => {
                                         canvas.clear(Color::from(PANEL_BG));
-                                        self.pages.active_page().render(canvas, width, height, &self.cache);
+                                        self.pages.active_page().render(canvas, width, height, &self.cache, plan);
                                         if let Some(pic) = &self.back_picture {
                                             canvas.draw_picture(pic, None, None);
                                         }
                                     }
                                     DirtyRegion::PageOnly => {
                                         canvas.clear(Color::from(PANEL_BG));
-                                        self.pages.active_page().render(canvas, width, height, &self.cache);
+                                        self.pages.active_page().render(canvas, width, height, &self.cache, plan);
                                         if let Some(pic) = &self.back_picture {
                                             canvas.draw_picture(pic, None, None);
                                         }
@@ -350,7 +391,12 @@ impl ApplicationHandler for Application {
                                             ClipOp::Intersect,
                                             false,
                                         );
-                                        self.pages.active_page().render(canvas, width, height, &self.cache);
+                                        // Clear the clipped region to the page background before
+                                        // re-drawing — pages that don't fill this area (e.g. the
+                                        // blank overview page) would otherwise leave the previous
+                                        // hover state visible on the retained surface.
+                                        canvas.draw_color(Color::from(PANEL_BG), BlendMode::Src);
+                                        self.pages.active_page().render(canvas, width, height, &self.cache, plan);
                                         if let Some(pic) = &self.back_picture {
                                             canvas.draw_picture(pic, None, None);
                                         }
@@ -379,6 +425,17 @@ impl ApplicationHandler for Application {
                     .unwrap();
             }
             _ => (),
+        }
+
+        // Drain the plan request queue and handle responses.
+        for response in self.engine.process_pending() {
+            match response {
+                PlanResponse::PlanUpdated => self.mark_dirty(DirtyRegion::All),
+                PlanResponse::Error(e) => {
+                    // TODO: surface errors to the UI
+                    eprintln!("plan error: {e}");
+                }
+            }
         }
 
         if self.pending_dirty != DirtyRegion::None {

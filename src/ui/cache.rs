@@ -2,16 +2,26 @@
 
 use skia_safe::{Font, FontMgr, FontStyle, Path, TextBlob};
 
-use super::icons::{build_icon_daily, build_icon_planning, build_icon_settings};
+use super::icons::{
+    build_icon_daily, build_icon_diamond, build_icon_person, build_icon_planning,
+    build_icon_plus, build_icon_settings,
+};
 use super::layout::HOME_CARD_ICON_SIZE;
 
 /// Holds Skia paths and text blobs that are built once at startup and reused
 /// every frame.  Passed as a shared reference to every page renderer.
 pub struct RenderCache {
-    #[allow(dead_code)]
     pub font: Font,
+    /// Smaller font (12 px) for labels and secondary text.
+    pub small_font: Font,
     pub home_icon_paths: [Path; 3],
     pub home_card_labels: [TextBlob; 3],
+    /// Person silhouette icon used by the overview toolbar.
+    pub icon_person: Path,
+    /// Plus / add-task icon used by the overview toolbar.
+    pub icon_plus: Path,
+    /// Diamond / milestone icon used by the overview toolbar.
+    pub icon_diamond: Path,
     pub daily_label: TextBlob,
     pub left_panel_label: TextBlob,
     pub right_panel_label: TextBlob,
@@ -30,6 +40,10 @@ impl RenderCache {
             Some(tf) => Font::from_typeface(tf.clone(), 16.0),
             None => Font::default(),
         };
+        let small_font = match &typeface {
+            Some(tf) => Font::from_typeface(tf.clone(), 12.0),
+            None => Font::default(),
+        };
         let card_font = match typeface {
             Some(tf) => Font::from_typeface(tf, 14.0),
             None => Font::default(),
@@ -40,10 +54,13 @@ impl RenderCache {
             build_icon_planning(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
             build_icon_settings(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
         ];
+        let icon_person = build_icon_person(32.0, 32.0);
+        let icon_plus = build_icon_plus(32.0, 32.0);
+        let icon_diamond = build_icon_diamond(32.0, 32.0);
 
         let home_card_labels = [
             TextBlob::new("Daily", &card_font).expect("text blob"),
-            TextBlob::new("Planning", &card_font).expect("text blob"),
+            TextBlob::new("Overview", &card_font).expect("text blob"),
             TextBlob::new("Settings", &card_font).expect("text blob"),
         ];
 
@@ -54,8 +71,12 @@ impl RenderCache {
 
         Self {
             font,
+            small_font,
             home_icon_paths,
             home_card_labels,
+            icon_person,
+            icon_plus,
+            icon_diamond,
             daily_label,
             left_panel_label,
             right_panel_label,

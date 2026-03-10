@@ -10,11 +10,13 @@
 
 pub mod daily;
 pub mod home;
-pub mod planning;
+pub mod overview;
 pub mod settings;
 
 use skia_safe::Canvas;
 
+use crate::data::Plan;
+use crate::engine::PlanRequestSender;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 
@@ -23,20 +25,49 @@ use crate::ui::dirty::DirtyRegion;
 pub enum PageId {
     Home,
     Daily,
-    Planning,
+    Overview,
     Settings,
 }
 
 /// Common interface that every full-screen page must implement.
 pub trait Page {
     /// Draw the page content onto `canvas`.  `width`/`height` are logical pixels.
-    fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache);
+    fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan);
     /// Called on every [`WindowEvent::CursorMoved`] while this page is active.
     /// Returns which region (if any) needs repainting.
-    fn on_cursor_moved(&mut self, x: f32, y: f32, width: f32, height: f32) -> DirtyRegion;
+    fn on_cursor_moved(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        plan: &Plan,
+    ) -> DirtyRegion;
     /// Called on left mouse button press (`pressed = true`) and release (`pressed = false`).
     /// Returns which region (if any) needs repainting.
-    fn on_mouse_input(&mut self, x: f32, y: f32, pressed: bool, width: f32, height: f32) -> DirtyRegion;
+    #[allow(clippy::too_many_arguments)]
+    fn on_mouse_input(
+        &mut self,
+        x: f32,
+        y: f32,
+        pressed: bool,
+        width: f32,
+        height: f32,
+        plan: &Plan,
+        sender: &PlanRequestSender,
+    ) -> DirtyRegion;
+    /// Called on key-down events while this page is active.
+    fn on_key_input(
+        &mut self,
+        _key: &winit::keyboard::Key,
+        _sender: &PlanRequestSender,
+    ) -> DirtyRegion {
+        DirtyRegion::None
+    }
+
+    /// Reset all hover state.  Called when navigating away from or to this
+    /// page so stale highlights don't persist across navigation.
+    fn reset_hover(&mut self) {}
 }
 
 /// Owns all page instances and tracks the currently active one.
@@ -46,7 +77,7 @@ pub struct PageManager {
     pub active: PageId,
     pub home: home::HomePage,
     pub daily: daily::DailyPage,
-    pub planning: planning::PlanningPage,
+    pub overview: overview::OverviewPage,
     pub settings: settings::SettingsPage,
 }
 
@@ -56,7 +87,7 @@ impl PageManager {
             active: PageId::Home,
             home: home::HomePage::new(),
             daily: daily::DailyPage::new(),
-            planning: planning::PlanningPage::new(),
+            overview: overview::OverviewPage::new(),
             settings: settings::SettingsPage::new(),
         }
     }
@@ -66,7 +97,7 @@ impl PageManager {
         match self.active {
             PageId::Home => &self.home,
             PageId::Daily => &self.daily,
-            PageId::Planning => &self.planning,
+            PageId::Overview => &self.overview,
             PageId::Settings => &self.settings,
         }
     }
@@ -76,7 +107,7 @@ impl PageManager {
         match self.active {
             PageId::Home => &mut self.home,
             PageId::Daily => &mut self.daily,
-            PageId::Planning => &mut self.planning,
+            PageId::Overview => &mut self.overview,
             PageId::Settings => &mut self.settings,
         }
     }

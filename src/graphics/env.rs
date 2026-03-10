@@ -63,8 +63,19 @@ pub fn create_surface(
 
 /// Recreates the Skia surface and resizes the GL surface to match the current
 /// window dimensions.  Call this in response to [`WindowEvent::Resized`].
-pub fn resize_surface(env: &mut Env, fb_info: FramebufferInfo, num_samples: usize, stencil_size: usize) {
-    env.surface = create_surface(&env.window, fb_info, &mut env.gr_context, num_samples, stencil_size);
+pub fn resize_surface(
+    env: &mut Env,
+    fb_info: FramebufferInfo,
+    num_samples: usize,
+    stencil_size: usize,
+) {
+    env.surface = create_surface(
+        &env.window,
+        fb_info,
+        &mut env.gr_context,
+        num_samples,
+        stencil_size,
+    );
     let size = env.window.inner_size();
     env.gl_surface.resize(
         &env.gl_context,

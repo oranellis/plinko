@@ -9,5 +9,7 @@
 pub mod back_button;
 pub mod cache;
 pub mod dirty;
+pub mod icon_button;
 pub mod icons;
 pub mod layout;
+pub mod text_input;

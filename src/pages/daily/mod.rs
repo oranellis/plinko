@@ -5,6 +5,8 @@ pub mod state;
 
 use skia_safe::Canvas;
 
+use crate::data::Plan;
+use crate::engine::PlanRequestSender;
 use crate::pages::Page;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
@@ -24,15 +26,31 @@ impl DailyPage {
 }
 
 impl Page for DailyPage {
-    fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache) {
+    fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, _plan: &Plan) {
         render::draw_daily(canvas, 0.0, 0.0, width, height, cache);
     }
 
-    fn on_cursor_moved(&mut self, _x: f32, _y: f32, _width: f32, _height: f32) -> DirtyRegion {
+    fn on_cursor_moved(
+        &mut self,
+        _x: f32,
+        _y: f32,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+    ) -> DirtyRegion {
         DirtyRegion::None
     }
 
-    fn on_mouse_input(&mut self, _x: f32, _y: f32, _pressed: bool, _width: f32, _height: f32) -> DirtyRegion {
+    fn on_mouse_input(
+        &mut self,
+        _x: f32,
+        _y: f32,
+        _pressed: bool,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _sender: &PlanRequestSender,
+    ) -> DirtyRegion {
         DirtyRegion::None
     }
 }

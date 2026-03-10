@@ -70,6 +70,12 @@ pub struct Task {
     pub constraint: Option<DateConstraint>,
     /// Calendar span in working days. 0.0 means derive from workload.
     pub duration_days_target: f32,
+    /// Recorded actual start date. Set when a task transitions to InProgress.
+    /// Used by the scheduler as the authoritative start date for non-NotStarted
+    /// tasks, and as an earliest-start floor for NotStarted tasks, taking
+    /// priority over the derived value.
+    #[serde(default)]
+    pub actual_start_date: Option<NaiveDate>,
     /// Recorded actual end date. Set when a task is completed or when an
     /// overrunning in-progress task is stretched to today. Used by the
     /// scheduler as the authoritative end date for non-NotStarted tasks,
@@ -90,6 +96,7 @@ impl Task {
             workers: Vec::new(),
             constraint: None,
             duration_days_target: 0.0,
+            actual_start_date: None,
             actual_end_date: None,
         }
     }
@@ -121,6 +128,7 @@ impl Task {
                 .collect(),
             constraint: None,
             duration_days_target: 0.0,
+            actual_start_date: None,
             actual_end_date: None,
         }
     }
@@ -156,6 +164,39 @@ impl Task {
             WorkerSlot::Specific { user_id, .. } => Some(*user_id),
             WorkerSlot::Placeholder { .. } => None,
         })
+    }
+
+    /// Transition to `InProgress`, recording today as `actual_start_date` if not
+    /// already set.
+    pub fn start(&mut self) {
+        self.status = TaskStatus::InProgress;
+        if self.actual_start_date.is_none() {
+            self.actual_start_date = Some(chrono::Local::now().date_naive());
+        }
+    }
+
+    /// Transition to `OnHold` (preserves `actual_start_date`).
+    pub fn pause(&mut self) {
+        self.status = TaskStatus::OnHold;
+    }
+
+    /// Transition back to `InProgress` from `OnHold` (preserves `actual_start_date`).
+    pub fn resume(&mut self) {
+        self.status = TaskStatus::InProgress;
+    }
+
+    /// Transition to `Complete`, recording today as `actual_end_date` if not
+    /// already set.
+    pub fn complete(&mut self) {
+        self.status = TaskStatus::Complete;
+        if self.actual_end_date.is_none() {
+            self.actual_end_date = Some(chrono::Local::now().date_naive());
+        }
+    }
+
+    /// Transition to `Dropped`.
+    pub fn drop_task(&mut self) {
+        self.status = TaskStatus::Dropped;
     }
 
     /// Set the calendar duration in days. Negative values are clamped to 0.

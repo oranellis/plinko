@@ -17,11 +17,7 @@ use glutin::{
 use glutin_winit::DisplayBuilder;
 use raw_window_handle::HasWindowHandle;
 use skia_safe::gpu::gl::FramebufferInfo;
-use winit::{
-    event_loop::EventLoop,
-    window::WindowAttributes,
-    dpi::LogicalSize,
-};
+use winit::{dpi::LogicalSize, event_loop::EventLoop, window::WindowAttributes};
 
 use super::env::{Env, create_surface};
 

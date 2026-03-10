@@ -11,6 +11,7 @@
 
 mod app;
 mod data;
+mod engine;
 mod graphics;
 mod pages;
 mod ui;
@@ -23,12 +24,16 @@ fn main() {
 
     let init = graphics::setup::initialize(&el);
 
+    let plan = data::Plan::new("My Plan");
+    let engine = engine::PlanEngine::new(plan);
+
     let mut application = app::Application::new(
         init.env,
         init.fb_info,
         init.num_samples,
         init.stencil_size,
         init.scale_factor,
+        engine,
     );
 
     el.run_app(&mut application).expect("run() failed");
