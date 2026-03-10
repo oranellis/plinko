@@ -1,8 +1,8 @@
 //! Date-specific hour overrides used to model holidays, half-days, and other exceptions.
 
-use std::collections::HashMap;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A set of specific date exceptions that override the normal work schedule.
 /// For example, a bank holiday (0h) or a half-day (4h).

@@ -40,7 +40,7 @@ pub fn draw_back_button(canvas: &Canvas, hovered: bool) {
 
     paint.set_color(Color::from(BACK_BTN_ICON_COLOR));
     paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(2.0);
+    paint.set_stroke_width(TOOLBAR_STROKE_WIDTH);
     canvas.draw_path(&path, &paint);
 
     end_blur_backdrop(canvas, BACK_BTN_X, BACK_BTN_Y);

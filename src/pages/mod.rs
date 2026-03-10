@@ -68,6 +68,14 @@ pub trait Page {
     /// Reset all hover state.  Called when navigating away from or to this
     /// page so stale highlights don't persist across navigation.
     fn reset_hover(&mut self) {}
+
+    /// Returns a pending floating window to open, consuming the request.
+    ///
+    /// Called by `Application` immediately after `on_mouse_input`.  The default
+    /// implementation returns `None`; pages override this to open modal overlays.
+    fn take_open_request(&mut self) -> Option<Box<dyn crate::ui::floating_window::FloatingWindow>> {
+        None
+    }
 }
 
 /// Owns all page instances and tracks the currently active one.

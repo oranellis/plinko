@@ -333,11 +333,13 @@ mod tests {
             id: u1,
             name: "Alice".into(),
             tags: Default::default(),
+            avatar: None,
         };
         let bob = User {
             id: u2,
             name: "Bob".into(),
             tags: Default::default(),
+            avatar: None,
         };
         assert!(slot.is_satisfied_by(&alice));
         assert!(!slot.is_satisfied_by(&bob));

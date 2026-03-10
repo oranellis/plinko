@@ -10,6 +10,8 @@ use crate::engine::PlanRequestSender;
 use crate::pages::Page;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
+use crate::ui::floating_window::FloatingWindow;
+use crate::ui::users_window::UsersWindow;
 
 use state::OverviewState;
 
@@ -59,10 +61,19 @@ impl Page for OverviewPage {
         _plan: &Plan,
         _sender: &PlanRequestSender,
     ) -> DirtyRegion {
-        if pressed && render::hit_test_toolbar_buttons(x, y).is_some() {
-            // Placeholder: toolbar button actions not yet implemented.
+        if pressed && let Some(0) = render::hit_test_toolbar_buttons(x, y) {
+            self.state.open_users_window = true;
         }
         DirtyRegion::None
+    }
+
+    fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+        if self.state.open_users_window {
+            self.state.open_users_window = false;
+            Some(Box::new(UsersWindow::new()))
+        } else {
+            None
+        }
     }
 
     fn reset_hover(&mut self) {

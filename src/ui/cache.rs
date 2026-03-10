@@ -3,8 +3,8 @@
 use skia_safe::{Font, FontMgr, FontStyle, Path, TextBlob};
 
 use super::icons::{
-    build_icon_daily, build_icon_diamond, build_icon_person, build_icon_planning,
-    build_icon_plus, build_icon_settings,
+    build_icon_daily, build_icon_diamond, build_icon_person, build_icon_planning, build_icon_plus,
+    build_icon_settings,
 };
 use super::layout::HOME_CARD_ICON_SIZE;
 

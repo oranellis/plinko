@@ -1,9 +1,9 @@
 //! Computed start dates for tasks and milestones, stored separately from their definitions.
 
-use std::collections::HashMap;
+use crate::data::ids::{MilestoneId, TaskId};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
-use crate::data::ids::{MilestoneId, TaskId};
+use std::collections::HashMap;
 
 /// Tracks the start date of every task and milestone in a plan.
 /// Kept separate from task/milestone definitions so dates can be recomputed

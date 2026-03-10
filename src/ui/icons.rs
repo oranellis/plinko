@@ -69,10 +69,10 @@ pub fn build_icon_plus(w: f32, h: f32) -> Path {
 /// Builds a diamond icon (rotated square) used to represent a milestone.
 pub fn build_icon_diamond(w: f32, h: f32) -> Path {
     let mut pb = PathBuilder::new();
-    pb.move_to((w * 0.5, 0.0));   // top
-    pb.line_to((w, h * 0.5));     // right
-    pb.line_to((w * 0.5, h));     // bottom
-    pb.line_to((0.0, h * 0.5));   // left
+    pb.move_to((w * 0.5, 0.0)); // top
+    pb.line_to((w, h * 0.5)); // right
+    pb.line_to((w * 0.5, h)); // bottom
+    pb.line_to((0.0, h * 0.5)); // left
     pb.close();
     pb.detach()
 }
@@ -85,7 +85,12 @@ pub fn build_icon_person(w: f32, h: f32) -> Path {
     let head_cx = w * 0.5;
     let head_cy = h * 0.3;
     pb.add_arc(
-        Rect::from_xywh(head_cx - head_r, head_cy - head_r, 2.0 * head_r, 2.0 * head_r),
+        Rect::from_xywh(
+            head_cx - head_r,
+            head_cy - head_r,
+            2.0 * head_r,
+            2.0 * head_r,
+        ),
         0.0,
         360.0,
     );
@@ -94,7 +99,12 @@ pub fn build_icon_person(w: f32, h: f32) -> Path {
     let body_cx = w * 0.5;
     let body_cy = h * 1.08;
     pb.add_arc(
-        Rect::from_xywh(body_cx - body_r, body_cy - body_r, 2.0 * body_r, 2.0 * body_r),
+        Rect::from_xywh(
+            body_cx - body_r,
+            body_cy - body_r,
+            2.0 * body_r,
+            2.0 * body_r,
+        ),
         205.0,
         130.0,
     );

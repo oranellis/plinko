@@ -1,0 +1,227 @@
+//! Floating window (modal overlay) infrastructure.
+//!
+//! Provides the [`FloatingWindow`] trait, [`FloatingWindowOutcome`] result
+//! type, and [`FloatingWindowManager`] stack for layered modal dialogs.
+
+use skia_safe::{Canvas, Color, Paint, Rect};
+use winit::keyboard::{Key, NamedKey};
+
+use crate::data::Plan;
+use crate::engine::PlanRequestSender;
+use crate::ui::cache::RenderCache;
+use crate::ui::dirty::DirtyRegion;
+
+/// Outcome returned by every [`FloatingWindow`] event handler.
+pub struct FloatingWindowOutcome {
+    pub dirty: DirtyRegion,
+    /// When `true`, the manager pops this window after the event.
+    pub close: bool,
+}
+
+impl Default for FloatingWindowOutcome {
+    fn default() -> Self {
+        Self {
+            dirty: DirtyRegion::None,
+            close: false,
+        }
+    }
+}
+
+impl FloatingWindowOutcome {
+    /// Close this window and request a full redraw.
+    pub fn close() -> Self {
+        Self {
+            dirty: DirtyRegion::All,
+            close: true,
+        }
+    }
+
+    /// Keep the window open, request the given dirty region.
+    pub fn dirty(region: DirtyRegion) -> Self {
+        Self {
+            dirty: region,
+            close: false,
+        }
+    }
+}
+
+/// A modal overlay that sits above page content and below the back button.
+pub trait FloatingWindow {
+    fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan);
+
+    fn on_cursor_moved(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        plan: &Plan,
+    ) -> FloatingWindowOutcome;
+
+    #[allow(clippy::too_many_arguments)]
+    fn on_mouse_input(
+        &mut self,
+        x: f32,
+        y: f32,
+        pressed: bool,
+        width: f32,
+        height: f32,
+        plan: &Plan,
+        sender: &PlanRequestSender,
+    ) -> FloatingWindowOutcome;
+
+    /// Default: close on Escape, ignore everything else.
+    fn on_key_input(&mut self, key: &Key, _sender: &PlanRequestSender) -> FloatingWindowOutcome {
+        if *key == Key::Named(NamedKey::Escape) {
+            FloatingWindowOutcome::close()
+        } else {
+            FloatingWindowOutcome::default()
+        }
+    }
+
+    /// Called on mouse-wheel / trackpad scroll while this window is topmost.
+    /// `delta_y` is positive when scrolling up (content moves down).
+    fn on_scroll(&mut self, _delta_y: f32, _plan: &Plan) -> FloatingWindowOutcome {
+        FloatingWindowOutcome::default()
+    }
+
+    /// Called after `on_mouse_input` to check whether this window wants to push
+    /// a child window onto the stack.  Implementations set an internal flag on
+    /// click and return the new window here, consuming the flag.
+    fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+        None
+    }
+
+    /// Like `take_open_request`, but the manager replaces the current window
+    /// instead of stacking on top of it.
+    fn take_replace_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+        None
+    }
+
+    fn reset_hover(&mut self) {}
+}
+
+/// Manages a stack of [`FloatingWindow`]s, routing events to the topmost one.
+pub struct FloatingWindowManager {
+    stack: Vec<Box<dyn FloatingWindow>>,
+}
+
+impl FloatingWindowManager {
+    pub fn new() -> Self {
+        Self { stack: Vec::new() }
+    }
+
+    pub fn is_open(&self) -> bool {
+        !self.stack.is_empty()
+    }
+
+    /// Push a new window onto the stack. Resets hover on the previous top.
+    pub fn push(&mut self, window: Box<dyn FloatingWindow>) {
+        if let Some(top) = self.stack.last_mut() {
+            top.reset_hover();
+        }
+        self.stack.push(window);
+    }
+
+    /// Renders a dim backdrop then all windows bottom-to-top.
+    pub fn render(
+        &self,
+        canvas: &Canvas,
+        width: f32,
+        height: f32,
+        cache: &RenderCache,
+        plan: &Plan,
+    ) {
+        if self.stack.is_empty() {
+            return;
+        }
+        draw_dim_backdrop(canvas, width, height);
+        for w in &self.stack {
+            w.render(canvas, width, height, cache, plan);
+        }
+    }
+
+    pub fn on_cursor_moved(&mut self, x: f32, y: f32, w: f32, h: f32, plan: &Plan) -> DirtyRegion {
+        let outcome = match self.stack.last_mut() {
+            Some(win) => win.on_cursor_moved(x, y, w, h, plan),
+            None => return DirtyRegion::None,
+        };
+        self.apply(outcome)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn on_mouse_input(
+        &mut self,
+        x: f32,
+        y: f32,
+        pressed: bool,
+        w: f32,
+        h: f32,
+        plan: &Plan,
+        sender: &PlanRequestSender,
+    ) -> DirtyRegion {
+        let outcome = match self.stack.last_mut() {
+            Some(win) => win.on_mouse_input(x, y, pressed, w, h, plan, sender),
+            None => return DirtyRegion::None,
+        };
+        if outcome.close {
+            self.stack.pop();
+            return DirtyRegion::All;
+        }
+        // Window is staying open — check for push or replace requests.
+        if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_replace_request()) {
+            self.stack.pop();
+            self.push(new_win);
+            DirtyRegion::All
+        } else if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_open_request()) {
+            self.push(new_win);
+            DirtyRegion::All
+        } else {
+            outcome.dirty
+        }
+    }
+
+    pub fn on_key_input(&mut self, key: &Key, sender: &PlanRequestSender) -> DirtyRegion {
+        let outcome = match self.stack.last_mut() {
+            Some(w) => w.on_key_input(key, sender),
+            None => return DirtyRegion::None,
+        };
+        if outcome.close {
+            self.stack.pop();
+            return DirtyRegion::All;
+        }
+        if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_replace_request()) {
+            self.stack.pop();
+            self.push(new_win);
+            DirtyRegion::All
+        } else if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_open_request()) {
+            self.push(new_win);
+            DirtyRegion::All
+        } else {
+            outcome.dirty
+        }
+    }
+
+    pub fn on_scroll(&mut self, delta_y: f32, plan: &Plan) -> DirtyRegion {
+        let outcome = match self.stack.last_mut() {
+            Some(w) => w.on_scroll(delta_y, plan),
+            None => return DirtyRegion::None,
+        };
+        self.apply(outcome)
+    }
+
+    fn apply(&mut self, outcome: FloatingWindowOutcome) -> DirtyRegion {
+        if outcome.close {
+            self.stack.pop();
+            DirtyRegion::All
+        } else {
+            outcome.dirty
+        }
+    }
+}
+
+fn draw_dim_backdrop(canvas: &Canvas, width: f32, height: f32) {
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_argb(120, 0, 0, 0));
+    canvas.draw_rect(Rect::from_wh(width, height), &paint);
+}

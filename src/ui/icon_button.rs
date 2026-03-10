@@ -97,7 +97,7 @@ pub fn draw_icon_button(canvas: &Canvas, x: f32, y: f32, hovered: bool, icon: &P
 
     paint.set_color(Color::from(TOOLBAR_BTN_ICON_COLOR));
     paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(2.0 / scale_x.min(scale_y));
+    paint.set_stroke_width(TOOLBAR_STROKE_WIDTH);
     canvas.draw_path(&scaled, &paint);
 
     end_blur_backdrop(canvas, x, y);

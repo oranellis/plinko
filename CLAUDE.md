@@ -10,11 +10,12 @@ cargo build --release
 cargo run
 cargo check          # fast compile check, no binary
 cargo clippy
+cargo fmt            # format the entire codebase
 cargo test
 cargo test <filter>  # run a single test or module, e.g. `cargo test data::task`
 ```
 
-`cargo clippy` must be run after any code change. All clippy warnings must be resolved before considering work complete.
+`cargo fmt` must be run on the entire codebase after any code change. `cargo clippy` must also be run after any code change. All clippy warnings must be resolved before considering work complete.
 
 Tests live in `#[cfg(test)]` modules within each source file.
 

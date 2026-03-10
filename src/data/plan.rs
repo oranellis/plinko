@@ -771,7 +771,11 @@ mod tests {
 
         p.complete_task(tid);
 
-        assert_eq!(p.dates.task(&tid), Some(start), "start date must be unchanged");
+        assert_eq!(
+            p.dates.task(&tid),
+            Some(start),
+            "start date must be unchanged"
+        );
     }
 
     #[test]
