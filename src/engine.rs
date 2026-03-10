@@ -228,6 +228,19 @@ pub enum PlanRequest {
     SetUserSchedule(UserId, WorkSchedule),
     /// Remove a user's schedule override, reverting to the plan default. Validated.
     ClearUserSchedule(UserId),
+
+    // ── Tag registry ──────────────────────────────────────────────────────────
+    /// Append a new tag to the plan's ordered tag registry. No-op if it already
+    /// exists.
+    AddTag(String),
+    /// Rename a tag in the registry and update every user tag set and task
+    /// placeholder that references it.
+    RenameTag(String, String),
+    /// Remove a tag from the registry and strip it from all users and task
+    /// placeholders.
+    DeleteTag(String),
+    /// Move a tag to a new position in the registry (controls UI display order).
+    MoveTag(String, usize),
 }
 
 // ── Responses ─────────────────────────────────────────────────────────────────
@@ -495,6 +508,27 @@ impl PlanEngine {
                 plan.clear_user_schedule(&id);
                 Ok(())
             }),
+
+            // ── Tag registry ──────────────────────────────────────────────────
+            PlanRequest::AddTag(name) => {
+                self.plan.add_tag(name);
+                PlanResponse::PlanUpdated
+            }
+
+            PlanRequest::RenameTag(old, new_name) => {
+                self.plan.rename_tag(&old, &new_name);
+                PlanResponse::PlanUpdated
+            }
+
+            PlanRequest::DeleteTag(name) => {
+                self.plan.remove_tag(&name);
+                PlanResponse::PlanUpdated
+            }
+
+            PlanRequest::MoveTag(name, new_index) => {
+                self.plan.move_tag(&name, new_index);
+                PlanResponse::PlanUpdated
+            }
         }
     }
 }

@@ -3,7 +3,7 @@
 //! All icons are drawn in a `w × h` bounding box starting at the origin;
 //! callers translate the canvas before drawing.
 
-use skia_safe::{Path, PathBuilder, Rect};
+use skia_safe::{Matrix, Path, PathBuilder, Rect};
 
 /// Builds a calendar-style icon: outline rectangle, header bar, two pin
 /// hangers at the top, and a filled circle representing a day.
@@ -109,6 +109,46 @@ pub fn build_icon_person(w: f32, h: f32) -> Path {
         130.0,
     );
     pb.detach()
+}
+
+/// Builds a gift-tag / price-tag icon: a rounded rectangle with a pointed
+/// left side and a small string hole, like a label tied to a package.
+pub fn build_icon_tag(w: f32, h: f32) -> Path {
+    let mut pb = PathBuilder::new();
+
+    let m = w * 0.06;
+    let tip_x = m;
+    let body_x = w * 0.32;
+    let right = w - m;
+    let top = h * 0.14;
+    let bottom = h - h * 0.14;
+    let cy = h * 0.5;
+    let r = (bottom - top) * 0.18;
+
+    // Outline: pointed left side → rounded rectangle
+    pb.move_to((tip_x, cy));
+    pb.line_to((body_x, top));
+    pb.line_to((right - r, top));
+    pb.quad_to((right, top), (right, top + r));
+    pb.line_to((right, bottom - r));
+    pb.quad_to((right, bottom), (right - r, bottom));
+    pb.line_to((body_x, bottom));
+    pb.close();
+
+    // String hole near the pointed end
+    let hole_cx = body_x + (right - body_x) * 0.18;
+    let hole_r = (bottom - top) * 0.1;
+    let oval = Rect::from_xywh(hole_cx - hole_r, cy - hole_r, hole_r * 2.0, hole_r * 2.0);
+    pb.add_arc(oval, 0.0, 360.0);
+
+    let path = pb.detach();
+    let cx = w / 2.0;
+    let cy = h / 2.0;
+    let mut m = Matrix::new_identity();
+    m.pre_translate((cx, cy));
+    m.pre_rotate(135.0, None);
+    m.pre_translate((-cx, -cy));
+    path.with_transform(&m)
 }
 
 /// Builds a three-line slider icon (horizontal rules with circular knobs)

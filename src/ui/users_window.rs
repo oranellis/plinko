@@ -23,6 +23,7 @@ const ROW_H: f32 = PLAN_LIST_ITEM_H;
 const PADDING: f32 = 16.0;
 /// Inset from the panel edge to the title-bar button (matches vertical centering).
 const BTN_INSET: f32 = (TITLE_H - BACK_BTN_SIZE) / 2.0;
+const BTN_GAP: f32 = 4.0;
 const CORNER: f32 = 8.0;
 const SCROLLBAR_W: f32 = 4.0;
 
@@ -31,8 +32,10 @@ pub struct UsersWindow {
     scroll_offset: f32,
     hovered_back: bool,
     hovered_plus: bool,
+    hovered_tags: bool,
     hovered_row: Option<usize>,
     pending_open_add: bool,
+    pending_open_tags: bool,
     pending_edit: Option<crate::data::User>,
 }
 
@@ -42,8 +45,10 @@ impl UsersWindow {
             scroll_offset: 0.0,
             hovered_back: false,
             hovered_plus: false,
+            hovered_tags: false,
             hovered_row: None,
             pending_open_add: false,
+            pending_open_tags: false,
             pending_edit: None,
         }
     }
@@ -65,7 +70,18 @@ impl UsersWindow {
         )
     }
 
-    /// Plus button — right side of title bar.
+    /// Tags button — second from right in title bar.
+    fn tags_btn_rect(width: f32, height: f32) -> Rect {
+        let panel = Self::panel_rect(width, height);
+        Rect::from_xywh(
+            panel.right - BTN_INSET - BACK_BTN_SIZE - BTN_GAP - BACK_BTN_SIZE,
+            panel.top + BTN_INSET,
+            BACK_BTN_SIZE,
+            BACK_BTN_SIZE,
+        )
+    }
+
+    /// Plus button — rightmost button in title bar.
     fn plus_btn_rect(width: f32, height: f32) -> Rect {
         let panel = Self::panel_rect(width, height);
         Rect::from_xywh(
@@ -145,8 +161,8 @@ impl UsersWindow {
         canvas.draw_path(&pb.detach(), &paint);
     }
 
-    /// Draws a plus icon button at `btn_rect`.
-    fn draw_plus_btn(canvas: &Canvas, btn_rect: Rect, hovered: bool, icon: &skia_safe::Path) {
+    /// Draws a generic icon button (plus or tag) at `btn_rect`.
+    fn draw_icon_btn(canvas: &Canvas, btn_rect: Rect, hovered: bool, icon: &skia_safe::Path) {
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
 
@@ -187,6 +203,7 @@ impl FloatingWindow for UsersWindow {
         let list = Self::list_rect(width, height);
         let back_btn = Self::back_btn_rect(width, height);
         let plus_btn = Self::plus_btn_rect(width, height);
+        let tags_btn = Self::tags_btn_rect(width, height);
 
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
@@ -229,8 +246,11 @@ impl FloatingWindow for UsersWindow {
         // Back (chevron) button
         Self::draw_chevron_btn(canvas, back_btn, self.hovered_back);
 
-        // Plus button (placeholder)
-        Self::draw_plus_btn(canvas, plus_btn, self.hovered_plus, &cache.icon_plus);
+        // Plus button
+        Self::draw_icon_btn(canvas, plus_btn, self.hovered_plus, &cache.icon_plus);
+
+        // Tags button
+        Self::draw_icon_btn(canvas, tags_btn, self.hovered_tags, &cache.icon_tag);
 
         // Divider below title
         paint.set_color(Color::from(DIVIDER_COLOR));
@@ -451,14 +471,17 @@ impl FloatingWindow for UsersWindow {
         let pt = Point::new(x, y);
         let new_back = Self::back_btn_rect(width, height).contains(pt);
         let new_plus = Self::plus_btn_rect(width, height).contains(pt);
+        let new_tags = Self::tags_btn_rect(width, height).contains(pt);
         let new_row = self.hovered_row_for(x, y, width, height, plan.users.len());
 
         if new_back != self.hovered_back
             || new_plus != self.hovered_plus
+            || new_tags != self.hovered_tags
             || new_row != self.hovered_row
         {
             self.hovered_back = new_back;
             self.hovered_plus = new_plus;
+            self.hovered_tags = new_tags;
             self.hovered_row = new_row;
             FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
         } else {
@@ -488,6 +511,11 @@ impl FloatingWindow for UsersWindow {
         // Plus button — open the Add Team Member form
         if Self::plus_btn_rect(width, height).contains(pt) {
             self.pending_open_add = true;
+            return FloatingWindowOutcome::default();
+        }
+        // Tags button — open the Tags window
+        if Self::tags_btn_rect(width, height).contains(pt) {
+            self.pending_open_tags = true;
             return FloatingWindowOutcome::default();
         }
         // Click outside the panel closes it
@@ -520,13 +548,19 @@ impl FloatingWindow for UsersWindow {
         }
     }
 
-    fn take_replace_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+    fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
         if let Some(user) = self.pending_edit.take() {
-            return Some(Box::new(crate::ui::edit_user_window::EditUserWindow::new(&user)));
+            return Some(Box::new(crate::ui::edit_user_window::EditUserWindow::new(
+                &user,
+            )));
         }
         if self.pending_open_add {
             self.pending_open_add = false;
             return Some(Box::new(crate::ui::add_user_window::AddUserWindow::new()));
+        }
+        if self.pending_open_tags {
+            self.pending_open_tags = false;
+            return Some(Box::new(crate::ui::tags_window::TagsWindow::new()));
         }
         None
     }
@@ -534,6 +568,7 @@ impl FloatingWindow for UsersWindow {
     fn reset_hover(&mut self) {
         self.hovered_back = false;
         self.hovered_plus = false;
+        self.hovered_tags = false;
         self.hovered_row = None;
     }
 }

@@ -4,7 +4,7 @@ use skia_safe::{Font, FontMgr, FontStyle, Path, TextBlob};
 
 use super::icons::{
     build_icon_daily, build_icon_diamond, build_icon_person, build_icon_planning, build_icon_plus,
-    build_icon_settings,
+    build_icon_settings, build_icon_tag,
 };
 use super::layout::HOME_CARD_ICON_SIZE;
 
@@ -22,6 +22,8 @@ pub struct RenderCache {
     pub icon_plus: Path,
     /// Diamond / milestone icon used by the overview toolbar.
     pub icon_diamond: Path,
+    /// Hashtag / tag icon used by the tags window button.
+    pub icon_tag: Path,
     pub daily_label: TextBlob,
     pub left_panel_label: TextBlob,
     pub right_panel_label: TextBlob,
@@ -57,6 +59,7 @@ impl RenderCache {
         let icon_person = build_icon_person(32.0, 32.0);
         let icon_plus = build_icon_plus(32.0, 32.0);
         let icon_diamond = build_icon_diamond(32.0, 32.0);
+        let icon_tag = build_icon_tag(32.0, 32.0);
 
         let home_card_labels = [
             TextBlob::new("Daily", &card_font).expect("text blob"),
@@ -77,6 +80,7 @@ impl RenderCache {
             icon_person,
             icon_plus,
             icon_diamond,
+            icon_tag,
             daily_label,
             left_panel_label,
             right_panel_label,

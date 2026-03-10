@@ -5,7 +5,7 @@ use skia_safe::{
 };
 use winit::keyboard::{Key, NamedKey};
 
-use crate::data::User;
+use crate::data::{Plan, User};
 use crate::engine::{PlanRequest, PlanRequestSender};
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
@@ -13,8 +13,9 @@ use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
     BTN_PRIMARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR,
-    INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, PANEL_BG, PANEL_TEXT, PLAN_BTN_CORNER, PLAN_BTN_H,
-    PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
+    INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG, PANEL_TEXT,
+    PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
+    TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 
@@ -22,44 +23,50 @@ const PANEL_W: f32 = 420.0;
 const TITLE_H: f32 = 48.0;
 const CORNER: f32 = 8.0;
 const BTN_INSET: f32 = (TITLE_H - BACK_BTN_SIZE) / 2.0;
-/// Label row height (small-font line height).
 const LABEL_H: f32 = 14.0;
-/// Total height of one form field block: label + gap + input.
 const FIELD_BLOCK_H: f32 = LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H;
-/// Total panel height.
 const PANEL_H: f32 = TITLE_H
-    + 1.0  // divider
+    + 1.0
     + PLAN_FORM_PADDING
     + FIELD_BLOCK_H   // name
     + PLAN_FIELD_GAP
-    + FIELD_BLOCK_H   // tags
+    + FIELD_BLOCK_H   // tags trigger
     + PLAN_FIELD_GAP
     + FIELD_BLOCK_H   // avatar path
-    + LABEL_H          // error message row (always reserved)
-    + 20.0             // gap before save button
+    + LABEL_H         // error row
+    + 20.0
     + PLAN_BTN_H
     + PLAN_FORM_PADDING;
-/// Width for the Save button.
 const SAVE_BTN_W: f32 = 80.0;
+
+/// Height of the filter input inside the dropdown.
+const DROPDOWN_FILTER_H: f32 = PLAN_INPUT_H;
+/// Row height for tag items in the dropdown list.
+const DROPDOWN_ROW_H: f32 = 28.0;
+/// Maximum rows visible at once (constrains dropdown height to fit in panel).
+const MAX_DROPDOWN_ROWS: usize = 4;
+/// Total dropdown height (fits inside panel with the trigger at its position).
+const DROPDOWN_H: f32 = DROPDOWN_FILTER_H + MAX_DROPDOWN_ROWS as f32 * DROPDOWN_ROW_H;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Field {
     Name,
-    Tags,
+    TagFilter,
     AvatarPath,
 }
 
-/// Floating form for adding a new [`User`] to the plan.
 pub struct AddUserWindow {
     name: TextInput,
-    tags: TextInput,
+    tag_filter: TextInput,
+    selected_tags: Vec<String>,
+    dropdown_open: bool,
+    dropdown_scroll: usize,
+    dropdown_hovered: Option<usize>,
     avatar_path: TextInput,
     focused: Field,
     hovered_back: bool,
     hovered_save: bool,
-    /// Error shown below the avatar path field when the file could not be read.
     avatar_error: bool,
-    pending_back: bool,
 }
 
 impl AddUserWindow {
@@ -68,53 +75,50 @@ impl AddUserWindow {
         name.focused = true;
         Self {
             name,
-            tags: TextInput::new(""),
+            tag_filter: TextInput::new(""),
+            selected_tags: Vec::new(),
+            dropdown_open: false,
+            dropdown_scroll: 0,
+            dropdown_hovered: None,
             avatar_path: TextInput::new(""),
             focused: Field::Name,
             hovered_back: false,
             hovered_save: false,
             avatar_error: false,
-            pending_back: false,
         }
     }
 
     fn panel_rect(width: f32, height: f32) -> Rect {
-        let x = (width - PANEL_W) / 2.0;
-        let y = (height - PANEL_H) / 2.0;
-        Rect::from_xywh(x, y, PANEL_W, PANEL_H)
+        Rect::from_xywh((width - PANEL_W) / 2.0, (height - PANEL_H) / 2.0, PANEL_W, PANEL_H)
     }
 
     fn back_btn_rect(width: f32, height: f32) -> Rect {
         let panel = Self::panel_rect(width, height);
-        Rect::from_xywh(
-            panel.left + BTN_INSET,
-            panel.top + BTN_INSET,
-            BACK_BTN_SIZE,
-            BACK_BTN_SIZE,
-        )
+        Rect::from_xywh(panel.left + BTN_INSET, panel.top + BTN_INSET, BACK_BTN_SIZE, BACK_BTN_SIZE)
     }
 
     fn save_btn_rect(width: f32, height: f32) -> Rect {
         let panel = Self::panel_rect(width, height);
-        let y = panel.bottom - PLAN_FORM_PADDING - PLAN_BTN_H;
-        let x = panel.right - PLAN_FORM_PADDING - SAVE_BTN_W;
-        Rect::from_xywh(x, y, SAVE_BTN_W, PLAN_BTN_H)
+        Rect::from_xywh(
+            panel.right - PLAN_FORM_PADDING - SAVE_BTN_W,
+            panel.bottom - PLAN_FORM_PADDING - PLAN_BTN_H,
+            SAVE_BTN_W,
+            PLAN_BTN_H,
+        )
     }
 
-    /// Y position of the top of the form area (below title bar + divider).
     fn form_top(width: f32, height: f32) -> f32 {
         Self::panel_rect(width, height).top + TITLE_H + 1.0 + PLAN_FORM_PADDING
     }
 
-    /// Returns the rect for the input box of `field`.
-    fn input_rect(&self, field: Field, width: f32, height: f32) -> Rect {
+    fn input_rect(field: Field, width: f32, height: f32) -> Rect {
         let panel = Self::panel_rect(width, height);
         let x = panel.left + PLAN_FORM_PADDING;
         let w = PANEL_W - 2.0 * PLAN_FORM_PADDING;
         let y0 = Self::form_top(width, height);
         let y = match field {
             Field::Name => y0 + LABEL_H + PLAN_LABEL_GAP,
-            Field::Tags => y0 + FIELD_BLOCK_H + PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP,
+            Field::TagFilter => y0 + FIELD_BLOCK_H + PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP,
             Field::AvatarPath => {
                 y0 + 2.0 * (FIELD_BLOCK_H + PLAN_FIELD_GAP) + LABEL_H + PLAN_LABEL_GAP
             }
@@ -122,34 +126,78 @@ impl AddUserWindow {
         Rect::from_xywh(x, y, w, PLAN_INPUT_H)
     }
 
-    fn focused_input(&mut self) -> &mut TextInput {
-        match self.focused {
-            Field::Name => &mut self.name,
-            Field::Tags => &mut self.tags,
-            Field::AvatarPath => &mut self.avatar_path,
-        }
+    fn dropdown_rect(width: f32, height: f32) -> Rect {
+        let trigger = Self::input_rect(Field::TagFilter, width, height);
+        Rect::from_xywh(trigger.left, trigger.bottom + 4.0, trigger.width(), DROPDOWN_H)
+    }
+
+    fn dropdown_filter_input_rect(width: f32, height: f32) -> Rect {
+        let dd = Self::dropdown_rect(width, height);
+        let h_pad = 8.0;
+        let input_h = 28.0;
+        Rect::from_xywh(
+            dd.left + h_pad,
+            dd.top + (DROPDOWN_FILTER_H - input_h) / 2.0,
+            dd.width() - 2.0 * h_pad,
+            input_h,
+        )
+    }
+
+    fn dropdown_list_top(width: f32, height: f32) -> f32 {
+        Self::dropdown_rect(width, height).top + DROPDOWN_FILTER_H
     }
 
     fn set_focus(&mut self, field: Field) {
         self.name.focused = field == Field::Name;
-        self.tags.focused = field == Field::Tags;
+        self.tag_filter.focused = field == Field::TagFilter;
         self.avatar_path.focused = field == Field::AvatarPath;
         self.focused = field;
     }
 
     fn cycle_focus_forward(&mut self) {
+        self.close_dropdown();
         let next = match self.focused {
-            Field::Name => Field::Tags,
-            Field::Tags => Field::AvatarPath,
+            Field::Name => Field::TagFilter,
+            Field::TagFilter => Field::AvatarPath,
             Field::AvatarPath => Field::Name,
         };
         self.set_focus(next);
+        if next == Field::TagFilter {
+            self.open_dropdown();
+        }
+    }
+
+    fn open_dropdown(&mut self) {
+        self.dropdown_open = true;
+        self.dropdown_scroll = 0;
+        self.dropdown_hovered = None;
+        self.set_focus(Field::TagFilter);
+    }
+
+    fn close_dropdown(&mut self) {
+        self.dropdown_open = false;
+        self.dropdown_hovered = None;
+    }
+
+    fn filtered_tags<'a>(&self, plan: &'a Plan) -> Vec<&'a str> {
+        let filter = self.tag_filter.content.to_lowercase();
+        plan.tags
+            .iter()
+            .filter(|t| filter.is_empty() || t.to_lowercase().contains(filter.as_str()))
+            .map(String::as_str)
+            .collect()
+    }
+
+    fn toggle_tag(&mut self, tag: &str) {
+        if let Some(pos) = self.selected_tags.iter().position(|t| t == tag) {
+            self.selected_tags.remove(pos);
+        } else {
+            self.selected_tags.push(tag.to_string());
+        }
     }
 
     fn try_submit(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         let name = self.name.content.trim().to_string();
-
-        // Load avatar bytes if a path was given
         let avatar = if self.avatar_path.content.trim().is_empty() {
             None
         } else {
@@ -161,21 +209,13 @@ impl AddUserWindow {
                 }
             }
         };
-
         let mut user = User::new(name);
-        for tag in self
-            .tags
-            .content
-            .split(',')
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-        {
+        for tag in &self.selected_tags {
             user.add_tag(tag);
         }
         user.avatar = avatar;
         sender.send(PlanRequest::CreateUser(user));
-        self.pending_back = true;
-        FloatingWindowOutcome::default()
+        FloatingWindowOutcome::close()
     }
 }
 
@@ -215,15 +255,10 @@ fn draw_text_input(
 ) {
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
-
     let rrect = RRect::new_rect_xy(rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
-
-    // Background
     paint.set_color(Color::from(INPUT_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(rrect, &paint);
-
-    // Border
     paint.set_color(if focused {
         Color::from(INPUT_BORDER_FOCUS)
     } else {
@@ -241,13 +276,12 @@ fn draw_text_input(
         rect.width() - 2.0 * h_pad,
         rect.height() - 4.0,
     );
-
     canvas.save();
     canvas.clip_rect(inner, ClipOp::Intersect, false);
 
     let (_, metrics) = cache.font.metrics();
-    let line_h = metrics.descent - metrics.ascent;
-    let text_y = rect.top + (rect.height() - line_h) / 2.0 - metrics.ascent;
+    let text_y = rect.top + (rect.height() - (metrics.descent - metrics.ascent)) / 2.0
+        - metrics.ascent;
 
     if !input.content.is_empty()
         && let Some(blob) = TextBlob::new(&input.content, &cache.font)
@@ -255,8 +289,6 @@ fn draw_text_input(
         paint.set_color(Color::from(INPUT_FG));
         canvas.draw_text_blob(&blob, (inner.left, text_y), &paint);
     }
-
-    // Cursor
     if focused {
         let cursor_pos = input.cursor.min(input.content.len());
         let cursor_x = if cursor_pos == 0 {
@@ -267,14 +299,251 @@ fn draw_text_input(
         };
         paint.set_color(Color::from(INPUT_CURSOR_COLOR));
         canvas.draw_rect(
-            Rect::from_xywh(
-                inner.left + cursor_x,
-                rect.top + 5.0,
-                1.5,
-                rect.height() - 10.0,
-            ),
+            Rect::from_xywh(inner.left + cursor_x, rect.top + 5.0, 1.5, rect.height() - 10.0),
             &paint,
         );
+    }
+    canvas.restore();
+}
+
+/// Trigger box showing selected tags with a chevron indicator.
+fn draw_tags_trigger(
+    canvas: &Canvas,
+    trigger: Rect,
+    selected_tags: &[String],
+    focused_or_open: bool,
+    open: bool,
+    cache: &RenderCache,
+) {
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+
+    let rrect = RRect::new_rect_xy(trigger, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
+    paint.set_color(Color::from(INPUT_BG));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(rrect, &paint);
+    paint.set_color(if focused_or_open {
+        Color::from(INPUT_BORDER_FOCUS)
+    } else {
+        Color::from(INPUT_BORDER)
+    });
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.0);
+    canvas.draw_rrect(rrect, &paint);
+    paint.set_style(PaintStyle::Fill);
+
+    // Chevron on the right
+    let chevron_w = 24.0;
+    let cx = trigger.right - chevron_w / 2.0;
+    let cy = trigger.top + trigger.height() / 2.0;
+    let s = 4.0;
+    let mut pb = PathBuilder::new();
+    if open {
+        pb.move_to((cx - s, cy + s * 0.5));
+        pb.line_to((cx, cy - s * 0.5));
+        pb.line_to((cx + s, cy + s * 0.5));
+    } else {
+        pb.move_to((cx - s, cy - s * 0.5));
+        pb.line_to((cx, cy + s * 0.5));
+        pb.line_to((cx + s, cy - s * 0.5));
+    }
+    paint.set_color(Color::from(0xff_888888_u32));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.5);
+    canvas.draw_path(&pb.detach(), &paint);
+    paint.set_style(PaintStyle::Fill);
+
+    // Tag text (clipped to left of chevron)
+    let text_area = Rect::from_xywh(
+        trigger.left + 8.0,
+        trigger.top,
+        trigger.width() - 8.0 - chevron_w,
+        trigger.height(),
+    );
+    canvas.save();
+    canvas.clip_rect(text_area, ClipOp::Intersect, false);
+
+    let (_, metrics) = cache.font.metrics();
+    let text_y = trigger.top + (trigger.height() - (metrics.descent - metrics.ascent)) / 2.0
+        - metrics.ascent;
+
+    if selected_tags.is_empty() {
+        if let Some(blob) = TextBlob::new("Select tags…", &cache.font) {
+            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            canvas.draw_text_blob(&blob, (text_area.left, text_y), &paint);
+        }
+    } else {
+        let text = selected_tags.join(", ");
+        if let Some(blob) = TextBlob::new(&text, &cache.font) {
+            paint.set_color(Color::from(INPUT_FG));
+            canvas.draw_text_blob(&blob, (text_area.left, text_y), &paint);
+        }
+    }
+    canvas.restore();
+}
+
+/// Dropdown panel: filter input + filtered tag list.
+#[allow(clippy::too_many_arguments)]
+fn draw_dropdown(
+    canvas: &Canvas,
+    width: f32,
+    height: f32,
+    filtered: &[&str],
+    scroll: usize,
+    hovered: Option<usize>,
+    filter_input: &TextInput,
+    selected_tags: &[String],
+    cache: &RenderCache,
+) {
+    let dd = {
+        let trigger = {
+            let panel = Rect::from_xywh(
+                (width - PANEL_W) / 2.0,
+                (height - PANEL_H) / 2.0,
+                PANEL_W,
+                PANEL_H,
+            );
+            let x = panel.left + PLAN_FORM_PADDING;
+            let w = PANEL_W - 2.0 * PLAN_FORM_PADDING;
+            let y0 = panel.top + TITLE_H + 1.0 + PLAN_FORM_PADDING;
+            let y = y0 + FIELD_BLOCK_H + PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP;
+            Rect::from_xywh(x, y, w, PLAN_INPUT_H)
+        };
+        Rect::from_xywh(trigger.left, trigger.bottom + 4.0, trigger.width(), DROPDOWN_H)
+    };
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+
+    // Shadow
+    paint.set_color(Color::from_argb(30, 0, 0, 0));
+    canvas.draw_rrect(
+        RRect::new_rect_xy(
+            Rect::from_xywh(dd.left + 2.0, dd.top + 3.0, dd.width(), dd.height()),
+            PLAN_BTN_CORNER,
+            PLAN_BTN_CORNER,
+        ),
+        &paint,
+    );
+
+    // Background
+    paint.set_color(Color::from(INPUT_BG));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER), &paint);
+
+    // Border
+    paint.set_color(Color::from(INPUT_BORDER_FOCUS));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.0);
+    canvas.draw_rrect(RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER), &paint);
+    paint.set_style(PaintStyle::Fill);
+
+    // Filter input
+    let h_pad = 8.0;
+    let input_h = 28.0;
+    let filter_rect = Rect::from_xywh(
+        dd.left + h_pad,
+        dd.top + (DROPDOWN_FILTER_H - input_h) / 2.0,
+        dd.width() - 2.0 * h_pad,
+        input_h,
+    );
+    draw_text_input(canvas, filter_rect, filter_input, true, cache);
+
+    // Divider between filter and list
+    paint.set_color(Color::from(DIVIDER_COLOR));
+    canvas.draw_rect(
+        Rect::from_xywh(dd.left, dd.top + DROPDOWN_FILTER_H, dd.width(), 1.0),
+        &paint,
+    );
+
+    // Tag list
+    let list_top = dd.top + DROPDOWN_FILTER_H + 1.0;
+    let list_rect =
+        Rect::from_xywh(dd.left, list_top, dd.width(), DROPDOWN_H - DROPDOWN_FILTER_H - 1.0);
+
+    canvas.save();
+    canvas.clip_rect(list_rect, ClipOp::Intersect, false);
+
+    if filtered.is_empty() {
+        let msg = if filter_input.content.trim().is_empty() {
+            "No tags defined yet"
+        } else {
+            "No matches"
+        };
+        if let Some(blob) = TextBlob::new(msg, &cache.small_font) {
+            let (_, sm) = cache.small_font.metrics();
+            let ty = list_top + 10.0 - sm.ascent;
+            paint.set_color(Color::from(PANEL_TEXT));
+            canvas.draw_text_blob(&blob, (dd.left + h_pad, ty), &paint);
+        }
+    } else {
+        let (_, metrics) = cache.font.metrics();
+        let text_y_off =
+            (DROPDOWN_ROW_H - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
+
+        let end = (scroll + MAX_DROPDOWN_ROWS).min(filtered.len());
+        for (vis_idx, &tag) in filtered[scroll..end].iter().enumerate() {
+            let abs_idx = scroll + vis_idx;
+            let ry = list_top + vis_idx as f32 * DROPDOWN_ROW_H;
+            let row_rect = Rect::from_xywh(dd.left, ry, dd.width(), DROPDOWN_ROW_H);
+
+            if hovered == Some(abs_idx) {
+                paint.set_color(Color::from(LIST_ITEM_HOVER_BG));
+                canvas.draw_rect(row_rect, &paint);
+            }
+
+            let is_selected = selected_tags.iter().any(|t| t == tag);
+            let circle_cx = dd.left + 18.0;
+            let circle_cy = ry + DROPDOWN_ROW_H / 2.0;
+            let circle_r = 5.5;
+            if is_selected {
+                paint.set_color(Color::from(INPUT_BORDER_FOCUS));
+                paint.set_style(PaintStyle::Fill);
+                canvas.draw_circle((circle_cx, circle_cy), circle_r, &paint);
+                // White tick (simple dot)
+                paint.set_color(Color::WHITE);
+                canvas.draw_circle((circle_cx, circle_cy), 2.0, &paint);
+            } else {
+                paint.set_color(Color::from(INPUT_BORDER));
+                paint.set_style(PaintStyle::Stroke);
+                paint.set_stroke_width(1.0);
+                canvas.draw_circle((circle_cx, circle_cy), circle_r, &paint);
+            }
+            paint.set_style(PaintStyle::Fill);
+
+            if let Some(blob) = TextBlob::new(tag, &cache.font) {
+                paint.set_color(Color::from(ITEM_FG));
+                canvas.draw_text_blob(&blob, (dd.left + 34.0, ry + text_y_off), &paint);
+            }
+        }
+
+        // Scroll indicators
+        if scroll > 0 {
+            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(1.5);
+            let ax = dd.right - 12.0;
+            let ay = list_top + 6.0;
+            let mut pb = PathBuilder::new();
+            pb.move_to((ax - 4.0, ay + 4.0));
+            pb.line_to((ax, ay));
+            pb.line_to((ax + 4.0, ay + 4.0));
+            canvas.draw_path(&pb.detach(), &paint);
+            paint.set_style(PaintStyle::Fill);
+        }
+        if end < filtered.len() {
+            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(1.5);
+            let ax = dd.right - 12.0;
+            let ay = list_rect.bottom - 6.0;
+            let mut pb = PathBuilder::new();
+            pb.move_to((ax - 4.0, ay - 4.0));
+            pb.line_to((ax, ay));
+            pb.line_to((ax + 4.0, ay - 4.0));
+            canvas.draw_path(&pb.detach(), &paint);
+            paint.set_style(PaintStyle::Fill);
+        }
     }
 
     canvas.restore();
@@ -289,7 +558,7 @@ impl FloatingWindow for AddUserWindow {
         width: f32,
         height: f32,
         cache: &RenderCache,
-        _plan: &crate::data::Plan,
+        plan: &Plan,
     ) {
         let panel = Self::panel_rect(width, height);
         let back_btn = Self::back_btn_rect(width, height);
@@ -313,7 +582,7 @@ impl FloatingWindow for AddUserWindow {
         paint.set_color(Color::from(PANEL_BG));
         canvas.draw_rrect(RRect::new_rect_xy(panel, CORNER, CORNER), &paint);
 
-        // Title bar background
+        // Title bar
         let title_rect = Rect::from_xywh(panel.left, panel.top, PANEL_W, TITLE_H);
         paint.set_color(Color::from(LIST_BG));
         canvas.draw_rrect(RRect::new_rect_xy(title_rect, CORNER, CORNER), &paint);
@@ -322,33 +591,28 @@ impl FloatingWindow for AddUserWindow {
             &paint,
         );
 
-        // Title text centred
         if let Some(blob) = TextBlob::new("Add Team Member", &cache.font) {
             let (_, metrics) = cache.font.metrics();
             let (advance, _) = cache.font.measure_str("Add Team Member", None);
             let tx = panel.left + (PANEL_W - advance) / 2.0;
-            let ty =
-                panel.top + (TITLE_H - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
+            let ty = panel.top + (TITLE_H - (metrics.descent - metrics.ascent)) / 2.0
+                - metrics.ascent;
             paint.set_color(Color::from(ITEM_FG));
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
 
         draw_chevron_btn(canvas, back_btn, self.hovered_back);
 
-        // Divider
         paint.set_color(Color::from(DIVIDER_COLOR));
         canvas.draw_rect(
             Rect::from_xywh(panel.left, panel.top + TITLE_H, PANEL_W, 1.0),
             &paint,
         );
 
-        // ── Form fields ───────────────────────────────────────────────────────
-
         let y0 = Self::form_top(width, height);
         let lx = panel.left + PLAN_FORM_PADDING;
         let (_, sm_metrics) = cache.small_font.metrics();
-
-        let label_y_offset = -(sm_metrics.ascent);
+        let label_y_offset = -sm_metrics.ascent;
 
         // Name
         if let Some(blob) = TextBlob::new("Name", &cache.small_font) {
@@ -357,23 +621,24 @@ impl FloatingWindow for AddUserWindow {
         }
         draw_text_input(
             canvas,
-            self.input_rect(Field::Name, width, height),
+            Self::input_rect(Field::Name, width, height),
             &self.name,
             self.focused == Field::Name,
             cache,
         );
 
         // Tags
-        let tags_y = y0 + FIELD_BLOCK_H + PLAN_FIELD_GAP;
-        if let Some(blob) = TextBlob::new("Tags (comma-separated)", &cache.small_font) {
+        let tags_label_y = y0 + FIELD_BLOCK_H + PLAN_FIELD_GAP;
+        if let Some(blob) = TextBlob::new("Tags", &cache.small_font) {
             paint.set_color(Color::from(LABEL_FG));
-            canvas.draw_text_blob(&blob, (lx, tags_y + label_y_offset), &paint);
+            canvas.draw_text_blob(&blob, (lx, tags_label_y + label_y_offset), &paint);
         }
-        draw_text_input(
+        draw_tags_trigger(
             canvas,
-            self.input_rect(Field::Tags, width, height),
-            &self.tags,
-            self.focused == Field::Tags,
+            Self::input_rect(Field::TagFilter, width, height),
+            &self.selected_tags,
+            self.focused == Field::TagFilter || self.dropdown_open,
+            self.dropdown_open,
             cache,
         );
 
@@ -385,24 +650,23 @@ impl FloatingWindow for AddUserWindow {
         }
         draw_text_input(
             canvas,
-            self.input_rect(Field::AvatarPath, width, height),
+            Self::input_rect(Field::AvatarPath, width, height),
             &self.avatar_path,
             self.focused == Field::AvatarPath,
             cache,
         );
 
-        // Avatar error message
         if self.avatar_error {
-            let err_y = self.input_rect(Field::AvatarPath, width, height).bottom + 4.0;
+            let err_y = Self::input_rect(Field::AvatarPath, width, height).bottom + 4.0;
             if let Some(blob) = TextBlob::new("Could not read file", &cache.small_font) {
-                paint.set_color(Color::from(0xff_e53935u32));
+                paint.set_color(Color::from(0xff_e53935_u32));
                 canvas.draw_text_blob(&blob, (lx, err_y + label_y_offset), &paint);
             }
         }
 
         // Save button
         paint.set_color(Color::from(if self.hovered_save {
-            0xff_3a7bc8u32 // slightly darker on hover
+            0xff_3a7bc8_u32
         } else {
             BTN_PRIMARY_BG
         }));
@@ -420,6 +684,22 @@ impl FloatingWindow for AddUserWindow {
             paint.set_color(Color::from(BTN_PRIMARY_FG));
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
+
+        // Dropdown (drawn last so it appears on top)
+        if self.dropdown_open {
+            let filtered = self.filtered_tags(plan);
+            draw_dropdown(
+                canvas,
+                width,
+                height,
+                &filtered,
+                self.dropdown_scroll,
+                self.dropdown_hovered,
+                &self.tag_filter,
+                &self.selected_tags,
+                cache,
+            );
+        }
     }
 
     fn on_cursor_moved(
@@ -428,14 +708,39 @@ impl FloatingWindow for AddUserWindow {
         y: f32,
         width: f32,
         height: f32,
-        _plan: &crate::data::Plan,
+        plan: &Plan,
     ) -> FloatingWindowOutcome {
         let pt = Point::new(x, y);
         let new_back = Self::back_btn_rect(width, height).contains(pt);
         let new_save = Self::save_btn_rect(width, height).contains(pt);
-        if new_back != self.hovered_back || new_save != self.hovered_save {
+
+        let new_dd_hovered = if self.dropdown_open {
+            let dd = Self::dropdown_rect(width, height);
+            let list_top = Self::dropdown_list_top(width, height);
+            let filtered = self.filtered_tags(plan);
+            let visible = filtered.len().saturating_sub(self.dropdown_scroll).min(MAX_DROPDOWN_ROWS);
+            if x >= dd.left
+                && x <= dd.right
+                && y >= list_top
+                && y < list_top + visible as f32 * DROPDOWN_ROW_H
+            {
+                let abs_idx =
+                    ((y - list_top) / DROPDOWN_ROW_H) as usize + self.dropdown_scroll;
+                if abs_idx < filtered.len() { Some(abs_idx) } else { None }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let changed = new_back != self.hovered_back
+            || new_save != self.hovered_save
+            || new_dd_hovered != self.dropdown_hovered;
+        if changed {
             self.hovered_back = new_back;
             self.hovered_save = new_save;
+            self.dropdown_hovered = new_dd_hovered;
             FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
         } else {
             FloatingWindowOutcome::default()
@@ -450,7 +755,7 @@ impl FloatingWindow for AddUserWindow {
         pressed: bool,
         width: f32,
         height: f32,
-        _plan: &crate::data::Plan,
+        plan: &Plan,
         sender: &PlanRequestSender,
     ) -> FloatingWindowOutcome {
         if !pressed {
@@ -459,32 +764,64 @@ impl FloatingWindow for AddUserWindow {
         let pt = Point::new(x, y);
 
         if Self::back_btn_rect(width, height).contains(pt) {
-            self.pending_back = true;
-            return FloatingWindowOutcome::default();
+            return FloatingWindowOutcome::close();
         }
         if Self::save_btn_rect(width, height).contains(pt) {
             return self.try_submit(sender);
         }
-        // Field focus on click
-        for field in [Field::Name, Field::Tags, Field::AvatarPath] {
-            if self.input_rect(field, width, height).contains(pt) {
+
+        if self.dropdown_open {
+            let dd = Self::dropdown_rect(width, height);
+            if dd.contains(pt) {
+                let list_top = Self::dropdown_list_top(width, height);
+                if y >= list_top {
+                    let filtered = self.filtered_tags(plan);
+                    let abs_idx =
+                        ((y - list_top) / DROPDOWN_ROW_H) as usize + self.dropdown_scroll;
+                    if let Some(&tag) = filtered.get(abs_idx) {
+                        let owned = tag.to_string();
+                        self.toggle_tag(&owned);
+                    }
+                }
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            // Click outside dropdown closes it
+            self.close_dropdown();
+            if !Self::panel_rect(width, height).contains(pt) {
+                return FloatingWindowOutcome::close();
+            }
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+
+        // Trigger click opens dropdown
+        if Self::input_rect(Field::TagFilter, width, height).contains(pt) {
+            self.open_dropdown();
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+
+        for field in [Field::Name, Field::AvatarPath] {
+            if Self::input_rect(field, width, height).contains(pt) {
                 self.set_focus(field);
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
         }
-        // Click outside panel goes back to the users list
+
         if !Self::panel_rect(width, height).contains(pt) {
-            self.pending_back = true;
-            return FloatingWindowOutcome::default();
+            return FloatingWindowOutcome::close();
         }
         FloatingWindowOutcome::default()
     }
 
     fn on_key_input(&mut self, key: &Key, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         match key {
-            Key::Named(NamedKey::Escape) => {
-                self.pending_back = true;
-                FloatingWindowOutcome::default()
+            Key::Named(NamedKey::Escape) if self.dropdown_open => {
+                self.close_dropdown();
+                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
+            }
+            Key::Named(NamedKey::Escape) => FloatingWindowOutcome::close(),
+            Key::Named(NamedKey::Enter) if self.dropdown_open => {
+                self.close_dropdown();
+                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::Enter) => self.try_submit(sender),
             Key::Named(NamedKey::Tab) => {
@@ -492,36 +829,70 @@ impl FloatingWindow for AddUserWindow {
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::Backspace) => {
-                self.focused_input().backspace();
-                self.avatar_error = false;
+                if self.dropdown_open {
+                    self.tag_filter.backspace();
+                    self.dropdown_scroll = 0;
+                } else if self.focused != Field::TagFilter {
+                    self.focused_input().backspace();
+                    self.avatar_error = false;
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::ArrowLeft) => {
-                self.focused_input().move_left();
+                if self.dropdown_open {
+                    self.tag_filter.move_left();
+                } else if self.focused != Field::TagFilter {
+                    self.focused_input().move_left();
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::ArrowRight) => {
-                self.focused_input().move_right();
+                if self.dropdown_open {
+                    self.tag_filter.move_right();
+                } else if self.focused != Field::TagFilter {
+                    self.focused_input().move_right();
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::Home) => {
-                self.focused_input().move_home();
+                if self.dropdown_open {
+                    self.tag_filter.move_home();
+                } else if self.focused != Field::TagFilter {
+                    self.focused_input().move_home();
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::End) => {
-                self.focused_input().move_end();
+                if self.dropdown_open {
+                    self.tag_filter.move_end();
+                } else if self.focused != Field::TagFilter {
+                    self.focused_input().move_end();
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::Space) => {
-                self.focused_input().insert_str(" ");
-                self.avatar_error = false;
+                if self.dropdown_open {
+                    self.tag_filter.insert_str(" ");
+                    self.dropdown_scroll = 0;
+                } else if self.focused != Field::TagFilter {
+                    self.focused_input().insert_str(" ");
+                    self.avatar_error = false;
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Character(c) => {
-                // Filter out control characters
                 if c.chars().all(|ch| !ch.is_control()) {
-                    self.focused_input().insert_str(c.as_str());
-                    self.avatar_error = false;
+                    if self.dropdown_open {
+                        self.tag_filter.insert_str(c.as_str());
+                        self.dropdown_scroll = 0;
+                    } else if self.focused == Field::TagFilter {
+                        // Typing while trigger is focused: open dropdown and start filtering
+                        self.open_dropdown();
+                        self.tag_filter.insert_str(c.as_str());
+                    } else {
+                        self.focused_input().insert_str(c.as_str());
+                        self.avatar_error = false;
+                    }
                     FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
                 } else {
                     FloatingWindowOutcome::default()
@@ -531,19 +902,41 @@ impl FloatingWindow for AddUserWindow {
         }
     }
 
-    fn take_replace_request(
-        &mut self,
-    ) -> Option<Box<dyn crate::ui::floating_window::FloatingWindow>> {
-        if self.pending_back {
-            self.pending_back = false;
-            Some(Box::new(crate::ui::users_window::UsersWindow::new()))
+    fn on_scroll(&mut self, delta_y: f32, plan: &Plan) -> FloatingWindowOutcome {
+        if !self.dropdown_open {
+            return FloatingWindowOutcome::default();
+        }
+        let total = self.filtered_tags(plan).len();
+        let max_scroll = total.saturating_sub(MAX_DROPDOWN_ROWS);
+        if max_scroll == 0 {
+            return FloatingWindowOutcome::default();
+        }
+        let new_scroll = if delta_y > 0.0 {
+            self.dropdown_scroll.saturating_sub(1)
         } else {
-            None
+            (self.dropdown_scroll + 1).min(max_scroll)
+        };
+        if new_scroll != self.dropdown_scroll {
+            self.dropdown_scroll = new_scroll;
+            FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
+        } else {
+            FloatingWindowOutcome::default()
         }
     }
 
     fn reset_hover(&mut self) {
         self.hovered_back = false;
         self.hovered_save = false;
+        self.dropdown_hovered = None;
+    }
+}
+
+impl AddUserWindow {
+    fn focused_input(&mut self) -> &mut TextInput {
+        match self.focused {
+            Field::Name => &mut self.name,
+            Field::TagFilter => &mut self.tag_filter,
+            Field::AvatarPath => &mut self.avatar_path,
+        }
     }
 }

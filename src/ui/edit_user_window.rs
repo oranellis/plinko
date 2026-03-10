@@ -55,7 +55,6 @@ pub struct EditUserWindow {
     hovered_back: bool,
     hovered_save: bool,
     avatar_error: bool,
-    pending_back: bool,
 }
 
 impl EditUserWindow {
@@ -76,7 +75,6 @@ impl EditUserWindow {
             hovered_back: false,
             hovered_save: false,
             avatar_error: false,
-            pending_back: false,
         }
     }
 
@@ -176,8 +174,7 @@ impl EditUserWindow {
         }
 
         sender.send(PlanRequest::UpdateUser(self.user_id, patch));
-        self.pending_back = true;
-        FloatingWindowOutcome::default()
+        FloatingWindowOutcome::close()
     }
 }
 
@@ -377,9 +374,10 @@ impl FloatingWindow for EditUserWindow {
 
         // Avatar path
         let av_y = y0 + 2.0 * (FIELD_BLOCK_H + PLAN_FIELD_GAP);
-        if let Some(blob) =
-            TextBlob::new("Avatar image path (blank = keep existing)", &cache.small_font)
-        {
+        if let Some(blob) = TextBlob::new(
+            "Avatar image path (blank = keep existing)",
+            &cache.small_font,
+        ) {
             paint.set_color(Color::from(LABEL_FG));
             canvas.draw_text_blob(&blob, (lx, av_y + label_y_offset), &paint);
         }
@@ -415,8 +413,7 @@ impl FloatingWindow for EditUserWindow {
             let (_, metrics) = cache.font.metrics();
             let (advance, _) = cache.font.measure_str("Save", None);
             let tx = save_btn.left + (SAVE_BTN_W - advance) / 2.0;
-            let ty = save_btn.top
-                + (PLAN_BTN_H - (metrics.descent - metrics.ascent)) / 2.0
+            let ty = save_btn.top + (PLAN_BTN_H - (metrics.descent - metrics.ascent)) / 2.0
                 - metrics.ascent;
             paint.set_color(Color::from(BTN_PRIMARY_FG));
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
@@ -460,8 +457,7 @@ impl FloatingWindow for EditUserWindow {
         let pt = Point::new(x, y);
 
         if Self::back_btn_rect(width, height).contains(pt) {
-            self.pending_back = true;
-            return FloatingWindowOutcome::default();
+            return FloatingWindowOutcome::close();
         }
         if Self::save_btn_rect(width, height).contains(pt) {
             return self.try_submit(sender);
@@ -473,18 +469,14 @@ impl FloatingWindow for EditUserWindow {
             }
         }
         if !Self::panel_rect(width, height).contains(pt) {
-            self.pending_back = true;
-            return FloatingWindowOutcome::default();
+            return FloatingWindowOutcome::close();
         }
         FloatingWindowOutcome::default()
     }
 
     fn on_key_input(&mut self, key: &Key, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         match key {
-            Key::Named(NamedKey::Escape) => {
-                self.pending_back = true;
-                FloatingWindowOutcome::default()
-            }
+            Key::Named(NamedKey::Escape) => FloatingWindowOutcome::close(),
             Key::Named(NamedKey::Enter) => self.try_submit(sender),
             Key::Named(NamedKey::Tab) => {
                 self.cycle_focus_forward();
@@ -526,15 +518,6 @@ impl FloatingWindow for EditUserWindow {
                 }
             }
             _ => FloatingWindowOutcome::default(),
-        }
-    }
-
-    fn take_replace_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
-        if self.pending_back {
-            self.pending_back = false;
-            Some(Box::new(crate::ui::users_window::UsersWindow::new()))
-        } else {
-            None
         }
     }
 

@@ -92,12 +92,6 @@ pub trait FloatingWindow {
         None
     }
 
-    /// Like `take_open_request`, but the manager replaces the current window
-    /// instead of stacking on top of it.
-    fn take_replace_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
-        None
-    }
-
     fn reset_hover(&mut self) {}
 }
 
@@ -136,7 +130,7 @@ impl FloatingWindowManager {
             return;
         }
         draw_dim_backdrop(canvas, width, height);
-        for w in &self.stack {
+        if let Some(w) = self.stack.last() {
             w.render(canvas, width, height, cache, plan);
         }
     }
@@ -168,12 +162,8 @@ impl FloatingWindowManager {
             self.stack.pop();
             return DirtyRegion::All;
         }
-        // Window is staying open — check for push or replace requests.
-        if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_replace_request()) {
-            self.stack.pop();
-            self.push(new_win);
-            DirtyRegion::All
-        } else if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_open_request()) {
+        // Window is staying open — check for push requests.
+        if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_open_request()) {
             self.push(new_win);
             DirtyRegion::All
         } else {
@@ -190,11 +180,7 @@ impl FloatingWindowManager {
             self.stack.pop();
             return DirtyRegion::All;
         }
-        if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_replace_request()) {
-            self.stack.pop();
-            self.push(new_win);
-            DirtyRegion::All
-        } else if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_open_request()) {
+        if let Some(new_win) = self.stack.last_mut().and_then(|w| w.take_open_request()) {
             self.push(new_win);
             DirtyRegion::All
         } else {
