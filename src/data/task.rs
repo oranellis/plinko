@@ -2,6 +2,7 @@
 
 use crate::data::constraint::DateConstraint;
 use crate::data::dependency::Dependency;
+use crate::data::ids::TagId;
 use crate::data::ids::TaskId;
 use crate::data::ids::UserId;
 use crate::data::user::User;
@@ -31,7 +32,7 @@ pub enum WorkerSlot {
     Specific { user_id: UserId, workload_days: f32 },
     /// An open role filled by whoever holds all the required tags.
     Placeholder {
-        required_tags: HashSet<String>,
+        required_tags: HashSet<TagId>,
         workload_days: f32,
     },
 }
@@ -144,11 +145,11 @@ impl Task {
     /// Add an open-role placeholder that any user with the given tags can fill.
     pub fn add_placeholder_worker(
         &mut self,
-        required_tags: impl IntoIterator<Item = impl Into<String>>,
+        required_tags: impl IntoIterator<Item = TagId>,
         workload_days: f32,
     ) {
         self.workers.push(WorkerSlot::Placeholder {
-            required_tags: required_tags.into_iter().map(Into::into).collect(),
+            required_tags: required_tags.into_iter().collect(),
             workload_days,
         });
     }
@@ -274,7 +275,7 @@ mod tests {
         let mut t = Task::new("X", "");
         t.add_specific_worker(u1, 2.0);
         t.add_specific_worker(u2, 3.0);
-        t.add_placeholder_worker(["rust"], 1.0);
+        t.add_placeholder_worker([TagId::new()], 1.0);
         let assigned: Vec<_> = t.assigned_users().collect();
         assert_eq!(assigned.len(), 2);
         assert!(assigned.contains(&u1));
@@ -286,7 +287,7 @@ mod tests {
         let u = UserId::new();
         let mut t = Task::new("X", "");
         t.add_specific_worker(u, 3.0);
-        t.add_placeholder_worker(["rust"], 5.0);
+        t.add_placeholder_worker([TagId::new()], 5.0);
         assert!((t.total_workload_days() - 8.0).abs() < f32::EPSILON);
     }
 
@@ -347,15 +348,17 @@ mod tests {
 
     #[test]
     fn placeholder_satisfied_by_user_with_all_tags() {
+        let t1 = TagId::new();
+        let t2 = TagId::new();
         let slot = WorkerSlot::Placeholder {
-            required_tags: ["rust", "skia"].iter().map(|s| s.to_string()).collect(),
+            required_tags: [t1, t2].iter().copied().collect(),
             workload_days: 3.0,
         };
         let eligible = User::new("Alice")
-            .with_tag("rust")
-            .with_tag("skia")
-            .with_tag("extra");
-        let missing_one = User::new("Bob").with_tag("rust");
+            .with_tag(t1)
+            .with_tag(t2)
+            .with_tag(TagId::new());
+        let missing_one = User::new("Bob").with_tag(t1);
         let no_tags = User::new("Carol");
         assert!(slot.is_satisfied_by(&eligible));
         assert!(!slot.is_satisfied_by(&missing_one));
@@ -375,7 +378,7 @@ mod tests {
     #[test]
     fn add_placeholder_worker_builder() {
         let mut t = Task::new("T", "");
-        t.add_placeholder_worker(["rust", "skia"], 4.0);
+        t.add_placeholder_worker([TagId::new(), TagId::new()], 4.0);
         assert_eq!(t.workers.len(), 1);
         assert!((t.total_workload_days() - 4.0).abs() < f32::EPSILON);
     }

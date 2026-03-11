@@ -2,7 +2,7 @@
 
 use crate::data::allocation::PlanAllocation;
 use crate::data::dependency::Dependency;
-use crate::data::ids::NodeId;
+use crate::data::ids::{NodeId, TagId};
 use crate::data::{
     CalendarOverrides, Milestone, MilestoneId, StartDates, Task, TaskId, TaskStatus, User, UserId,
     WorkSchedule, WorkerSlot,
@@ -13,6 +13,22 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use uuid::Uuid;
+
+/// A named tag in the plan's ordered registry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Tag {
+    pub id: TagId,
+    pub name: String,
+}
+
+impl Tag {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            id: TagId::new(),
+            name: name.into(),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum DependencyError {
@@ -60,7 +76,7 @@ pub struct Plan {
     /// Tags on users and task placeholders must come from this list.
     /// The order here controls how tags appear in the tag management UI.
     #[serde(default)]
-    pub tags: Vec<String>,
+    pub tags: Vec<Tag>,
 }
 
 impl Plan {
@@ -123,13 +139,13 @@ impl Plan {
         self.schedule_for(user_id).hours_on(weekday)
     }
 
-    /// Returns all users that possess ALL of the specified tags (skills/roles/clearances).
+    /// Returns all users that possess ALL of the specified tag IDs.
     /// An empty tag list matches all users.
-    pub fn users_with_tags(&self, tags: &[&str]) -> impl Iterator<Item = &User> {
-        let tag_set: std::collections::HashSet<&str> = tags.iter().copied().collect();
+    pub fn users_with_tags(&self, tag_ids: &[TagId]) -> impl Iterator<Item = &User> {
+        let tag_set: HashSet<&TagId> = tag_ids.iter().collect();
         self.users
             .values()
-            .filter(move |user| tag_set.iter().all(|tag| user.has_tag(tag)))
+            .filter(move |user| tag_set.iter().all(|id| user.tags.contains(id)))
     }
 
     /// Add a dependency to a task. Returns `Err` if the task doesn't exist or the
@@ -271,68 +287,55 @@ impl Plan {
 
     // ── Tag registry ──────────────────────────────────────────────────────────
 
-    /// Append `name` to the ordered tag registry.
-    /// Does nothing and returns `false` if the tag already exists.
-    pub fn add_tag(&mut self, name: impl Into<String>) -> bool {
+    /// Append a new tag to the ordered registry. Returns the new `TagId`.
+    /// Does nothing and returns `None` if a tag with this name already exists.
+    pub fn add_tag(&mut self, name: impl Into<String>) -> Option<TagId> {
         let name = name.into();
-        if self.tags.iter().any(|t| t == &name) {
-            return false;
+        if self.tags.iter().any(|t| t.name == name) {
+            return None;
         }
-        self.tags.push(name);
-        true
+        let tag = Tag::new(name);
+        let id = tag.id;
+        self.tags.push(tag);
+        Some(id)
     }
 
-    /// Rename a tag everywhere: the registry, every user's tag set, and every
-    /// task placeholder's `required_tags`. Returns `false` if `old` is not in
-    /// the registry or `new_name` already exists.
-    pub fn rename_tag(&mut self, old: &str, new_name: &str) -> bool {
-        let pos = match self.tags.iter().position(|t| t == old) {
-            Some(p) => p,
-            None => return false,
-        };
-        if self.tags.iter().any(|t| t == new_name) {
+    /// Rename a tag. With ID-based references, no cascade to users/tasks is needed.
+    /// Returns `false` if `id` is not in the registry, or if `new_name` is already taken.
+    pub fn rename_tag(&mut self, id: &TagId, new_name: &str) -> bool {
+        if self.tags.iter().any(|t| &t.id != id && t.name == new_name) {
             return false;
         }
-        self.tags[pos] = new_name.to_string();
-        for user in self.users.values_mut() {
-            if user.tags.remove(old) {
-                user.tags.insert(new_name.to_string());
+        match self.tags.iter_mut().find(|t| &t.id == id) {
+            Some(tag) => {
+                tag.name = new_name.to_string();
+                true
             }
+            None => false,
         }
-        for task in self.tasks.values_mut() {
-            for slot in task.workers.iter_mut() {
-                if let WorkerSlot::Placeholder { required_tags, .. } = slot
-                    && required_tags.remove(old)
-                {
-                    required_tags.insert(new_name.to_string());
-                }
-            }
-        }
-        self.allocation = None;
-        true
     }
 
     /// Remove a tag from the registry, all user tag sets, and all task
-    /// placeholder `required_tags`. No-op if the tag is not in the registry.
-    pub fn remove_tag(&mut self, name: &str) {
-        self.tags.retain(|t| t != name);
+    /// placeholder `required_tags`. No-op if the tag ID is not in the registry.
+    pub fn remove_tag(&mut self, id: &TagId) {
+        self.tags.retain(|t| &t.id != id);
         for user in self.users.values_mut() {
-            user.tags.remove(name);
+            user.tags.remove(id);
         }
         for task in self.tasks.values_mut() {
             for slot in task.workers.iter_mut() {
                 if let WorkerSlot::Placeholder { required_tags, .. } = slot {
-                    required_tags.remove(name);
+                    required_tags.remove(id);
                 }
             }
         }
         self.allocation = None;
     }
 
-    /// Move `name` to `new_index` in the registry (0-based, clamped to valid
-    /// range). Returns `false` if the tag is not in the registry.
-    pub fn move_tag(&mut self, name: &str, new_index: usize) -> bool {
-        let pos = match self.tags.iter().position(|t| t == name) {
+    /// Move the tag with `id` to `new_index` in the registry (0-based, clamped).
+    /// Returns `false` if the ID is not in the registry.
+    pub fn move_tag(&mut self, id: &TagId, new_index: usize) -> bool {
+        let pos = match self.tags.iter().position(|t| &t.id == id) {
             Some(p) => p,
             None => return false,
         };
@@ -414,12 +417,16 @@ mod tests {
     #[test]
     fn users_with_tags_returns_matching_users() {
         let mut p = make_plan();
-        p.add_user(User::new("Alice").with_tag("rust").with_tag("frontend"));
-        p.add_user(User::new("Bob").with_tag("rust").with_tag("backend"));
-        p.add_user(User::new("Carol").with_tag("python"));
+        let rust = p.add_tag("rust").unwrap();
+        let frontend = p.add_tag("frontend").unwrap();
+        let backend = p.add_tag("backend").unwrap();
+        let python = p.add_tag("python").unwrap();
+        p.add_user(User::new("Alice").with_tag(rust).with_tag(frontend));
+        p.add_user(User::new("Bob").with_tag(rust).with_tag(backend));
+        p.add_user(User::new("Carol").with_tag(python));
 
         let rust_users: Vec<_> = p
-            .users_with_tags(&["rust"])
+            .users_with_tags(&[rust])
             .map(|u| u.name.as_str())
             .collect();
         assert_eq!(rust_users.len(), 2);
@@ -430,12 +437,16 @@ mod tests {
     #[test]
     fn users_with_tags_returns_users_with_all_tags() {
         let mut p = make_plan();
-        p.add_user(User::new("Alice").with_tag("rust").with_tag("frontend"));
-        p.add_user(User::new("Bob").with_tag("rust").with_tag("backend"));
-        p.add_user(User::new("Carol").with_tag("python"));
+        let rust = p.add_tag("rust").unwrap();
+        let frontend = p.add_tag("frontend").unwrap();
+        let backend = p.add_tag("backend").unwrap();
+        let python = p.add_tag("python").unwrap();
+        p.add_user(User::new("Alice").with_tag(rust).with_tag(frontend));
+        p.add_user(User::new("Bob").with_tag(rust).with_tag(backend));
+        p.add_user(User::new("Carol").with_tag(python));
 
         let users: Vec<_> = p
-            .users_with_tags(&["rust", "frontend"])
+            .users_with_tags(&[rust, frontend])
             .map(|u| u.name.as_str())
             .collect();
         assert_eq!(users.len(), 1);
@@ -445,24 +456,29 @@ mod tests {
     #[test]
     fn users_with_tags_returns_empty_when_no_matches() {
         let mut p = make_plan();
-        p.add_user(User::new("Alice").with_tag("rust"));
+        let rust = p.add_tag("rust").unwrap();
+        let python = p.add_tag("python").unwrap();
+        p.add_user(User::new("Alice").with_tag(rust));
 
-        let users: Vec<_> = p.users_with_tags(&["python"]).collect();
+        let users: Vec<_> = p.users_with_tags(&[python]).collect();
         assert!(users.is_empty());
     }
 
     #[test]
     fn users_with_tags_returns_empty_for_empty_plan() {
-        let p = make_plan();
-        let users: Vec<_> = p.users_with_tags(&["rust"]).collect();
+        let mut p = make_plan();
+        let rust = p.add_tag("rust").unwrap();
+        let users: Vec<_> = p.users_with_tags(&[rust]).collect();
         assert!(users.is_empty());
     }
 
     #[test]
     fn users_with_tags_empty_list_matches_all_users() {
         let mut p = make_plan();
-        p.add_user(User::new("Alice").with_tag("rust"));
-        p.add_user(User::new("Bob").with_tag("python"));
+        let rust = p.add_tag("rust").unwrap();
+        let python = p.add_tag("python").unwrap();
+        p.add_user(User::new("Alice").with_tag(rust));
+        p.add_user(User::new("Bob").with_tag(python));
         p.add_user(User::new("Carol"));
 
         let users: Vec<_> = p.users_with_tags(&[]).collect();
@@ -882,112 +898,87 @@ mod tests {
     // ── Tag registry ──────────────────────────────────────────────────────────
 
     #[test]
-    fn add_tag_appends_and_returns_true() {
-        let mut p = make_plan();
-        assert!(p.add_tag("rust"));
-        assert!(p.add_tag("python"));
-        assert_eq!(p.tags, vec!["rust", "python"]);
+    fn add_tag_returns_id() {
+        let mut plan = Plan::new("Test");
+        let id = plan.add_tag("rust").expect("new tag");
+        assert_eq!(plan.tags.len(), 1);
+        assert_eq!(plan.tags[0].name, "rust");
+        assert_eq!(plan.tags[0].id, id);
     }
 
     #[test]
-    fn add_tag_ignores_duplicate() {
-        let mut p = make_plan();
-        p.add_tag("rust");
-        assert!(!p.add_tag("rust"));
-        assert_eq!(p.tags.len(), 1);
+    fn add_tag_duplicate_returns_none() {
+        let mut plan = Plan::new("Test");
+        plan.add_tag("rust");
+        assert!(plan.add_tag("rust").is_none());
+        assert_eq!(plan.tags.len(), 1);
     }
 
     #[test]
-    fn rename_tag_updates_registry_users_and_tasks() {
-        let mut p = make_plan();
-        p.add_tag("rust");
-        let uid = p.add_user(User::new("Alice").with_tag("rust"));
-        let mut t = Task::new("T", "");
-        t.workers.push(WorkerSlot::Placeholder {
-            required_tags: ["rust".to_string()].into(),
-            workload_days: 1.0,
-        });
-        let tid = p.add_task(t);
+    fn rename_tag_changes_name() {
+        let mut plan = Plan::new("Test");
+        let id = plan.add_tag("rust").unwrap();
+        assert!(plan.rename_tag(&id, "Rust"));
+        assert_eq!(plan.tags[0].name, "Rust");
+    }
 
-        assert!(p.rename_tag("rust", "typescript"));
-        assert_eq!(p.tags, vec!["typescript"]);
-        assert!(p.users[&uid].tags.contains("typescript"));
-        assert!(!p.users[&uid].tags.contains("rust"));
-        if let WorkerSlot::Placeholder { required_tags, .. } = &p.tasks[&tid].workers[0] {
-            assert!(required_tags.contains("typescript"));
-            assert!(!required_tags.contains("rust"));
-        } else {
-            panic!("expected placeholder");
+    #[test]
+    fn rename_tag_rejects_duplicate_name() {
+        let mut plan = Plan::new("Test");
+        let id1 = plan.add_tag("rust").unwrap();
+        plan.add_tag("python").unwrap();
+        assert!(!plan.rename_tag(&id1, "python"));
+        assert_eq!(plan.tags[0].name, "rust");
+    }
+
+    #[test]
+    fn remove_tag_removes_from_registry_and_users() {
+        let mut plan = Plan::new("Test");
+        let id = plan.add_tag("rust").unwrap();
+        let mut user = User::new("Alice");
+        user.add_tag(id);
+        plan.add_user(user);
+        plan.remove_tag(&id);
+        assert!(plan.tags.is_empty());
+        for user in plan.users.values() {
+            assert!(user.tags.is_empty());
         }
-    }
-
-    #[test]
-    fn rename_tag_fails_if_old_not_found() {
-        let mut p = make_plan();
-        assert!(!p.rename_tag("missing", "new"));
-    }
-
-    #[test]
-    fn rename_tag_fails_if_new_name_already_exists() {
-        let mut p = make_plan();
-        p.add_tag("rust");
-        p.add_tag("python");
-        assert!(!p.rename_tag("rust", "python"));
-        assert_eq!(p.tags, vec!["rust", "python"]);
-    }
-
-    #[test]
-    fn remove_tag_removes_from_registry_users_and_tasks() {
-        let mut p = make_plan();
-        p.add_tag("rust");
-        p.add_tag("python");
-        let uid = p.add_user(User::new("Alice").with_tag("rust").with_tag("python"));
-        let mut t = Task::new("T", "");
-        t.workers.push(WorkerSlot::Placeholder {
-            required_tags: ["rust".to_string(), "python".to_string()].into(),
-            workload_days: 1.0,
-        });
-        let tid = p.add_task(t);
-
-        p.remove_tag("rust");
-        assert_eq!(p.tags, vec!["python"]);
-        assert!(!p.users[&uid].tags.contains("rust"));
-        assert!(p.users[&uid].tags.contains("python"));
-        if let WorkerSlot::Placeholder { required_tags, .. } = &p.tasks[&tid].workers[0] {
-            assert!(!required_tags.contains("rust"));
-            assert!(required_tags.contains("python"));
-        }
-    }
-
-    #[test]
-    fn remove_tag_noop_if_not_in_registry() {
-        let mut p = make_plan();
-        p.remove_tag("missing"); // must not panic
     }
 
     #[test]
     fn move_tag_reorders_registry() {
-        let mut p = make_plan();
-        p.add_tag("a");
-        p.add_tag("b");
-        p.add_tag("c");
-        assert!(p.move_tag("a", 2));
-        assert_eq!(p.tags, vec!["b", "c", "a"]);
+        let mut plan = Plan::new("Test");
+        let a = plan.add_tag("a").unwrap();
+        plan.add_tag("b").unwrap();
+        plan.add_tag("c").unwrap();
+        plan.move_tag(&a, 2);
+        assert_eq!(plan.tags[0].name, "b");
+        assert_eq!(plan.tags[1].name, "c");
+        assert_eq!(plan.tags[2].name, "a");
     }
 
     #[test]
-    fn move_tag_clamps_to_end() {
-        let mut p = make_plan();
-        p.add_tag("a");
-        p.add_tag("b");
-        assert!(p.move_tag("a", 100));
-        assert_eq!(p.tags, vec!["b", "a"]);
+    fn remove_tag_cascades_to_task_placeholders() {
+        let mut plan = Plan::new("Test");
+        let id = plan.add_tag("rust").unwrap();
+        let mut task = Task::new("Dev", "");
+        task.add_placeholder_worker([id], 2.0);
+        plan.add_task(task);
+        plan.remove_tag(&id);
+        for task in plan.tasks.values() {
+            for slot in &task.workers {
+                if let WorkerSlot::Placeholder { required_tags, .. } = slot {
+                    assert!(!required_tags.contains(&id));
+                }
+            }
+        }
     }
 
     #[test]
     fn move_tag_returns_false_if_not_found() {
         let mut p = make_plan();
-        assert!(!p.move_tag("missing", 0));
+        let unknown = crate::data::ids::TagId::new();
+        assert!(!p.move_tag(&unknown, 0));
     }
 
     #[test]
@@ -1007,7 +998,9 @@ mod tests {
         p.save(&path).unwrap();
         let loaded2 = Plan::load(&path).unwrap();
         std::fs::remove_file(&path).ok();
-        assert_eq!(loaded2.tags, vec!["rust", "python"]);
+        assert_eq!(loaded2.tags.len(), 2);
+        assert_eq!(loaded2.tags[0].name, "rust");
+        assert_eq!(loaded2.tags[1].name, "python");
     }
 
     // ── Serialization round-trip ──────────────────────────────────────────────

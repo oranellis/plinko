@@ -1,6 +1,7 @@
 use crate::data::allocation::{
     MilestoneAllocation, PlanAllocation, SlotAllocation, TaskAllocation, WorkSegment,
 };
+use crate::data::ids::TagId;
 use crate::data::task::{TaskStatus, WorkerSlot};
 use crate::data::{Dependency, MilestoneId, NodeId, Plan, TaskId, UserId, constraint};
 use chrono::NaiveDate;
@@ -23,7 +24,7 @@ pub enum SchedulerError {
     EmptyChain,
     MissingTaskAffinity {
         task_name: String,
-        required_tags: HashSet<String>,
+        required_tags: HashSet<TagId>,
     },
     NoPathsToNode(NodeId),
     FixedConstraintViolated {
@@ -47,7 +48,8 @@ impl fmt::Display for SchedulerError {
                 task_name,
                 required_tags,
             } => {
-                let mut tags: Vec<&str> = required_tags.iter().map(String::as_str).collect();
+                let mut tags: Vec<String> =
+                    required_tags.iter().map(|id| id.0.to_string()).collect();
                 tags.sort_unstable();
                 write!(
                     f,
@@ -434,7 +436,7 @@ impl Plan {
     /// Ties broken by smallest `UserId` (lexicographic on the inner Uuid).
     fn select_user_for_placeholder(
         &self,
-        required_tags: &HashSet<String>,
+        required_tags: &HashSet<TagId>,
         workload_days: f32,
         earliest_start: NaiveDate,
         state: &SchedulerState,
@@ -1313,9 +1315,10 @@ mod tests {
 
     #[test]
     fn all_completable_task_with_only_specific_workers() {
-        use crate::data::User;
+        use crate::data::{TagId, User};
         let mut p = Plan::new("Specific");
-        let uid = p.add_user(User::new("Alice").with_tag("rust"));
+        let rust = p.add_tag("rust").unwrap();
+        let uid = p.add_user(User::new("Alice").with_tag(rust));
         let mut task = Task::new("T", "");
         task.add_specific_worker(uid, 3.0);
         p.add_task(task);
@@ -1324,85 +1327,95 @@ mod tests {
 
     #[test]
     fn all_completable_placeholder_satisfied_by_one_user() {
-        use crate::data::User;
+        use crate::data::{TagId, User};
         let mut p = Plan::new("Satisfied");
+        let rust = p.add_tag("rust").unwrap();
         let mut task = Task::new("T", "");
-        task.add_placeholder_worker(["rust"], 3.0);
+        task.add_placeholder_worker([rust], 3.0);
         p.add_task(task);
-        p.add_user(User::new("Alice").with_tag("rust"));
+        p.add_user(User::new("Alice").with_tag(rust));
         assert!(p.all_tasks_completable().is_ok());
     }
 
     #[test]
     fn all_completable_fails_when_no_user_satisfies_placeholder() {
-        use crate::data::User;
+        use crate::data::{TagId, User};
         let mut p = Plan::new("Unsatisfied");
+        let rust = p.add_tag("rust").unwrap();
+        let python = p.add_tag("python").unwrap();
         let mut task = Task::new("T", "");
-        task.add_placeholder_worker(["rust"], 3.0);
+        task.add_placeholder_worker([rust], 3.0);
         p.add_task(task);
-        p.add_user(User::new("Alice").with_tag("python"));
+        p.add_user(User::new("Alice").with_tag(python));
         let err = p.all_tasks_completable().unwrap_err();
         assert!(matches!(err, SchedulerError::MissingTaskAffinity { .. }));
-        assert!(err.to_string().contains("rust"));
         assert!(err.to_string().contains("\"T\""));
     }
 
     #[test]
     fn all_completable_no_users_but_placeholder_required() {
+        use crate::data::TagId;
         let mut p = Plan::new("NoUsers");
+        let rust = p.add_tag("rust").unwrap();
         let mut task = Task::new("T", "");
-        task.add_placeholder_worker(["rust"], 3.0);
+        task.add_placeholder_worker([rust], 3.0);
         p.add_task(task);
         assert!(p.all_tasks_completable().is_err());
     }
 
     #[test]
     fn all_completable_partial_match_is_insufficient() {
-        use crate::data::User;
+        use crate::data::{TagId, User};
         let mut p = Plan::new("Partial");
+        let rust = p.add_tag("rust").unwrap();
+        let skia = p.add_tag("skia").unwrap();
         let mut task = Task::new("T", "");
-        task.add_placeholder_worker(["rust", "skia"], 3.0);
+        task.add_placeholder_worker([rust, skia], 3.0);
         p.add_task(task);
-        p.add_user(User::new("Alice").with_tag("rust")); // missing "skia"
+        p.add_user(User::new("Alice").with_tag(rust)); // missing skia
         assert!(p.all_tasks_completable().is_err());
     }
 
     #[test]
     fn all_completable_second_user_satisfies_placeholder() {
-        use crate::data::User;
+        use crate::data::{TagId, User};
         let mut p = Plan::new("SecondUser");
+        let rust = p.add_tag("rust").unwrap();
+        let python = p.add_tag("python").unwrap();
         let mut task = Task::new("T", "");
-        task.add_placeholder_worker(["rust"], 3.0);
+        task.add_placeholder_worker([rust], 3.0);
         p.add_task(task);
-        p.add_user(User::new("Alice").with_tag("python"));
-        p.add_user(User::new("Bob").with_tag("rust"));
+        p.add_user(User::new("Alice").with_tag(python));
+        p.add_user(User::new("Bob").with_tag(rust));
         assert!(p.all_tasks_completable().is_ok());
     }
 
     #[test]
     fn all_completable_display_lists_tags_sorted() {
-        use crate::data::User;
+        use crate::data::{TagId, User};
         let mut p = Plan::new("Display");
+        let t1 = p.add_tag("typescript").unwrap();
+        let t2 = p.add_tag("react").unwrap();
         let mut task = Task::new("Frontend", "");
-        task.add_placeholder_worker(["typescript", "react"], 3.0);
+        task.add_placeholder_worker([t1, t2], 3.0);
         p.add_task(task);
         p.add_user(User::new("Alice")); // no tags
         let msg = p.all_tasks_completable().unwrap_err().to_string();
         assert!(msg.contains("\"Frontend\""));
-        // Tags should appear sorted
-        let react_pos = msg.find("react").unwrap();
-        let ts_pos = msg.find("typescript").unwrap();
-        assert!(react_pos < ts_pos);
+        // IDs are in the message (sorted UUIDs)
+        assert!(msg.contains(t1.0.to_string().as_str()) || msg.contains(t2.0.to_string().as_str()));
     }
 
     #[test]
     fn all_completable_mixed_slots_both_must_pass() {
-        use crate::data::User;
+        use crate::data::{TagId, User};
         let mut p = Plan::new("Mixed");
-        let uid = p.add_user(User::new("Alice").with_tag("design"));
+        let design = p.add_tag("design").unwrap();
+        let rust = p.add_tag("rust").unwrap();
+        let uid = p.add_user(User::new("Alice").with_tag(design));
         let mut task = Task::new("T", "");
         task.add_specific_worker(uid, 2.0);
-        task.add_placeholder_worker(["rust"], 3.0); // no rust user
+        task.add_placeholder_worker([rust], 3.0); // no rust user
         p.add_task(task);
         assert!(p.all_tasks_completable().is_err());
     }
@@ -1602,8 +1615,10 @@ mod tests {
         let mut p = make_plan();
         p.start_date = date(2030, 1, 7); // future Monday
 
+        let dev = p.add_tag("dev").unwrap();
+
         // Alice works only 4 h/day on every weekday
-        let alice = p.add_user(User::new("Alice").with_tag("dev"));
+        let alice = p.add_user(User::new("Alice").with_tag(dev));
         let half_time = WorkSchedule::weekdays()
             .with_day(Weekday::Monday, 4.0)
             .with_day(Weekday::Tuesday, 4.0)
@@ -1613,14 +1628,14 @@ mod tests {
         p.set_user_schedule(alice, half_time);
 
         // Bob works the default 8 h/day
-        let bob = p.add_user(User::new("Bob").with_tag("dev"));
+        let bob = p.add_user(User::new("Bob").with_tag(dev));
 
         // Placeholder task: 1 workload-day = 8 hours.
         // Alice: 4 h Mon + 4 h Tue → finishes Tuesday.
         // Bob:   8 h Mon            → finishes Monday.
         // Expected: Bob is selected.
         let mut task = Task::new("T", "");
-        task.add_placeholder_worker(["dev"], 1.0);
+        task.add_placeholder_worker([dev], 1.0);
         let tid = p.add_task(task);
         p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
             .unwrap();

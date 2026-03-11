@@ -11,6 +11,8 @@ use crate::pages::Page;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::FloatingWindow;
+use crate::ui::milestone_form_window::MilestoneFormWindow;
+use crate::ui::task_form_window::TaskFormWindow;
 use crate::ui::users_window::UsersWindow;
 
 use state::OverviewState;
@@ -61,8 +63,13 @@ impl Page for OverviewPage {
         _plan: &Plan,
         _sender: &PlanRequestSender,
     ) -> DirtyRegion {
-        if pressed && let Some(0) = render::hit_test_toolbar_buttons(x, y) {
-            self.state.open_users_window = true;
+        if pressed {
+            match render::hit_test_toolbar_buttons(x, y) {
+                Some(0) => self.state.open_users_window = true,
+                Some(1) => self.state.open_task_form = true,
+                Some(2) => self.state.open_milestone_form = true,
+                _ => {}
+            }
         }
         DirtyRegion::None
     }
@@ -70,10 +77,17 @@ impl Page for OverviewPage {
     fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
         if self.state.open_users_window {
             self.state.open_users_window = false;
-            Some(Box::new(UsersWindow::new()))
-        } else {
-            None
+            return Some(Box::new(UsersWindow::new()));
         }
+        if self.state.open_task_form {
+            self.state.open_task_form = false;
+            return Some(Box::new(TaskFormWindow::new()));
+        }
+        if self.state.open_milestone_form {
+            self.state.open_milestone_form = false;
+            return Some(Box::new(MilestoneFormWindow::new()));
+        }
+        None
     }
 
     fn reset_hover(&mut self) {

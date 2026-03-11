@@ -5,7 +5,7 @@ use skia_safe::{
 };
 use winit::keyboard::{Key, NamedKey};
 
-use crate::data::Plan;
+use crate::data::{Plan, TagId};
 use crate::engine::{PlanRequest, PlanRequestSender};
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
@@ -44,6 +44,8 @@ pub struct TagsWindow {
     /// When Some, the add-tag footer is visible with an inline text input.
     add_input: Option<TextInput>,
     hovered_confirm: bool,
+    /// When Some, the tag with this `TagId` is being renamed via the inline input.
+    rename_state: Option<(TagId, TextInput)>,
 }
 
 impl TagsWindow {
@@ -57,16 +59,14 @@ impl TagsWindow {
             drag_state: None,
             add_input: None,
             hovered_confirm: false,
+            rename_state: None,
         }
     }
 
     fn panel_rect(width: f32, height: f32) -> Rect {
-        Rect::from_xywh(
-            (width - PANEL_W) / 2.0,
-            (height - PANEL_H) / 2.0,
-            PANEL_W,
-            PANEL_H,
-        )
+        let pw = (width * 0.95).min(PANEL_W);
+        let ph = (height * 0.95).min(PANEL_H);
+        Rect::from_xywh((width - pw) / 2.0, (height - ph) / 2.0, pw, ph)
     }
 
     fn back_btn_rect(width: f32, height: f32) -> Rect {
@@ -95,14 +95,14 @@ impl TagsWindow {
         Rect::from_xywh(
             p.left,
             p.top + TITLE_H + 1.0,
-            PANEL_W,
-            PANEL_H - TITLE_H - 1.0 - footer,
+            p.width(),
+            p.height() - TITLE_H - 1.0 - footer,
         )
     }
 
     fn footer_rect(width: f32, height: f32) -> Rect {
         let p = Self::panel_rect(width, height);
-        Rect::from_xywh(p.left, p.bottom - FOOTER_H, PANEL_W, FOOTER_H)
+        Rect::from_xywh(p.left, p.bottom - FOOTER_H, p.width(), FOOTER_H)
     }
 
     fn confirm_btn_rect(width: f32, height: f32) -> Rect {
@@ -130,9 +130,9 @@ impl TagsWindow {
         list_top + idx as f32 * ROW_H - self.scroll_offset
     }
 
-    fn max_scroll(n_tags: usize, has_footer: bool) -> f32 {
+    fn max_scroll(n_tags: usize, width: f32, height: f32, has_footer: bool) -> f32 {
         let content_h = n_tags as f32 * ROW_H;
-        let list_h = PANEL_H - TITLE_H - 1.0 - if has_footer { FOOTER_H } else { 0.0 };
+        let list_h = Self::list_rect(width, height, has_footer).height();
         (content_h - list_h).max(0.0)
     }
 
@@ -288,7 +288,12 @@ impl FloatingWindow for TagsWindow {
         paint.set_color(Color::from_argb(40, 0, 0, 0));
         canvas.draw_rrect(
             RRect::new_rect_xy(
-                Rect::from_xywh(panel.left + 2.0, panel.top + 4.0, PANEL_W, PANEL_H),
+                Rect::from_xywh(
+                    panel.left + 2.0,
+                    panel.top + 4.0,
+                    panel.width(),
+                    panel.height(),
+                ),
                 CORNER,
                 CORNER,
             ),
@@ -300,11 +305,16 @@ impl FloatingWindow for TagsWindow {
         canvas.draw_rrect(RRect::new_rect_xy(panel, CORNER, CORNER), &paint);
 
         // Title bar
-        let title_rect = Rect::from_xywh(panel.left, panel.top, PANEL_W, TITLE_H);
+        let title_rect = Rect::from_xywh(panel.left, panel.top, panel.width(), TITLE_H);
         paint.set_color(Color::from(LIST_BG));
         canvas.draw_rrect(RRect::new_rect_xy(title_rect, CORNER, CORNER), &paint);
         canvas.draw_rect(
-            Rect::from_xywh(panel.left, panel.top + CORNER, PANEL_W, TITLE_H - CORNER),
+            Rect::from_xywh(
+                panel.left,
+                panel.top + CORNER,
+                panel.width(),
+                TITLE_H - CORNER,
+            ),
             &paint,
         );
 
@@ -312,7 +322,7 @@ impl FloatingWindow for TagsWindow {
         if let Some(blob) = TextBlob::new("Tags", &cache.font) {
             let (_, metrics) = cache.font.metrics();
             let (advance, _) = cache.font.measure_str("Tags", None);
-            let tx = panel.left + (PANEL_W - advance) / 2.0;
+            let tx = panel.left + (panel.width() - advance) / 2.0;
             let ty =
                 panel.top + (TITLE_H - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
             paint.set_color(Color::from(ITEM_FG));
@@ -325,7 +335,7 @@ impl FloatingWindow for TagsWindow {
         // Divider below title
         paint.set_color(Color::from(DIVIDER_COLOR));
         canvas.draw_rect(
-            Rect::from_xywh(panel.left, panel.top + TITLE_H, PANEL_W, 1.0),
+            Rect::from_xywh(panel.left, panel.top + TITLE_H, panel.width(), 1.0),
             &paint,
         );
 
@@ -337,7 +347,7 @@ impl FloatingWindow for TagsWindow {
             if let Some(blob) = TextBlob::new("No tags yet", &cache.font) {
                 let (_, metrics) = cache.font.metrics();
                 let (advance, _) = cache.font.measure_str("No tags yet", None);
-                let tx = panel.left + (PANEL_W - advance) / 2.0;
+                let tx = panel.left + (panel.width() - advance) / 2.0;
                 let ty = list.top + 48.0 - metrics.ascent;
                 paint.set_color(Color::from(PANEL_TEXT));
                 canvas.draw_text_blob(&blob, (tx, ty), &paint);
@@ -359,13 +369,21 @@ impl FloatingWindow for TagsWindow {
                 }
 
                 let is_dragged = self.drag_state.map(|(s, _)| s == i).unwrap_or(false);
+                let is_renaming = self
+                    .rename_state
+                    .as_ref()
+                    .map(|(id, _)| id == &tag.id)
+                    .unwrap_or(false);
 
                 // Row hover background
                 let is_hovered = self.hovered_row == Some(i) && !is_dragged;
                 if is_hovered {
                     paint.set_color(Color::from(LIST_ITEM_HOVER_BG));
                     paint.set_style(PaintStyle::Fill);
-                    canvas.draw_rect(Rect::from_xywh(panel.left, ry, PANEL_W, ROW_H), &paint);
+                    canvas.draw_rect(
+                        Rect::from_xywh(panel.left, ry, panel.width(), ROW_H),
+                        &paint,
+                    );
                 }
 
                 // Alpha for dragged row
@@ -378,12 +396,86 @@ impl FloatingWindow for TagsWindow {
                     Self::draw_grip(canvas, handle_zone);
                 }
 
-                // Tag name
-                if let Some(blob) = TextBlob::new(tag, &cache.font) {
-                    paint.set_color(Color::from_argb(alpha, 0x33, 0x33, 0x33));
-                    paint.set_style(PaintStyle::Fill);
-                    let tx = panel.left + PADDING + HANDLE_W + 4.0;
-                    canvas.draw_text_blob(&blob, (tx, ry + text_y_offset), &paint);
+                if is_renaming {
+                    // Draw inline rename input in the tag name area
+                    if let Some((_, ref input)) = self.rename_state {
+                        let input_rect = Rect::from_xywh(
+                            panel.left + PADDING + HANDLE_W + 4.0,
+                            ry + 4.0,
+                            panel.right
+                                - PADDING
+                                - DELETE_W
+                                - SCROLLBAR_W
+                                - 2.0
+                                - (panel.left + PADDING + HANDLE_W + 4.0)
+                                - 4.0,
+                            ROW_H - 8.0,
+                        );
+                        // Background
+                        paint.set_color(Color::from(INPUT_BG));
+                        paint.set_style(PaintStyle::Fill);
+                        canvas.draw_rrect(
+                            RRect::new_rect_xy(input_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                            &paint,
+                        );
+                        // Border
+                        paint.set_color(Color::from(INPUT_BORDER_FOCUS));
+                        paint.set_style(PaintStyle::Stroke);
+                        paint.set_stroke_width(1.0);
+                        canvas.draw_rrect(
+                            RRect::new_rect_xy(input_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                            &paint,
+                        );
+                        paint.set_style(PaintStyle::Fill);
+                        // Text + cursor
+                        let h_pad = 6.0;
+                        let inner = Rect::from_xywh(
+                            input_rect.left + h_pad,
+                            input_rect.top + 2.0,
+                            input_rect.width() - 2.0 * h_pad,
+                            input_rect.height() - 4.0,
+                        );
+                        canvas.save();
+                        canvas.clip_rect(inner, ClipOp::Intersect, false);
+                        let (_, fm) = cache.font.metrics();
+                        let text_y = input_rect.top
+                            + (input_rect.height() - (fm.descent - fm.ascent)) / 2.0
+                            - fm.ascent;
+                        if !input.content.is_empty()
+                            && let Some(blob) = TextBlob::new(&input.content, &cache.font)
+                        {
+                            paint.set_color(Color::from(INPUT_FG));
+                            canvas.draw_text_blob(&blob, (inner.left, text_y), &paint);
+                        }
+                        let cursor_x = if input.cursor == 0 {
+                            0.0
+                        } else {
+                            let (adv, _) = cache.font.measure_str(
+                                &input.content[..input.cursor.min(input.content.len())],
+                                None,
+                            );
+                            adv
+                        };
+                        paint.set_color(Color::from(INPUT_CURSOR_COLOR));
+                        canvas.draw_rect(
+                            Rect::from_xywh(
+                                inner.left + cursor_x,
+                                input_rect.top + 3.0,
+                                1.5,
+                                input_rect.height() - 6.0,
+                            ),
+                            &paint,
+                        );
+                        canvas.restore();
+                    }
+                } else {
+                    // Tag name
+                    if let Some(blob) = TextBlob::new(&tag.name, &cache.font) {
+                        paint.set_color(Color::from_argb(alpha, 0x33, 0x33, 0x33));
+                        paint.set_style(PaintStyle::Fill);
+                        let tx = panel.left + PADDING + HANDLE_W + 4.0;
+                        canvas.draw_text_blob(&blob, (tx, ry + text_y_offset), &paint);
+                    }
                 }
 
                 // Delete button zone
@@ -404,7 +496,7 @@ impl FloatingWindow for TagsWindow {
                         Rect::from_xywh(
                             panel.left + PADDING + HANDLE_W,
                             ry + ROW_H - 1.0,
-                            PANEL_W - 2.0 * PADDING - HANDLE_W,
+                            panel.width() - 2.0 * PADDING - HANDLE_W,
                             1.0,
                         ),
                         &paint,
@@ -422,7 +514,7 @@ impl FloatingWindow for TagsWindow {
                     Rect::from_xywh(
                         panel.left + PADDING,
                         line_y - 1.5,
-                        PANEL_W - 2.0 * PADDING,
+                        panel.width() - 2.0 * PADDING,
                         3.0,
                     ),
                     &paint,
@@ -437,11 +529,14 @@ impl FloatingWindow for TagsWindow {
                 // Ghost background
                 paint.set_color(Color::from_argb(220, 255, 255, 255));
                 paint.set_style(PaintStyle::Fill);
-                canvas.draw_rect(Rect::from_xywh(panel.left, gy, PANEL_W, ROW_H), &paint);
+                canvas.draw_rect(
+                    Rect::from_xywh(panel.left, gy, panel.width(), ROW_H),
+                    &paint,
+                );
                 // Ghost shadow
                 paint.set_color(Color::from_argb(30, 0, 0, 0));
                 canvas.draw_rect(
-                    Rect::from_xywh(panel.left, gy + ROW_H, PANEL_W, 3.0),
+                    Rect::from_xywh(panel.left, gy + ROW_H, panel.width(), 3.0),
                     &paint,
                 );
                 // Ghost grip
@@ -450,7 +545,7 @@ impl FloatingWindow for TagsWindow {
                     Rect::from_xywh(panel.left, gy, PADDING + HANDLE_W, ROW_H),
                 );
                 // Ghost name
-                if let Some(blob) = TextBlob::new(tag, &cache.font) {
+                if let Some(blob) = TextBlob::new(&tag.name, &cache.font) {
                     paint.set_color(Color::from(ITEM_FG));
                     canvas.draw_text_blob(
                         &blob,
@@ -465,9 +560,9 @@ impl FloatingWindow for TagsWindow {
 
         // Scrollbar
         let n = plan.tags.len();
-        let max_scroll = Self::max_scroll(n, has_footer);
+        let max_scroll = Self::max_scroll(n, width, height, has_footer);
         if max_scroll > 0.0 {
-            let list_h = PANEL_H - TITLE_H - 1.0 - if has_footer { FOOTER_H } else { 0.0 };
+            let list_h = list.height();
             let content_h = n as f32 * ROW_H;
             let thumb_h = (list_h * list_h / content_h).max(20.0);
             let thumb_y = list.top + (self.scroll_offset / max_scroll) * (list_h - thumb_h);
@@ -497,7 +592,7 @@ impl FloatingWindow for TagsWindow {
             // Footer divider
             paint.set_color(Color::from(DIVIDER_COLOR));
             canvas.draw_rect(
-                Rect::from_xywh(panel.left, footer.top, PANEL_W, 1.0),
+                Rect::from_xywh(panel.left, footer.top, panel.width(), 1.0),
                 &paint,
             );
 
@@ -646,9 +741,9 @@ impl FloatingWindow for TagsWindow {
                     let gap = Self::drag_gap(drag_y, list.top, self.scroll_offset, n);
                     let new_index = Self::gap_to_new_index(gap, src_idx);
                     if new_index != src_idx
-                        && let Some(name) = plan.tags.get(src_idx)
+                        && let Some(tag) = plan.tags.get(src_idx)
                     {
-                        sender.send(PlanRequest::MoveTag(name.clone(), new_index));
+                        sender.send(PlanRequest::MoveTag(tag.id, new_index));
                     }
                 }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
@@ -691,8 +786,8 @@ impl FloatingWindow for TagsWindow {
             // Delete button zone
             let del_x = panel.right - PADDING - DELETE_W - SCROLLBAR_W - 2.0;
             if x >= del_x && x <= del_x + DELETE_W {
-                if let Some(name) = plan.tags.get(idx) {
-                    sender.send(PlanRequest::DeleteTag(name.clone()));
+                if let Some(tag) = plan.tags.get(idx) {
+                    sender.send(PlanRequest::DeleteTag(tag.id));
                 }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
@@ -703,12 +798,89 @@ impl FloatingWindow for TagsWindow {
                 self.drag_state = Some((idx, y));
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
+
+            // Tag name zone — start rename
+            let name_end_x = panel.right - PADDING - DELETE_W - SCROLLBAR_W - 2.0;
+            if x > handle_end_x && x < name_end_x {
+                if let Some(tag) = plan.tags.get(idx) {
+                    let tag_id = tag.id;
+                    let current_name = tag.name.clone();
+                    self.rename_state = Some((tag_id, TextInput::new(&current_name)));
+                }
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
         }
 
         FloatingWindowOutcome::default()
     }
 
     fn on_key_input(&mut self, key: &Key, sender: &PlanRequestSender) -> FloatingWindowOutcome {
+        // Rename state takes priority
+        if self.rename_state.is_some() {
+            match key {
+                Key::Named(NamedKey::Escape) => {
+                    self.rename_state = None;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Enter) => {
+                    if let Some((tag_id, ref input)) = self.rename_state {
+                        let new_name = input.content.trim().to_string();
+                        if !new_name.is_empty() {
+                            sender.send(PlanRequest::RenameTag(tag_id, new_name));
+                        }
+                    }
+                    self.rename_state = None;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    if let Some((_, ref mut input)) = self.rename_state {
+                        input.backspace();
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowLeft) => {
+                    if let Some((_, ref mut input)) = self.rename_state {
+                        input.move_left();
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    if let Some((_, ref mut input)) = self.rename_state {
+                        input.move_right();
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Home) => {
+                    if let Some((_, ref mut input)) = self.rename_state {
+                        input.move_home();
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::End) => {
+                    if let Some((_, ref mut input)) = self.rename_state {
+                        input.move_end();
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Space) => {
+                    if let Some((_, ref mut input)) = self.rename_state {
+                        input.insert_str(" ");
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Character(c) => {
+                    if c.chars().all(|ch| !ch.is_control()) {
+                        if let Some((_, ref mut input)) = self.rename_state {
+                            input.insert_str(c.as_str());
+                        }
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                    return FloatingWindowOutcome::default();
+                }
+                _ => return FloatingWindowOutcome::default(),
+            }
+        }
+
         if let Some(input) = &mut self.add_input {
             match key {
                 Key::Named(NamedKey::Escape) => {
@@ -757,8 +929,14 @@ impl FloatingWindow for TagsWindow {
         }
     }
 
-    fn on_scroll(&mut self, delta_y: f32, plan: &Plan) -> FloatingWindowOutcome {
-        let max = Self::max_scroll(plan.tags.len(), self.add_input.is_some());
+    fn on_scroll(
+        &mut self,
+        delta_y: f32,
+        plan: &Plan,
+        width: f32,
+        height: f32,
+    ) -> FloatingWindowOutcome {
+        let max = Self::max_scroll(plan.tags.len(), width, height, self.add_input.is_some());
         if max <= 0.0 {
             return FloatingWindowOutcome::default();
         }
@@ -777,6 +955,7 @@ impl FloatingWindow for TagsWindow {
         self.hovered_row = None;
         self.hovered_delete = None;
         self.hovered_confirm = false;
+        self.rename_state = None;
     }
 }
 

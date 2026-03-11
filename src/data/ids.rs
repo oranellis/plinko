@@ -48,6 +48,16 @@ impl UserId {
     }
 }
 
+/// Unique identifier for a tag in the plan's tag registry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TagId(pub Uuid);
+
+impl TagId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,6 +80,13 @@ mod tests {
     fn user_ids_are_unique() {
         let a = UserId::new();
         let b = UserId::new();
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn tag_ids_are_unique() {
+        let a = TagId::new();
+        let b = TagId::new();
         assert_ne!(a, b);
     }
 

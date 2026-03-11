@@ -38,7 +38,7 @@ use chrono::NaiveDate;
 
 use crate::data::constraint::DateConstraint;
 use crate::data::dependency::Dependency;
-use crate::data::ids::{MilestoneId, TaskId, UserId};
+use crate::data::ids::{MilestoneId, TagId, TaskId, UserId};
 use crate::data::plan::DependencyError;
 use crate::data::scheduler::SchedulerError;
 use crate::data::task::WorkerSlot;
@@ -60,6 +60,9 @@ use crate::data::{Plan, WorkSchedule};
 pub struct TaskPatch {
     pub name: Option<String>,
     pub description: Option<String>,
+    /// Directly overrides the task status. Bypasses lifecycle date-recording;
+    /// use alongside `actual_start_date` / `actual_end_date` when needed.
+    pub status: Option<crate::data::task::TaskStatus>,
     /// `Some(None)` clears the recorded start date.
     pub actual_start_date: Option<Option<NaiveDate>>,
     /// `Some(None)` clears the recorded end date.
@@ -86,6 +89,10 @@ impl TaskPatch {
     }
     pub fn description(mut self, v: impl Into<String>) -> Self {
         self.description = Some(v.into());
+        self
+    }
+    pub fn status(mut self, v: crate::data::task::TaskStatus) -> Self {
+        self.status = Some(v);
         self
     }
     pub fn actual_start_date(mut self, v: Option<NaiveDate>) -> Self {
@@ -155,7 +162,7 @@ impl MilestonePatch {
 pub struct UserPatch {
     pub name: Option<String>,
     /// Replaces the user's entire tag set.
-    pub tags: Option<HashSet<String>>,
+    pub tags: Option<HashSet<TagId>>,
     /// `Some(None)` clears the avatar; `Some(Some(v))` sets it to new bytes; `None` leaves it unchanged.
     pub avatar: Option<Option<Vec<u8>>>,
 }
@@ -169,7 +176,7 @@ impl UserPatch {
         self.name = Some(v.into());
         self
     }
-    pub fn tags(mut self, v: HashSet<String>) -> Self {
+    pub fn tags(mut self, v: HashSet<TagId>) -> Self {
         self.tags = Some(v);
         self
     }
@@ -233,14 +240,13 @@ pub enum PlanRequest {
     /// Append a new tag to the plan's ordered tag registry. No-op if it already
     /// exists.
     AddTag(String),
-    /// Rename a tag in the registry and update every user tag set and task
-    /// placeholder that references it.
-    RenameTag(String, String),
+    /// Rename a tag in the registry by ID.
+    RenameTag(TagId, String),
     /// Remove a tag from the registry and strip it from all users and task
     /// placeholders.
-    DeleteTag(String),
+    DeleteTag(TagId),
     /// Move a tag to a new position in the registry (controls UI display order).
-    MoveTag(String, usize),
+    MoveTag(TagId, usize),
 }
 
 // ── Responses ─────────────────────────────────────────────────────────────────
@@ -515,18 +521,18 @@ impl PlanEngine {
                 PlanResponse::PlanUpdated
             }
 
-            PlanRequest::RenameTag(old, new_name) => {
-                self.plan.rename_tag(&old, &new_name);
+            PlanRequest::RenameTag(id, new_name) => {
+                self.plan.rename_tag(&id, &new_name);
                 PlanResponse::PlanUpdated
             }
 
-            PlanRequest::DeleteTag(name) => {
-                self.plan.remove_tag(&name);
+            PlanRequest::DeleteTag(id) => {
+                self.plan.remove_tag(&id);
                 PlanResponse::PlanUpdated
             }
 
-            PlanRequest::MoveTag(name, new_index) => {
-                self.plan.move_tag(&name, new_index);
+            PlanRequest::MoveTag(id, new_index) => {
+                self.plan.move_tag(&id, new_index);
                 PlanResponse::PlanUpdated
             }
         }
@@ -559,6 +565,9 @@ fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result<(),
     }
     if let Some(v) = patch.description {
         task.description = v;
+    }
+    if let Some(v) = patch.status {
+        task.status = v;
     }
     if let Some(v) = patch.actual_start_date {
         task.actual_start_date = v;

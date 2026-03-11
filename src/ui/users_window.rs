@@ -54,9 +54,9 @@ impl UsersWindow {
     }
 
     fn panel_rect(width: f32, height: f32) -> Rect {
-        let x = (width - PANEL_W) / 2.0;
-        let y = (height - PANEL_H) / 2.0;
-        Rect::from_xywh(x, y, PANEL_W, PANEL_H)
+        let pw = (width * 0.95).min(PANEL_W);
+        let ph = (height * 0.95).min(PANEL_H);
+        Rect::from_xywh((width - pw) / 2.0, (height - ph) / 2.0, pw, ph)
     }
 
     /// Back (chevron) button — left side of title bar.
@@ -98,8 +98,8 @@ impl UsersWindow {
         Rect::from_xywh(
             panel.left,
             panel.top + TITLE_H + 1.0,
-            PANEL_W,
-            PANEL_H - TITLE_H - 1.0,
+            panel.width(),
+            panel.height() - TITLE_H - 1.0,
         )
     }
 
@@ -107,9 +107,9 @@ impl UsersWindow {
         list_top + idx as f32 * ROW_H - self.scroll_offset
     }
 
-    fn max_scroll(user_count: usize) -> f32 {
+    fn max_scroll(user_count: usize, width: f32, height: f32) -> f32 {
         let content_h = user_count as f32 * ROW_H;
-        let list_h = PANEL_H - TITLE_H - 1.0;
+        let list_h = Self::list_rect(width, height).height();
         (content_h - list_h).max(0.0)
     }
 
@@ -212,7 +212,12 @@ impl FloatingWindow for UsersWindow {
         paint.set_color(Color::from_argb(40, 0, 0, 0));
         canvas.draw_rrect(
             RRect::new_rect_xy(
-                Rect::from_xywh(panel.left + 2.0, panel.top + 4.0, PANEL_W, PANEL_H),
+                Rect::from_xywh(
+                    panel.left + 2.0,
+                    panel.top + 4.0,
+                    panel.width(),
+                    panel.height(),
+                ),
                 CORNER,
                 CORNER,
             ),
@@ -224,11 +229,16 @@ impl FloatingWindow for UsersWindow {
         canvas.draw_rrect(RRect::new_rect_xy(panel, CORNER, CORNER), &paint);
 
         // Title bar background — full rrect then square off the bottom half
-        let title_rect = Rect::from_xywh(panel.left, panel.top, PANEL_W, TITLE_H);
+        let title_rect = Rect::from_xywh(panel.left, panel.top, panel.width(), TITLE_H);
         paint.set_color(Color::from(LIST_BG));
         canvas.draw_rrect(RRect::new_rect_xy(title_rect, CORNER, CORNER), &paint);
         canvas.draw_rect(
-            Rect::from_xywh(panel.left, panel.top + CORNER, PANEL_W, TITLE_H - CORNER),
+            Rect::from_xywh(
+                panel.left,
+                panel.top + CORNER,
+                panel.width(),
+                TITLE_H - CORNER,
+            ),
             &paint,
         );
 
@@ -236,7 +246,7 @@ impl FloatingWindow for UsersWindow {
         if let Some(blob) = TextBlob::new("Team Members", &cache.font) {
             let (_, metrics) = cache.font.metrics();
             let (advance, _) = cache.font.measure_str("Team Members", None);
-            let tx = panel.left + (PANEL_W - advance) / 2.0;
+            let tx = panel.left + (panel.width() - advance) / 2.0;
             let ty =
                 panel.top + (TITLE_H - metrics.descent + metrics.ascent) / 2.0 - metrics.ascent;
             paint.set_color(Color::from(ITEM_FG));
@@ -255,7 +265,7 @@ impl FloatingWindow for UsersWindow {
         // Divider below title
         paint.set_color(Color::from(DIVIDER_COLOR));
         canvas.draw_rect(
-            Rect::from_xywh(panel.left, panel.top + TITLE_H, PANEL_W, 1.0),
+            Rect::from_xywh(panel.left, panel.top + TITLE_H, panel.width(), 1.0),
             &paint,
         );
 
@@ -270,7 +280,7 @@ impl FloatingWindow for UsersWindow {
             if let Some(blob) = TextBlob::new("No team members yet", &cache.font) {
                 let (_, metrics) = cache.font.metrics();
                 let (advance, _) = cache.font.measure_str("No team members yet", None);
-                let tx = panel.left + (PANEL_W - advance) / 2.0;
+                let tx = panel.left + (panel.width() - advance) / 2.0;
                 let ty = list.top + 48.0 - metrics.ascent;
                 paint.set_color(Color::from(PANEL_TEXT));
                 canvas.draw_text_blob(&blob, (tx, ty), &paint);
@@ -310,7 +320,10 @@ impl FloatingWindow for UsersWindow {
                 // Row hover background
                 if self.hovered_row == Some(i) {
                     paint.set_color(Color::from(LIST_ITEM_HOVER_BG));
-                    canvas.draw_rect(Rect::from_xywh(panel.left, ry, PANEL_W, ROW_H), &paint);
+                    canvas.draw_rect(
+                        Rect::from_xywh(panel.left, ry, panel.width(), ROW_H),
+                        &paint,
+                    );
                 }
 
                 // Avatar circle
@@ -404,11 +417,20 @@ impl FloatingWindow for UsersWindow {
                     );
                 }
 
-                // Tags (right-aligned, small font, sorted)
+                // Tags (right-aligned, small font, sorted by name)
                 if !user.tags.is_empty() {
-                    let mut tags: Vec<&str> = user.tags.iter().map(|s| s.as_str()).collect();
-                    tags.sort_unstable();
-                    let tags_str = tags.join(", ");
+                    let mut tag_names: Vec<&str> = user
+                        .tags
+                        .iter()
+                        .filter_map(|id| {
+                            plan.tags
+                                .iter()
+                                .find(|t| &t.id == id)
+                                .map(|t| t.name.as_str())
+                        })
+                        .collect();
+                    tag_names.sort_unstable();
+                    let tags_str = tag_names.join(", ");
                     if let Some(blob) = TextBlob::new(&tags_str, &cache.small_font) {
                         let tx = panel.right - PADDING - SCROLLBAR_W - 4.0 - blob.bounds().width();
                         paint.set_color(Color::from(LIST_SECTION_FG));
@@ -423,7 +445,7 @@ impl FloatingWindow for UsersWindow {
                         Rect::from_xywh(
                             panel.left + PADDING,
                             ry + ROW_H - 1.0,
-                            PANEL_W - 2.0 * PADDING,
+                            panel.width() - 2.0 * PADDING,
                             1.0,
                         ),
                         &paint,
@@ -437,9 +459,9 @@ impl FloatingWindow for UsersWindow {
         // Scrollbar thumb
         let user_count = sorted_users.len();
         drop(sorted_users);
-        let max_scroll = Self::max_scroll(user_count);
+        let max_scroll = Self::max_scroll(user_count, width, height);
         if max_scroll > 0.0 {
-            let list_h = PANEL_H - TITLE_H - 1.0;
+            let list_h = list.height();
             let content_h = user_count as f32 * ROW_H;
             let thumb_h = (list_h * list_h / content_h).max(20.0);
             let thumb_y = list.top + (self.scroll_offset / max_scroll) * (list_h - thumb_h);
@@ -534,8 +556,14 @@ impl FloatingWindow for UsersWindow {
         FloatingWindowOutcome::default()
     }
 
-    fn on_scroll(&mut self, delta_y: f32, plan: &Plan) -> FloatingWindowOutcome {
-        let max = Self::max_scroll(plan.users.len());
+    fn on_scroll(
+        &mut self,
+        delta_y: f32,
+        plan: &Plan,
+        width: f32,
+        height: f32,
+    ) -> FloatingWindowOutcome {
+        let max = Self::max_scroll(plan.users.len(), width, height);
         if max <= 0.0 {
             return FloatingWindowOutcome::default();
         }
@@ -550,13 +578,13 @@ impl FloatingWindow for UsersWindow {
 
     fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
         if let Some(user) = self.pending_edit.take() {
-            return Some(Box::new(crate::ui::edit_user_window::EditUserWindow::new(
-                &user,
-            )));
+            return Some(Box::new(
+                crate::ui::user_form_window::UserFormWindow::from_user(&user),
+            ));
         }
         if self.pending_open_add {
             self.pending_open_add = false;
-            return Some(Box::new(crate::ui::add_user_window::AddUserWindow::new()));
+            return Some(Box::new(crate::ui::user_form_window::UserFormWindow::new()));
         }
         if self.pending_open_tags {
             self.pending_open_tags = false;

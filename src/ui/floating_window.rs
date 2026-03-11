@@ -81,7 +81,13 @@ pub trait FloatingWindow {
 
     /// Called on mouse-wheel / trackpad scroll while this window is topmost.
     /// `delta_y` is positive when scrolling up (content moves down).
-    fn on_scroll(&mut self, _delta_y: f32, _plan: &Plan) -> FloatingWindowOutcome {
+    fn on_scroll(
+        &mut self,
+        _delta_y: f32,
+        _plan: &Plan,
+        _width: f32,
+        _height: f32,
+    ) -> FloatingWindowOutcome {
         FloatingWindowOutcome::default()
     }
 
@@ -188,9 +194,9 @@ impl FloatingWindowManager {
         }
     }
 
-    pub fn on_scroll(&mut self, delta_y: f32, plan: &Plan) -> DirtyRegion {
+    pub fn on_scroll(&mut self, delta_y: f32, plan: &Plan, width: f32, height: f32) -> DirtyRegion {
         let outcome = match self.stack.last_mut() {
-            Some(w) => w.on_scroll(delta_y, plan),
+            Some(w) => w.on_scroll(delta_y, plan, width, height),
             None => return DirtyRegion::None,
         };
         self.apply(outcome)
@@ -204,6 +210,12 @@ impl FloatingWindowManager {
             outcome.dirty
         }
     }
+}
+
+/// Returns the actual panel dimensions given the window size and the window's
+/// preferred maximum dimensions.  Each axis is `min(window * 0.95, max)`.
+pub fn panel_size(window_w: f32, window_h: f32, max_w: f32, max_h: f32) -> (f32, f32) {
+    ((window_w * 0.95).min(max_w), (window_h * 0.95).min(max_h))
 }
 
 fn draw_dim_backdrop(canvas: &Canvas, width: f32, height: f32) {

@@ -499,8 +499,9 @@ impl ApplicationHandler for Application {
                         MouseScrollDelta::LineDelta(_, y) => y,
                         MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 40.0,
                     };
+                    let (width, height) = self.logical_size();
                     let plan = self.engine.plan();
-                    let dirty = self.floats.on_scroll(delta_y, plan);
+                    let dirty = self.floats.on_scroll(delta_y, plan, width, height);
                     self.mark_dirty(dirty);
                 }
             }

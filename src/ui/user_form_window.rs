@@ -1,11 +1,14 @@
-//! Floating form for editing an existing team member.
+//! Floating form for creating or editing a team member.
+//!
+//! A single [`UserFormWindow`] handles both flows; the title and submit
+//! behaviour change based on whether a `UserId` was supplied at construction.
 
 use skia_safe::{
     Canvas, ClipOp, Color, Contains, Paint, PaintStyle, PathBuilder, Point, RRect, Rect, TextBlob,
 };
 use winit::keyboard::{Key, NamedKey};
 
-use crate::data::{Plan, Tag, TagId, ids::UserId};
+use crate::data::{Plan, Tag, TagId, User, ids::UserId};
 use crate::engine::{PlanRequest, PlanRequestSender, UserPatch};
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
@@ -51,8 +54,14 @@ enum Field {
     AvatarPath,
 }
 
-pub struct EditUserWindow {
-    user_id: UserId,
+/// Whether this form is creating a new user or editing an existing one.
+enum Mode {
+    New,
+    Edit(UserId),
+}
+
+pub struct UserFormWindow {
+    mode: Mode,
     name: TextInput,
     tag_filter: TextInput,
     selected_tags: Vec<TagId>,
@@ -66,14 +75,34 @@ pub struct EditUserWindow {
     avatar_error: bool,
 }
 
-impl EditUserWindow {
-    pub fn new(user: &crate::data::User) -> Self {
+impl UserFormWindow {
+    /// Open the form to create a new team member.
+    pub fn new() -> Self {
+        let mut name = TextInput::new("");
+        name.focused = true;
+        Self {
+            mode: Mode::New,
+            name,
+            tag_filter: TextInput::new(""),
+            selected_tags: Vec::new(),
+            dropdown_open: false,
+            dropdown_scroll: 0,
+            dropdown_hovered: None,
+            avatar_path: TextInput::new(""),
+            focused: Field::Name,
+            hovered_back: false,
+            hovered_save: false,
+            avatar_error: false,
+        }
+    }
+
+    /// Open the form pre-filled with an existing user's data.
+    pub fn from_user(user: &User) -> Self {
         let mut name = TextInput::new(&user.name);
         name.focused = true;
-        // Pre-select the user's existing tags
         let selected_tags: Vec<TagId> = user.tags.iter().copied().collect();
         Self {
-            user_id: user.id,
+            mode: Mode::Edit(user.id),
             name,
             tag_filter: TextInput::new(""),
             selected_tags,
@@ -85,6 +114,20 @@ impl EditUserWindow {
             hovered_back: false,
             hovered_save: false,
             avatar_error: false,
+        }
+    }
+
+    fn title(&self) -> &'static str {
+        match self.mode {
+            Mode::New => "Add Team Member",
+            Mode::Edit(_) => "Edit Team Member",
+        }
+    }
+
+    fn avatar_label(&self) -> &'static str {
+        match self.mode {
+            Mode::New => "Avatar image path (optional)",
+            Mode::Edit(_) => "Avatar image path (blank = keep existing)",
         }
     }
 
@@ -198,11 +241,12 @@ impl EditUserWindow {
     fn try_submit(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         let name = self.name.content.trim().to_string();
 
-        let avatar: Option<Option<Vec<u8>>> = if self.avatar_path.content.trim().is_empty() {
+        let avatar_path = self.avatar_path.content.trim();
+        let avatar_bytes: Option<Vec<u8>> = if avatar_path.is_empty() {
             None
         } else {
-            match std::fs::read(self.avatar_path.content.trim()) {
-                Ok(bytes) => Some(Some(bytes)),
+            match std::fs::read(avatar_path) {
+                Ok(bytes) => Some(bytes),
                 Err(_) => {
                     self.avatar_error = true;
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
@@ -210,12 +254,25 @@ impl EditUserWindow {
             }
         };
 
-        let tags: std::collections::HashSet<TagId> = self.selected_tags.iter().copied().collect();
-        let mut patch = UserPatch::new().name(name).tags(tags);
-        if let Some(av) = avatar {
-            patch = patch.avatar(av);
+        match self.mode {
+            Mode::New => {
+                let mut user = User::new(name);
+                for &tag_id in &self.selected_tags {
+                    user.add_tag(tag_id);
+                }
+                user.avatar = avatar_bytes;
+                sender.send(PlanRequest::CreateUser(user));
+            }
+            Mode::Edit(user_id) => {
+                let tags: std::collections::HashSet<TagId> =
+                    self.selected_tags.iter().copied().collect();
+                let mut patch = UserPatch::new().name(name).tags(tags);
+                if let Some(bytes) = avatar_bytes {
+                    patch = patch.avatar(Some(bytes));
+                }
+                sender.send(PlanRequest::UpdateUser(user_id, patch));
+            }
         }
-        sender.send(PlanRequest::UpdateUser(self.user_id, patch));
         FloatingWindowOutcome::close()
     }
 
@@ -287,9 +344,11 @@ fn draw_text_input(
     );
     canvas.save();
     canvas.clip_rect(inner, ClipOp::Intersect, false);
+
     let (_, metrics) = cache.font.metrics();
     let text_y =
         rect.top + (rect.height() - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
+
     if !input.content.is_empty()
         && let Some(blob) = TextBlob::new(&input.content, &cache.font)
     {
@@ -558,7 +617,7 @@ fn draw_dropdown(
 
 // ── FloatingWindow impl ───────────────────────────────────────────────────────
 
-impl FloatingWindow for EditUserWindow {
+impl FloatingWindow for UserFormWindow {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         let panel = Self::panel_rect(width, height);
         let back_btn = Self::back_btn_rect(width, height);
@@ -567,6 +626,7 @@ impl FloatingWindow for EditUserWindow {
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
 
+        // Drop shadow
         paint.set_color(Color::from_argb(40, 0, 0, 0));
         canvas.draw_rrect(
             RRect::new_rect_xy(
@@ -582,9 +642,11 @@ impl FloatingWindow for EditUserWindow {
             &paint,
         );
 
+        // Panel background
         paint.set_color(Color::from(PANEL_BG));
         canvas.draw_rrect(RRect::new_rect_xy(panel, CORNER, CORNER), &paint);
 
+        // Title bar
         let title_rect = Rect::from_xywh(panel.left, panel.top, panel.width(), TITLE_H);
         paint.set_color(Color::from(LIST_BG));
         canvas.draw_rrect(RRect::new_rect_xy(title_rect, CORNER, CORNER), &paint);
@@ -598,9 +660,10 @@ impl FloatingWindow for EditUserWindow {
             &paint,
         );
 
-        if let Some(blob) = TextBlob::new("Edit Team Member", &cache.font) {
+        let title = self.title();
+        if let Some(blob) = TextBlob::new(title, &cache.font) {
             let (_, metrics) = cache.font.metrics();
-            let (advance, _) = cache.font.measure_str("Edit Team Member", None);
+            let (advance, _) = cache.font.measure_str(title, None);
             let tx = panel.left + (panel.width() - advance) / 2.0;
             let ty =
                 panel.top + (TITLE_H - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
@@ -661,10 +724,7 @@ impl FloatingWindow for EditUserWindow {
 
         // Avatar path
         let av_y = y0 + 2.0 * (FIELD_BLOCK_H + PLAN_FIELD_GAP);
-        if let Some(blob) = TextBlob::new(
-            "Avatar image path (blank = keep existing)",
-            &cache.small_font,
-        ) {
+        if let Some(blob) = TextBlob::new(self.avatar_label(), &cache.small_font) {
             paint.set_color(Color::from(LABEL_FG));
             canvas.draw_text_blob(&blob, (lx, av_y + label_y_offset), &paint);
         }

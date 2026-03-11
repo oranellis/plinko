@@ -1234,6 +1234,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
+name = "plinko"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gl",
+ "glutin",
+ "glutin-winit",
+ "raw-window-handle",
+ "serde",
+ "serde_json",
+ "skia-safe",
+ "tempfile",
+ "uuid",
+ "winit",
+]
+
+[[package]]
 name = "polling"
 version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1519,23 +1536,6 @@ checksum = "2c13e5913d17403753fd8cc2c15402e8d9ba8278d1b82a12aa7264a63f9c6325"
 dependencies = [
  "bitflags 2.10.0",
  "skia-bindings",
-]
-
-[[package]]
-name = "skiatest"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "gl",
- "glutin",
- "glutin-winit",
- "raw-window-handle",
- "serde",
- "serde_json",
- "skia-safe",
- "tempfile",
- "uuid",
- "winit",
 ]
 
 [[package]]

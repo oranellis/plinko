@@ -5,7 +5,7 @@ use skia_safe::{
 };
 use winit::keyboard::{Key, NamedKey};
 
-use crate::data::{Plan, User};
+use crate::data::{Plan, Tag, TagId, User};
 use crate::engine::{PlanRequest, PlanRequestSender};
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
@@ -58,7 +58,7 @@ enum Field {
 pub struct AddUserWindow {
     name: TextInput,
     tag_filter: TextInput,
-    selected_tags: Vec<String>,
+    selected_tags: Vec<TagId>,
     dropdown_open: bool,
     dropdown_scroll: usize,
     dropdown_hovered: Option<usize>,
@@ -89,12 +89,19 @@ impl AddUserWindow {
     }
 
     fn panel_rect(width: f32, height: f32) -> Rect {
-        Rect::from_xywh((width - PANEL_W) / 2.0, (height - PANEL_H) / 2.0, PANEL_W, PANEL_H)
+        let pw = (width * 0.95).min(PANEL_W);
+        let ph = (height * 0.95).min(PANEL_H);
+        Rect::from_xywh((width - pw) / 2.0, (height - ph) / 2.0, pw, ph)
     }
 
     fn back_btn_rect(width: f32, height: f32) -> Rect {
         let panel = Self::panel_rect(width, height);
-        Rect::from_xywh(panel.left + BTN_INSET, panel.top + BTN_INSET, BACK_BTN_SIZE, BACK_BTN_SIZE)
+        Rect::from_xywh(
+            panel.left + BTN_INSET,
+            panel.top + BTN_INSET,
+            BACK_BTN_SIZE,
+            BACK_BTN_SIZE,
+        )
     }
 
     fn save_btn_rect(width: f32, height: f32) -> Rect {
@@ -114,7 +121,7 @@ impl AddUserWindow {
     fn input_rect(field: Field, width: f32, height: f32) -> Rect {
         let panel = Self::panel_rect(width, height);
         let x = panel.left + PLAN_FORM_PADDING;
-        let w = PANEL_W - 2.0 * PLAN_FORM_PADDING;
+        let w = panel.width() - 2.0 * PLAN_FORM_PADDING;
         let y0 = Self::form_top(width, height);
         let y = match field {
             Field::Name => y0 + LABEL_H + PLAN_LABEL_GAP,
@@ -128,7 +135,12 @@ impl AddUserWindow {
 
     fn dropdown_rect(width: f32, height: f32) -> Rect {
         let trigger = Self::input_rect(Field::TagFilter, width, height);
-        Rect::from_xywh(trigger.left, trigger.bottom + 4.0, trigger.width(), DROPDOWN_H)
+        Rect::from_xywh(
+            trigger.left,
+            trigger.bottom + 4.0,
+            trigger.width(),
+            DROPDOWN_H,
+        )
     }
 
     fn dropdown_filter_input_rect(width: f32, height: f32) -> Rect {
@@ -179,20 +191,19 @@ impl AddUserWindow {
         self.dropdown_hovered = None;
     }
 
-    fn filtered_tags<'a>(&self, plan: &'a Plan) -> Vec<&'a str> {
+    fn filtered_tags<'a>(&self, plan: &'a Plan) -> Vec<&'a Tag> {
         let filter = self.tag_filter.content.to_lowercase();
         plan.tags
             .iter()
-            .filter(|t| filter.is_empty() || t.to_lowercase().contains(filter.as_str()))
-            .map(String::as_str)
+            .filter(|t| filter.is_empty() || t.name.to_lowercase().contains(filter.as_str()))
             .collect()
     }
 
-    fn toggle_tag(&mut self, tag: &str) {
-        if let Some(pos) = self.selected_tags.iter().position(|t| t == tag) {
+    fn toggle_tag(&mut self, tag_id: TagId) {
+        if let Some(pos) = self.selected_tags.iter().position(|&id| id == tag_id) {
             self.selected_tags.remove(pos);
         } else {
-            self.selected_tags.push(tag.to_string());
+            self.selected_tags.push(tag_id);
         }
     }
 
@@ -210,8 +221,8 @@ impl AddUserWindow {
             }
         };
         let mut user = User::new(name);
-        for tag in &self.selected_tags {
-            user.add_tag(tag);
+        for &tag_id in &self.selected_tags {
+            user.add_tag(tag_id);
         }
         user.avatar = avatar;
         sender.send(PlanRequest::CreateUser(user));
@@ -280,8 +291,8 @@ fn draw_text_input(
     canvas.clip_rect(inner, ClipOp::Intersect, false);
 
     let (_, metrics) = cache.font.metrics();
-    let text_y = rect.top + (rect.height() - (metrics.descent - metrics.ascent)) / 2.0
-        - metrics.ascent;
+    let text_y =
+        rect.top + (rect.height() - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
 
     if !input.content.is_empty()
         && let Some(blob) = TextBlob::new(&input.content, &cache.font)
@@ -299,7 +310,12 @@ fn draw_text_input(
         };
         paint.set_color(Color::from(INPUT_CURSOR_COLOR));
         canvas.draw_rect(
-            Rect::from_xywh(inner.left + cursor_x, rect.top + 5.0, 1.5, rect.height() - 10.0),
+            Rect::from_xywh(
+                inner.left + cursor_x,
+                rect.top + 5.0,
+                1.5,
+                rect.height() - 10.0,
+            ),
             &paint,
         );
     }
@@ -388,28 +404,30 @@ fn draw_dropdown(
     canvas: &Canvas,
     width: f32,
     height: f32,
-    filtered: &[&str],
+    filtered: &[&Tag],
     scroll: usize,
     hovered: Option<usize>,
     filter_input: &TextInput,
-    selected_tags: &[String],
+    selected_tags: &[TagId],
     cache: &RenderCache,
 ) {
     let dd = {
         let trigger = {
-            let panel = Rect::from_xywh(
-                (width - PANEL_W) / 2.0,
-                (height - PANEL_H) / 2.0,
-                PANEL_W,
-                PANEL_H,
-            );
+            let pw = (width * 0.95).min(PANEL_W);
+            let ph = (height * 0.95).min(PANEL_H);
+            let panel = Rect::from_xywh((width - pw) / 2.0, (height - ph) / 2.0, pw, ph);
             let x = panel.left + PLAN_FORM_PADDING;
-            let w = PANEL_W - 2.0 * PLAN_FORM_PADDING;
+            let w = panel.width() - 2.0 * PLAN_FORM_PADDING;
             let y0 = panel.top + TITLE_H + 1.0 + PLAN_FORM_PADDING;
             let y = y0 + FIELD_BLOCK_H + PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP;
             Rect::from_xywh(x, y, w, PLAN_INPUT_H)
         };
-        Rect::from_xywh(trigger.left, trigger.bottom + 4.0, trigger.width(), DROPDOWN_H)
+        Rect::from_xywh(
+            trigger.left,
+            trigger.bottom + 4.0,
+            trigger.width(),
+            DROPDOWN_H,
+        )
     };
 
     let mut paint = Paint::default();
@@ -429,13 +447,19 @@ fn draw_dropdown(
     // Background
     paint.set_color(Color::from(INPUT_BG));
     paint.set_style(PaintStyle::Fill);
-    canvas.draw_rrect(RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER), &paint);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
 
     // Border
     paint.set_color(Color::from(INPUT_BORDER_FOCUS));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.0);
-    canvas.draw_rrect(RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER), &paint);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
     paint.set_style(PaintStyle::Fill);
 
     // Filter input
@@ -458,8 +482,12 @@ fn draw_dropdown(
 
     // Tag list
     let list_top = dd.top + DROPDOWN_FILTER_H + 1.0;
-    let list_rect =
-        Rect::from_xywh(dd.left, list_top, dd.width(), DROPDOWN_H - DROPDOWN_FILTER_H - 1.0);
+    let list_rect = Rect::from_xywh(
+        dd.left,
+        list_top,
+        dd.width(),
+        DROPDOWN_H - DROPDOWN_FILTER_H - 1.0,
+    );
 
     canvas.save();
     canvas.clip_rect(list_rect, ClipOp::Intersect, false);
@@ -482,7 +510,7 @@ fn draw_dropdown(
             (DROPDOWN_ROW_H - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
 
         let end = (scroll + MAX_DROPDOWN_ROWS).min(filtered.len());
-        for (vis_idx, &tag) in filtered[scroll..end].iter().enumerate() {
+        for (vis_idx, tag) in filtered[scroll..end].iter().enumerate() {
             let abs_idx = scroll + vis_idx;
             let ry = list_top + vis_idx as f32 * DROPDOWN_ROW_H;
             let row_rect = Rect::from_xywh(dd.left, ry, dd.width(), DROPDOWN_ROW_H);
@@ -492,7 +520,7 @@ fn draw_dropdown(
                 canvas.draw_rect(row_rect, &paint);
             }
 
-            let is_selected = selected_tags.iter().any(|t| t == tag);
+            let is_selected = selected_tags.contains(&tag.id);
             let circle_cx = dd.left + 18.0;
             let circle_cy = ry + DROPDOWN_ROW_H / 2.0;
             let circle_r = 5.5;
@@ -511,7 +539,7 @@ fn draw_dropdown(
             }
             paint.set_style(PaintStyle::Fill);
 
-            if let Some(blob) = TextBlob::new(tag, &cache.font) {
+            if let Some(blob) = TextBlob::new(&tag.name, &cache.font) {
                 paint.set_color(Color::from(ITEM_FG));
                 canvas.draw_text_blob(&blob, (dd.left + 34.0, ry + text_y_off), &paint);
             }
@@ -552,14 +580,7 @@ fn draw_dropdown(
 // ── FloatingWindow impl ───────────────────────────────────────────────────────
 
 impl FloatingWindow for AddUserWindow {
-    fn render(
-        &self,
-        canvas: &Canvas,
-        width: f32,
-        height: f32,
-        cache: &RenderCache,
-        plan: &Plan,
-    ) {
+    fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         let panel = Self::panel_rect(width, height);
         let back_btn = Self::back_btn_rect(width, height);
         let save_btn = Self::save_btn_rect(width, height);
@@ -571,7 +592,12 @@ impl FloatingWindow for AddUserWindow {
         paint.set_color(Color::from_argb(40, 0, 0, 0));
         canvas.draw_rrect(
             RRect::new_rect_xy(
-                Rect::from_xywh(panel.left + 2.0, panel.top + 4.0, PANEL_W, PANEL_H),
+                Rect::from_xywh(
+                    panel.left + 2.0,
+                    panel.top + 4.0,
+                    panel.width(),
+                    panel.height(),
+                ),
                 CORNER,
                 CORNER,
             ),
@@ -583,20 +609,25 @@ impl FloatingWindow for AddUserWindow {
         canvas.draw_rrect(RRect::new_rect_xy(panel, CORNER, CORNER), &paint);
 
         // Title bar
-        let title_rect = Rect::from_xywh(panel.left, panel.top, PANEL_W, TITLE_H);
+        let title_rect = Rect::from_xywh(panel.left, panel.top, panel.width(), TITLE_H);
         paint.set_color(Color::from(LIST_BG));
         canvas.draw_rrect(RRect::new_rect_xy(title_rect, CORNER, CORNER), &paint);
         canvas.draw_rect(
-            Rect::from_xywh(panel.left, panel.top + CORNER, PANEL_W, TITLE_H - CORNER),
+            Rect::from_xywh(
+                panel.left,
+                panel.top + CORNER,
+                panel.width(),
+                TITLE_H - CORNER,
+            ),
             &paint,
         );
 
         if let Some(blob) = TextBlob::new("Add Team Member", &cache.font) {
             let (_, metrics) = cache.font.metrics();
             let (advance, _) = cache.font.measure_str("Add Team Member", None);
-            let tx = panel.left + (PANEL_W - advance) / 2.0;
-            let ty = panel.top + (TITLE_H - (metrics.descent - metrics.ascent)) / 2.0
-                - metrics.ascent;
+            let tx = panel.left + (panel.width() - advance) / 2.0;
+            let ty =
+                panel.top + (TITLE_H - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
             paint.set_color(Color::from(ITEM_FG));
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
@@ -605,7 +636,7 @@ impl FloatingWindow for AddUserWindow {
 
         paint.set_color(Color::from(DIVIDER_COLOR));
         canvas.draw_rect(
-            Rect::from_xywh(panel.left, panel.top + TITLE_H, PANEL_W, 1.0),
+            Rect::from_xywh(panel.left, panel.top + TITLE_H, panel.width(), 1.0),
             &paint,
         );
 
@@ -633,10 +664,20 @@ impl FloatingWindow for AddUserWindow {
             paint.set_color(Color::from(LABEL_FG));
             canvas.draw_text_blob(&blob, (lx, tags_label_y + label_y_offset), &paint);
         }
+        let selected_names: Vec<String> = self
+            .selected_tags
+            .iter()
+            .filter_map(|id| {
+                plan.tags
+                    .iter()
+                    .find(|t| &t.id == id)
+                    .map(|t| t.name.clone())
+            })
+            .collect();
         draw_tags_trigger(
             canvas,
             Self::input_rect(Field::TagFilter, width, height),
-            &self.selected_tags,
+            &selected_names,
             self.focused == Field::TagFilter || self.dropdown_open,
             self.dropdown_open,
             cache,
@@ -718,15 +759,21 @@ impl FloatingWindow for AddUserWindow {
             let dd = Self::dropdown_rect(width, height);
             let list_top = Self::dropdown_list_top(width, height);
             let filtered = self.filtered_tags(plan);
-            let visible = filtered.len().saturating_sub(self.dropdown_scroll).min(MAX_DROPDOWN_ROWS);
+            let visible = filtered
+                .len()
+                .saturating_sub(self.dropdown_scroll)
+                .min(MAX_DROPDOWN_ROWS);
             if x >= dd.left
                 && x <= dd.right
                 && y >= list_top
                 && y < list_top + visible as f32 * DROPDOWN_ROW_H
             {
-                let abs_idx =
-                    ((y - list_top) / DROPDOWN_ROW_H) as usize + self.dropdown_scroll;
-                if abs_idx < filtered.len() { Some(abs_idx) } else { None }
+                let abs_idx = ((y - list_top) / DROPDOWN_ROW_H) as usize + self.dropdown_scroll;
+                if abs_idx < filtered.len() {
+                    Some(abs_idx)
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -776,11 +823,9 @@ impl FloatingWindow for AddUserWindow {
                 let list_top = Self::dropdown_list_top(width, height);
                 if y >= list_top {
                     let filtered = self.filtered_tags(plan);
-                    let abs_idx =
-                        ((y - list_top) / DROPDOWN_ROW_H) as usize + self.dropdown_scroll;
-                    if let Some(&tag) = filtered.get(abs_idx) {
-                        let owned = tag.to_string();
-                        self.toggle_tag(&owned);
+                    let abs_idx = ((y - list_top) / DROPDOWN_ROW_H) as usize + self.dropdown_scroll;
+                    if let Some(tag) = filtered.get(abs_idx) {
+                        self.toggle_tag(tag.id);
                     }
                 }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
@@ -902,7 +947,13 @@ impl FloatingWindow for AddUserWindow {
         }
     }
 
-    fn on_scroll(&mut self, delta_y: f32, plan: &Plan) -> FloatingWindowOutcome {
+    fn on_scroll(
+        &mut self,
+        delta_y: f32,
+        plan: &Plan,
+        _width: f32,
+        _height: f32,
+    ) -> FloatingWindowOutcome {
         if !self.dropdown_open {
             return FloatingWindowOutcome::default();
         }

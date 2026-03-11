@@ -1,6 +1,6 @@
 //! The [`User`] type — a team member with skill/role tags used for affinity matching.
 
-use crate::data::ids::UserId;
+use crate::data::ids::{TagId, UserId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -13,8 +13,8 @@ use std::collections::HashSet;
 pub struct User {
     pub id: UserId,
     pub name: String,
-    /// Skills, roles, or clearances this user possesses.
-    pub tags: HashSet<String>,
+    /// Skills, roles, or clearances this user possesses (stored as TagIds).
+    pub tags: HashSet<TagId>,
     /// Raw image bytes (any Skia-decodable format: JPEG, PNG, WebP, …).
     ///
     /// Serialised as a base64 string in JSON snapshots.  `None` when no avatar
@@ -35,24 +35,24 @@ impl User {
     }
 
     /// Builder: adds a tag and returns `self`.  Useful for chained construction.
-    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
-        self.tags.insert(tag.into());
+    pub fn with_tag(mut self, tag_id: TagId) -> Self {
+        self.tags.insert(tag_id);
         self
     }
 
     /// Inserts a tag into this user's tag set.
-    pub fn add_tag(&mut self, tag: impl Into<String>) {
-        self.tags.insert(tag.into());
+    pub fn add_tag(&mut self, tag_id: TagId) {
+        self.tags.insert(tag_id);
     }
 
     /// Removes a tag from this user's tag set.
-    pub fn remove_tag(&mut self, tag: &str) {
-        self.tags.remove(tag);
+    pub fn remove_tag(&mut self, tag_id: &TagId) {
+        self.tags.remove(tag_id);
     }
 
     /// Returns `true` if this user possesses the given tag.
-    pub fn has_tag(&self, tag: &str) -> bool {
-        self.tags.contains(tag)
+    pub fn has_tag(&self, tag_id: &TagId) -> bool {
+        self.tags.contains(tag_id)
     }
 }
 
@@ -152,33 +152,38 @@ mod tests {
 
     #[test]
     fn add_tag_and_has_tag() {
+        let id = TagId::new();
         let mut u = User::new("Alice");
-        u.add_tag("rust");
-        assert!(u.has_tag("rust"));
-        assert!(!u.has_tag("python"));
+        u.add_tag(id);
+        assert!(u.has_tag(&id));
+        assert!(!u.has_tag(&TagId::new()));
     }
 
     #[test]
     fn remove_tag() {
+        let id = TagId::new();
         let mut u = User::new("Alice");
-        u.add_tag("rust");
-        u.remove_tag("rust");
-        assert!(!u.has_tag("rust"));
+        u.add_tag(id);
+        u.remove_tag(&id);
+        assert!(!u.has_tag(&id));
     }
 
     #[test]
     fn with_tag_builder() {
-        let u = User::new("Alice").with_tag("rust").with_tag("skia");
-        assert!(u.has_tag("rust"));
-        assert!(u.has_tag("skia"));
-        assert!(!u.has_tag("python"));
+        let id1 = TagId::new();
+        let id2 = TagId::new();
+        let u = User::new("Alice").with_tag(id1).with_tag(id2);
+        assert!(u.has_tag(&id1));
+        assert!(u.has_tag(&id2));
+        assert!(!u.has_tag(&TagId::new()));
     }
 
     #[test]
     fn duplicate_tags_are_deduplicated() {
+        let id = TagId::new();
         let mut u = User::new("Alice");
-        u.add_tag("rust");
-        u.add_tag("rust");
+        u.add_tag(id);
+        u.add_tag(id);
         assert_eq!(u.tags.len(), 1);
     }
 
