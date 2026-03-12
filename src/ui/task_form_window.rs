@@ -91,6 +91,8 @@ const PANEL_H: f32 = TITLE_H
     + PLAN_BTN_H
     + PLAN_FORM_PADDING;
 
+const SCROLLBAR_W: f32 = 4.0;
+
 // ── Helper types ──────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq)]
@@ -153,6 +155,7 @@ struct CalendarPicker {
     hovered_next_month: bool,
     hovered_next_year: bool,
     hovered_clear: bool,
+    hovered_today: bool,
     hovered_trigger: bool,
 }
 
@@ -169,6 +172,7 @@ impl CalendarPicker {
             hovered_next_month: false,
             hovered_next_year: false,
             hovered_clear: false,
+            hovered_today: false,
             hovered_trigger: false,
         }
     }
@@ -206,6 +210,7 @@ impl CalendarPicker {
         self.hovered_next_month = false;
         self.hovered_next_year = false;
         self.hovered_clear = false;
+        self.hovered_today = false;
         self.hovered_trigger = false;
     }
 
@@ -257,7 +262,7 @@ struct WorkerSlotEdit {
 impl WorkerSlotEdit {
     fn new() -> Self {
         Self {
-            slot_type: SlotType::Specific,
+            slot_type: SlotType::Placeholder,
             user_id: None,
             user_filter: TextInput::new(""),
             required_tags: HashSet::new(),
@@ -723,6 +728,12 @@ impl TaskFormWindow {
         let w = 48.0;
         let h = 22.0;
         Rect::from_xywh(cal.right - CAL_PAD - w, cal.bottom - CAL_PAD - h, w, h)
+    }
+
+    fn cal_today_btn(cal: Rect) -> Rect {
+        let w = 48.0;
+        let h = 22.0;
+        Rect::from_xywh(cal.left + CAL_PAD, cal.bottom - CAL_PAD - h, w, h)
     }
 
     fn cal_day_cell(cal: Rect, day_1_offset: u32, day: u32) -> Rect {
@@ -1314,6 +1325,25 @@ fn draw_calendar_popup(
         paint.set_color(Color::from(BTN_SECONDARY_FG));
         canvas.draw_text_blob(&blob, (tx, ty), &paint);
     }
+
+    let today_btn = TaskFormWindow::cal_today_btn(cal);
+    paint.set_color(Color::from(if picker.hovered_today {
+        0xff_e0e0e0_u32
+    } else {
+        BTN_SECONDARY_BG
+    }));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(today_btn, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
+    if let Some(blob) = TextBlob::new("Today", &cache.small_font) {
+        let (adv, _) = cache.small_font.measure_str("Today", None);
+        let tx = today_btn.left + (today_btn.width() - adv) / 2.0;
+        let ty = today_btn.top + (today_btn.height() - sm_h) / 2.0 - sm.ascent;
+        paint.set_color(Color::from(BTN_SECONDARY_FG));
+        canvas.draw_text_blob(&blob, (tx, ty), &paint);
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1348,13 +1378,13 @@ fn draw_worker_row(
         );
     }
 
-    // Type toggle: two small pills "P" | "T"
+    // Type toggle: two small pills "T" | "P"
     {
         let half_w = type_rect.width() / 2.0;
-        let labels = ["P", "T"];
+        let labels = ["T", "P"];
         let sel_idx = match slot.slot_type {
-            SlotType::Specific => 0usize,
-            SlotType::Placeholder => 1,
+            SlotType::Placeholder => 0usize,
+            SlotType::Specific => 1,
         };
         for (i, lbl) in labels.iter().enumerate() {
             let rx = type_rect.left + i as f32 * half_w;
@@ -2135,36 +2165,28 @@ impl FloatingWindow for TaskFormWindow {
 
         canvas.restore(); // end content scroll region
 
-        // Scroll indicator: up arrow when scrolled down, down arrow when more content below
-        if scroll_y > 0.0 {
-            let mut paint = Paint::default();
-            paint.set_anti_alias(true);
-            paint.set_color(Color::from(0x88_555555_u32));
-            paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.5);
-            let ax = panel.right - 12.0;
-            let ay = panel.top + TITLE_H + 1.0 + 8.0;
-            let mut pb = PathBuilder::new();
-            pb.move_to((ax - 5.0, ay + 5.0));
-            pb.line_to((ax, ay));
-            pb.line_to((ax + 5.0, ay + 5.0));
-            canvas.draw_path(&pb.detach(), &paint);
-        }
-        let panel_h = Self::panel_rect(width, height).height();
-        let max_scroll = (PANEL_H - panel_h).max(0.0);
-        if scroll_y < max_scroll {
-            let mut paint = Paint::default();
-            paint.set_anti_alias(true);
-            paint.set_color(Color::from(0x88_555555_u32));
-            paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.5);
-            let ax = panel.right - 12.0;
-            let ay = panel.bottom - 8.0;
-            let mut pb = PathBuilder::new();
-            pb.move_to((ax - 5.0, ay - 5.0));
-            pb.line_to((ax, ay));
-            pb.line_to((ax + 5.0, ay - 5.0));
-            canvas.draw_path(&pb.detach(), &paint);
+        // Scrollbar
+        let content_area_h = panel.height() - TITLE_H - 1.0;
+        let full_content_h = PANEL_H - TITLE_H - 1.0;
+        let max_scroll = (full_content_h - content_area_h).max(0.0);
+        if max_scroll > 0.0 {
+            let thumb_h = (content_area_h * content_area_h / full_content_h).max(20.0);
+            let thumb_y =
+                (panel.top + TITLE_H + 1.0) + (scroll_y / max_scroll) * (content_area_h - thumb_h);
+            paint.set_color(Color::from_argb(80, 0, 0, 0));
+            canvas.draw_rrect(
+                RRect::new_rect_xy(
+                    Rect::from_xywh(
+                        panel.right - SCROLLBAR_W - 2.0,
+                        thumb_y,
+                        SCROLLBAR_W,
+                        thumb_h,
+                    ),
+                    2.0,
+                    2.0,
+                ),
+                &paint,
+            );
         }
 
         // Calendar popup (on top)
@@ -2278,6 +2300,7 @@ impl FloatingWindow for TaskFormWindow {
             let new_next_month = Self::cal_next_month_btn(cal).contains(pt);
             let new_next_year = Self::cal_next_year_btn(cal).contains(pt);
             let new_clear = Self::cal_clear_btn(cal).contains(pt);
+            let new_today = Self::cal_today_btn(cal).contains(pt);
             let mut new_day: Option<u32> = None;
             for day in 1..=num_days {
                 if TaskFormWindow::cal_day_cell(cal, day_1, day).contains(pt) {
@@ -2285,7 +2308,7 @@ impl FloatingWindow for TaskFormWindow {
                     break;
                 }
             }
-            let (opy, opm, onm, ony, oc, od) = {
+            let (opy, opm, onm, ony, oc, ot, od) = {
                 let p = self.picker_ref(target);
                 (
                     p.hovered_prev_year,
@@ -2293,6 +2316,7 @@ impl FloatingWindow for TaskFormWindow {
                     p.hovered_next_month,
                     p.hovered_next_year,
                     p.hovered_clear,
+                    p.hovered_today,
                     p.hovered_day,
                 )
             };
@@ -2301,6 +2325,7 @@ impl FloatingWindow for TaskFormWindow {
                 || new_next_month != onm
                 || new_next_year != ony
                 || new_clear != oc
+                || new_today != ot
                 || new_day != od
             {
                 let p = self.picker_mut(target);
@@ -2309,6 +2334,7 @@ impl FloatingWindow for TaskFormWindow {
                 p.hovered_next_month = new_next_month;
                 p.hovered_next_year = new_next_year;
                 p.hovered_clear = new_clear;
+                p.hovered_today = new_today;
                 p.hovered_day = new_day;
                 changed = true;
             }
@@ -2464,6 +2490,11 @@ impl FloatingWindow for TaskFormWindow {
                     self.close_calendar();
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
+                if TaskFormWindow::cal_today_btn(cal).contains(pt) {
+                    self.picker_mut(target).value = Some(chrono::Local::now().date_naive());
+                    self.close_calendar();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
                 let day_1 = first_weekday_offset(
                     self.picker_ref(target).nav_year,
                     self.picker_ref(target).nav_month,
@@ -2578,9 +2609,9 @@ impl FloatingWindow for TaskFormWindow {
                 if TaskFormWindow::slot_type_rect(list, vis).contains(pt_form) {
                     let type_rect = TaskFormWindow::slot_type_rect(list, vis);
                     let new_type = if x < type_rect.left + type_rect.width() / 2.0 {
-                        SlotType::Specific
-                    } else {
                         SlotType::Placeholder
+                    } else {
+                        SlotType::Specific
                     };
                     if self.workers[abs].slot_type != new_type {
                         self.workers[abs].slot_type = new_type;
@@ -2896,34 +2927,15 @@ impl FloatingWindow for TaskFormWindow {
             return FloatingWindowOutcome::default();
         }
 
-        // Form scroll when there's overflow; worker list scroll otherwise
+        // Smooth continuous scroll — same feel as the users list
         let panel_h = Self::panel_rect(width, height).height();
-        let form_overflow = (PANEL_H - panel_h).max(0.0);
-        if form_overflow > 0.0 {
-            let step = 24.0_f32;
-            let new_scroll = if delta_y > 0.0 {
-                (self.form_scroll_y - step).max(0.0)
-            } else {
-                (self.form_scroll_y + step).min(form_overflow)
-            };
-            if (new_scroll - self.form_scroll_y).abs() > 0.001 {
-                self.form_scroll_y = new_scroll;
-                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-            }
+        let max_scroll = (PANEL_H - panel_h).max(0.0);
+        if max_scroll <= 0.0 {
             return FloatingWindowOutcome::default();
         }
-        // Worker list scroll when form fits fully
-        let max = self.workers.len().saturating_sub(MAX_VISIBLE_WORKERS);
-        if max == 0 {
-            return FloatingWindowOutcome::default();
-        }
-        let new_scroll = if delta_y > 0.0 {
-            self.worker_scroll.saturating_sub(1)
-        } else {
-            (self.worker_scroll + 1).min(max)
-        };
-        if new_scroll != self.worker_scroll {
-            self.worker_scroll = new_scroll;
+        let new_scroll = (self.form_scroll_y - delta_y * 40.0).clamp(0.0, max_scroll);
+        if (new_scroll - self.form_scroll_y).abs() > f32::EPSILON {
+            self.form_scroll_y = new_scroll;
             FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
         } else {
             FloatingWindowOutcome::default()
