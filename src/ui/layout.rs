@@ -116,3 +116,47 @@ pub const AVATAR_COLORS: [u32; 7] = [
     0xff_e05c8a,
     0xff_d4a843,
 ];
+
+// ── Gantt chart ────────────────────────────────────────────────────────────────
+
+// Layout
+pub const GANTT_MONTH_ROW_H: f32 = 18.0;
+pub const GANTT_DAY_ROW_H: f32 = 28.0;
+pub const GANTT_HEADER_H: f32 = GANTT_MONTH_ROW_H + GANTT_DAY_ROW_H;
+pub const GANTT_ROW_H: f32 = 36.0;
+pub const GANTT_ROW_PADDING: f32 = 5.0;
+pub const GANTT_BAR_CORNER: f32 = 4.0;
+pub const GANTT_DAY_LINE_W: f32 = 2.0;
+pub const GANTT_ZOOM_DEFAULT: f32 = 40.0;
+pub const GANTT_ZOOM_MIN: f32 = 8.0;
+pub const GANTT_ZOOM_MAX: f32 = 200.0;
+pub const GANTT_MS_HALF: f32 = 10.0; // milestone diamond half-size
+
+// Chrome
+pub const GANTT_BG: u32 = 0xff_fafafa;
+pub const GANTT_HEADER_BG: u32 = 0xff_f0f0f0;
+pub const GANTT_HEADER_BORDER: u32 = 0xff_d8d8d8;
+pub const GANTT_HEADER_FG: u32 = 0xff_555555;
+pub const GANTT_HEADER_MONTH_FG: u32 = 0xff_333333;
+pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_e8e8e8;
+pub const GANTT_TODAY_LINE_COLOR: u32 = 0x80_4a90d9;
+pub const GANTT_ROW_ALT_BG: u32 = 0xff_f4f4f4;
+
+// Task status colors
+pub const GANTT_TASK_NOT_STARTED: u32 = 0xff_d0d0d0;
+pub const GANTT_TASK_IN_PROGRESS: u32 = 0xff_f5a623;
+pub const GANTT_TASK_ON_HOLD: u32 = 0xff_b39ddb;
+pub const GANTT_TASK_COMPLETE: u32 = 0xff_66bb6a;
+pub const GANTT_TASK_DROPPED: u32 = 0xff_757575;
+
+// Task label colors (on bars)
+pub const GANTT_TASK_LABEL_DARK: u32 = 0xff_333333; // on light bars
+pub const GANTT_TASK_LABEL_LIGHT: u32 = 0xff_ffffff; // on dark bars
+
+// Milestone status colors
+pub const GANTT_MS_NOT_STARTED: u32 = 0xff_bdbdbd;
+pub const GANTT_MS_IN_PROGRESS: u32 = 0xff_f5a623;
+pub const GANTT_MS_COMPLETE: u32 = 0xff_66bb6a;
+
+// Dependency line color
+pub const GANTT_DEP_LINE_COLOR: u32 = 0x80_888888;

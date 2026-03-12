@@ -517,17 +517,25 @@ impl ApplicationHandler for Application {
                     .unwrap();
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                if let AppState::InPage(_) = self.app_state
-                    && self.floats.is_open()
-                {
+                if let AppState::InPage(_) = self.app_state {
                     let delta_y = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y,
                         MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 40.0,
                     };
                     let (width, height) = self.logical_size();
                     let plan = self.engine.plan();
-                    let dirty = self.floats.on_scroll(delta_y, plan, width, height);
-                    self.mark_dirty(dirty);
+
+                    if self.floats.is_open() {
+                        let dirty = self.floats.on_scroll(delta_y, plan, width, height);
+                        self.mark_dirty(dirty);
+                    } else {
+                        let shift = self.modifiers.state().shift_key();
+                        let dirty = self
+                            .pages
+                            .active_page_mut()
+                            .on_scroll(delta_y, shift, width, height, plan);
+                        self.mark_dirty(dirty);
+                    }
                 }
             }
             _ => (),

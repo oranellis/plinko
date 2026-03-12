@@ -65,6 +65,21 @@ pub trait Page {
         DirtyRegion::None
     }
 
+    /// Called on mouse-wheel scroll events while this page is active.
+    ///
+    /// `delta_y` is positive = scroll up / zoom in, negative = scroll down / zoom out.
+    /// `shift` is true when the Shift modifier is held.
+    fn on_scroll(
+        &mut self,
+        _delta_y: f32,
+        _shift: bool,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+    ) -> DirtyRegion {
+        DirtyRegion::None
+    }
+
     /// Reset all hover state.  Called when navigating away from or to this
     /// page so stale highlights don't persist across navigation.
     fn reset_hover(&mut self) {}
