@@ -268,23 +268,20 @@ impl UserFormWindow {
 
     fn try_submit(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         let name = self.name.content.trim().to_string();
-        if name.is_empty() {
-            self.name_error = true;
-            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-        }
+        self.name_error = name.is_empty();
 
         let avatar_path = self.avatar_path.content.trim();
-        let avatar_bytes: Option<Vec<u8>> = if avatar_path.is_empty() {
-            None
+        let avatar_read: Result<Option<Vec<u8>>, ()> = if avatar_path.is_empty() {
+            Ok(None)
         } else {
-            match std::fs::read(avatar_path) {
-                Ok(bytes) => Some(bytes),
-                Err(_) => {
-                    self.avatar_error = true;
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-            }
+            std::fs::read(avatar_path).map(Some).map_err(|_| ())
         };
+        self.avatar_error = avatar_read.is_err();
+
+        if self.name_error || self.avatar_error {
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        let avatar_bytes = avatar_read.unwrap();
 
         match self.mode {
             Mode::New => {

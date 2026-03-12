@@ -1050,21 +1050,15 @@ impl TaskFormWindow {
     // ── Submit ────────────────────────────────────────────────────────────────
 
     fn try_submit(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
+        // Validate all fields and collect errors before returning so the user
+        // can see every problem at once rather than one at a time.
         let name = self.name.content.trim().to_string();
-        if name.is_empty() {
-            self.name_error = true;
-            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-        }
-        // Duration is required and must be a valid positive number
+        self.name_error = name.is_empty();
+
         let duration_str = self.duration.content.trim().to_string();
-        let duration = match duration_str.parse::<f32>() {
-            Ok(v) if v > 0.0 => v,
-            _ => {
-                self.duration_error = true;
-                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-            }
-        };
-        // At least one dependency with a target must be set
+        let duration_parsed = duration_str.parse::<f32>().ok().filter(|&v| v > 0.0);
+        self.duration_error = duration_parsed.is_none();
+
         let dependencies: Vec<Dependency> = self
             .dependencies
             .iter()
@@ -1074,11 +1068,7 @@ impl TaskFormWindow {
                 Some(Dependency { id, lag_days })
             })
             .collect();
-        if dependencies.is_empty() {
-            self.dep_error = true;
-            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-        }
-        self.dep_error = false;
+        self.dep_error = dependencies.is_empty();
 
         let worker_slots: Vec<WorkerSlot> = self
             .workers
@@ -1087,12 +1077,14 @@ impl TaskFormWindow {
             .collect();
         self.worker_error = false;
 
-        // Constraint date required when a constraint type is selected
-        if self.constraint_kind != ConstraintSel::None && self.constraint_date.value.is_none() {
-            self.constraint_date_error = true;
+        self.constraint_date_error =
+            self.constraint_kind != ConstraintSel::None && self.constraint_date.value.is_none();
+
+        if self.name_error || self.duration_error || self.dep_error || self.constraint_date_error {
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
-        self.constraint_date_error = false;
+
+        let duration = duration_parsed.unwrap();
 
         let description = self.description.content.trim().to_string();
         let constraint = self
@@ -1214,13 +1206,16 @@ fn draw_multi_line_input(
         canvas.draw_line((cursor_x, cursor_y_top), (cursor_x, cursor_y_bot), &paint);
         paint.set_style(PaintStyle::Fill);
 
-        // Auto-scroll to keep cursor visible
+        // Auto-scroll to keep cursor visible.
+        // cursor_rel_y is the cursor's Y position relative to the text content
+        // area (not absolute canvas coordinates), so it can be compared with
+        // visible_h correctly.
         let visible_h = rect.height() - 8.0;
-        let cursor_abs_y = text_top + cursor_line_idx as f32 * line_h;
-        let new_scroll = if cursor_abs_y - scroll_y < 0.0 {
-            cursor_abs_y - rect.top
-        } else if cursor_abs_y + line_h - scroll_y > visible_h {
-            cursor_abs_y + line_h - visible_h
+        let cursor_rel_y = cursor_line_idx as f32 * line_h;
+        let new_scroll = if cursor_rel_y < scroll_y {
+            cursor_rel_y
+        } else if cursor_rel_y + line_h > scroll_y + visible_h {
+            cursor_rel_y + line_h - visible_h
         } else {
             scroll_y
         };

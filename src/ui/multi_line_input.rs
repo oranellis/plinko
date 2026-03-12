@@ -138,3 +138,163 @@ impl MultiLineInput {
         (byte_offset + best_pos).min(self.content.len())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(s: &str) -> MultiLineInput {
+        MultiLineInput::new(s)
+    }
+
+    // ── Basic editing ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn new_cursor_at_end() {
+        let m = input("hello");
+        assert_eq!(m.cursor, 5);
+    }
+
+    #[test]
+    fn insert_char_advances_cursor() {
+        let mut m = input("");
+        m.insert_char('a');
+        assert_eq!(m.content, "a");
+        assert_eq!(m.cursor, 1);
+        m.insert_char('b');
+        assert_eq!(m.content, "ab");
+        assert_eq!(m.cursor, 2);
+    }
+
+    #[test]
+    fn insert_char_in_middle() {
+        let mut m = input("ac");
+        m.cursor = 1; // between 'a' and 'c'
+        m.insert_char('b');
+        assert_eq!(m.content, "abc");
+        assert_eq!(m.cursor, 2);
+    }
+
+    #[test]
+    fn insert_newline() {
+        let mut m = input("ab");
+        m.cursor = 1;
+        m.insert_newline();
+        assert_eq!(m.content, "a\nb");
+        assert_eq!(m.cursor, 2);
+    }
+
+    #[test]
+    fn backspace_removes_previous_char() {
+        let mut m = input("abc");
+        m.backspace();
+        assert_eq!(m.content, "ab");
+        assert_eq!(m.cursor, 2);
+    }
+
+    #[test]
+    fn backspace_at_start_is_noop() {
+        let mut m = input("abc");
+        m.cursor = 0;
+        m.backspace();
+        assert_eq!(m.content, "abc");
+        assert_eq!(m.cursor, 0);
+    }
+
+    #[test]
+    fn backspace_removes_newline() {
+        let mut m = input("a\nb");
+        m.cursor = 2; // after '\n'
+        m.backspace();
+        assert_eq!(m.content, "ab");
+        assert_eq!(m.cursor, 1);
+    }
+
+    // ── Cursor movement ───────────────────────────────────────────────────────
+
+    #[test]
+    fn move_left_and_right() {
+        let mut m = input("abc");
+        m.move_left();
+        assert_eq!(m.cursor, 2);
+        m.move_left();
+        assert_eq!(m.cursor, 1);
+        m.move_right();
+        assert_eq!(m.cursor, 2);
+        m.move_right();
+        assert_eq!(m.cursor, 3);
+    }
+
+    #[test]
+    fn move_left_clamps_at_zero() {
+        let mut m = input("x");
+        m.cursor = 0;
+        m.move_left();
+        assert_eq!(m.cursor, 0);
+    }
+
+    #[test]
+    fn move_right_clamps_at_end() {
+        let mut m = input("x");
+        m.move_right();
+        assert_eq!(m.cursor, 1);
+    }
+
+    #[test]
+    fn move_to_start_and_end() {
+        let mut m = input("hello world");
+        m.cursor = 5;
+        m.move_to_start();
+        assert_eq!(m.cursor, 0);
+        m.move_to_end();
+        assert_eq!(m.cursor, 11);
+    }
+
+    // ── Unicode safety ────────────────────────────────────────────────────────
+
+    #[test]
+    fn insert_multibyte_char() {
+        let mut m = input("");
+        m.insert_char('é'); // 2 bytes in UTF-8
+        assert_eq!(m.content, "é");
+        assert_eq!(m.cursor, 'é'.len_utf8());
+    }
+
+    #[test]
+    fn backspace_multibyte() {
+        let mut m = input("aé");
+        m.backspace(); // removes 'é' (2 bytes)
+        assert_eq!(m.content, "a");
+        assert_eq!(m.cursor, 1);
+    }
+
+    #[test]
+    fn cursor_always_on_char_boundary() {
+        let mut m = MultiLineInput::new("héllo");
+        // Force cursor to the middle of 'é' (byte index 2, which is not a boundary)
+        m.cursor = 2;
+        m.move_left(); // clamped_cursor should step back to a boundary
+        assert!(m.content.is_char_boundary(m.cursor));
+    }
+
+    // ── set_content ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn set_content_resets_cursor_and_scroll() {
+        let mut m = input("old content");
+        m.cursor = 3;
+        m.scroll_y.set(50.0);
+        m.set_content("new");
+        assert_eq!(m.content, "new");
+        assert_eq!(m.cursor, 3);
+        assert_eq!(m.scroll_y.get(), 0.0);
+    }
+
+    #[test]
+    fn set_content_empty_string() {
+        let mut m = input("something");
+        m.set_content("");
+        assert_eq!(m.content, "");
+        assert_eq!(m.cursor, 0);
+    }
+}

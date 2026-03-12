@@ -5,7 +5,7 @@
 /// Accumulated per event cycle via [`DirtyRegion::merge`].  At
 /// `RedrawRequested` time, `Application` checks this value and only repaints
 /// the required region, skipping unchanged parts of the frame.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum DirtyRegion {
     /// Nothing changed; skip the repaint entirely.
     None,
@@ -27,6 +27,61 @@ impl DirtyRegion {
             (DirtyRegion::All, _) | (_, DirtyRegion::All) => DirtyRegion::All,
             (a, b) if a == b => a,
             _ => DirtyRegion::All,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn none_is_identity() {
+        for region in [
+            DirtyRegion::None,
+            DirtyRegion::All,
+            DirtyRegion::BackButtonOnly,
+            DirtyRegion::PageOnly,
+        ] {
+            assert_eq!(DirtyRegion::None.merge(region), region);
+            assert_eq!(region.merge(DirtyRegion::None), region);
+        }
+    }
+
+    #[test]
+    fn same_region_is_idempotent() {
+        assert_eq!(DirtyRegion::All.merge(DirtyRegion::All), DirtyRegion::All);
+        assert_eq!(
+            DirtyRegion::PageOnly.merge(DirtyRegion::PageOnly),
+            DirtyRegion::PageOnly
+        );
+        assert_eq!(
+            DirtyRegion::BackButtonOnly.merge(DirtyRegion::BackButtonOnly),
+            DirtyRegion::BackButtonOnly
+        );
+    }
+
+    #[test]
+    fn different_regions_escalate_to_all() {
+        assert_eq!(
+            DirtyRegion::PageOnly.merge(DirtyRegion::BackButtonOnly),
+            DirtyRegion::All
+        );
+        assert_eq!(
+            DirtyRegion::BackButtonOnly.merge(DirtyRegion::PageOnly),
+            DirtyRegion::All
+        );
+    }
+
+    #[test]
+    fn all_absorbs_everything() {
+        for region in [
+            DirtyRegion::None,
+            DirtyRegion::PageOnly,
+            DirtyRegion::BackButtonOnly,
+        ] {
+            assert_eq!(DirtyRegion::All.merge(region), DirtyRegion::All);
+            assert_eq!(region.merge(DirtyRegion::All), DirtyRegion::All);
         }
     }
 }
