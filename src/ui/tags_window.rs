@@ -12,9 +12,10 @@ use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
-    BTN_PRIMARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG,
-    ITEM_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG, PANEL_TEXT, PLAN_BTN_CORNER, PLAN_LIST_ITEM_H,
-    TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
+    BTN_PRIMARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
+    INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG, PANEL_TEXT,
+    PLAN_BTN_CORNER, PLAN_LIST_ITEM_H, TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR,
+    TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 
@@ -44,6 +45,8 @@ pub struct TagsWindow {
     /// When Some, the add-tag footer is visible with an inline text input.
     add_input: Option<TextInput>,
     hovered_confirm: bool,
+    add_input_error: bool,
+    rename_error: bool,
     /// When Some, the tag with this `TagId` is being renamed via the inline input.
     rename_state: Option<(TagId, TextInput)>,
 }
@@ -59,6 +62,8 @@ impl TagsWindow {
             drag_state: None,
             add_input: None,
             hovered_confirm: false,
+            add_input_error: false,
+            rename_error: false,
             rename_state: None,
         }
     }
@@ -419,9 +424,13 @@ impl FloatingWindow for TagsWindow {
                             &paint,
                         );
                         // Border
-                        paint.set_color(Color::from(INPUT_BORDER_FOCUS));
+                        paint.set_color(Color::from(if self.rename_error {
+                            INPUT_BORDER_ERROR
+                        } else {
+                            INPUT_BORDER_FOCUS
+                        }));
                         paint.set_style(PaintStyle::Stroke);
-                        paint.set_stroke_width(1.0);
+                        paint.set_stroke_width(if self.rename_error { 2.0 } else { 1.0 });
                         canvas.draw_rrect(
                             RRect::new_rect_xy(input_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
                             &paint,
@@ -601,9 +610,13 @@ impl FloatingWindow for TagsWindow {
             paint.set_color(Color::from(INPUT_BG));
             paint.set_style(PaintStyle::Fill);
             canvas.draw_rrect(rrect, &paint);
-            paint.set_color(Color::from(INPUT_BORDER_FOCUS));
+            paint.set_color(Color::from(if self.add_input_error {
+                INPUT_BORDER_ERROR
+            } else {
+                INPUT_BORDER_FOCUS
+            }));
             paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.0);
+            paint.set_stroke_width(if self.add_input_error { 2.0 } else { 1.0 });
             canvas.draw_rrect(rrect, &paint);
 
             // Input text + cursor
@@ -807,6 +820,7 @@ impl FloatingWindow for TagsWindow {
                     let tag_id = tag.id;
                     let current_name = tag.name.clone();
                     self.rename_state = Some((tag_id, TextInput::new(&current_name)));
+                    self.rename_error = false;
                 }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
@@ -821,21 +835,26 @@ impl FloatingWindow for TagsWindow {
             match key {
                 Key::Named(NamedKey::Escape) => {
                     self.rename_state = None;
+                    self.rename_error = false;
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::Enter) => {
                     if let Some((tag_id, ref input)) = self.rename_state {
                         let new_name = input.content.trim().to_string();
-                        if !new_name.is_empty() {
-                            sender.send(PlanRequest::RenameTag(tag_id, new_name));
+                        if new_name.is_empty() {
+                            self.rename_error = true;
+                            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                         }
+                        sender.send(PlanRequest::RenameTag(tag_id, new_name));
                     }
                     self.rename_state = None;
+                    self.rename_error = false;
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::Backspace) => {
                     if let Some((_, ref mut input)) = self.rename_state {
                         input.backspace();
+                        self.rename_error = false;
                     }
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
@@ -866,6 +885,7 @@ impl FloatingWindow for TagsWindow {
                 Key::Named(NamedKey::Space) => {
                     if let Some((_, ref mut input)) = self.rename_state {
                         input.insert_str(" ");
+                        self.rename_error = false;
                     }
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
@@ -873,6 +893,7 @@ impl FloatingWindow for TagsWindow {
                     if c.chars().all(|ch| !ch.is_control()) {
                         if let Some((_, ref mut input)) = self.rename_state {
                             input.insert_str(c.as_str());
+                            self.rename_error = false;
                         }
                         return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                     }
@@ -886,11 +907,13 @@ impl FloatingWindow for TagsWindow {
             match key {
                 Key::Named(NamedKey::Escape) => {
                     self.add_input = None;
+                    self.add_input_error = false;
                     FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
                 }
                 Key::Named(NamedKey::Enter) => self.submit_add(sender),
                 Key::Named(NamedKey::Backspace) => {
                     input.backspace();
+                    self.add_input_error = false;
                     FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
                 }
                 Key::Named(NamedKey::ArrowLeft) => {
@@ -911,11 +934,13 @@ impl FloatingWindow for TagsWindow {
                 }
                 Key::Named(NamedKey::Space) => {
                     input.insert_str(" ");
+                    self.add_input_error = false;
                     FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
                 }
                 Key::Character(c) => {
                     if c.chars().all(|ch| !ch.is_control()) {
                         input.insert_str(c.as_str());
+                        self.add_input_error = false;
                         FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
                     } else {
                         FloatingWindowOutcome::default()
@@ -967,10 +992,13 @@ impl TagsWindow {
             .as_ref()
             .map(|i| i.content.trim().to_string())
             .unwrap_or_default();
-        if !name.is_empty() {
-            sender.send(PlanRequest::AddTag(name));
+        if name.is_empty() {
+            self.add_input_error = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
+        sender.send(PlanRequest::AddTag(name));
         self.add_input = None;
+        self.add_input_error = false;
         FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
     }
 }

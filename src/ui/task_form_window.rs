@@ -17,9 +17,9 @@ use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
     BTN_PRIMARY_FG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER,
-    INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG,
-    LIST_ITEM_HOVER_BG, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
-    PLAN_INPUT_H, PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
+    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
+    LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP,
+    PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 use std::collections::HashSet;
@@ -409,6 +409,8 @@ pub struct TaskFormWindow {
     focused_slot_workload: Option<usize>,
     hovered_plus: bool,
     worker_error: bool,
+    name_error: bool,
+    duration_error: bool,
     // Buttons
     hovered_back: bool,
     hovered_save: bool,
@@ -443,6 +445,8 @@ impl TaskFormWindow {
             focused_slot_workload: None,
             hovered_plus: false,
             worker_error: false,
+            name_error: false,
+            duration_error: false,
             hovered_back: false,
             hovered_save: false,
             form_scroll_y: 0.0,
@@ -482,6 +486,8 @@ impl TaskFormWindow {
             focused_slot_workload: None,
             hovered_plus: false,
             worker_error: false,
+            name_error: false,
+            duration_error: false,
             hovered_back: false,
             hovered_save: false,
             form_scroll_y: 0.0,
@@ -822,7 +828,15 @@ impl TaskFormWindow {
     fn try_submit(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         let name = self.name.content.trim().to_string();
         if name.is_empty() {
-            return FloatingWindowOutcome::default();
+            self.name_error = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        // Validate duration is numeric when provided
+        if !self.duration.content.trim().is_empty()
+            && self.duration.content.trim().parse::<f32>().is_err()
+        {
+            self.duration_error = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
         // Validate: at least one complete (user-assigned) worker
         let worker_slots: Vec<WorkerSlot> = self
@@ -908,6 +922,7 @@ fn draw_text_input(
     rect: Rect,
     input: &TextInput,
     focused: bool,
+    error: bool,
     cache: &RenderCache,
 ) {
     let mut paint = Paint::default();
@@ -916,13 +931,15 @@ fn draw_text_input(
     paint.set_color(Color::from(INPUT_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(rrect, &paint);
-    paint.set_color(if focused {
+    paint.set_color(if error {
+        Color::from(INPUT_BORDER_ERROR)
+    } else if focused {
         Color::from(INPUT_BORDER_FOCUS)
     } else {
         Color::from(INPUT_BORDER)
     });
     paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(1.0);
+    paint.set_stroke_width(if error { 2.0 } else { 1.0 });
     canvas.draw_rrect(rrect, &paint);
     paint.set_style(PaintStyle::Fill);
 
@@ -1518,7 +1535,7 @@ fn draw_worker_row(
     }
 
     // Workload input
-    draw_text_input(canvas, wl_rect, &slot.workload, wl_focused, cache);
+    draw_text_input(canvas, wl_rect, &slot.workload, wl_focused, false, cache);
 
     // "d" suffix drawn inside workload box (right-aligned)
     if let Some(blob) = TextBlob::new("d", &cache.small_font) {
@@ -1601,7 +1618,7 @@ fn draw_user_dropdown(
 
     // Filter input
     let filter_rect = Rect::from_xywh(dd.left, dd.top, dd.width(), USER_DROPDOWN_FILTER_H);
-    draw_text_input(canvas, filter_rect, &slot.user_filter, true, cache);
+    draw_text_input(canvas, filter_rect, &slot.user_filter, true, false, cache);
 
     // Divider
     paint.set_color(Color::from(DIVIDER_COLOR));
@@ -1715,7 +1732,7 @@ fn draw_tag_dropdown(
 
     // Filter input
     let filter_rect = Rect::from_xywh(dd.left, dd.top, dd.width(), USER_DROPDOWN_FILTER_H);
-    draw_text_input(canvas, filter_rect, &slot.tag_filter, true, cache);
+    draw_text_input(canvas, filter_rect, &slot.tag_filter, true, false, cache);
 
     // Divider
     paint.set_color(Color::from(DIVIDER_COLOR));
@@ -1903,6 +1920,7 @@ impl FloatingWindow for TaskFormWindow {
             Self::full_input_rect(ROW_NAME, width, height),
             &self.name,
             self.focused == TextField::Name,
+            self.name_error,
             cache,
         );
 
@@ -1913,6 +1931,7 @@ impl FloatingWindow for TaskFormWindow {
             Self::full_input_rect(ROW_DESC, width, height),
             &self.description,
             self.focused == TextField::Description,
+            false,
             cache,
         );
 
@@ -1949,6 +1968,7 @@ impl FloatingWindow for TaskFormWindow {
             Self::left_input_rect(ROW_DURATION, width, height),
             &self.duration,
             self.focused == TextField::Duration,
+            self.duration_error,
             cache,
         );
 
@@ -2861,6 +2881,11 @@ impl FloatingWindow for TaskFormWindow {
             }
             Key::Named(NamedKey::Backspace) => {
                 self.focused_input_mut().backspace();
+                match self.focused {
+                    TextField::Name => self.name_error = false,
+                    TextField::Duration => self.duration_error = false,
+                    _ => {}
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::ArrowLeft) => {
@@ -2881,11 +2906,21 @@ impl FloatingWindow for TaskFormWindow {
             }
             Key::Named(NamedKey::Space) => {
                 self.focused_input_mut().insert_str(" ");
+                match self.focused {
+                    TextField::Name => self.name_error = false,
+                    TextField::Duration => self.duration_error = false,
+                    _ => {}
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Character(c) => {
                 if c.chars().all(|ch| !ch.is_control()) {
                     self.focused_input_mut().insert_str(c.as_str());
+                    match self.focused {
+                        TextField::Name => self.name_error = false,
+                        TextField::Duration => self.duration_error = false,
+                        _ => {}
+                    }
                     FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
                 } else {
                     FloatingWindowOutcome::default()

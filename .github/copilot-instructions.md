@@ -23,6 +23,8 @@ Common types: `feat`, `fix`, `refactor`, `chore`, `docs`. Scope is the module or
 
 Tests live in `#[cfg(test)]` modules within each source file.
 
+Make sure to make and commit each feature rather than grouping features or fixes into a single commit
+
 ## Architecture
 
 Desktop GUI app: **winit** (window/event loop) → **glutin** (OpenGL context) → **skia-safe** (2D rendering).

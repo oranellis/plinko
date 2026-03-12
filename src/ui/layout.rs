@@ -73,6 +73,7 @@ pub const ADD_BTN_HOVER_BG: u32 = 0xff_e0e0e0;
 pub const ADD_BTN_FG: u32 = 0xff_555555;
 pub const INPUT_BG: u32 = 0xff_ffffff;
 pub const INPUT_BORDER: u32 = 0xff_cccccc;
+pub const INPUT_BORDER_ERROR: u32 = 0xff_e5_39_35;
 pub const INPUT_BORDER_FOCUS: u32 = 0xff_4a90d9;
 pub const INPUT_FG: u32 = 0xff_222222;
 pub const INPUT_CURSOR_COLOR: u32 = 0xff_4a90d9;

@@ -15,9 +15,9 @@ use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
     BTN_PRIMARY_FG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER,
-    INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, PANEL_BG,
-    PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
-    TOOLBAR_STROKE_WIDTH,
+    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
+    LIST_BG, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
+    PLAN_INPUT_H, PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 
@@ -292,6 +292,7 @@ pub struct MilestoneFormWindow {
     calendar_open: bool,
     hovered_back: bool,
     hovered_save: bool,
+    name_error: bool,
     form_scroll_y: f32,
 }
 
@@ -310,6 +311,7 @@ impl MilestoneFormWindow {
             calendar_open: false,
             hovered_back: false,
             hovered_save: false,
+            name_error: false,
             form_scroll_y: 0.0,
         }
     }
@@ -329,6 +331,7 @@ impl MilestoneFormWindow {
             calendar_open: false,
             hovered_back: false,
             hovered_save: false,
+            name_error: false,
             form_scroll_y: 0.0,
         }
     }
@@ -443,7 +446,8 @@ impl MilestoneFormWindow {
     fn try_submit(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         let name = self.name.content.trim().to_string();
         if name.is_empty() {
-            return FloatingWindowOutcome::default();
+            self.name_error = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
         let description = self.description.content.trim().to_string();
         let constraint = self
@@ -499,6 +503,7 @@ fn draw_text_input(
     rect: Rect,
     input: &TextInput,
     focused: bool,
+    error: bool,
     cache: &RenderCache,
 ) {
     let mut paint = Paint::default();
@@ -507,13 +512,15 @@ fn draw_text_input(
     paint.set_color(Color::from(INPUT_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(rrect, &paint);
-    paint.set_color(if focused {
+    paint.set_color(if error {
+        Color::from(INPUT_BORDER_ERROR)
+    } else if focused {
         Color::from(INPUT_BORDER_FOCUS)
     } else {
         Color::from(INPUT_BORDER)
     });
     paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(1.0);
+    paint.set_stroke_width(if error { 2.0 } else { 1.0 });
     canvas.draw_rrect(rrect, &paint);
     paint.set_style(PaintStyle::Fill);
 
@@ -1012,6 +1019,7 @@ impl FloatingWindow for MilestoneFormWindow {
             Self::full_input_rect(ROW_NAME, width, height),
             &self.name,
             self.focused == TextField::Name,
+            self.name_error,
             cache,
         );
 
@@ -1026,6 +1034,7 @@ impl FloatingWindow for MilestoneFormWindow {
             Self::full_input_rect(ROW_DESC, width, height),
             &self.description,
             self.focused == TextField::Description,
+            false,
             cache,
         );
 
@@ -1375,6 +1384,9 @@ impl FloatingWindow for MilestoneFormWindow {
             }
             Key::Named(NamedKey::Backspace) => {
                 self.focused_input().backspace();
+                if self.focused == TextField::Name {
+                    self.name_error = false;
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Named(NamedKey::ArrowLeft) => {
@@ -1395,11 +1407,17 @@ impl FloatingWindow for MilestoneFormWindow {
             }
             Key::Named(NamedKey::Space) => {
                 self.focused_input().insert_str(" ");
+                if self.focused == TextField::Name {
+                    self.name_error = false;
+                }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Key::Character(c) => {
                 if c.chars().all(|ch| !ch.is_control()) {
                     self.focused_input().insert_str(c.as_str());
+                    if self.focused == TextField::Name {
+                        self.name_error = false;
+                    }
                     FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
                 } else {
                     FloatingWindowOutcome::default()

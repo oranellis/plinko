@@ -15,10 +15,10 @@ use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
-    BTN_PRIMARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR,
-    INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG, PANEL_TEXT,
-    PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
-    TOOLBAR_STROKE_WIDTH,
+    BTN_PRIMARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
+    INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG,
+    PANEL_TEXT, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H,
+    PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 
@@ -73,6 +73,7 @@ pub struct UserFormWindow {
     hovered_back: bool,
     hovered_save: bool,
     avatar_error: bool,
+    name_error: bool,
 }
 
 impl UserFormWindow {
@@ -93,6 +94,7 @@ impl UserFormWindow {
             hovered_back: false,
             hovered_save: false,
             avatar_error: false,
+            name_error: false,
         }
     }
 
@@ -114,6 +116,7 @@ impl UserFormWindow {
             hovered_back: false,
             hovered_save: false,
             avatar_error: false,
+            name_error: false,
         }
     }
 
@@ -240,6 +243,10 @@ impl UserFormWindow {
 
     fn try_submit(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         let name = self.name.content.trim().to_string();
+        if name.is_empty() {
+            self.name_error = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
 
         let avatar_path = self.avatar_path.content.trim();
         let avatar_bytes: Option<Vec<u8>> = if avatar_path.is_empty() {
@@ -317,6 +324,7 @@ fn draw_text_input(
     rect: Rect,
     input: &TextInput,
     focused: bool,
+    error: bool,
     cache: &RenderCache,
 ) {
     let mut paint = Paint::default();
@@ -325,13 +333,15 @@ fn draw_text_input(
     paint.set_color(Color::from(INPUT_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(rrect, &paint);
-    paint.set_color(if focused {
+    paint.set_color(if error {
+        Color::from(INPUT_BORDER_ERROR)
+    } else if focused {
         Color::from(INPUT_BORDER_FOCUS)
     } else {
         Color::from(INPUT_BORDER)
     });
     paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(1.0);
+    paint.set_stroke_width(if error { 2.0 } else { 1.0 });
     canvas.draw_rrect(rrect, &paint);
     paint.set_style(PaintStyle::Fill);
 
@@ -513,7 +523,7 @@ fn draw_dropdown(
         dd.width() - 2.0 * h_pad,
         input_h,
     );
-    draw_text_input(canvas, filter_rect, filter_input, true, cache);
+    draw_text_input(canvas, filter_rect, filter_input, true, false, cache);
 
     paint.set_color(Color::from(DIVIDER_COLOR));
     canvas.draw_rect(
@@ -694,6 +704,7 @@ impl FloatingWindow for UserFormWindow {
             Self::input_rect(Field::Name, width, height),
             &self.name,
             self.focused == Field::Name,
+            self.name_error,
             cache,
         );
 
@@ -733,6 +744,7 @@ impl FloatingWindow for UserFormWindow {
             Self::input_rect(Field::AvatarPath, width, height),
             &self.avatar_path,
             self.focused == Field::AvatarPath,
+            false,
             cache,
         );
 
@@ -936,6 +948,9 @@ impl FloatingWindow for UserFormWindow {
                 } else if self.focused != Field::TagFilter {
                     self.focused_input().backspace();
                     self.avatar_error = false;
+                    if self.focused == Field::Name {
+                        self.name_error = false;
+                    }
                 }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
@@ -978,6 +993,9 @@ impl FloatingWindow for UserFormWindow {
                 } else if self.focused != Field::TagFilter {
                     self.focused_input().insert_str(" ");
                     self.avatar_error = false;
+                    if self.focused == Field::Name {
+                        self.name_error = false;
+                    }
                 }
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
@@ -992,6 +1010,9 @@ impl FloatingWindow for UserFormWindow {
                     } else {
                         self.focused_input().insert_str(c.as_str());
                         self.avatar_error = false;
+                        if self.focused == Field::Name {
+                            self.name_error = false;
+                        }
                     }
                     FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
                 } else {
