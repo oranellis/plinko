@@ -131,7 +131,7 @@ pub const GANTT_HEADER_H: f32 = GANTT_MONTH_ROW_H + GANTT_DAY_ROW_H;
 pub const GANTT_ROW_H: f32 = 36.0;
 pub const GANTT_ROW_PADDING: f32 = 5.0;
 pub const GANTT_BAR_CORNER: f32 = 4.0;
-pub const GANTT_DAY_LINE_W: f32 = 3.0;
+pub const GANTT_DAY_LINE_W: f32 = 6.0;
 pub const GANTT_ZOOM_DEFAULT: f32 = 40.0;
 pub const GANTT_ZOOM_MIN: f32 = 8.0;
 pub const GANTT_ZOOM_MAX: f32 = 200.0;
@@ -143,9 +143,10 @@ pub const GANTT_HEADER_BG: u32 = 0xff_f0f0f0;
 pub const GANTT_HEADER_BORDER: u32 = 0xff_d8d8d8;
 pub const GANTT_HEADER_FG: u32 = 0xff_555555;
 pub const GANTT_HEADER_MONTH_FG: u32 = 0xff_333333;
-pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_ececec;
+pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_e4e4e4;
 pub const GANTT_TODAY_LINE_COLOR: u32 = 0x80_4a90d9;
 pub const GANTT_ROW_ALT_BG: u32 = 0xff_f4f4f4;
+pub const GANTT_WEEKEND_BG: u32 = 0xff_efefef;
 
 // Task status colors
 pub const GANTT_TASK_NOT_STARTED: u32 = 0xff_d0d0d0;

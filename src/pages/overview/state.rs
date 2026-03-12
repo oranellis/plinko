@@ -1,5 +1,6 @@
 //! Mutable state for the overview page.
 
+use crate::data::ids::NodeId;
 use crate::ui::layout::GANTT_ZOOM_DEFAULT;
 
 /// Full interactive state for the overview page.
@@ -25,6 +26,8 @@ pub struct OverviewState {
     pub vel_x: f32,
     pub vel_y: f32,
     pub zoom_vel: f32,
+    /// Target zoom for smooth interpolation (shift+scroll nudges this).
+    pub zoom_target: f32,
     // Drag tracking
     pub is_dragging: bool,
     pub last_drag_x: f32,
@@ -38,6 +41,7 @@ pub struct OverviewState {
     // Stored plan data for initialising the settings window
     pub settings_init_name: String,
     pub settings_init_date: String,
+    pub settings_init_scheduler_target: NodeId,
 }
 
 impl OverviewState {
@@ -54,6 +58,7 @@ impl OverviewState {
             vel_x: 0.0,
             vel_y: 0.0,
             zoom_vel: 1.0,
+            zoom_target: GANTT_ZOOM_DEFAULT,
             is_dragging: false,
             last_drag_x: 0.0,
             last_drag_y: 0.0,
@@ -63,6 +68,7 @@ impl OverviewState {
             open_settings_window: false,
             settings_init_name: String::new(),
             settings_init_date: String::new(),
+            settings_init_scheduler_target: NodeId::PlanStart,
         }
     }
 }

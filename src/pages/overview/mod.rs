@@ -126,6 +126,7 @@ impl Page for OverviewPage {
                     Some(3) => {
                         self.state.settings_init_name = plan.name.clone();
                         self.state.settings_init_date = plan.start_date.to_string();
+                        self.state.settings_init_scheduler_target = plan.scheduler_target;
                         self.state.open_settings_window = true;
                     }
                     _ => {}
@@ -151,8 +152,10 @@ impl Page for OverviewPage {
         _plan: &Plan,
     ) -> DirtyRegion {
         if shift {
-            let factor = if delta_y > 0.0 { 0.02 } else { -0.02 };
-            self.state.zoom_vel = (self.state.zoom_vel + factor).clamp(0.85, 1.15);
+            // Nudge zoom target; tick_animation lerps toward it smoothly.
+            let factor = if delta_y > 0.0 { 1.12_f32 } else { 1.0 / 1.12 };
+            self.state.zoom_target =
+                (self.state.zoom_target * factor).clamp(GANTT_ZOOM_MIN, GANTT_ZOOM_MAX);
             DirtyRegion::PageOnly
         } else {
             self.state.vel_y -= delta_y * 4.0;
@@ -176,11 +179,11 @@ impl Page for OverviewPage {
         }
         if self.state.open_settings_window {
             self.state.open_settings_window = false;
-            let mut w = crate::ui::plan_settings_window::PlanSettingsWindow::with_values(
+            let w = crate::ui::plan_settings_window::PlanSettingsWindow::with_values(
                 &self.state.settings_init_name,
                 &self.state.settings_init_date,
+                self.state.settings_init_scheduler_target,
             );
-            w.name.focused = true;
             return Some(Box::new(w));
         }
         None
@@ -193,24 +196,20 @@ impl Page for OverviewPage {
     fn has_animation(&self) -> bool {
         self.state.vel_x.abs() > 0.1
             || self.state.vel_y.abs() > 0.1
-            || (self.state.zoom_vel - 1.0).abs() > 0.0001
+            || (self.state.zoom_target - self.state.zoom).abs() > 0.05
     }
 
     fn tick_animation(&mut self, _width: f32, height: f32, plan: &Plan) -> DirtyRegion {
         let friction = 0.88_f32;
         let mut dirty = false;
 
-        if (self.state.zoom_vel - 1.0).abs() > 0.0001 {
-            let new_zoom =
-                (self.state.zoom * self.state.zoom_vel).clamp(GANTT_ZOOM_MIN, GANTT_ZOOM_MAX);
-            if (new_zoom - self.state.zoom).abs() > f32::EPSILON {
-                self.state.zoom = new_zoom;
-                dirty = true;
-            }
-            self.state.zoom_vel = 1.0 + (self.state.zoom_vel - 1.0) * friction;
-            if (self.state.zoom_vel - 1.0).abs() < 0.0001 {
-                self.state.zoom_vel = 1.0;
-            }
+        // Smooth zoom: lerp toward zoom_target
+        let zoom_diff = self.state.zoom_target - self.state.zoom;
+        if zoom_diff.abs() > 0.05 {
+            self.state.zoom += zoom_diff * 0.18;
+            dirty = true;
+        } else if zoom_diff.abs() > f32::EPSILON {
+            self.state.zoom = self.state.zoom_target;
         }
 
         if self.state.vel_x.abs() > 0.1 {

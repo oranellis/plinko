@@ -38,7 +38,7 @@ use chrono::NaiveDate;
 
 use crate::data::constraint::DateConstraint;
 use crate::data::dependency::Dependency;
-use crate::data::ids::{MilestoneId, TagId, TaskId, UserId};
+use crate::data::ids::{MilestoneId, NodeId, TagId, TaskId, UserId};
 use crate::data::plan::DependencyError;
 use crate::data::scheduler::SchedulerError;
 use crate::data::task::WorkerSlot;
@@ -249,10 +249,11 @@ pub enum PlanRequest {
     MoveTag(TagId, usize),
 
     // ── Plan metadata ──────────────────────────────────────────────────────────
-    /// Update top-level plan metadata (name and start date).
+    /// Update top-level plan metadata.
     UpdatePlanSettings {
         name: String,
         start_date: chrono::NaiveDate,
+        scheduler_target: NodeId,
     },
 }
 
@@ -543,9 +544,14 @@ impl PlanEngine {
                 PlanResponse::PlanUpdated
             }
 
-            PlanRequest::UpdatePlanSettings { name, start_date } => {
+            PlanRequest::UpdatePlanSettings {
+                name,
+                start_date,
+                scheduler_target,
+            } => {
                 self.plan.name = name;
                 self.plan.start_date = start_date;
+                self.plan.scheduler_target = scheduler_target;
                 PlanResponse::PlanUpdated
             }
         }

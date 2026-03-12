@@ -1,6 +1,6 @@
 //! Rendering functions for the overview page Gantt chart.
 
-use chrono::{Datelike, Duration, NaiveDate};
+use chrono::{Datelike, Duration, NaiveDate, Weekday as CWeekday};
 use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, PathBuilder, RRect, Rect, TextBlob};
 
 use crate::data::Plan;
@@ -128,7 +128,7 @@ fn draw_gantt_header(
     let header_top = gantt_header_top();
     let zoom = state.zoom;
     let scroll_x = state.scroll_x;
-    let days_visible = (width / zoom).ceil() as i64 + 2;
+    let days_visible = (width / zoom).ceil() as i64 + 4;
     let first_offset = (scroll_x / zoom).floor() as i64 - 1;
 
     let mut paint = Paint::default();
@@ -146,19 +146,21 @@ fn draw_gantt_header(
     let day_row_top = header_top + GANTT_MONTH_ROW_H;
     let (_, metrics) = cache.font.metrics();
 
-    // Build month segments and draw day labels
+    // Build month segments. For each month, x_start is computed from the ACTUAL
+    // first day of that month (not the first visible day) so panning is smooth.
+    // x_end is updated each iteration to extend the segment to the right.
     let mut month_segments: Vec<(String, f32, f32)> = Vec::new(); // (label, x_start, x_end)
     let mut last_month: Option<(u32, i32)> = None;
 
-    for day_offset in first_offset..=first_offset + days_visible + 2 {
+    for day_offset in first_offset..=first_offset + days_visible {
         let date = view_start + Duration::days(day_offset);
         let x = day_offset as f32 * zoom - scroll_x;
-        if x > width + 10.0 {
+        if x > width + zoom {
             break;
         }
         let (y, m) = (date.year(), date.month());
 
-        // Month segments
+        // Month segments — x_start is always the true first-of-month position
         match last_month {
             Some((pm, py)) if pm == m && py == y => {
                 if let Some(last) = month_segments.last_mut() {
@@ -168,24 +170,20 @@ fn draw_gantt_header(
             _ => {
                 last_month = Some((m, y));
                 let label = format!("{} {}", month_abbr(m), y);
-                month_segments.push((label, x, x + zoom));
+                // Compute x for the actual first day of this month (may be off-screen left)
+                let first_of_month = NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(date);
+                let fom_offset = (first_of_month - view_start).num_days();
+                let x_month_start = fom_offset as f32 * zoom - scroll_x;
+                month_segments.push((label, x_month_start, x + zoom));
             }
         }
 
-        // Day boundary line (in day row)
-        if day_offset > 0 {
-            paint.set_color(Color::from(GANTT_HEADER_BORDER));
-            paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(2.0);
-            canvas.draw_line((x, day_row_top), (x, day_row_top + GANTT_DAY_ROW_H), &paint);
-            paint.set_style(PaintStyle::Fill);
-        }
-
-        // Day number
+        // Day number (no separator lines in header)
         if zoom >= 16.0 {
             let day_label = format!("{}", date.day());
             let tw = cache.font.measure_str(&day_label, None).0;
             let day_x = x + zoom / 2.0 - tw / 2.0;
+            // Baseline near bottom of day row
             let day_y = day_row_top + GANTT_DAY_ROW_H - metrics.descent - 3.0;
             paint.set_color(Color::from(GANTT_HEADER_FG));
             paint.set_style(PaintStyle::Fill);
@@ -195,39 +193,31 @@ fn draw_gantt_header(
         }
     }
 
-    // Month labels and separators
+    // Month labels — centred in visible portion of each segment (no separators)
     for (label, x_start, x_end) in &month_segments {
-        let seg_w = x_end - x_start;
+        let vis_start = x_start.max(0.0);
+        let vis_end = x_end.min(width);
+        if vis_end <= vis_start {
+            continue;
+        }
         let tw = cache.font.measure_str(label, None).0;
-        let label_x = (x_start + seg_w / 2.0 - tw / 2.0).max(x_start + 4.0);
+        let seg_center = (vis_start + vis_end) / 2.0;
+        let label_x = (seg_center - tw / 2.0).max(vis_start + 4.0);
+        // Vertically centred in the month row — baseline
         let label_y =
-            month_row_top + GANTT_MONTH_ROW_H * 0.5 + (metrics.descent - metrics.ascent) * 0.5;
+            month_row_top + GANTT_MONTH_ROW_H / 2.0 - (metrics.ascent + metrics.descent) / 2.0;
         paint.set_color(Color::from(GANTT_HEADER_MONTH_FG));
         paint.set_style(PaintStyle::Fill);
         if let Some(blob) = TextBlob::new(label, &cache.font) {
             canvas.draw_text_blob(&blob, (label_x, label_y), &paint);
         }
-        if *x_start > 0.5 {
-            paint.set_color(Color::from(GANTT_HEADER_BORDER));
-            paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.0);
-            canvas.draw_line(
-                (*x_start, month_row_top),
-                (*x_start, month_row_top + GANTT_MONTH_ROW_H),
-                &paint,
-            );
-            paint.set_style(PaintStyle::Fill);
-        }
     }
 
-    // Separator between month row and day row
+    // Bottom border of header (only)
+    let border_y = header_top + GANTT_HEADER_H - 0.5;
     paint.set_color(Color::from(GANTT_HEADER_BORDER));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.0);
-    canvas.draw_line((0.0, day_row_top - 0.5), (width, day_row_top - 0.5), &paint);
-
-    // Bottom border of header
-    let border_y = header_top + GANTT_HEADER_H - 0.5;
     canvas.draw_line((0.0, border_y), (width, border_y), &paint);
     paint.set_style(PaintStyle::Fill);
 }
@@ -268,7 +258,6 @@ fn draw_gantt_grid(
 
     let mut paint = Paint::default();
     paint.set_anti_alias(false);
-    paint.set_style(PaintStyle::Stroke);
 
     for day_offset in first_offset..=first_offset + days_visible + 2 {
         let date = view_start + Duration::days(day_offset);
@@ -279,6 +268,20 @@ fn draw_gantt_grid(
         if x > width {
             break;
         }
+
+        // Weekend shading (fill the day column)
+        let wd = date.weekday();
+        if wd == CWeekday::Sat || wd == CWeekday::Sun {
+            paint.set_color(Color::from(GANTT_WEEKEND_BG));
+            paint.set_style(PaintStyle::Fill);
+            canvas.draw_rect(
+                Rect::from_xywh(x, rows_top, zoom, height - rows_top),
+                &paint,
+            );
+        }
+
+        // Vertical day separator line
+        paint.set_style(PaintStyle::Stroke);
         if date == today {
             paint.set_color(Color::from(GANTT_TODAY_LINE_COLOR));
             paint.set_stroke_width(2.0);
