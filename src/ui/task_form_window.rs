@@ -50,6 +50,8 @@ const WORKER_WORKLOAD_W: f32 = 64.0;
 const WORKER_REMOVE_SIZE: f32 = 22.0;
 const WORKER_COL_GAP: f32 = 8.0;
 const SLOT_TYPE_W: f32 = 50.0;
+const WORKER_PAD_L: f32 = 4.0; // gap before T/P toggle
+const WORKER_PAD_R: f32 = 8.0; // gap after X button (accommodates scrollbar)
 const MAX_VISIBLE_WORKERS: usize = 3;
 const PLUS_BTN_H: f32 = 28.0;
 const WORKER_SECTION_H: f32 = LABEL_H + PLAN_LABEL_GAP + WORKER_ROW_H * 3.0 + PLUS_BTN_H;
@@ -399,7 +401,8 @@ pub struct TaskFormWindow {
     open_calendar: Option<OpenCalendar>,
     // Workers
     workers: Vec<WorkerSlotEdit>,
-    worker_scroll: usize,
+    worker_scroll_y: f32,
+    cursor_in_worker_list: bool,
     open_slot_dropdown: Option<usize>,
     slot_dropdown_hovered: Option<usize>,
     slot_dropdown_scroll: usize,
@@ -432,7 +435,8 @@ impl TaskFormWindow {
             actual_end: CalendarPicker::new(None),
             open_calendar: None,
             workers: Vec::new(),
-            worker_scroll: 0,
+            worker_scroll_y: 0.0,
+            cursor_in_worker_list: false,
             open_slot_dropdown: None,
             slot_dropdown_hovered: None,
             slot_dropdown_scroll: 0,
@@ -470,7 +474,8 @@ impl TaskFormWindow {
             actual_end: CalendarPicker::new(task.actual_end_date),
             open_calendar: None,
             workers,
-            worker_scroll: 0,
+            worker_scroll_y: 0.0,
+            cursor_in_worker_list: false,
             open_slot_dropdown: None,
             slot_dropdown_hovered: None,
             slot_dropdown_scroll: 0,
@@ -594,29 +599,31 @@ impl TaskFormWindow {
         Rect::from_xywh(list.left, list.bottom, list.width(), PLUS_BTN_H)
     }
 
-    fn slot_type_rect(list: Rect, vis_idx: usize) -> Rect {
-        let row_y = list.top + vis_idx as f32 * WORKER_ROW_H;
+    fn slot_type_rect(list: Rect, abs_idx: usize) -> Rect {
+        let row_y = list.top + abs_idx as f32 * WORKER_ROW_H;
         let vy = row_y + (WORKER_ROW_H - WORKER_INPUT_H) / 2.0;
-        Rect::from_xywh(list.left, vy, SLOT_TYPE_W, WORKER_INPUT_H)
+        Rect::from_xywh(list.left + WORKER_PAD_L, vy, SLOT_TYPE_W, WORKER_INPUT_H)
     }
 
-    /// Rect of the user selector button for a visible slot (vis_idx = 0..MAX_VISIBLE_WORKERS).
-    fn slot_user_rect(list: Rect, vis_idx: usize) -> Rect {
-        let row_y = list.top + vis_idx as f32 * WORKER_ROW_H;
-        let x = list.left + SLOT_TYPE_W + WORKER_COL_GAP;
+    /// Rect of the user selector button for a visible slot (abs_idx = 0..workers.len()).
+    fn slot_user_rect(list: Rect, abs_idx: usize) -> Rect {
+        let row_y = list.top + abs_idx as f32 * WORKER_ROW_H;
+        let x = list.left + WORKER_PAD_L + SLOT_TYPE_W + WORKER_COL_GAP;
         let w = list.width()
+            - WORKER_PAD_L
             - SLOT_TYPE_W
             - WORKER_COL_GAP
             - WORKER_COL_GAP
             - WORKER_WORKLOAD_W
             - WORKER_COL_GAP
-            - WORKER_REMOVE_SIZE;
+            - WORKER_REMOVE_SIZE
+            - WORKER_PAD_R;
         let vy = row_y + (WORKER_ROW_H - WORKER_INPUT_H) / 2.0;
         Rect::from_xywh(x, vy, w, WORKER_INPUT_H)
     }
 
-    fn slot_workload_rect(list: Rect, vis_idx: usize) -> Rect {
-        let user = Self::slot_user_rect(list, vis_idx);
+    fn slot_workload_rect(list: Rect, abs_idx: usize) -> Rect {
+        let user = Self::slot_user_rect(list, abs_idx);
         Rect::from_xywh(
             user.right + WORKER_COL_GAP,
             user.top,
@@ -625,19 +632,18 @@ impl TaskFormWindow {
         )
     }
 
-    fn slot_remove_rect(list: Rect, vis_idx: usize) -> Rect {
-        let wl = Self::slot_workload_rect(list, vis_idx);
-        let row_y = list.top + vis_idx as f32 * WORKER_ROW_H;
+    fn slot_remove_rect(list: Rect, abs_idx: usize) -> Rect {
+        let row_y = list.top + abs_idx as f32 * WORKER_ROW_H;
         Rect::from_xywh(
-            wl.right + WORKER_COL_GAP,
+            list.right - WORKER_PAD_R - WORKER_REMOVE_SIZE,
             row_y + (WORKER_ROW_H - WORKER_REMOVE_SIZE) / 2.0,
             WORKER_REMOVE_SIZE,
             WORKER_REMOVE_SIZE,
         )
     }
 
-    fn slot_dropdown_rect(list: Rect, vis_idx: usize, panel: Rect) -> Rect {
-        let user_btn = Self::slot_user_rect(list, vis_idx);
+    fn slot_dropdown_rect(list: Rect, abs_idx: usize, panel: Rect) -> Rect {
+        let user_btn = Self::slot_user_rect(list, abs_idx);
         let below = user_btn.bottom + 2.0;
         let above = user_btn.top - 2.0 - USER_DROPDOWN_H;
         let top = if below + USER_DROPDOWN_H <= panel.bottom + 8.0 {
@@ -804,9 +810,11 @@ impl TaskFormWindow {
         self.slot_dropdown_hovered = None;
     }
 
-    fn clamp_worker_scroll(&mut self) {
-        let max = self.workers.len().saturating_sub(MAX_VISIBLE_WORKERS);
-        self.worker_scroll = self.worker_scroll.min(max);
+    fn clamp_worker_scroll_y(&mut self) {
+        let total_h = self.workers.len() as f32 * WORKER_ROW_H;
+        let visible_h = WORKER_ROW_H * MAX_VISIBLE_WORKERS as f32;
+        let max = (total_h - visible_h).max(0.0);
+        self.worker_scroll_y = self.worker_scroll_y.clamp(0.0, max);
     }
 
     // ── Submit ────────────────────────────────────────────────────────────────
@@ -2046,13 +2054,9 @@ impl FloatingWindow for TaskFormWindow {
         // Clip list to its rect
         canvas.save();
         canvas.clip_rect(list, ClipOp::Intersect, false);
+        canvas.translate((0.0, -self.worker_scroll_y));
 
-        let vis_count = self
-            .workers
-            .len()
-            .saturating_sub(self.worker_scroll)
-            .min(MAX_VISIBLE_WORKERS);
-        if vis_count == 0 {
+        if self.workers.is_empty() {
             // Empty state
             if let Some(blob) = TextBlob::new("No workers added yet", &cache.small_font) {
                 let (_, sm2) = cache.small_font.metrics();
@@ -2061,14 +2065,13 @@ impl FloatingWindow for TaskFormWindow {
                 canvas.draw_text_blob(&blob, (list.left + 12.0, ty), &paint);
             }
         } else {
-            for vis in 0..vis_count {
-                let abs = self.worker_scroll + vis;
+            for abs in 0..self.workers.len() {
                 let wl_focused = self.focused_slot_workload == Some(abs);
                 let dd_open = self.open_slot_dropdown == Some(abs);
                 draw_worker_row(
                     canvas,
                     list,
-                    vis,
+                    abs,
                     &self.workers[abs],
                     dd_open,
                     wl_focused,
@@ -2078,35 +2081,31 @@ impl FloatingWindow for TaskFormWindow {
             }
         }
 
-        // Scroll indicators
-        if self.worker_scroll > 0 {
-            paint.set_color(Color::from(0xff_aaaaaa_u32));
-            paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.5);
-            let ax = list.right - 12.0;
-            let ay = list.top + 6.0;
-            let mut pb = PathBuilder::new();
-            pb.move_to((ax - 4.0, ay + 4.0));
-            pb.line_to((ax, ay));
-            pb.line_to((ax + 4.0, ay + 4.0));
-            canvas.draw_path(&pb.detach(), &paint);
-            paint.set_style(PaintStyle::Fill);
-        }
-        if self.worker_scroll + MAX_VISIBLE_WORKERS < self.workers.len() {
-            paint.set_color(Color::from(0xff_aaaaaa_u32));
-            paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.5);
-            let ax = list.right - 12.0;
-            let ay = list.bottom - 6.0;
-            let mut pb = PathBuilder::new();
-            pb.move_to((ax - 4.0, ay - 4.0));
-            pb.line_to((ax, ay));
-            pb.line_to((ax + 4.0, ay - 4.0));
-            canvas.draw_path(&pb.detach(), &paint);
-            paint.set_style(PaintStyle::Fill);
-        }
-
         canvas.restore();
+
+        // Worker list scrollbar
+        let total_worker_h = self.workers.len() as f32 * WORKER_ROW_H;
+        let visible_worker_h = list.height();
+        let max_wscroll = (total_worker_h - visible_worker_h).max(0.0);
+        if max_wscroll > 0.0 {
+            let thumb_h = (visible_worker_h * visible_worker_h / total_worker_h).max(20.0);
+            let thumb_y =
+                list.top + (self.worker_scroll_y / max_wscroll) * (visible_worker_h - thumb_h);
+            paint.set_color(Color::from_argb(80, 0, 0, 0));
+            canvas.draw_rrect(
+                RRect::new_rect_xy(
+                    Rect::from_xywh(
+                        list.right - SCROLLBAR_W - 2.0,
+                        thumb_y,
+                        SCROLLBAR_W,
+                        thumb_h,
+                    ),
+                    2.0,
+                    2.0,
+                ),
+                &paint,
+            );
+        }
 
         // Plus button
         let plus_rect = Self::worker_plus_rect(width, height);
@@ -2207,15 +2206,15 @@ impl FloatingWindow for TaskFormWindow {
         if let Some(slot_idx) = self.open_slot_dropdown
             && slot_idx < self.workers.len()
         {
-            let vis_idx = slot_idx.saturating_sub(self.worker_scroll);
             let list2 = Self::worker_list_rect(width, height);
-            let scrolled_list2 = Rect::from_xywh(
+            // Adjust list top for both form scroll and worker list scroll so dropdown appears at the correct screen position
+            let adjusted_list = Rect::from_xywh(
                 list2.left,
-                list2.top - scroll_y,
+                list2.top - scroll_y - self.worker_scroll_y,
                 list2.width(),
                 list2.height(),
             );
-            let dd_rect = TaskFormWindow::slot_dropdown_rect(scrolled_list2, vis_idx, panel);
+            let dd_rect = TaskFormWindow::slot_dropdown_rect(adjusted_list, slot_idx, panel);
             match self.workers[slot_idx].slot_type {
                 SlotType::Specific => draw_user_dropdown(
                     canvas,
@@ -2344,11 +2343,14 @@ impl FloatingWindow for TaskFormWindow {
         if let Some(slot_idx) = self.open_slot_dropdown
             && slot_idx < self.workers.len()
         {
-            let vis = slot_idx.saturating_sub(self.worker_scroll);
             let list = Self::worker_list_rect(width, height);
-            let scrolled_list =
-                Rect::from_xywh(list.left, list.top - scroll_y, list.width(), list.height());
-            let dd = TaskFormWindow::slot_dropdown_rect(scrolled_list, vis, panel);
+            let adjusted_list = Rect::from_xywh(
+                list.left,
+                list.top - scroll_y - self.worker_scroll_y,
+                list.width(),
+                list.height(),
+            );
+            let dd = TaskFormWindow::slot_dropdown_rect(adjusted_list, slot_idx, panel);
             let list_top = dd.top + USER_DROPDOWN_FILTER_H + 1.0;
             let filtered_len = match self.workers[slot_idx].slot_type {
                 SlotType::Specific => self.workers[slot_idx].filtered_users(plan).len(),
@@ -2365,19 +2367,17 @@ impl FloatingWindow for TaskFormWindow {
         }
 
         // Worker row hovers (user btn, remove, workload)
+        let list = Self::worker_list_rect(width, height);
+        let in_list = list.contains(pt_form);
+        set!(self.cursor_in_worker_list, in_list);
         if self.open_slot_dropdown.is_none() && self.open_calendar.is_none() {
-            let list = Self::worker_list_rect(width, height);
-            let vis_count = self
-                .workers
-                .len()
-                .saturating_sub(self.worker_scroll)
-                .min(MAX_VISIBLE_WORKERS);
-            for vis in 0..vis_count {
-                let abs = self.worker_scroll + vis;
-                let new_ub = TaskFormWindow::slot_user_rect(list, vis).contains(pt_form);
-                let new_rm = TaskFormWindow::slot_remove_rect(list, vis).contains(pt_form);
-                let type_rect = TaskFormWindow::slot_type_rect(list, vis);
-                let new_type = if type_rect.contains(pt_form) {
+            // pt_worker: screen pt converted to worker-list content space
+            let pt_worker = Point::new(x, y + scroll_y + self.worker_scroll_y);
+            for abs in 0..self.workers.len() {
+                let new_ub = TaskFormWindow::slot_user_rect(list, abs).contains(pt_worker);
+                let new_rm = TaskFormWindow::slot_remove_rect(list, abs).contains(pt_worker);
+                let type_rect = TaskFormWindow::slot_type_rect(list, abs);
+                let new_type = if type_rect.contains(pt_worker) {
                     let half = type_rect.width() / 2.0;
                     if x < type_rect.left + half {
                         Some(0)
@@ -2523,11 +2523,14 @@ impl FloatingWindow for TaskFormWindow {
         // User/tag dropdown
         if let Some(slot_idx) = self.open_slot_dropdown {
             if slot_idx < self.workers.len() {
-                let vis = slot_idx.saturating_sub(self.worker_scroll);
                 let list = Self::worker_list_rect(width, height);
-                let scrolled_list =
-                    Rect::from_xywh(list.left, list.top - scroll_y, list.width(), list.height());
-                let dd = TaskFormWindow::slot_dropdown_rect(scrolled_list, vis, panel);
+                let adjusted_list = Rect::from_xywh(
+                    list.left,
+                    list.top - scroll_y - self.worker_scroll_y,
+                    list.width(),
+                    list.height(),
+                );
+                let dd = TaskFormWindow::slot_dropdown_rect(adjusted_list, slot_idx, panel);
                 if dd.contains(pt) {
                     let filter_rect =
                         Rect::from_xywh(dd.left, dd.top, dd.width(), USER_DROPDOWN_FILTER_H);
@@ -2579,24 +2582,20 @@ impl FloatingWindow for TaskFormWindow {
 
         if plus_rect.contains(pt_form) {
             self.workers.push(WorkerSlotEdit::new());
-            // Scroll to show new item
-            if self.workers.len() > MAX_VISIBLE_WORKERS {
-                self.worker_scroll = self.workers.len() - MAX_VISIBLE_WORKERS;
-            }
+            // Scroll to show the new item
+            let total_h = self.workers.len() as f32 * WORKER_ROW_H;
+            let visible_h = WORKER_ROW_H * MAX_VISIBLE_WORKERS as f32;
+            self.worker_scroll_y = (total_h - visible_h).max(0.0);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
         if list.contains(pt_form) {
-            let vis_count = self
-                .workers
-                .len()
-                .saturating_sub(self.worker_scroll)
-                .min(MAX_VISIBLE_WORKERS);
-            for vis in 0..vis_count {
-                let abs = self.worker_scroll + vis;
-                if TaskFormWindow::slot_remove_rect(list, vis).contains(pt_form) {
+            // pt_worker: form-pt converted to worker-list content space
+            let pt_worker = Point::new(x, y + scroll_y + self.worker_scroll_y);
+            for abs in 0..self.workers.len() {
+                if TaskFormWindow::slot_remove_rect(list, abs).contains(pt_worker) {
                     self.workers.remove(abs);
-                    self.clamp_worker_scroll();
+                    self.clamp_worker_scroll_y();
                     if let Some(ref mut fs) = self.focused_slot_workload {
                         if *fs == abs {
                             self.focused_slot_workload = None;
@@ -2606,8 +2605,8 @@ impl FloatingWindow for TaskFormWindow {
                     }
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                if TaskFormWindow::slot_type_rect(list, vis).contains(pt_form) {
-                    let type_rect = TaskFormWindow::slot_type_rect(list, vis);
+                if TaskFormWindow::slot_type_rect(list, abs).contains(pt_worker) {
+                    let type_rect = TaskFormWindow::slot_type_rect(list, abs);
                     let new_type = if x < type_rect.left + type_rect.width() / 2.0 {
                         SlotType::Placeholder
                     } else {
@@ -2623,16 +2622,16 @@ impl FloatingWindow for TaskFormWindow {
                     }
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                if TaskFormWindow::slot_user_rect(list, vis).contains(pt_form) {
+                if TaskFormWindow::slot_user_rect(list, abs).contains(pt_worker) {
                     self.open_slot_dropdown(abs);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                if TaskFormWindow::slot_workload_rect(list, vis).contains(pt_form) {
+                if TaskFormWindow::slot_workload_rect(list, abs).contains(pt_worker) {
                     self.focused_slot_workload = Some(abs);
                     self.name.focused = false;
                     self.description.focused = false;
                     self.duration.focused = false;
-                    let wl_rect = TaskFormWindow::slot_workload_rect(list, vis);
+                    let wl_rect = TaskFormWindow::slot_workload_rect(list, abs);
                     let x_in_inner =
                         x - (wl_rect.left + 8.0) + self.workers[abs].workload.scroll_x.get();
                     self.workers[abs].workload.cursor = self.workers[abs]
@@ -2927,7 +2926,22 @@ impl FloatingWindow for TaskFormWindow {
             return FloatingWindowOutcome::default();
         }
 
-        // Smooth continuous scroll — same feel as the users list
+        // Scroll worker list independently when cursor is inside it
+        if self.cursor_in_worker_list {
+            let total_h = self.workers.len() as f32 * WORKER_ROW_H;
+            let visible_h = WORKER_ROW_H * MAX_VISIBLE_WORKERS as f32;
+            let max_wscroll = (total_h - visible_h).max(0.0);
+            if max_wscroll > 0.0 {
+                let new_scroll = (self.worker_scroll_y - delta_y * 40.0).clamp(0.0, max_wscroll);
+                if (new_scroll - self.worker_scroll_y).abs() > f32::EPSILON {
+                    self.worker_scroll_y = new_scroll;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                return FloatingWindowOutcome::default();
+            }
+        }
+
+        // Smooth continuous scroll of the form — same feel as the users list
         let panel_h = Self::panel_rect(width, height).height();
         let max_scroll = (PANEL_H - panel_h).max(0.0);
         if max_scroll <= 0.0 {
