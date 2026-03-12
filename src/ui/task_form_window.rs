@@ -480,6 +480,7 @@ pub struct TaskFormWindow {
     hovered_back: bool,
     hovered_save: bool,
     // Scroll
+    cursor_in_desc: bool,
     form_scroll_y: f32,
 }
 
@@ -527,6 +528,7 @@ impl TaskFormWindow {
             constraint_date_error: false,
             hovered_back: false,
             hovered_save: false,
+            cursor_in_desc: false,
             form_scroll_y: 0.0,
         }
     }
@@ -595,6 +597,7 @@ impl TaskFormWindow {
             constraint_date_error: false,
             hovered_back: false,
             hovered_save: false,
+            cursor_in_desc: false,
             form_scroll_y: 0.0,
         }
     }
@@ -3162,6 +3165,11 @@ impl FloatingWindow for TaskFormWindow {
         let list = Self::worker_list_rect(width, height);
         let in_list = list.contains(pt_form);
         set!(self.cursor_in_worker_list, in_list);
+        // Track cursor in description box
+        set!(
+            self.cursor_in_desc,
+            Self::full_input_rect(ROW_DESC, width, height).contains(pt_form)
+        );
         if self.open_slot_dropdown.is_none() && self.open_calendar.is_none() {
             // pt_worker: screen pt converted to worker-list content space
             let pt_worker = Point::new(x, y + scroll_y + self.worker_scroll_y);
@@ -4138,6 +4146,24 @@ impl FloatingWindow for TaskFormWindow {
                 let new_scroll = (self.dep_scroll_y - delta_y * 40.0).clamp(0.0, max_dscroll);
                 if (new_scroll - self.dep_scroll_y).abs() > f32::EPSILON {
                     self.dep_scroll_y = new_scroll;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                return FloatingWindowOutcome::default();
+            }
+        }
+
+        // Scroll description box independently when cursor is inside it
+        if self.cursor_in_desc {
+            let line_count = self.description.content.split('\n').count().max(1);
+            let line_h = DESC_LINE_H;
+            let total_h = line_count as f32 * line_h + 8.0;
+            let visible_h = DESC_H;
+            let max_dscroll = (total_h - visible_h).max(0.0);
+            if max_dscroll > 0.0 {
+                let cur = self.description.scroll_y.get();
+                let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll);
+                if (new_scroll - cur).abs() > f32::EPSILON {
+                    self.description.scroll_y.set(new_scroll);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 return FloatingWindowOutcome::default();

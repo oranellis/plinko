@@ -17,10 +17,11 @@ use crate::ui::layout::{
     BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, CAL_SELECTED_BG,
     DIVIDER_COLOR, ERROR_BG, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
     INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, MUTED_FG, OVERLAY_LIGHT,
-    OVERLAY_SOFT, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
-    PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG,
+    OVERLAY_SOFT, PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP,
+    PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG,
     TOOLBAR_STROKE_WIDTH,
 };
+use crate::ui::multi_line_input::MultiLineInput;
 use crate::ui::text_input::TextInput;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -35,6 +36,12 @@ const COL_GAP: f32 = 12.0;
 const SAVE_BTN_W: f32 = 80.0;
 const SCROLLBAR_W: f32 = 4.0;
 
+// Multi-line description box
+const DESC_LINE_H: f32 = 18.0;
+const DESC_LINES: usize = 6;
+const DESC_H: f32 = DESC_LINE_H * DESC_LINES as f32 + 8.0;
+const DESC_BLOCK_H: f32 = LABEL_H + PLAN_LABEL_GAP + DESC_H;
+
 const ROW_NAME: usize = 0;
 const ROW_DESC: usize = 1;
 const ROW_CONSTRAINT: usize = 2;
@@ -44,7 +51,7 @@ const PANEL_H: f32 = TITLE_H
     + PLAN_FORM_PADDING
     + FIELD_BLOCK_H   // name
     + PLAN_FIELD_GAP
-    + FIELD_BLOCK_H   // description
+    + DESC_BLOCK_H    // description (tall)
     + PLAN_FIELD_GAP
     + FIELD_BLOCK_H   // constraint kind + date
     + 20.0
@@ -286,7 +293,7 @@ enum Mode {
 pub struct MilestoneFormWindow {
     mode: Mode,
     name: TextInput,
-    description: TextInput,
+    description: MultiLineInput,
     focused: TextField,
     constraint_kind: ConstraintSel,
     hovered_constraint_kind: Option<usize>,
@@ -296,6 +303,7 @@ pub struct MilestoneFormWindow {
     hovered_save: bool,
     name_error: bool,
     constraint_date_error: bool,
+    cursor_in_desc: bool,
     form_scroll_y: f32,
 }
 
@@ -306,7 +314,7 @@ impl MilestoneFormWindow {
         Self {
             mode: Mode::New,
             name,
-            description: TextInput::new(""),
+            description: MultiLineInput::new(""),
             focused: TextField::Name,
             constraint_kind: ConstraintSel::None,
             hovered_constraint_kind: None,
@@ -316,6 +324,7 @@ impl MilestoneFormWindow {
             hovered_save: false,
             name_error: false,
             constraint_date_error: false,
+            cursor_in_desc: false,
             form_scroll_y: 0.0,
         }
     }
@@ -327,7 +336,7 @@ impl MilestoneFormWindow {
         Self {
             mode: Mode::Edit(milestone.id),
             name,
-            description: TextInput::new(&milestone.description),
+            description: MultiLineInput::new(&milestone.description),
             focused: TextField::Name,
             constraint_kind,
             hovered_constraint_kind: None,
@@ -337,6 +346,7 @@ impl MilestoneFormWindow {
             hovered_save: false,
             name_error: false,
             constraint_date_error: false,
+            cursor_in_desc: false,
             form_scroll_y: 0.0,
         }
     }
@@ -386,7 +396,12 @@ impl MilestoneFormWindow {
     }
 
     fn row_label_y(row: usize, width: f32, height: f32) -> f32 {
-        Self::form_top(width, height) + row as f32 * (FIELD_BLOCK_H + PLAN_FIELD_GAP)
+        let base = Self::form_top(width, height) + row as f32 * (FIELD_BLOCK_H + PLAN_FIELD_GAP);
+        if row > ROW_DESC {
+            base + (DESC_BLOCK_H - FIELD_BLOCK_H)
+        } else {
+            base
+        }
     }
 
     fn full_input_rect(row: usize, width: f32, height: f32) -> Rect {
@@ -394,7 +409,12 @@ impl MilestoneFormWindow {
         let x = p.left + PLAN_FORM_PADDING;
         let w = p.width() - 2.0 * PLAN_FORM_PADDING;
         let y = Self::row_label_y(row, width, height) + LABEL_H + PLAN_LABEL_GAP;
-        Rect::from_xywh(x, y, w, PLAN_INPUT_H)
+        let h = if row == ROW_DESC {
+            DESC_H
+        } else {
+            PLAN_INPUT_H
+        };
+        Rect::from_xywh(x, y, w, h)
     }
 
     fn col_width(width: f32, height: f32) -> f32 {
@@ -435,7 +455,9 @@ impl MilestoneFormWindow {
     fn focused_input(&mut self) -> &mut TextInput {
         match self.focused {
             TextField::Name => &mut self.name,
-            TextField::Description => &mut self.description,
+            TextField::Description => {
+                unreachable!("description is MultiLineInput; handled separately")
+            }
         }
     }
 
@@ -483,6 +505,123 @@ impl MilestoneFormWindow {
 }
 
 // ── Drawing helpers ───────────────────────────────────────────────────────────
+
+fn draw_multi_line_input(
+    canvas: &Canvas,
+    rect: Rect,
+    input: &MultiLineInput,
+    focused: bool,
+    cache: &RenderCache,
+) {
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    let rrect = RRect::new_rect_xy(rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
+    paint.set_color(Color::from(INPUT_BG));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(rrect, &paint);
+    paint.set_color(if focused {
+        Color::from(INPUT_BORDER_FOCUS)
+    } else {
+        Color::from(INPUT_BORDER)
+    });
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(if focused { 2.0 } else { 1.0 });
+    canvas.draw_rrect(rrect, &paint);
+    paint.set_style(PaintStyle::Fill);
+
+    let (_, metrics) = cache.font.metrics();
+    let line_h = metrics.descent - metrics.ascent + 2.0;
+    let text_x = rect.left + 8.0;
+    let text_top = rect.top + 4.0;
+    let scroll_y = input.scroll_y.get();
+
+    canvas.save();
+    canvas.clip_rect(
+        Rect::from_xywh(
+            rect.left + 1.0,
+            rect.top + 1.0,
+            rect.width() - 2.0,
+            rect.height() - 2.0,
+        ),
+        ClipOp::Intersect,
+        false,
+    );
+
+    let content = &input.content;
+    let raw_lines: Vec<&str> = if content.is_empty() {
+        vec![""]
+    } else {
+        content.split('\n').collect()
+    };
+
+    for (i, line) in raw_lines.iter().enumerate() {
+        let y = text_top + i as f32 * line_h - scroll_y;
+        if y + line_h < rect.top || y > rect.bottom() {
+            continue;
+        }
+        if !line.is_empty()
+            && let Some(blob) = TextBlob::new(line, &cache.font)
+        {
+            paint.set_color(Color::from(INPUT_FG));
+            canvas.draw_text_blob(&blob, (text_x, y - metrics.ascent), &paint);
+        }
+    }
+
+    if content.is_empty()
+        && let Some(blob) = TextBlob::new("Description…", &cache.font)
+    {
+        paint.set_color(Color::from(PLACEHOLDER_FG));
+        canvas.draw_text_blob(&blob, (text_x, text_top - metrics.ascent), &paint);
+    }
+
+    if focused {
+        let cursor_pos = input.cursor.min(content.len());
+        let before_cursor = &content[..cursor_pos];
+        let lines_before: Vec<&str> = before_cursor.split('\n').collect();
+        let cursor_line_idx = lines_before.len().saturating_sub(1);
+        let cursor_col_str = lines_before.last().copied().unwrap_or("");
+        let cursor_x = text_x + cache.font.measure_str(cursor_col_str, None).0;
+        let cursor_y_top = text_top + cursor_line_idx as f32 * line_h - scroll_y;
+        let cursor_y_bot = cursor_y_top + line_h;
+        paint.set_color(Color::from(INPUT_CURSOR_COLOR));
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_width(1.5);
+        canvas.draw_line((cursor_x, cursor_y_top), (cursor_x, cursor_y_bot), &paint);
+        paint.set_style(PaintStyle::Fill);
+
+        // Auto-scroll to keep cursor visible
+        let visible_h = rect.height() - 8.0;
+        let cursor_abs_y = text_top + cursor_line_idx as f32 * line_h;
+        let new_scroll = if cursor_abs_y - scroll_y < 0.0 {
+            cursor_abs_y - rect.top
+        } else if cursor_abs_y + line_h - scroll_y > visible_h {
+            cursor_abs_y + line_h - visible_h
+        } else {
+            scroll_y
+        };
+        input.scroll_y.set(new_scroll.max(0.0));
+    }
+
+    // Scrollbar
+    let total_h = raw_lines.len() as f32 * line_h + 8.0;
+    let visible_h = rect.height();
+    let max_scroll = (total_h - visible_h).max(0.0);
+    if max_scroll > 0.0 {
+        let thumb_h = (visible_h * visible_h / total_h).max(20.0);
+        let thumb_y = rect.top + (scroll_y / max_scroll) * (visible_h - thumb_h);
+        paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
+        canvas.draw_rrect(
+            RRect::new_rect_xy(
+                Rect::from_xywh(rect.right - 6.0, thumb_y, 4.0, thumb_h),
+                2.0,
+                2.0,
+            ),
+            &paint,
+        );
+    }
+
+    canvas.restore();
+}
 
 fn draw_chevron_btn(canvas: &Canvas, btn_rect: Rect, hovered: bool) {
     let mut paint = Paint::default();
@@ -1045,12 +1184,11 @@ impl FloatingWindow for MilestoneFormWindow {
             paint.set_color(Color::from(LABEL_FG));
             canvas.draw_text_blob(&blob, (lx, desc_label_y + label_y_offset), &paint);
         }
-        draw_text_input(
+        draw_multi_line_input(
             canvas,
             Self::full_input_rect(ROW_DESC, width, height),
             &self.description,
             self.focused == TextField::Description,
-            false,
             cache,
         );
 
@@ -1214,6 +1352,11 @@ impl FloatingWindow for MilestoneFormWindow {
             set!(self.hovered_back, new_back);
             set!(self.hovered_save, new_save);
 
+            set!(
+                self.cursor_in_desc,
+                Self::full_input_rect(ROW_DESC, width, height).contains(pt_form)
+            );
+
             let new_ck = Self::constraint_kind_btn_rects(width, height)
                 .iter()
                 .position(|r| r.contains(pt_form));
@@ -1347,33 +1490,23 @@ impl FloatingWindow for MilestoneFormWindow {
         }
 
         // Text inputs
-        for field in [TextField::Name, TextField::Description] {
-            let rect = Self::full_input_rect(
-                match field {
-                    TextField::Name => ROW_NAME,
-                    TextField::Description => ROW_DESC,
-                },
-                width,
-                height,
-            );
-            if rect.contains(pt_form) {
-                self.set_focus(field);
-                let x_in_inner = x - (rect.left + 8.0)
-                    + match field {
-                        TextField::Name => self.name.scroll_x.get(),
-                        TextField::Description => self.description.scroll_x.get(),
-                    };
-                match field {
-                    TextField::Name => {
-                        self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
-                    }
-                    TextField::Description => {
-                        self.description.cursor =
-                            self.description.cursor_for_x(x_in_inner, &cache.font);
-                    }
-                }
-                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-            }
+        // Description (multi-line) handled separately
+        let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
+        if desc_rect.contains(pt_form) {
+            self.set_focus(TextField::Description);
+            let x_in_box = x - desc_rect.left;
+            let y_in_box = pt_form.y - desc_rect.top;
+            self.description.cursor =
+                self.description
+                    .cursor_for_click(x_in_box, y_in_box, &cache.font);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        if Self::full_input_rect(ROW_NAME, width, height).contains(pt_form) {
+            self.set_focus(TextField::Name);
+            let rect = Self::full_input_rect(ROW_NAME, width, height);
+            let x_in_inner = x - (rect.left + 8.0) + self.name.scroll_x.get();
+            self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
         if !Self::panel_rect(width, height).contains(pt) {
@@ -1390,6 +1523,56 @@ impl FloatingWindow for MilestoneFormWindow {
             }
             return FloatingWindowOutcome::default();
         }
+
+        // Description (multi-line): Enter inserts newline, not submit
+        if self.focused == TextField::Description {
+            match key {
+                Key::Named(NamedKey::Escape) => return FloatingWindowOutcome::close(),
+                Key::Named(NamedKey::Enter) => {
+                    self.description.insert_newline();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Tab) => {
+                    self.set_focus(TextField::Name);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    self.description.backspace();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.description.move_left();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.description.move_right();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Home) => {
+                    self.description.move_to_start();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::End) => {
+                    self.description.move_to_end();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Space) => {
+                    self.description.insert_char(' ');
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Character(c) => {
+                    if c.chars().all(|ch| !ch.is_control()) {
+                        for ch in c.chars() {
+                            self.description.insert_char(ch);
+                        }
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                    return FloatingWindowOutcome::default();
+                }
+                _ => return FloatingWindowOutcome::default(),
+            }
+        }
+
         match key {
             Key::Named(NamedKey::Escape) => FloatingWindowOutcome::close(),
             Key::Named(NamedKey::Enter) => self.try_submit(sender),
@@ -1460,6 +1643,23 @@ impl FloatingWindow for MilestoneFormWindow {
         width: f32,
         height: f32,
     ) -> FloatingWindowOutcome {
+        // Scroll description box independently when cursor is inside it
+        if self.cursor_in_desc {
+            let line_count = self.description.content.split('\n').count().max(1);
+            let total_h = line_count as f32 * DESC_LINE_H + 8.0;
+            let visible_h = DESC_H;
+            let max_dscroll = (total_h - visible_h).max(0.0);
+            if max_dscroll > 0.0 {
+                let cur = self.description.scroll_y.get();
+                let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll);
+                if (new_scroll - cur).abs() > f32::EPSILON {
+                    self.description.scroll_y.set(new_scroll);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                return FloatingWindowOutcome::default();
+            }
+        }
+
         let panel_h = Self::panel_rect(width, height).height();
         let max_scroll = (PANEL_H - panel_h).max(0.0);
         if max_scroll <= 0.0 {
