@@ -15,6 +15,12 @@ cargo test <filter>          # run a single test or module, e.g. `cargo test dat
 
 **After every code change**: run `cargo fmt` (whole codebase) and `cargo clippy`. All clippy warnings must be resolved.
 
+**After every feature, fix, or chore**: create a git commit using [Conventional Commits](https://www.conventionalcommits.org/) format:
+```
+<type>(<scope>): <short description>
+```
+Common types: `feat`, `fix`, `refactor`, `chore`, `docs`. Scope is the module or area changed (e.g. `ui`, `data`, `scheduler`). Commit after `cargo fmt` and `cargo clippy` pass. Then push with `git push`.
+
 Tests live in `#[cfg(test)]` modules within each source file.
 
 ## Architecture
