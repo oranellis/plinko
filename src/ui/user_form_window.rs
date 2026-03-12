@@ -15,9 +15,10 @@ use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
-    BTN_PRIMARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
-    INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG,
-    PANEL_TEXT, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H,
+    BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER,
+    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
+    LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PANEL_TEXT,
+    PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H,
     PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
@@ -426,7 +427,7 @@ fn draw_tags_trigger(
         pb.line_to((cx, cy + s * 0.5));
         pb.line_to((cx + s, cy - s * 0.5));
     }
-    paint.set_color(Color::from(0xff_888888_u32));
+    paint.set_color(Color::from(PLACEHOLDER_FG));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.5);
     canvas.draw_path(&pb.detach(), &paint);
@@ -445,7 +446,7 @@ fn draw_tags_trigger(
         - metrics.ascent;
     if selected_tags.is_empty() {
         if let Some(blob) = TextBlob::new("Select tags…", &cache.font) {
-            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            paint.set_color(Color::from(MUTED_FG));
             canvas.draw_text_blob(&blob, (text_area.left, text_y), &paint);
         }
     } else {
@@ -490,7 +491,7 @@ fn draw_dropdown(
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
 
-    paint.set_color(Color::from_argb(30, 0, 0, 0));
+    paint.set_color(Color::from(OVERLAY_XLIGHT));
     canvas.draw_rrect(
         RRect::new_rect_xy(
             Rect::from_xywh(dd.left + 2.0, dd.top + 3.0, dd.width(), dd.height()),
@@ -595,7 +596,7 @@ fn draw_dropdown(
         }
 
         if scroll > 0 {
-            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            paint.set_color(Color::from(MUTED_FG));
             paint.set_style(PaintStyle::Stroke);
             paint.set_stroke_width(1.5);
             let ax = dd.right - 12.0;
@@ -608,7 +609,7 @@ fn draw_dropdown(
             paint.set_style(PaintStyle::Fill);
         }
         if end < filtered.len() {
-            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            paint.set_color(Color::from(MUTED_FG));
             paint.set_style(PaintStyle::Stroke);
             paint.set_stroke_width(1.5);
             let ax = dd.right - 12.0;
@@ -637,7 +638,7 @@ impl FloatingWindow for UserFormWindow {
         paint.set_anti_alias(true);
 
         // Drop shadow
-        paint.set_color(Color::from_argb(40, 0, 0, 0));
+        paint.set_color(Color::from(OVERLAY_SOFT));
         canvas.draw_rrect(
             RRect::new_rect_xy(
                 Rect::from_xywh(
@@ -758,7 +759,7 @@ impl FloatingWindow for UserFormWindow {
 
         // Save button
         paint.set_color(Color::from(if self.hovered_save {
-            0xff_3a7bc8_u32
+            BTN_PRIMARY_HOVER_BG
         } else {
             BTN_PRIMARY_BG
         }));

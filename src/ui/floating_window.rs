@@ -10,6 +10,7 @@ use crate::data::Plan;
 use crate::engine::PlanRequestSender;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
+use crate::ui::layout::OVERLAY_DARK;
 
 /// Outcome returned by every [`FloatingWindow`] event handler.
 pub struct FloatingWindowOutcome {
@@ -222,6 +223,6 @@ pub fn panel_size(window_w: f32, window_h: f32, max_w: f32, max_h: f32) -> (f32,
 
 fn draw_dim_backdrop(canvas: &Canvas, width: f32, height: f32) {
     let mut paint = Paint::default();
-    paint.set_color(Color::from_argb(120, 0, 0, 0));
+    paint.set_color(Color::from(OVERLAY_DARK));
     canvas.draw_rect(Rect::from_wh(width, height), &paint);
 }

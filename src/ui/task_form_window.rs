@@ -17,11 +17,12 @@ use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_DANGER_BG,
-    BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, DEP_PLAN_START_FG,
-    DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
-    INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG,
-    PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
-    TOOLBAR_STROKE_WIDTH,
+    BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG,
+    CAL_SELECTED_BG, DEP_PLAN_START_FG, DIVIDER_COLOR, GHOST_FG, INPUT_BG, INPUT_BORDER,
+    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
+    LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_LIGHT, OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG,
+    PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H,
+    PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG, TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 use std::collections::HashSet;
@@ -1216,7 +1217,7 @@ fn draw_date_btn(
     paint.set_anti_alias(true);
     let rrect = RRect::new_rect_xy(rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
     paint.set_color(if disabled {
-        Color::from(0xff_f5f5f5_u32)
+        Color::from(SUBTLE_BG)
     } else {
         Color::from(INPUT_BG)
     });
@@ -1227,7 +1228,7 @@ fn draw_date_btn(
     } else if is_open {
         Color::from(INPUT_BORDER_FOCUS)
     } else if picker.hovered_trigger {
-        Color::from(0xff_aaaaaa_u32)
+        Color::from(MUTED_FG)
     } else {
         Color::from(INPUT_BORDER)
     });
@@ -1245,7 +1246,7 @@ fn draw_date_btn(
         } else if picker.value.is_some() {
             Color::from(INPUT_FG)
         } else {
-            Color::from(0xff_aaaaaa_u32)
+            Color::from(MUTED_FG)
         });
         canvas.draw_text_blob(&blob, (rect.left + 8.0, ty), &paint);
     }
@@ -1257,7 +1258,7 @@ fn draw_date_btn(
     paint.set_color(if disabled {
         Color::from(0xff_cccccc_u32)
     } else {
-        Color::from(0xff_999999_u32)
+        Color::from(SUBTLE_FG)
     });
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.2);
@@ -1353,7 +1354,7 @@ fn draw_calendar_popup(
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
 
-    paint.set_color(Color::from_argb(35, 0, 0, 0));
+    paint.set_color(Color::from(OVERLAY_LIGHT));
     canvas.draw_rrect(
         RRect::new_rect_xy(
             Rect::from_xywh(cal.left + 2.0, cal.top + 4.0, cal.width(), cal.height()),
@@ -1502,7 +1503,7 @@ fn draw_calendar_popup(
             paint.set_color(Color::from(BTN_PRIMARY_BG));
             canvas.draw_circle((cx, cy), CAL_CELL / 2.0 - 2.0, &paint);
         } else if is_hov {
-            paint.set_color(Color::from(0xff_e8eef8_u32));
+            paint.set_color(Color::from(CAL_SELECTED_BG));
             canvas.draw_circle((cx, cy), CAL_CELL / 2.0 - 2.0, &paint);
         }
 
@@ -1623,7 +1624,7 @@ fn draw_worker_row(
             } else if hov {
                 0xff_e0e0e0_u32
             } else {
-                0xff_f5f5f5_u32
+                SUBTLE_BG
             };
             paint.set_color(Color::from(bg));
             paint.set_style(PaintStyle::Fill);
@@ -1658,7 +1659,7 @@ fn draw_worker_row(
     paint.set_color(if is_dropdown_open {
         Color::from(INPUT_BORDER_FOCUS)
     } else if slot.hovered_user_btn {
-        Color::from(0xff_aaaaaa_u32)
+        Color::from(MUTED_FG)
     } else {
         Color::from(INPUT_BORDER)
     });
@@ -1692,7 +1693,7 @@ fn draw_worker_row(
     let picker_color = match slot.slot_type {
         SlotType::Specific if slot.user_id.is_some() => Color::from(INPUT_FG),
         SlotType::Placeholder if !slot.required_tags.is_empty() => Color::from(INPUT_FG),
-        _ => Color::from(0xff_aaaaaa_u32),
+        _ => Color::from(MUTED_FG),
     };
 
     canvas.save();
@@ -1729,7 +1730,7 @@ fn draw_worker_row(
             pb.line_to((cx, cy + s * 0.5));
             pb.line_to((cx + s, cy - s * 0.5));
         }
-        paint.set_color(Color::from(0xff_888888_u32));
+        paint.set_color(Color::from(PLACEHOLDER_FG));
         paint.set_style(PaintStyle::Stroke);
         paint.set_stroke_width(1.5);
         canvas.draw_path(&pb.detach(), &paint);
@@ -1770,7 +1771,7 @@ fn draw_worker_row(
         paint.set_color(if slot.hovered_remove {
             Color::WHITE
         } else {
-            Color::from(0xff_888888_u32)
+            Color::from(PLACEHOLDER_FG)
         });
         paint.set_style(PaintStyle::Stroke);
         paint.set_stroke_width(1.5);
@@ -1792,7 +1793,7 @@ fn draw_user_dropdown(
     paint.set_anti_alias(true);
 
     // Shadow
-    paint.set_color(Color::from_argb(30, 0, 0, 0));
+    paint.set_color(Color::from(OVERLAY_XLIGHT));
     canvas.draw_rrect(
         RRect::new_rect_xy(
             Rect::from_xywh(dd.left + 2.0, dd.top + 3.0, dd.width(), dd.height()),
@@ -1850,7 +1851,7 @@ fn draw_user_dropdown(
         };
         if let Some(blob) = TextBlob::new(msg, &cache.small_font) {
             let (_, sm) = cache.small_font.metrics();
-            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            paint.set_color(Color::from(MUTED_FG));
             canvas.draw_text_blob(&blob, (dd.left + 8.0, list_top + 8.0 - sm.ascent), &paint);
         }
     } else {
@@ -1906,7 +1907,7 @@ fn draw_tag_dropdown(
     paint.set_anti_alias(true);
 
     // Shadow
-    paint.set_color(Color::from_argb(30, 0, 0, 0));
+    paint.set_color(Color::from(OVERLAY_XLIGHT));
     canvas.draw_rrect(
         RRect::new_rect_xy(
             Rect::from_xywh(dd.left + 2.0, dd.top + 3.0, dd.width(), dd.height()),
@@ -1964,7 +1965,7 @@ fn draw_tag_dropdown(
         };
         if let Some(blob) = TextBlob::new(msg, &cache.small_font) {
             let (_, sm) = cache.small_font.metrics();
-            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            paint.set_color(Color::from(MUTED_FG));
             canvas.draw_text_blob(&blob, (dd.left + 8.0, list_top + 8.0 - sm.ascent), &paint);
         }
     } else {
@@ -2023,7 +2024,7 @@ fn draw_dep_dropdown(
     paint.set_anti_alias(true);
 
     // Shadow
-    paint.set_color(Color::from_argb(30, 0, 0, 0));
+    paint.set_color(Color::from(OVERLAY_XLIGHT));
     canvas.draw_rrect(
         RRect::new_rect_xy(
             Rect::from_xywh(dd.left + 2.0, dd.top + 3.0, dd.width(), dd.height()),
@@ -2106,7 +2107,7 @@ fn draw_dep_dropdown(
         let msg = "No matches";
         if let Some(blob) = TextBlob::new(msg, &cache.small_font) {
             let (_, sm) = cache.small_font.metrics();
-            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            paint.set_color(Color::from(MUTED_FG));
             canvas.draw_text_blob(&blob, (dd.left + 8.0, list_top + 8.0 - sm.ascent), &paint);
         }
     } else {
@@ -2168,7 +2169,7 @@ impl FloatingWindow for TaskFormWindow {
         paint.set_anti_alias(true);
 
         // Drop shadow
-        paint.set_color(Color::from_argb(40, 0, 0, 0));
+        paint.set_color(Color::from(OVERLAY_SOFT));
         canvas.draw_rrect(
             RRect::new_rect_xy(
                 Rect::from_xywh(
@@ -2420,7 +2421,7 @@ impl FloatingWindow for TaskFormWindow {
             if let Some(blob) = TextBlob::new("No workers added yet", &cache.small_font) {
                 let (_, sm2) = cache.small_font.metrics();
                 let ty = list.top + (WORKER_ROW_H - (sm2.descent - sm2.ascent)) / 2.0 - sm2.ascent;
-                paint.set_color(Color::from(0xff_aaaaaa_u32));
+                paint.set_color(Color::from(MUTED_FG));
                 canvas.draw_text_blob(&blob, (list.left + 12.0, ty), &paint);
             }
         } else {
@@ -2450,7 +2451,7 @@ impl FloatingWindow for TaskFormWindow {
             let thumb_h = (visible_worker_h * visible_worker_h / total_worker_h).max(20.0);
             let thumb_y =
                 list.top + (self.worker_scroll_y / max_wscroll) * (visible_worker_h - thumb_h);
-            paint.set_color(Color::from_argb(80, 0, 0, 0));
+            paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
             canvas.draw_rrect(
                 RRect::new_rect_xy(
                     Rect::from_xywh(
@@ -2471,7 +2472,7 @@ impl FloatingWindow for TaskFormWindow {
         paint.set_color(Color::from(if self.hovered_plus {
             0xff_e0e0e0_u32
         } else {
-            0xff_f5f5f5_u32
+            SUBTLE_BG
         }));
         canvas.draw_rrect(
             RRect::new_rect_xy(plus_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
@@ -2540,7 +2541,7 @@ impl FloatingWindow for TaskFormWindow {
             if let Some(blob) = TextBlob::new("No dependencies added yet", &cache.small_font) {
                 let (_, sm2) = cache.small_font.metrics();
                 let ty = dep_list.top + (DEP_ROW_H - (sm2.descent - sm2.ascent)) / 2.0 - sm2.ascent;
-                paint.set_color(Color::from(0xff_aaaaaa_u32));
+                paint.set_color(Color::from(MUTED_FG));
                 canvas.draw_text_blob(&blob, (dep_list.left + 12.0, ty), &paint);
             }
         } else {
@@ -2572,7 +2573,7 @@ impl FloatingWindow for TaskFormWindow {
                 paint.set_color(if dd_open {
                     Color::from(INPUT_BORDER_FOCUS)
                 } else if dep.hovered_target {
-                    Color::from(0xff_aaaaaa_u32)
+                    Color::from(MUTED_FG)
                 } else {
                     Color::from(INPUT_BORDER)
                 });
@@ -2596,10 +2597,7 @@ impl FloatingWindow for TaskFormWindow {
                     None => String::new(),
                 };
                 let (target_text, target_color) = if dep.target.is_none() {
-                    (
-                        "Select dependency…".to_string(),
-                        Color::from(0xff_aaaaaa_u32),
-                    )
+                    ("Select dependency…".to_string(), Color::from(MUTED_FG))
                 } else if dep.target == Some(NodeId::PlanStart) {
                     (target_name, Color::from(DEP_PLAN_START_FG))
                 } else {
@@ -2642,7 +2640,7 @@ impl FloatingWindow for TaskFormWindow {
                         pb.line_to((cx, cy + s * 0.5));
                         pb.line_to((cx + s, cy - s * 0.5));
                     }
-                    paint.set_color(Color::from(0xff_888888_u32));
+                    paint.set_color(Color::from(PLACEHOLDER_FG));
                     paint.set_style(PaintStyle::Stroke);
                     paint.set_stroke_width(1.5);
                     canvas.draw_path(&pb.detach(), &paint);
@@ -2659,7 +2657,7 @@ impl FloatingWindow for TaskFormWindow {
                     let (_, sm) = cache.small_font.metrics();
                     let ty = lag_rect.top + (lag_rect.height() - (sm.descent - sm.ascent)) / 2.0
                         - sm.ascent;
-                    paint.set_color(Color::from(0xff_bbbbbb_u32));
+                    paint.set_color(Color::from(GHOST_FG));
                     canvas.draw_text_blob(&blob, (lag_rect.left + 8.0, ty), &paint);
                 }
 
@@ -2686,7 +2684,7 @@ impl FloatingWindow for TaskFormWindow {
                     paint.set_color(if dep.hovered_remove {
                         Color::WHITE
                     } else {
-                        Color::from(0xff_888888_u32)
+                        Color::from(PLACEHOLDER_FG)
                     });
                     paint.set_style(PaintStyle::Stroke);
                     paint.set_stroke_width(1.5);
@@ -2706,7 +2704,7 @@ impl FloatingWindow for TaskFormWindow {
             let thumb_h = (visible_dep_h * visible_dep_h / total_dep_h).max(20.0);
             let thumb_y =
                 dep_list.top + (self.dep_scroll_y / max_dep_scroll) * (visible_dep_h - thumb_h);
-            paint.set_color(Color::from_argb(80, 0, 0, 0));
+            paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
             canvas.draw_rrect(
                 RRect::new_rect_xy(
                     Rect::from_xywh(
@@ -2727,7 +2725,7 @@ impl FloatingWindow for TaskFormWindow {
         paint.set_color(Color::from(if self.hovered_dep_plus {
             0xff_e0e0e0_u32
         } else {
-            0xff_f5f5f5_u32
+            SUBTLE_BG
         }));
         canvas.draw_rrect(
             RRect::new_rect_xy(dep_plus_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
@@ -2759,7 +2757,7 @@ impl FloatingWindow for TaskFormWindow {
 
         // Save button
         paint.set_color(Color::from(if self.hovered_save {
-            0xff_3a7bc8_u32
+            BTN_PRIMARY_HOVER_BG
         } else {
             BTN_PRIMARY_BG
         }));
@@ -2787,7 +2785,7 @@ impl FloatingWindow for TaskFormWindow {
             let thumb_h = (content_area_h * content_area_h / full_content_h).max(20.0);
             let thumb_y =
                 (panel.top + TITLE_H + 1.0) + (scroll_y / max_scroll) * (content_area_h - thumb_h);
-            paint.set_color(Color::from_argb(80, 0, 0, 0));
+            paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
             canvas.draw_rrect(
                 RRect::new_rect_xy(
                     Rect::from_xywh(

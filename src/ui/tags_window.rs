@@ -12,10 +12,11 @@ use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
-    BTN_PRIMARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
-    INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG, PANEL_TEXT,
-    PLAN_BTN_CORNER, PLAN_LIST_ITEM_H, TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR,
-    TOOLBAR_STROKE_WIDTH,
+    BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, DIVIDER_COLOR, ERROR_BG, ICON_DELETE_COLOR, INPUT_BG,
+    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LINK_COLOR,
+    LIST_BG, LIST_ITEM_HOVER_BG, OVERLAY_DARK, OVERLAY_MEDIUM, OVERLAY_SOFT, OVERLAY_XLIGHT,
+    PANEL_BG, PANEL_TEXT, PLAN_BTN_CORNER, PLAN_LIST_ITEM_H, SCROLLBAR_THUMB_COLOR,
+    TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH, TOOLTIP_BG,
 };
 use crate::ui::text_input::TextInput;
 
@@ -227,7 +228,7 @@ impl TagsWindow {
     fn draw_grip(canvas: &Canvas, zone: Rect) {
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
-        paint.set_color(Color::from_argb(100, 0, 0, 0));
+        paint.set_color(Color::from(OVERLAY_MEDIUM));
         paint.set_style(PaintStyle::Fill);
         let r = 2.0;
         let col_gap = 5.0;
@@ -252,7 +253,7 @@ impl TagsWindow {
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
         if hovered {
-            paint.set_color(Color::from(0xff_ffeeee_u32));
+            paint.set_color(Color::from(ERROR_BG));
             paint.set_style(PaintStyle::Fill);
             let r = zone.width().min(zone.height()) / 2.0 - 2.0;
             let cx = zone.left + zone.width() / 2.0;
@@ -268,9 +269,9 @@ impl TagsWindow {
         pb.move_to((cx + s, cy - s));
         pb.line_to((cx - s, cy + s));
         paint.set_color(if hovered {
-            Color::from(0xff_cc2222_u32)
+            Color::from(ICON_DELETE_COLOR)
         } else {
-            Color::from_argb(120, 0, 0, 0)
+            Color::from(OVERLAY_DARK)
         });
         paint.set_style(PaintStyle::Stroke);
         paint.set_stroke_width(1.5);
@@ -290,7 +291,7 @@ impl FloatingWindow for TagsWindow {
         paint.set_anti_alias(true);
 
         // Drop shadow
-        paint.set_color(Color::from_argb(40, 0, 0, 0));
+        paint.set_color(Color::from(OVERLAY_SOFT));
         canvas.draw_rrect(
             RRect::new_rect_xy(
                 Rect::from_xywh(
@@ -517,7 +518,7 @@ impl FloatingWindow for TagsWindow {
             if let Some((_, gap)) = drag_gap {
                 let line_y = list.top + gap as f32 * ROW_H - self.scroll_offset;
                 let line_y = line_y.clamp(list.top, list.bottom);
-                paint.set_color(Color::from(0xff_2196f3_u32));
+                paint.set_color(Color::from(LINK_COLOR));
                 paint.set_style(PaintStyle::Fill);
                 canvas.draw_rect(
                     Rect::from_xywh(
@@ -536,14 +537,14 @@ impl FloatingWindow for TagsWindow {
             {
                 let gy = drag_y - ROW_H / 2.0;
                 // Ghost background
-                paint.set_color(Color::from_argb(220, 255, 255, 255));
+                paint.set_color(Color::from(TOOLTIP_BG));
                 paint.set_style(PaintStyle::Fill);
                 canvas.draw_rect(
                     Rect::from_xywh(panel.left, gy, panel.width(), ROW_H),
                     &paint,
                 );
                 // Ghost shadow
-                paint.set_color(Color::from_argb(30, 0, 0, 0));
+                paint.set_color(Color::from(OVERLAY_XLIGHT));
                 canvas.draw_rect(
                     Rect::from_xywh(panel.left, gy + ROW_H, panel.width(), 3.0),
                     &paint,
@@ -575,7 +576,7 @@ impl FloatingWindow for TagsWindow {
             let content_h = n as f32 * ROW_H;
             let thumb_h = (list_h * list_h / content_h).max(20.0);
             let thumb_y = list.top + (self.scroll_offset / max_scroll) * (list_h - thumb_h);
-            paint.set_color(Color::from_argb(80, 0, 0, 0));
+            paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
             paint.set_style(PaintStyle::Fill);
             canvas.draw_rrect(
                 RRect::new_rect_xy(
@@ -663,7 +664,7 @@ impl FloatingWindow for TagsWindow {
 
             // Confirm button
             paint.set_color(Color::from(if self.hovered_confirm {
-                0xff_3a7bc8_u32
+                BTN_PRIMARY_HOVER_BG
             } else {
                 BTN_PRIMARY_BG
             }));

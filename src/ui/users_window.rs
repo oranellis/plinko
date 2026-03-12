@@ -11,9 +11,10 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, DIVIDER_COLOR, ITEM_FG,
-    LIST_BG, LIST_ITEM_HOVER_BG, LIST_SECTION_FG, PANEL_BG, PANEL_TEXT, PLAN_LIST_ITEM_H,
-    TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
+    AVATAR_COLORS, BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE,
+    DIVIDER_COLOR, ITEM_FG, LIST_BG, LIST_ITEM_HOVER_BG, LIST_SECTION_FG, OVERLAY_SOFT, PANEL_BG,
+    PANEL_TEXT, PLAN_LIST_ITEM_H, SCROLLBAR_THUMB_COLOR, TOOLBAR_BTN_HOVER_BG,
+    TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
 };
 
 const PANEL_W: f32 = 420.0;
@@ -209,7 +210,7 @@ impl FloatingWindow for UsersWindow {
         paint.set_anti_alias(true);
 
         // Drop shadow
-        paint.set_color(Color::from_argb(40, 0, 0, 0));
+        paint.set_color(Color::from(OVERLAY_SOFT));
         canvas.draw_rrect(
             RRect::new_rect_xy(
                 Rect::from_xywh(
@@ -297,16 +298,6 @@ impl FloatingWindow for UsersWindow {
             const AVATAR_RADIUS: f32 = 14.0;
             const AVATAR_DIAMETER: f32 = AVATAR_RADIUS * 2.0;
             const AVATAR_TEXT_GAP: f32 = 8.0;
-            const AVATAR_COLORS: [u32; 8] = [
-                0xff_4a90d9,
-                0xff_7b68ee,
-                0xff_50c878,
-                0xff_e07b54,
-                0xff_9370db,
-                0xff_20b2aa,
-                0xff_e05c8a,
-                0xff_d4a843,
-            ];
 
             let sorted_len = sorted_users.len();
             for (i, user) in sorted_users.iter().enumerate() {
@@ -353,7 +344,7 @@ impl FloatingWindow for UsersWindow {
                     } else {
                         // Fallback: draw color circle if image decode failed
                         let id_byte = user.id.0.as_bytes()[0];
-                        let color = AVATAR_COLORS[(id_byte % 8) as usize];
+                        let color = AVATAR_COLORS[(id_byte % 7) as usize];
                         paint.set_color(Color::from(color));
                         paint.set_style(PaintStyle::Fill);
                         canvas.draw_circle((avatar_cx, avatar_cy), AVATAR_RADIUS, &paint);
@@ -361,7 +352,7 @@ impl FloatingWindow for UsersWindow {
                 } else {
                     // Colored circle with initials
                     let id_byte = user.id.0.as_bytes()[0];
-                    let color = AVATAR_COLORS[(id_byte % 8) as usize];
+                    let color = AVATAR_COLORS[(id_byte % 7) as usize];
                     paint.set_color(Color::from(color));
                     paint.set_style(PaintStyle::Fill);
                     canvas.draw_circle((avatar_cx, avatar_cy), AVATAR_RADIUS, &paint);
@@ -465,7 +456,7 @@ impl FloatingWindow for UsersWindow {
             let content_h = user_count as f32 * ROW_H;
             let thumb_h = (list_h * list_h / content_h).max(20.0);
             let thumb_y = list.top + (self.scroll_offset / max_scroll) * (list_h - thumb_h);
-            paint.set_color(Color::from_argb(80, 0, 0, 0));
+            paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
             canvas.draw_rrect(
                 RRect::new_rect_xy(
                     Rect::from_xywh(

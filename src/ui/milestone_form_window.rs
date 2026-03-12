@@ -14,10 +14,12 @@ use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
-    BTN_PRIMARY_FG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER,
-    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
-    LIST_BG, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
-    PLAN_INPUT_H, PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
+    BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, CAL_SELECTED_BG,
+    DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
+    INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, MUTED_FG, OVERLAY_LIGHT,
+    OVERLAY_SOFT, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
+    PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG,
+    TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 
@@ -593,7 +595,7 @@ fn draw_date_btn(
     paint.set_anti_alias(true);
     let rrect = RRect::new_rect_xy(rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
     paint.set_color(if disabled {
-        Color::from(0xff_f5f5f5_u32)
+        Color::from(SUBTLE_BG)
     } else {
         Color::from(INPUT_BG)
     });
@@ -604,7 +606,7 @@ fn draw_date_btn(
     } else if is_open {
         Color::from(INPUT_BORDER_FOCUS)
     } else if picker.hovered_trigger {
-        Color::from(0xff_aaaaaa_u32)
+        Color::from(MUTED_FG)
     } else {
         Color::from(INPUT_BORDER)
     });
@@ -622,7 +624,7 @@ fn draw_date_btn(
         } else if picker.value.is_some() {
             Color::from(INPUT_FG)
         } else {
-            Color::from(0xff_aaaaaa_u32)
+            Color::from(MUTED_FG)
         });
         canvas.draw_text_blob(&blob, (rect.left + 8.0, ty), &paint);
     }
@@ -634,7 +636,7 @@ fn draw_date_btn(
     paint.set_color(if disabled {
         Color::from(0xff_cccccc_u32)
     } else {
-        Color::from(0xff_999999_u32)
+        Color::from(SUBTLE_FG)
     });
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.2);
@@ -728,7 +730,7 @@ fn draw_calendar_popup(
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
 
-    paint.set_color(Color::from_argb(35, 0, 0, 0));
+    paint.set_color(Color::from(OVERLAY_LIGHT));
     canvas.draw_rrect(
         RRect::new_rect_xy(
             Rect::from_xywh(cal.left + 2.0, cal.top + 4.0, cal.width(), cal.height()),
@@ -856,7 +858,7 @@ fn draw_calendar_popup(
             paint.set_color(Color::from(BTN_PRIMARY_BG));
             canvas.draw_circle((cx, cy), CAL_CELL / 2.0 - 2.0, &paint);
         } else if is_hov {
-            paint.set_color(Color::from(0xff_e8eef8_u32));
+            paint.set_color(Color::from(CAL_SELECTED_BG));
             canvas.draw_circle((cx, cy), CAL_CELL / 2.0 - 2.0, &paint);
         }
 
@@ -939,7 +941,7 @@ impl FloatingWindow for MilestoneFormWindow {
         paint.set_anti_alias(true);
 
         // Drop shadow
-        paint.set_color(Color::from_argb(40, 0, 0, 0));
+        paint.set_color(Color::from(OVERLAY_SOFT));
         canvas.draw_rrect(
             RRect::new_rect_xy(
                 Rect::from_xywh(
@@ -1070,7 +1072,7 @@ impl FloatingWindow for MilestoneFormWindow {
 
         // Save button
         paint.set_color(Color::from(if self.hovered_save {
-            0xff_3a7bc8_u32
+            BTN_PRIMARY_HOVER_BG
         } else {
             BTN_PRIMARY_BG
         }));
@@ -1099,7 +1101,7 @@ impl FloatingWindow for MilestoneFormWindow {
             let thumb_h = (content_area_h * content_area_h / full_content_h).max(20.0);
             let thumb_y =
                 (panel.top + TITLE_H + 1.0) + (scroll_y / max_scroll) * (content_area_h - thumb_h);
-            paint.set_color(Color::from_argb(80, 0, 0, 0));
+            paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
             canvas.draw_rrect(
                 RRect::new_rect_xy(
                     Rect::from_xywh(

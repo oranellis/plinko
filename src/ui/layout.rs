@@ -88,3 +88,31 @@ pub const ITEM_FG: u32 = 0xff_222222;
 pub const ITEM_TASK_DOT: u32 = 0xff_4a90d9;
 pub const ITEM_MILESTONE_DOT: u32 = 0xff_f5a623;
 pub const DEP_PLAN_START_FG: u32 = 0xff_00897b; // Teal — Plan Start special node
+
+// Extended colour palette
+pub const MUTED_FG: u32 = 0xff_aaaaaa;
+pub const PLACEHOLDER_FG: u32 = 0xff_888888;
+pub const SUBTLE_FG: u32 = 0xff_999999;
+pub const GHOST_FG: u32 = 0xff_bbbbbb;
+pub const SUBTLE_BG: u32 = 0xff_f5f5f5;
+pub const BTN_PRIMARY_HOVER_BG: u32 = 0xff_3a7bc8;
+pub const CAL_SELECTED_BG: u32 = 0xff_e8eef8;
+pub const ERROR_BG: u32 = 0xff_ffeeee;
+pub const ICON_DELETE_COLOR: u32 = 0xff_cc2222;
+pub const LINK_COLOR: u32 = 0xff_2196f3;
+pub const SCROLLBAR_THUMB_COLOR: u32 = 0x50_000000;
+pub const OVERLAY_XLIGHT: u32 = 0x1e_000000;
+pub const OVERLAY_LIGHT: u32 = 0x23_000000;
+pub const OVERLAY_SOFT: u32 = 0x28_000000;
+pub const OVERLAY_MEDIUM: u32 = 0x64_000000;
+pub const OVERLAY_DARK: u32 = 0x78_000000;
+pub const TOOLTIP_BG: u32 = 0xdc_ffffff;
+pub const AVATAR_COLORS: [u32; 7] = [
+    0xff_7b68ee,
+    0xff_50c878,
+    0xff_e07b54,
+    0xff_9370db,
+    0xff_20b2aa,
+    0xff_e05c8a,
+    0xff_d4a843,
+];
