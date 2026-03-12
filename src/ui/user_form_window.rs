@@ -8,6 +8,8 @@ use skia_safe::{
 };
 use winit::keyboard::{Key, NamedKey};
 
+use rfd;
+
 use crate::data::{Plan, Tag, TagId, User, ids::UserId};
 use crate::engine::{PlanRequest, PlanRequestSender, UserPatch};
 use crate::ui::cache::RenderCache;
@@ -73,6 +75,7 @@ pub struct UserFormWindow {
     focused: Field,
     hovered_back: bool,
     hovered_save: bool,
+    hovered_browse: bool,
     avatar_error: bool,
     name_error: bool,
 }
@@ -94,6 +97,7 @@ impl UserFormWindow {
             focused: Field::Name,
             hovered_back: false,
             hovered_save: false,
+            hovered_browse: false,
             avatar_error: false,
             name_error: false,
         }
@@ -116,6 +120,7 @@ impl UserFormWindow {
             focused: Field::Name,
             hovered_back: false,
             hovered_save: false,
+            hovered_browse: false,
             avatar_error: false,
             name_error: false,
         }
@@ -158,6 +163,25 @@ impl UserFormWindow {
             panel.bottom - PLAN_FORM_PADDING - PLAN_BTN_H,
             SAVE_BTN_W,
             PLAN_BTN_H,
+        )
+    }
+
+    fn browse_btn_rect(width: f32, height: f32) -> Rect {
+        let full = Self::input_rect(Field::AvatarPath, width, height);
+        const BROWSE_W: f32 = 72.0;
+        const GAP: f32 = 6.0;
+        Rect::from_xywh(full.right - BROWSE_W, full.top, BROWSE_W, full.height())
+    }
+
+    fn avatar_input_rect(width: f32, height: f32) -> Rect {
+        let full = Self::input_rect(Field::AvatarPath, width, height);
+        const BROWSE_W: f32 = 72.0;
+        const GAP: f32 = 6.0;
+        Rect::from_xywh(
+            full.left,
+            full.top,
+            full.width() - BROWSE_W - GAP,
+            full.height(),
         )
     }
 
@@ -742,12 +766,33 @@ impl FloatingWindow for UserFormWindow {
         }
         draw_text_input(
             canvas,
-            Self::input_rect(Field::AvatarPath, width, height),
+            Self::avatar_input_rect(width, height),
             &self.avatar_path,
             self.focused == Field::AvatarPath,
             false,
             cache,
         );
+        // Browse button
+        let browse_btn = Self::browse_btn_rect(width, height);
+        paint.set_color(Color::from(if self.hovered_browse {
+            BTN_PRIMARY_HOVER_BG
+        } else {
+            BTN_PRIMARY_BG
+        }));
+        paint.set_style(PaintStyle::Fill);
+        canvas.draw_rrect(
+            RRect::new_rect_xy(browse_btn, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+            &paint,
+        );
+        if let Some(blob) = TextBlob::new("Browse…", &cache.small_font) {
+            let (_, sm) = cache.small_font.metrics();
+            let (adv, _) = cache.small_font.measure_str("Browse…", None);
+            let tx = browse_btn.left + (browse_btn.width() - adv) / 2.0;
+            let ty =
+                browse_btn.top + (browse_btn.height() - (sm.descent - sm.ascent)) / 2.0 - sm.ascent;
+            paint.set_color(Color::from(BTN_PRIMARY_FG));
+            canvas.draw_text_blob(&blob, (tx, ty), &paint);
+        }
 
         if self.avatar_error {
             let err_y = Self::input_rect(Field::AvatarPath, width, height).bottom + 4.0;
@@ -833,12 +878,15 @@ impl FloatingWindow for UserFormWindow {
             None
         };
 
+        let new_browse = Self::browse_btn_rect(width, height).contains(pt);
         let changed = new_back != self.hovered_back
             || new_save != self.hovered_save
+            || new_browse != self.hovered_browse
             || new_dd_hovered != self.dropdown_hovered;
         if changed {
             self.hovered_back = new_back;
             self.hovered_save = new_save;
+            self.hovered_browse = new_browse;
             self.dropdown_hovered = new_dd_hovered;
             FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
         } else {
@@ -869,6 +917,18 @@ impl FloatingWindow for UserFormWindow {
         if Self::save_btn_rect(width, height).contains(pt) {
             return self.try_submit(sender);
         }
+        // Browse button opens a native file picker
+        if Self::browse_btn_rect(width, height).contains(pt) {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("Images", &["png", "jpg", "jpeg", "gif", "bmp", "webp"])
+                .pick_file()
+            {
+                self.avatar_path
+                    .set_content(path.to_string_lossy().as_ref());
+                self.avatar_error = false;
+            }
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
 
         if self.dropdown_open {
             let dd = Self::dropdown_rect(width, height);
@@ -895,29 +955,21 @@ impl FloatingWindow for UserFormWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
-        for field in [Field::Name, Field::AvatarPath] {
-            let rect = Self::input_rect(field, width, height);
-            if rect.contains(pt) {
-                self.set_focus(field);
-                let inner_left = rect.left + 8.0;
-                let x_in_inner = x - inner_left
-                    + match field {
-                        Field::Name => self.name.scroll_x.get(),
-                        Field::AvatarPath => self.avatar_path.scroll_x.get(),
-                        Field::TagFilter => 0.0,
-                    };
-                match field {
-                    Field::Name => {
-                        self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
-                    }
-                    Field::AvatarPath => {
-                        self.avatar_path.cursor =
-                            self.avatar_path.cursor_for_x(x_in_inner, &cache.font);
-                    }
-                    Field::TagFilter => {}
-                }
-                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-            }
+        // Name field click
+        let name_rect = Self::input_rect(Field::Name, width, height);
+        if name_rect.contains(pt) {
+            self.set_focus(Field::Name);
+            let x_in_inner = x - (name_rect.left + 8.0) + self.name.scroll_x.get();
+            self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        // Avatar path field click (narrower rect excluding browse button)
+        let av_rect = Self::avatar_input_rect(width, height);
+        if av_rect.contains(pt) {
+            self.set_focus(Field::AvatarPath);
+            let x_in_inner = x - (av_rect.left + 8.0) + self.avatar_path.scroll_x.get();
+            self.avatar_path.cursor = self.avatar_path.cursor_for_x(x_in_inner, &cache.font);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
         if !Self::panel_rect(width, height).contains(pt) {
@@ -1055,6 +1107,7 @@ impl FloatingWindow for UserFormWindow {
     fn reset_hover(&mut self) {
         self.hovered_back = false;
         self.hovered_save = false;
+        self.hovered_browse = false;
         self.dropdown_hovered = None;
     }
 }

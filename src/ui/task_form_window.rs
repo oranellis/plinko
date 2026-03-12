@@ -18,12 +18,14 @@ use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_DANGER_BG,
     BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG,
-    CAL_SELECTED_BG, DEP_PLAN_START_FG, DIVIDER_COLOR, GHOST_FG, INPUT_BG, INPUT_BORDER,
-    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
-    LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_LIGHT, OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG,
-    PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H,
-    PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG, TOOLBAR_STROKE_WIDTH,
+    CAL_SELECTED_BG, DEP_PLAN_START_FG, DIVIDER_COLOR, ERROR_BG, GHOST_FG, ICON_DELETE_COLOR,
+    INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG,
+    ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK, OVERLAY_LIGHT,
+    OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H,
+    PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR,
+    SUBTLE_BG, SUBTLE_FG, TOOLBAR_STROKE_WIDTH,
 };
+use crate::ui::multi_line_input::MultiLineInput;
 use crate::ui::text_input::TextInput;
 use std::collections::HashSet;
 
@@ -37,6 +39,12 @@ const LABEL_H: f32 = 14.0;
 const FIELD_BLOCK_H: f32 = LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H;
 const COL_GAP: f32 = 12.0;
 const SAVE_BTN_W: f32 = 80.0;
+
+// Multi-line description box
+const DESC_LINE_H: f32 = 18.0;
+const DESC_LINES: usize = 8;
+const DESC_H: f32 = DESC_LINE_H * DESC_LINES as f32 + 8.0;
+const DESC_BLOCK_H: f32 = LABEL_H + PLAN_LABEL_GAP + DESC_H;
 
 // Row indices
 const ROW_NAME: usize = 0;
@@ -100,7 +108,7 @@ const PANEL_H: f32 = TITLE_H
     + PLAN_FORM_PADDING
     + FIELD_BLOCK_H   // name
     + PLAN_FIELD_GAP
-    + FIELD_BLOCK_H   // description
+    + DESC_BLOCK_H    // description (tall)
     + PLAN_FIELD_GAP
     + FIELD_BLOCK_H   // status
     + PLAN_FIELD_GAP
@@ -434,7 +442,7 @@ enum Mode {
 pub struct TaskFormWindow {
     mode: Mode,
     name: TextInput,
-    description: TextInput,
+    description: MultiLineInput,
     duration: TextInput,
     focused: TextField,
     status: TaskStatus,
@@ -467,6 +475,7 @@ pub struct TaskFormWindow {
     dep_error: bool,
     name_error: bool,
     duration_error: bool,
+    constraint_date_error: bool,
     // Buttons
     hovered_back: bool,
     hovered_save: bool,
@@ -481,7 +490,7 @@ impl TaskFormWindow {
         Self {
             mode: Mode::New,
             name,
-            description: TextInput::new(""),
+            description: MultiLineInput::new(""),
             duration: TextInput::new(""),
             focused: TextField::Name,
             status: TaskStatus::NotStarted,
@@ -515,6 +524,7 @@ impl TaskFormWindow {
             dep_error: false,
             name_error: false,
             duration_error: false,
+            constraint_date_error: false,
             hovered_back: false,
             hovered_save: false,
             form_scroll_y: 0.0,
@@ -534,7 +544,7 @@ impl TaskFormWindow {
         Self {
             mode: Mode::Edit(task.id),
             name,
-            description: TextInput::new(&task.description),
+            description: MultiLineInput::new(&task.description),
             duration: TextInput::new(&dur_str),
             focused: TextField::Name,
             status: task.status,
@@ -582,6 +592,7 @@ impl TaskFormWindow {
             dep_error: false,
             name_error: false,
             duration_error: false,
+            constraint_date_error: false,
             hovered_back: false,
             hovered_save: false,
             form_scroll_y: 0.0,
@@ -633,7 +644,12 @@ impl TaskFormWindow {
     }
 
     fn row_label_y(row: usize, width: f32, height: f32) -> f32 {
-        Self::form_top(width, height) + row as f32 * (FIELD_BLOCK_H + PLAN_FIELD_GAP)
+        let base = Self::form_top(width, height) + row as f32 * (FIELD_BLOCK_H + PLAN_FIELD_GAP);
+        if row > ROW_DESC {
+            base + (DESC_BLOCK_H - FIELD_BLOCK_H)
+        } else {
+            base
+        }
     }
 
     fn full_input_rect(row: usize, width: f32, height: f32) -> Rect {
@@ -641,7 +657,12 @@ impl TaskFormWindow {
         let x = p.left + PLAN_FORM_PADDING;
         let w = p.width() - 2.0 * PLAN_FORM_PADDING;
         let y = Self::row_label_y(row, width, height) + LABEL_H + PLAN_LABEL_GAP;
-        Rect::from_xywh(x, y, w, PLAN_INPUT_H)
+        let h = if row == ROW_DESC {
+            DESC_H
+        } else {
+            PLAN_INPUT_H
+        };
+        Rect::from_xywh(x, y, w, h)
     }
 
     fn col_width(width: f32, height: f32) -> f32 {
@@ -683,7 +704,10 @@ impl TaskFormWindow {
 
     fn workers_label_y(width: f32, height: f32) -> f32 {
         // After 6 field rows + their gaps, then one more gap before workers section
-        Self::form_top(width, height) + 6.0 * (FIELD_BLOCK_H + PLAN_FIELD_GAP)
+        // Also shift down by the extra height from the tall description row
+        Self::form_top(width, height)
+            + 6.0 * (FIELD_BLOCK_H + PLAN_FIELD_GAP)
+            + (DESC_BLOCK_H - FIELD_BLOCK_H)
     }
 
     fn worker_list_rect(width: f32, height: f32) -> Rect {
@@ -933,8 +957,10 @@ impl TaskFormWindow {
     fn focused_input_mut(&mut self) -> &mut TextInput {
         match self.focused {
             TextField::Name => &mut self.name,
-            TextField::Description => &mut self.description,
             TextField::Duration => &mut self.duration,
+            TextField::Description => {
+                unreachable!("description is MultiLineInput; handled separately")
+            }
         }
     }
 
@@ -1058,6 +1084,13 @@ impl TaskFormWindow {
             .collect();
         self.worker_error = false;
 
+        // Constraint date required when a constraint type is selected
+        if self.constraint_kind != ConstraintSel::None && self.constraint_date.value.is_none() {
+            self.constraint_date_error = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        self.constraint_date_error = false;
+
         let description = self.description.content.trim().to_string();
         let constraint = self
             .constraint_kind
@@ -1094,6 +1127,123 @@ impl TaskFormWindow {
 }
 
 // ── Drawing helpers ───────────────────────────────────────────────────────────
+
+fn draw_multi_line_input(
+    canvas: &Canvas,
+    rect: Rect,
+    input: &crate::ui::multi_line_input::MultiLineInput,
+    focused: bool,
+    cache: &RenderCache,
+) {
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    let rrect = RRect::new_rect_xy(rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
+    paint.set_color(Color::from(INPUT_BG));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(rrect, &paint);
+    paint.set_color(if focused {
+        Color::from(INPUT_BORDER_FOCUS)
+    } else {
+        Color::from(INPUT_BORDER)
+    });
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(if focused { 2.0 } else { 1.0 });
+    canvas.draw_rrect(rrect, &paint);
+    paint.set_style(PaintStyle::Fill);
+
+    let (_, metrics) = cache.font.metrics();
+    let line_h = metrics.descent - metrics.ascent + 2.0;
+    let text_x = rect.left + 8.0;
+    let text_top = rect.top + 4.0;
+    let scroll_y = input.scroll_y.get();
+
+    canvas.save();
+    canvas.clip_rect(
+        Rect::from_xywh(
+            rect.left + 1.0,
+            rect.top + 1.0,
+            rect.width() - 2.0,
+            rect.height() - 2.0,
+        ),
+        ClipOp::Intersect,
+        false,
+    );
+
+    let content = &input.content;
+    let raw_lines: Vec<&str> = if content.is_empty() {
+        vec![""]
+    } else {
+        content.split('\n').collect()
+    };
+
+    for (i, line) in raw_lines.iter().enumerate() {
+        let y = text_top + i as f32 * line_h - scroll_y;
+        if y + line_h < rect.top || y > rect.bottom() {
+            continue;
+        }
+        if !line.is_empty()
+            && let Some(blob) = TextBlob::new(line, &cache.font)
+        {
+            paint.set_color(Color::from(INPUT_FG));
+            canvas.draw_text_blob(&blob, (text_x, y - metrics.ascent), &paint);
+        }
+    }
+
+    if content.is_empty()
+        && let Some(blob) = TextBlob::new("Description…", &cache.font)
+    {
+        paint.set_color(Color::from(PLACEHOLDER_FG));
+        canvas.draw_text_blob(&blob, (text_x, text_top - metrics.ascent), &paint);
+    }
+
+    if focused {
+        let cursor_pos = input.cursor.min(content.len());
+        let before_cursor = &content[..cursor_pos];
+        let lines_before: Vec<&str> = before_cursor.split('\n').collect();
+        let cursor_line_idx = lines_before.len().saturating_sub(1);
+        let cursor_col_str = lines_before.last().copied().unwrap_or("");
+        let cursor_x = text_x + cache.font.measure_str(cursor_col_str, None).0;
+        let cursor_y_top = text_top + cursor_line_idx as f32 * line_h - scroll_y;
+        let cursor_y_bot = cursor_y_top + line_h;
+        paint.set_color(Color::from(INPUT_CURSOR_COLOR));
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_width(1.5);
+        canvas.draw_line((cursor_x, cursor_y_top), (cursor_x, cursor_y_bot), &paint);
+        paint.set_style(PaintStyle::Fill);
+
+        // Auto-scroll to keep cursor visible
+        let visible_h = rect.height() - 8.0;
+        let cursor_abs_y = text_top + cursor_line_idx as f32 * line_h;
+        let new_scroll = if cursor_abs_y - scroll_y < 0.0 {
+            cursor_abs_y - rect.top
+        } else if cursor_abs_y + line_h - scroll_y > visible_h {
+            cursor_abs_y + line_h - visible_h
+        } else {
+            scroll_y
+        };
+        input.scroll_y.set(new_scroll.max(0.0));
+    }
+
+    // Scrollbar
+    let total_h = raw_lines.len() as f32 * line_h + 8.0;
+    let visible_h = rect.height();
+    let max_scroll = (total_h - visible_h).max(0.0);
+    if max_scroll > 0.0 {
+        let thumb_h = (visible_h * visible_h / total_h).max(20.0);
+        let thumb_y = rect.top + (scroll_y / max_scroll) * (visible_h - thumb_h);
+        paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
+        canvas.draw_rrect(
+            RRect::new_rect_xy(
+                Rect::from_xywh(rect.right - 6.0, thumb_y, 4.0, thumb_h),
+                2.0,
+                2.0,
+            ),
+            &paint,
+        );
+    }
+
+    canvas.restore();
+}
 
 fn draw_chevron_btn(canvas: &Canvas, btn_rect: Rect, hovered: bool) {
     let mut paint = Paint::default();
@@ -1211,6 +1361,7 @@ fn draw_date_btn(
     picker: &CalendarPicker,
     is_open: bool,
     disabled: bool,
+    error: bool,
     cache: &RenderCache,
 ) {
     let mut paint = Paint::default();
@@ -1218,6 +1369,8 @@ fn draw_date_btn(
     let rrect = RRect::new_rect_xy(rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
     paint.set_color(if disabled {
         Color::from(SUBTLE_BG)
+    } else if error {
+        Color::from(ERROR_BG)
     } else {
         Color::from(INPUT_BG)
     });
@@ -1225,6 +1378,8 @@ fn draw_date_btn(
     canvas.draw_rrect(rrect, &paint);
     paint.set_color(if disabled {
         Color::from(0xff_e0e0e0_u32)
+    } else if error {
+        Color::from(INPUT_BORDER_ERROR)
     } else if is_open {
         Color::from(INPUT_BORDER_FOCUS)
     } else if picker.hovered_trigger {
@@ -1233,7 +1388,7 @@ fn draw_date_btn(
         Color::from(INPUT_BORDER)
     });
     paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(1.0);
+    paint.set_stroke_width(if error { 2.0 } else { 1.0 });
     canvas.draw_rrect(rrect, &paint);
     paint.set_style(PaintStyle::Fill);
 
@@ -1748,30 +1903,29 @@ fn draw_worker_row(
         canvas.draw_text_blob(&blob, (wl_rect.right - 14.0, ty), &paint);
     }
 
-    // Remove button
-    let rm_bg = if slot.hovered_remove {
-        0xff_e53935_u32
-    } else {
-        0xff_f0f0f0_u32
-    };
-    paint.set_color(Color::from(rm_bg));
-    canvas.draw_rrect(
-        RRect::new_rect_xy(rm_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
-        &paint,
-    );
+    // Remove button (tags-style: circle hover, ICON_DELETE_COLOR on hover)
+    if slot.hovered_remove {
+        let r = rm_rect.width().min(rm_rect.height()) / 2.0 - 2.0;
+        let cx = rm_rect.left + rm_rect.width() / 2.0;
+        let cy = rm_rect.top + rm_rect.height() / 2.0;
+        paint.set_color(Color::from(ERROR_BG));
+        paint.set_style(PaintStyle::Fill);
+        canvas.draw_circle((cx, cy), r, &paint);
+        paint.set_style(PaintStyle::Fill);
+    }
     {
         let cx = rm_rect.left + rm_rect.width() / 2.0;
         let cy = rm_rect.top + rm_rect.height() / 2.0;
-        let s = 4.0;
+        let s = 5.0;
         let mut pb = PathBuilder::new();
         pb.move_to((cx - s, cy - s));
         pb.line_to((cx + s, cy + s));
         pb.move_to((cx + s, cy - s));
         pb.line_to((cx - s, cy + s));
         paint.set_color(if slot.hovered_remove {
-            Color::WHITE
+            Color::from(ICON_DELETE_COLOR)
         } else {
-            Color::from(PLACEHOLDER_FG)
+            Color::from(OVERLAY_DARK)
         });
         paint.set_style(PaintStyle::Stroke);
         paint.set_stroke_width(1.5);
@@ -2275,12 +2429,11 @@ impl FloatingWindow for TaskFormWindow {
 
         // Description
         label!(ROW_DESC, "Description");
-        draw_text_input(
+        draw_multi_line_input(
             canvas,
             Self::full_input_rect(ROW_DESC, width, height),
             &self.description,
             self.focused == TextField::Description,
-            false,
             cache,
         );
 
@@ -2366,6 +2519,7 @@ impl FloatingWindow for TaskFormWindow {
                 &self.constraint_date,
                 constraint_open,
                 false,
+                self.constraint_date_error,
                 cache,
             );
         }
@@ -2380,6 +2534,7 @@ impl FloatingWindow for TaskFormWindow {
             &self.actual_start,
             self.open_calendar == Some(OpenCalendar::ActualStart),
             start_disabled,
+            false,
             cache,
         );
         label!(ROW_DATES, 1, "Actual End");
@@ -2389,6 +2544,7 @@ impl FloatingWindow for TaskFormWindow {
             &self.actual_end,
             self.open_calendar == Some(OpenCalendar::ActualEnd),
             end_disabled,
+            false,
             cache,
         );
 
@@ -2661,30 +2817,29 @@ impl FloatingWindow for TaskFormWindow {
                     canvas.draw_text_blob(&blob, (lag_rect.left + 8.0, ty), &paint);
                 }
 
-                // Remove button
-                let rm_bg = if dep.hovered_remove {
-                    0xff_e53935_u32
-                } else {
-                    0xff_f0f0f0_u32
-                };
-                paint.set_color(Color::from(rm_bg));
-                canvas.draw_rrect(
-                    RRect::new_rect_xy(rm_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
-                    &paint,
-                );
+                // Remove button (tags-style: circle hover, ICON_DELETE_COLOR on hover)
+                if dep.hovered_remove {
+                    let r = rm_rect.width().min(rm_rect.height()) / 2.0 - 2.0;
+                    let cx = rm_rect.left + rm_rect.width() / 2.0;
+                    let cy = rm_rect.top + rm_rect.height() / 2.0;
+                    paint.set_color(Color::from(ERROR_BG));
+                    paint.set_style(PaintStyle::Fill);
+                    canvas.draw_circle((cx, cy), r, &paint);
+                    paint.set_style(PaintStyle::Fill);
+                }
                 {
                     let cx = rm_rect.left + rm_rect.width() / 2.0;
                     let cy = rm_rect.top + rm_rect.height() / 2.0;
-                    let s = 4.0;
+                    let s = 5.0;
                     let mut pb = PathBuilder::new();
                     pb.move_to((cx - s, cy - s));
                     pb.line_to((cx + s, cy + s));
                     pb.move_to((cx + s, cy - s));
                     pb.line_to((cx - s, cy + s));
                     paint.set_color(if dep.hovered_remove {
-                        Color::WHITE
+                        Color::from(ICON_DELETE_COLOR)
                     } else {
-                        Color::from(PLACEHOLDER_FG)
+                        Color::from(OVERLAY_DARK)
                     });
                     paint.set_style(PaintStyle::Stroke);
                     paint.set_stroke_width(1.5);
@@ -3220,6 +3375,9 @@ impl FloatingWindow for TaskFormWindow {
                 }
                 if TaskFormWindow::cal_today_btn(cal).contains(pt) {
                     self.picker_mut(target).value = Some(chrono::Local::now().date_naive());
+                    if matches!(target, OpenCalendar::Constraint) {
+                        self.constraint_date_error = false;
+                    }
                     self.close_calendar();
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
@@ -3235,6 +3393,9 @@ impl FloatingWindow for TaskFormWindow {
                     if TaskFormWindow::cal_day_cell(cal, day_1, day).contains(pt) {
                         let p = self.picker_mut(target);
                         p.value = NaiveDate::from_ymd_opt(p.nav_year, p.nav_month, day);
+                        if matches!(target, OpenCalendar::Constraint) {
+                            self.constraint_date_error = false;
+                        }
                         self.close_calendar();
                         return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                     }
@@ -3488,11 +3649,23 @@ impl FloatingWindow for TaskFormWindow {
         }
 
         // Text fields
-        for field in [TextField::Name, TextField::Description, TextField::Duration] {
+        // Description (multi-line) handled separately
+        let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
+        if desc_rect.contains(pt_form) {
+            self.set_focus(TextField::Description);
+            let x_in_box = x - desc_rect.left;
+            let y_in_box = pt_form.y - desc_rect.top;
+            self.description.cursor =
+                self.description
+                    .cursor_for_click(x_in_box, y_in_box, &cache.font);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+
+        for field in [TextField::Name, TextField::Duration] {
             let rect = match field {
                 TextField::Name => Self::full_input_rect(ROW_NAME, width, height),
-                TextField::Description => Self::full_input_rect(ROW_DESC, width, height),
                 TextField::Duration => Self::left_input_rect(ROW_DURATION, width, height),
+                TextField::Description => unreachable!(),
             };
             if rect.contains(pt_form) {
                 self.set_focus(field);
@@ -3500,20 +3673,17 @@ impl FloatingWindow for TaskFormWindow {
                 let x_in_inner = x - inner_left
                     + match field {
                         TextField::Name => self.name.scroll_x.get(),
-                        TextField::Description => self.description.scroll_x.get(),
                         TextField::Duration => self.duration.scroll_x.get(),
+                        TextField::Description => unreachable!(),
                     };
                 match field {
                     TextField::Name => {
                         self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
                     }
-                    TextField::Description => {
-                        self.description.cursor =
-                            self.description.cursor_for_x(x_in_inner, &cache.font);
-                    }
                     TextField::Duration => {
                         self.duration.cursor = self.duration.cursor_for_x(x_in_inner, &cache.font);
                     }
+                    TextField::Description => unreachable!(),
                 }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
@@ -3776,6 +3946,55 @@ impl FloatingWindow for TaskFormWindow {
         }
 
         // Normal text field routing
+        // Description (multi-line): Enter inserts newline, not submit
+        if self.focused == TextField::Description {
+            match key {
+                Key::Named(NamedKey::Escape) => return FloatingWindowOutcome::close(),
+                Key::Named(NamedKey::Enter) => {
+                    self.description.insert_newline();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Tab) => {
+                    self.set_focus(TextField::Duration);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    self.description.backspace();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.description.move_left();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.description.move_right();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Home) => {
+                    self.description.move_to_start();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::End) => {
+                    self.description.move_to_end();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Space) => {
+                    self.description.insert_char(' ');
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Character(c) => {
+                    if c.chars().all(|ch| !ch.is_control()) {
+                        for ch in c.chars() {
+                            self.description.insert_char(ch);
+                        }
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                    return FloatingWindowOutcome::default();
+                }
+                _ => return FloatingWindowOutcome::default(),
+            }
+        }
+
         match key {
             Key::Named(NamedKey::Escape) => FloatingWindowOutcome::close(),
             Key::Named(NamedKey::Enter) => self.try_submit(sender),

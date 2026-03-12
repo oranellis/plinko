@@ -14,6 +14,7 @@ pub mod icon_button;
 pub mod icons;
 pub mod layout;
 pub mod milestone_form_window;
+pub mod multi_line_input;
 pub mod tags_window;
 pub mod task_form_window;
 pub mod text_input;

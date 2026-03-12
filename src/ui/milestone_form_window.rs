@@ -15,7 +15,7 @@ use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
     BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, CAL_SELECTED_BG,
-    DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
+    DIVIDER_COLOR, ERROR_BG, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
     INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, MUTED_FG, OVERLAY_LIGHT,
     OVERLAY_SOFT, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
     PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG,
@@ -295,6 +295,7 @@ pub struct MilestoneFormWindow {
     hovered_back: bool,
     hovered_save: bool,
     name_error: bool,
+    constraint_date_error: bool,
     form_scroll_y: f32,
 }
 
@@ -314,6 +315,7 @@ impl MilestoneFormWindow {
             hovered_back: false,
             hovered_save: false,
             name_error: false,
+            constraint_date_error: false,
             form_scroll_y: 0.0,
         }
     }
@@ -334,6 +336,7 @@ impl MilestoneFormWindow {
             hovered_back: false,
             hovered_save: false,
             name_error: false,
+            constraint_date_error: false,
             form_scroll_y: 0.0,
         }
     }
@@ -451,6 +454,12 @@ impl MilestoneFormWindow {
             self.name_error = true;
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
+        // Constraint date required when a constraint type is selected
+        if self.constraint_kind != ConstraintSel::None && self.constraint_date.value.is_none() {
+            self.constraint_date_error = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        self.constraint_date_error = false;
         let description = self.description.content.trim().to_string();
         let constraint = self
             .constraint_kind
@@ -589,6 +598,7 @@ fn draw_date_btn(
     picker: &CalendarPicker,
     is_open: bool,
     disabled: bool,
+    error: bool,
     cache: &RenderCache,
 ) {
     let mut paint = Paint::default();
@@ -596,6 +606,8 @@ fn draw_date_btn(
     let rrect = RRect::new_rect_xy(rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
     paint.set_color(if disabled {
         Color::from(SUBTLE_BG)
+    } else if error {
+        Color::from(ERROR_BG)
     } else {
         Color::from(INPUT_BG)
     });
@@ -603,6 +615,8 @@ fn draw_date_btn(
     canvas.draw_rrect(rrect, &paint);
     paint.set_color(if disabled {
         Color::from(0xff_e0e0e0_u32)
+    } else if error {
+        Color::from(INPUT_BORDER_ERROR)
     } else if is_open {
         Color::from(INPUT_BORDER_FOCUS)
     } else if picker.hovered_trigger {
@@ -611,7 +625,7 @@ fn draw_date_btn(
         Color::from(INPUT_BORDER)
     });
     paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(1.0);
+    paint.set_stroke_width(if error { 2.0 } else { 1.0 });
     canvas.draw_rrect(rrect, &paint);
     paint.set_style(PaintStyle::Fill);
 
@@ -1067,6 +1081,7 @@ impl FloatingWindow for MilestoneFormWindow {
             &self.constraint_date,
             self.calendar_open,
             date_disabled,
+            self.constraint_date_error,
             cache,
         );
 
@@ -1260,6 +1275,7 @@ impl FloatingWindow for MilestoneFormWindow {
                     self.close_calendar();
                 } else if cal_today_btn(cal).contains(pt) {
                     self.constraint_date.value = Some(chrono::Local::now().date_naive());
+                    self.constraint_date_error = false;
                     self.close_calendar();
                 } else {
                     let day_1 = first_weekday_offset(
@@ -1277,6 +1293,7 @@ impl FloatingWindow for MilestoneFormWindow {
                                 self.constraint_date.nav_month,
                                 day,
                             );
+                            self.constraint_date_error = false;
                             self.close_calendar();
                             break;
                         }
