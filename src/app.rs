@@ -556,6 +556,30 @@ impl ApplicationHandler for Application {
             self.env.window.request_redraw();
         }
 
-        event_loop.set_control_flow(ControlFlow::Wait);
+        // Tick animations
+        let has_anim = matches!(self.app_state, AppState::InPage(_))
+            && self.pages.active_page_mut().has_animation();
+        if has_anim {
+            let plan = self.engine.plan();
+            let size = self.env.window.inner_size();
+            let sf = self.scale_factor as f32;
+            let width = size.width as f32 / sf;
+            let height = size.height as f32 / sf;
+            let dirty = self
+                .pages
+                .active_page_mut()
+                .tick_animation(width, height, plan);
+            self.mark_dirty(dirty);
+        }
+
+        if self.pending_dirty != DirtyRegion::None {
+            self.env.window.request_redraw();
+        }
+
+        event_loop.set_control_flow(if has_anim {
+            ControlFlow::Poll
+        } else {
+            ControlFlow::Wait
+        });
     }
 }

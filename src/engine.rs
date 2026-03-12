@@ -247,6 +247,13 @@ pub enum PlanRequest {
     DeleteTag(TagId),
     /// Move a tag to a new position in the registry (controls UI display order).
     MoveTag(TagId, usize),
+
+    // ── Plan metadata ──────────────────────────────────────────────────────────
+    /// Update top-level plan metadata (name and start date).
+    UpdatePlanSettings {
+        name: String,
+        start_date: chrono::NaiveDate,
+    },
 }
 
 // ── Responses ─────────────────────────────────────────────────────────────────
@@ -533,6 +540,12 @@ impl PlanEngine {
 
             PlanRequest::MoveTag(id, new_index) => {
                 self.plan.move_tag(&id, new_index);
+                PlanResponse::PlanUpdated
+            }
+
+            PlanRequest::UpdatePlanSettings { name, start_date } => {
+                self.plan.name = name;
+                self.plan.start_date = start_date;
                 PlanResponse::PlanUpdated
             }
         }

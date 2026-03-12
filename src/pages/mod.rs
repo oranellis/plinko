@@ -91,6 +91,16 @@ pub trait Page {
     fn take_open_request(&mut self) -> Option<Box<dyn crate::ui::floating_window::FloatingWindow>> {
         None
     }
+
+    /// Called every frame when there is active animation.
+    fn tick_animation(&mut self, _width: f32, _height: f32, _plan: &Plan) -> DirtyRegion {
+        DirtyRegion::None
+    }
+
+    /// Returns true if this page has active animation that needs per-frame updates.
+    fn has_animation(&self) -> bool {
+        false
+    }
 }
 
 /// Owns all page instances and tracks the currently active one.

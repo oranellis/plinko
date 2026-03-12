@@ -21,6 +21,23 @@ pub struct OverviewState {
     /// Last known cursor position (used for hover).
     pub cursor_x: f32,
     pub cursor_y: f32,
+    // Momentum / animation state
+    pub vel_x: f32,
+    pub vel_y: f32,
+    pub zoom_vel: f32,
+    // Drag tracking
+    pub is_dragging: bool,
+    pub last_drag_x: f32,
+    pub last_drag_y: f32,
+    pub drag_vel_x: f32,
+    pub drag_vel_y: f32,
+    // Horizontal scroll (pixels)
+    pub scroll_x: f32,
+    // Settings window flag
+    pub open_settings_window: bool,
+    // Stored plan data for initialising the settings window
+    pub settings_init_name: String,
+    pub settings_init_date: String,
 }
 
 impl OverviewState {
@@ -34,6 +51,18 @@ impl OverviewState {
             zoom: GANTT_ZOOM_DEFAULT,
             cursor_x: 0.0,
             cursor_y: 0.0,
+            vel_x: 0.0,
+            vel_y: 0.0,
+            zoom_vel: 1.0,
+            is_dragging: false,
+            last_drag_x: 0.0,
+            last_drag_y: 0.0,
+            drag_vel_x: 0.0,
+            drag_vel_y: 0.0,
+            scroll_x: 0.0,
+            open_settings_window: false,
+            settings_init_name: String::new(),
+            settings_init_date: String::new(),
         }
     }
 }

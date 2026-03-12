@@ -62,12 +62,6 @@ pub struct Plan {
     /// The node that the scheduler is trying to optimise for (bring as early as possible).
     /// If set to the plan start then all end nodes are brought in as much as possible
     pub scheduler_target: NodeId,
-    /// How many standard hours one workload-day represents.
-    /// Used to convert `WorkerSlot::workload_days` → hours when filling capacity.
-    /// Defaults to 8.0. Kept at plan level so effort is consistent across users
-    /// regardless of individual schedule lengths.
-    #[serde(default = "Plan::default_hours_per_workload_day")]
-    pub hours_per_workload_day: f32,
     /// The latest computed allocation. `None` until the scheduler has been run,
     /// and invalidated (reset to `None`) whenever the plan is mutated.
     #[serde(default)]
@@ -80,10 +74,6 @@ pub struct Plan {
 }
 
 impl Plan {
-    fn default_hours_per_workload_day() -> f32 {
-        8.0
-    }
-
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -98,7 +88,6 @@ impl Plan {
             start_date: chrono::Local::now().date_naive(),
             dates: StartDates::new(),
             scheduler_target: NodeId::PlanStart,
-            hours_per_workload_day: 8.0,
             allocation: None,
             tags: Vec::new(),
         }

@@ -89,6 +89,36 @@ impl WorkSchedule {
     pub fn working_days_per_week(&self) -> f32 {
         self.days.values().filter(|&&h| h > 0.0).count() as f32
     }
+
+    /// Returns the "standard" hours per workload day for this schedule.
+    /// Computes the mode (most-frequent hours value) among all working days.
+    /// On a tie, returns the highest hours value among the tied modes.
+    pub fn hours_per_workload_day(&self) -> f32 {
+        if self.days.is_empty() {
+            return 8.0;
+        }
+        // Count occurrences of each hours value (use ordered_float or just f32 bits as key)
+        use std::collections::HashMap;
+        let mut counts: HashMap<u32, (f32, u32)> = HashMap::new();
+        for &h in self.days.values() {
+            if h > 0.0 {
+                let bits = h.to_bits();
+                let entry = counts.entry(bits).or_insert((h, 0));
+                entry.1 += 1;
+            }
+        }
+        if counts.is_empty() {
+            return 8.0;
+        }
+        // Find max frequency
+        let max_freq = counts.values().map(|&(_, c)| c).max().unwrap_or(0);
+        // Among tied modes, pick highest hours
+        counts
+            .values()
+            .filter(|&&(_, c)| c == max_freq)
+            .map(|&(h, _)| h)
+            .fold(f32::NEG_INFINITY, f32::max)
+    }
 }
 
 impl Default for WorkSchedule {
@@ -183,5 +213,36 @@ mod tests {
         assert_eq!(chrono_to_weekday(chrono::Weekday::Mon), Weekday::Monday);
         assert_eq!(chrono_to_weekday(chrono::Weekday::Sat), Weekday::Saturday);
         assert_eq!(chrono_to_weekday(chrono::Weekday::Sun), Weekday::Sunday);
+    }
+
+    #[test]
+    fn hours_per_workload_day_mode_and_tie_break() {
+        // [5, 5, 6, 6, 7] → tie at 5(×2) and 6(×2), pick highest = 6
+        let s = WorkSchedule {
+            days: [
+                (Weekday::Monday, 5.0),
+                (Weekday::Tuesday, 5.0),
+                (Weekday::Wednesday, 6.0),
+                (Weekday::Thursday, 6.0),
+                (Weekday::Friday, 7.0),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        assert_eq!(s.hours_per_workload_day(), 6.0);
+
+        // [8, 8, 8, 6, 6] → mode is 8
+        let s2 = WorkSchedule {
+            days: [
+                (Weekday::Monday, 8.0),
+                (Weekday::Tuesday, 8.0),
+                (Weekday::Wednesday, 8.0),
+                (Weekday::Thursday, 6.0),
+                (Weekday::Friday, 6.0),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        assert_eq!(s2.hours_per_workload_day(), 8.0);
     }
 }

@@ -24,9 +24,13 @@ fn gantt_rows_top() -> f32 {
     gantt_header_top() + GANTT_HEADER_H
 }
 
-fn date_to_x(date: NaiveDate, view_start: NaiveDate, zoom: f32) -> f32 {
+pub fn gantt_header_h() -> f32 {
+    GANTT_HEADER_H
+}
+
+fn date_to_x(date: NaiveDate, view_start: NaiveDate, zoom: f32, scroll_x: f32) -> f32 {
     let days = (date - view_start).num_days();
-    days as f32 * zoom
+    days as f32 * zoom - scroll_x
 }
 
 fn view_start_date(plan: &Plan) -> NaiveDate {
@@ -64,12 +68,12 @@ pub fn draw_overview(
     draw_gantt_rows(canvas, state, plan, &rows, w, h, view_start, cache);
     draw_gantt_dependencies(canvas, state, plan, &rows, w, h, view_start);
     draw_gantt_header(canvas, state, w, view_start, cache);
-    draw_toolbar_buttons(canvas, state, cache);
+    draw_toolbar_buttons(canvas, state, cache, w);
 }
 
 // ── Toolbar buttons ────────────────────────────────────────────────────────────
 
-fn draw_toolbar_buttons(canvas: &Canvas, state: &OverviewState, cache: &RenderCache) {
+fn draw_toolbar_buttons(canvas: &Canvas, state: &OverviewState, cache: &RenderCache, width: f32) {
     icon_button::draw_icon_button(
         canvas,
         toolbar_btn_x(0),
@@ -91,13 +95,23 @@ fn draw_toolbar_buttons(canvas: &Canvas, state: &OverviewState, cache: &RenderCa
         state.toolbar_btn_hovered == Some(2),
         &cache.icon_diamond,
     );
+    icon_button::draw_icon_button(
+        canvas,
+        settings_btn_x(width),
+        TOOLBAR_BTN_Y,
+        state.toolbar_btn_hovered == Some(3),
+        &cache.icon_settings,
+    );
 }
 
-pub fn hit_test_toolbar_buttons(px: f32, py: f32) -> Option<usize> {
+pub fn hit_test_toolbar_buttons(px: f32, py: f32, width: f32) -> Option<usize> {
     for i in 0..3_u32 {
         if icon_button::hit_test_icon_button(px, py, toolbar_btn_x(i), TOOLBAR_BTN_Y) {
             return Some(i as usize);
         }
+    }
+    if icon_button::hit_test_icon_button(px, py, settings_btn_x(width), TOOLBAR_BTN_Y) {
+        return Some(3);
     }
     None
 }
@@ -113,7 +127,9 @@ fn draw_gantt_header(
 ) {
     let header_top = gantt_header_top();
     let zoom = state.zoom;
+    let scroll_x = state.scroll_x;
     let days_visible = (width / zoom).ceil() as i64 + 2;
+    let first_offset = (scroll_x / zoom).floor() as i64 - 1;
 
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
@@ -134,9 +150,12 @@ fn draw_gantt_header(
     let mut month_segments: Vec<(String, f32, f32)> = Vec::new(); // (label, x_start, x_end)
     let mut last_month: Option<(u32, i32)> = None;
 
-    for day_offset in 0..days_visible {
+    for day_offset in first_offset..=first_offset + days_visible + 2 {
         let date = view_start + Duration::days(day_offset);
-        let x = day_offset as f32 * zoom;
+        let x = day_offset as f32 * zoom - scroll_x;
+        if x > width + 10.0 {
+            break;
+        }
         let (y, m) = (date.year(), date.month());
 
         // Month segments
@@ -157,7 +176,7 @@ fn draw_gantt_header(
         if day_offset > 0 {
             paint.set_color(Color::from(GANTT_HEADER_BORDER));
             paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.0);
+            paint.set_stroke_width(2.0);
             canvas.draw_line((x, day_row_top), (x, day_row_top + GANTT_DAY_ROW_H), &paint);
             paint.set_style(PaintStyle::Fill);
         }
@@ -167,7 +186,7 @@ fn draw_gantt_header(
             let day_label = format!("{}", date.day());
             let tw = cache.font.measure_str(&day_label, None).0;
             let day_x = x + zoom / 2.0 - tw / 2.0;
-            let day_y = day_row_top + GANTT_DAY_ROW_H * 0.72 - metrics.ascent;
+            let day_y = day_row_top + GANTT_DAY_ROW_H - metrics.descent - 3.0;
             paint.set_color(Color::from(GANTT_HEADER_FG));
             paint.set_style(PaintStyle::Fill);
             if let Some(blob) = TextBlob::new(&day_label, &cache.font) {
@@ -181,7 +200,8 @@ fn draw_gantt_header(
         let seg_w = x_end - x_start;
         let tw = cache.font.measure_str(label, None).0;
         let label_x = (x_start + seg_w / 2.0 - tw / 2.0).max(x_start + 4.0);
-        let label_y = month_row_top + GANTT_MONTH_ROW_H * 0.72 - metrics.ascent;
+        let label_y =
+            month_row_top + GANTT_MONTH_ROW_H * 0.5 + (metrics.descent - metrics.ascent) * 0.5;
         paint.set_color(Color::from(GANTT_HEADER_MONTH_FG));
         paint.set_style(PaintStyle::Fill);
         if let Some(blob) = TextBlob::new(label, &cache.font) {
@@ -241,16 +261,24 @@ fn draw_gantt_grid(
 ) {
     let rows_top = gantt_rows_top();
     let zoom = state.zoom;
+    let scroll_x = state.scroll_x;
     let days_visible = (width / zoom).ceil() as i64 + 2;
+    let first_offset = (scroll_x / zoom).floor() as i64 - 1;
     let today = chrono::Local::now().date_naive();
 
     let mut paint = Paint::default();
     paint.set_anti_alias(false);
     paint.set_style(PaintStyle::Stroke);
 
-    for day_offset in 0..=days_visible {
+    for day_offset in first_offset..=first_offset + days_visible + 2 {
         let date = view_start + Duration::days(day_offset);
-        let x = day_offset as f32 * zoom;
+        let x = day_offset as f32 * zoom - scroll_x;
+        if x + zoom < 0.0 {
+            continue;
+        }
+        if x > width {
+            break;
+        }
         if date == today {
             paint.set_color(Color::from(GANTT_TODAY_LINE_COLOR));
             paint.set_stroke_width(2.0);
@@ -278,6 +306,7 @@ fn draw_gantt_rows(
     let rows_top = gantt_rows_top();
     let scroll_y = state.scroll_y;
     let zoom = state.zoom;
+    let scroll_x = state.scroll_x;
 
     canvas.save();
     canvas.clip_rect(
@@ -306,7 +335,7 @@ fn draw_gantt_rows(
                         Some(t) => t,
                         None => continue,
                     };
-                    let bar_x = date_to_x(*start, view_start, zoom);
+                    let bar_x = date_to_x(*start, view_start, zoom, scroll_x);
                     let bar_w = (((*end - *start).num_days() + 1) as f32 * zoom).max(4.0);
                     let bar_y = row_y + GANTT_ROW_PADDING;
                     let bar_h = GANTT_ROW_H - 2.0 * GANTT_ROW_PADDING;
@@ -344,7 +373,7 @@ fn draw_gantt_rows(
                 GanttItem::Milestone { id, date } => {
                     let ms_status = milestone_display_status(plan, *id);
                     let ms_color = milestone_color(ms_status);
-                    let cx = date_to_x(*date, view_start, zoom) + zoom / 2.0;
+                    let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;
                     let cy = row_y + GANTT_ROW_H / 2.0;
                     let half = GANTT_MS_HALF;
 
@@ -436,6 +465,7 @@ fn draw_gantt_dependencies(
     let rows_top = gantt_rows_top();
     let scroll_y = state.scroll_y;
     let zoom = state.zoom;
+    let scroll_x = state.scroll_x;
 
     canvas.save();
     canvas.clip_rect(
@@ -466,14 +496,14 @@ fn draw_gantt_dependencies(
                     pos_map.insert(
                         NodeId::Task(*id),
                         ItemPos {
-                            start_x: date_to_x(*start, view_start, zoom),
-                            end_x: date_to_x(*end, view_start, zoom) + zoom,
+                            start_x: date_to_x(*start, view_start, zoom, scroll_x),
+                            end_x: date_to_x(*end, view_start, zoom, scroll_x) + zoom,
                             center_y: cy,
                         },
                     );
                 }
                 GanttItem::Milestone { id, date } => {
-                    let cx = date_to_x(*date, view_start, zoom) + zoom / 2.0;
+                    let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;
                     pos_map.insert(
                         NodeId::Milestone(*id),
                         ItemPos {

@@ -441,7 +441,7 @@ impl Plan {
         earliest_start: NaiveDate,
         state: &SchedulerState,
     ) -> UserId {
-        let total_hours = workload_days * self.hours_per_workload_day;
+        let total_hours = workload_days * self.default_schedule.hours_per_workload_day();
 
         let mut best_user: Option<UserId> = None;
         let mut best_end = NaiveDate::MAX;
@@ -534,7 +534,7 @@ impl Plan {
                 }
             };
 
-            let total_hours = workload_days * self.hours_per_workload_day;
+            let total_hours = workload_days * self.default_schedule.hours_per_workload_day();
             let segments = self.fill_slot(user_id, total_hours, start_date, state);
 
             if let Some(first) = segments.first() {

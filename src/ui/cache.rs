@@ -24,6 +24,8 @@ pub struct RenderCache {
     pub icon_diamond: Path,
     /// Hashtag / tag icon used by the tags window button.
     pub icon_tag: Path,
+    /// Settings (cogwheel/sliders) icon.
+    pub icon_settings: Path,
     pub daily_label: TextBlob,
     pub left_panel_label: TextBlob,
     pub right_panel_label: TextBlob,
@@ -60,6 +62,7 @@ impl RenderCache {
         let icon_plus = build_icon_plus(32.0, 32.0);
         let icon_diamond = build_icon_diamond(32.0, 32.0);
         let icon_tag = build_icon_tag(32.0, 32.0);
+        let icon_settings = build_icon_settings(32.0, 32.0);
 
         let home_card_labels = [
             TextBlob::new("Daily", &card_font).expect("text blob"),
@@ -81,6 +84,7 @@ impl RenderCache {
             icon_plus,
             icon_diamond,
             icon_tag,
+            icon_settings,
             daily_label,
             left_panel_label,
             right_panel_label,

@@ -49,6 +49,11 @@ pub const fn toolbar_btn_x(n: u32) -> f32 {
     BACK_BTN_X + BACK_BTN_SIZE + TOOLBAR_BTN_GAP + n as f32 * (TOOLBAR_BTN_SIZE + TOOLBAR_BTN_GAP)
 }
 
+/// X position of the settings (cogwheel) button on the right side of the toolbar.
+pub fn settings_btn_x(window_width: f32) -> f32 {
+    window_width - TOOLBAR_BTN_SIZE - TOOLBAR_BTN_GAP
+}
+
 // Planning page list panel
 pub const PLAN_LIST_ITEM_H: f32 = 36.0;
 pub const PLAN_LIST_PADDING: f32 = 8.0;
@@ -126,7 +131,7 @@ pub const GANTT_HEADER_H: f32 = GANTT_MONTH_ROW_H + GANTT_DAY_ROW_H;
 pub const GANTT_ROW_H: f32 = 36.0;
 pub const GANTT_ROW_PADDING: f32 = 5.0;
 pub const GANTT_BAR_CORNER: f32 = 4.0;
-pub const GANTT_DAY_LINE_W: f32 = 2.0;
+pub const GANTT_DAY_LINE_W: f32 = 3.0;
 pub const GANTT_ZOOM_DEFAULT: f32 = 40.0;
 pub const GANTT_ZOOM_MIN: f32 = 8.0;
 pub const GANTT_ZOOM_MAX: f32 = 200.0;
@@ -138,7 +143,7 @@ pub const GANTT_HEADER_BG: u32 = 0xff_f0f0f0;
 pub const GANTT_HEADER_BORDER: u32 = 0xff_d8d8d8;
 pub const GANTT_HEADER_FG: u32 = 0xff_555555;
 pub const GANTT_HEADER_MONTH_FG: u32 = 0xff_333333;
-pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_e8e8e8;
+pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_ececec;
 pub const GANTT_TODAY_LINE_COLOR: u32 = 0x80_4a90d9;
 pub const GANTT_ROW_ALT_BG: u32 = 0xff_f4f4f4;
 
