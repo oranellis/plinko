@@ -4,6 +4,7 @@
 //! type, and [`FloatingWindowManager`] stack for layered modal dialogs.
 
 use skia_safe::{Canvas, Color, Paint, Rect};
+use winit::event::Modifiers;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::data::Plan;
@@ -67,13 +68,23 @@ pub trait FloatingWindow {
         pressed: bool,
         width: f32,
         height: f32,
+        modifiers: &Modifiers,
         plan: &Plan,
         sender: &PlanRequestSender,
         cache: &RenderCache,
     ) -> FloatingWindowOutcome;
 
     /// Default: close on Escape, ignore everything else.
-    fn on_key_input(&mut self, key: &Key, _sender: &PlanRequestSender) -> FloatingWindowOutcome {
+    #[allow(clippy::too_many_arguments)]
+    fn on_key_input(
+        &mut self,
+        key: &Key,
+        _sender: &PlanRequestSender,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
         if *key == Key::Named(NamedKey::Escape) {
             FloatingWindowOutcome::close()
         } else {
@@ -159,12 +170,13 @@ impl FloatingWindowManager {
         pressed: bool,
         w: f32,
         h: f32,
+        modifiers: &Modifiers,
         plan: &Plan,
         sender: &PlanRequestSender,
         cache: &RenderCache,
     ) -> DirtyRegion {
         let outcome = match self.stack.last_mut() {
-            Some(win) => win.on_mouse_input(x, y, pressed, w, h, plan, sender, cache),
+            Some(win) => win.on_mouse_input(x, y, pressed, w, h, modifiers, plan, sender, cache),
             None => return DirtyRegion::None,
         };
         if outcome.close {
@@ -180,9 +192,18 @@ impl FloatingWindowManager {
         }
     }
 
-    pub fn on_key_input(&mut self, key: &Key, sender: &PlanRequestSender) -> DirtyRegion {
+    #[allow(clippy::too_many_arguments)]
+    pub fn on_key_input(
+        &mut self,
+        key: &Key,
+        sender: &PlanRequestSender,
+        width: f32,
+        height: f32,
+        plan: &Plan,
+        cache: &RenderCache,
+    ) -> DirtyRegion {
         let outcome = match self.stack.last_mut() {
-            Some(w) => w.on_key_input(key, sender),
+            Some(w) => w.on_key_input(key, sender, width, height, plan, cache),
             None => return DirtyRegion::None,
         };
         if outcome.close {

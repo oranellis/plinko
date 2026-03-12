@@ -4,6 +4,7 @@ use chrono::{Datelike, NaiveDate};
 use skia_safe::{
     Canvas, ClipOp, Color, Contains, Paint, PaintStyle, PathBuilder, Point, RRect, Rect, TextBlob,
 };
+use winit::event::Modifiers;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::data::constraint::{ConstraintKind, DateConstraint};
@@ -19,10 +20,10 @@ use crate::ui::layout::{
     BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG,
     CAL_SELECTED_BG, DEP_PLAN_START_FG, DIVIDER_COLOR, ERROR_BG, GHOST_FG, ICON_DELETE_COLOR,
     INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG,
-    ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK, OVERLAY_LIGHT,
-    OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H,
-    PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR,
-    SUBTLE_BG, SUBTLE_FG, TOOLBAR_STROKE_WIDTH,
+    ITEM_FG, LABEL_FG, LINK_COLOR, LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK,
+    OVERLAY_LIGHT, OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER,
+    PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
+    SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG, TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::multi_line_input::MultiLineInput;
 use crate::ui::text_input::TextInput;
@@ -733,6 +734,11 @@ fn draw_multi_line_input(
     let line_h = metrics.descent - metrics.ascent + 2.0;
     let text_x = rect.left + 8.0;
     let text_top = rect.top + 4.0;
+    let inner_width = rect.width() - 16.0;
+    let visible_h = rect.height() - 8.0;
+
+    // Clamp scroll (never auto-scroll; that happens only in event handlers).
+    input.clamp_scroll(inner_width, &cache.font, line_h, visible_h);
     let scroll_y = input.scroll_y.get();
 
     canvas.save();
@@ -748,39 +754,93 @@ fn draw_multi_line_input(
     );
 
     let content = &input.content;
-    let raw_lines: Vec<&str> = if content.is_empty() {
-        vec![""]
+    let lines = input.visual_lines(inner_width, &cache.font);
+    let link_ranges = MultiLineInput::find_links(content);
+
+    if lines.is_empty() || (lines.len() == 1 && lines[0].text.is_empty() && content.is_empty()) {
+        if let Some(blob) = TextBlob::new("Description…", &cache.font) {
+            paint.set_color(Color::from(PLACEHOLDER_FG));
+            canvas.draw_text_blob(&blob, (text_x, text_top - metrics.ascent), &paint);
+        }
     } else {
-        content.split('\n').collect()
-    };
+        for (i, vline) in lines.iter().enumerate() {
+            let y = text_top + i as f32 * line_h - scroll_y;
+            if y + line_h < rect.top || y > rect.bottom() {
+                continue;
+            }
+            if vline.text.is_empty() {
+                continue;
+            }
 
-    for (i, line) in raw_lines.iter().enumerate() {
-        let y = text_top + i as f32 * line_h - scroll_y;
-        if y + line_h < rect.top || y > rect.bottom() {
-            continue;
-        }
-        if !line.is_empty()
-            && let Some(blob) = TextBlob::new(line, &cache.font)
-        {
-            paint.set_color(Color::from(INPUT_FG));
-            canvas.draw_text_blob(&blob, (text_x, y - metrics.ascent), &paint);
+            let line_byte_start = vline.byte_start;
+            let line_byte_end = line_byte_start + vline.text.len();
+
+            let mut spans: Vec<(usize, usize, bool)> = Vec::new();
+            let mut pos = line_byte_start;
+            for range in &link_ranges {
+                let link_start = range.start.max(line_byte_start).min(line_byte_end);
+                let link_end = range.end.max(line_byte_start).min(line_byte_end);
+                if link_start >= link_end {
+                    continue;
+                }
+                if pos < link_start {
+                    spans.push((pos, link_start, false));
+                }
+                spans.push((link_start, link_end, true));
+                pos = link_end;
+            }
+            if pos < line_byte_end {
+                spans.push((pos, line_byte_end, false));
+            }
+
+            if spans.is_empty() {
+                if let Some(blob) = TextBlob::new(vline.text, &cache.font) {
+                    paint.set_color(Color::from(INPUT_FG));
+                    canvas.draw_text_blob(&blob, (text_x, y - metrics.ascent), &paint);
+                }
+            } else {
+                let mut span_x = text_x;
+                for (s_start, s_end, is_link) in spans {
+                    let span_text = &content[s_start..s_end];
+                    if span_text.is_empty() {
+                        continue;
+                    }
+                    let span_w = cache.font.measure_str(span_text, None).0;
+                    if let Some(blob) = TextBlob::new(span_text, &cache.font) {
+                        paint.set_color(Color::from(if is_link { LINK_COLOR } else { INPUT_FG }));
+                        canvas.draw_text_blob(&blob, (span_x, y - metrics.ascent), &paint);
+                        if is_link {
+                            paint.set_style(PaintStyle::Stroke);
+                            paint.set_stroke_width(1.0);
+                            let underline_y = y - metrics.ascent + metrics.descent + 1.0;
+                            canvas.draw_line(
+                                (span_x, underline_y),
+                                (span_x + span_w, underline_y),
+                                &paint,
+                            );
+                            paint.set_style(PaintStyle::Fill);
+                        }
+                    }
+                    span_x += span_w;
+                }
+            }
         }
     }
 
-    if content.is_empty()
-        && let Some(blob) = TextBlob::new("Description…", &cache.font)
-    {
-        paint.set_color(Color::from(PLACEHOLDER_FG));
-        canvas.draw_text_blob(&blob, (text_x, text_top - metrics.ascent), &paint);
-    }
-
+    // Cursor
     if focused {
-        let cursor_pos = input.cursor.min(content.len());
-        let before_cursor = &content[..cursor_pos];
-        let lines_before: Vec<&str> = before_cursor.split('\n').collect();
-        let cursor_line_idx = lines_before.len().saturating_sub(1);
-        let cursor_col_str = lines_before.last().copied().unwrap_or("");
-        let cursor_x = text_x + cache.font.measure_str(cursor_col_str, None).0;
+        let cursor_pos = input.clamped_cursor();
+        let (cursor_line_idx, cursor_col_str) = {
+            let before = &content[..cursor_pos];
+            let idx = lines
+                .iter()
+                .rposition(|l| l.byte_start <= cursor_pos)
+                .unwrap_or(0);
+            let col_start = lines.get(idx).map(|l| l.byte_start).unwrap_or(0);
+            let col_str = before[col_start..].to_owned();
+            (idx, col_str)
+        };
+        let cursor_x = text_x + cache.font.measure_str(&cursor_col_str, None).0;
         let cursor_y_top = text_top + cursor_line_idx as f32 * line_h - scroll_y;
         let cursor_y_bot = cursor_y_top + line_h;
         paint.set_color(Color::from(INPUT_CURSOR_COLOR));
@@ -788,29 +848,15 @@ fn draw_multi_line_input(
         paint.set_stroke_width(1.5);
         canvas.draw_line((cursor_x, cursor_y_top), (cursor_x, cursor_y_bot), &paint);
         paint.set_style(PaintStyle::Fill);
-
-        // Auto-scroll to keep cursor visible.
-        // cursor_rel_y is relative to the text content area (not canvas
-        // coordinates), so it can be compared with visible_h correctly.
-        let visible_h = rect.height() - 8.0;
-        let cursor_rel_y = cursor_line_idx as f32 * line_h;
-        let new_scroll = if cursor_rel_y < scroll_y {
-            cursor_rel_y
-        } else if cursor_rel_y + line_h > scroll_y + visible_h {
-            cursor_rel_y + line_h - visible_h
-        } else {
-            scroll_y
-        };
-        input.scroll_y.set(new_scroll.max(0.0));
     }
 
     // Scrollbar
-    let total_h = raw_lines.len() as f32 * line_h + 8.0;
-    let visible_h = rect.height();
-    let max_scroll = (total_h - visible_h).max(0.0);
+    let total_h = lines.len() as f32 * line_h + 8.0;
+    let scrollbar_visible_h = rect.height();
+    let max_scroll = (total_h - scrollbar_visible_h).max(0.0);
     if max_scroll > 0.0 {
-        let thumb_h = (visible_h * visible_h / total_h).max(20.0);
-        let thumb_y = rect.top + (scroll_y / max_scroll) * (visible_h - thumb_h);
+        let thumb_h = (scrollbar_visible_h * scrollbar_visible_h / total_h).max(20.0);
+        let thumb_y = rect.top + (scroll_y / max_scroll) * (scrollbar_visible_h - thumb_h);
         paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
         canvas.draw_rrect(
             RRect::new_rect_xy(
@@ -2090,6 +2136,7 @@ impl FloatingWindow for MilestoneFormWindow {
         pressed: bool,
         width: f32,
         height: f32,
+        modifiers: &Modifiers,
         plan: &Plan,
         sender: &PlanRequestSender,
         cache: &RenderCache,
@@ -2125,9 +2172,17 @@ impl FloatingWindow for MilestoneFormWindow {
                     self.constraint_date.value = None;
                     self.close_calendar();
                 } else if cal_today_btn(cal).contains(pt) {
-                    self.constraint_date.value = Some(chrono::Local::now().date_naive());
-                    self.constraint_date_error = false;
-                    self.close_calendar();
+                    let today = chrono::Local::now().date_naive();
+                    let on_today_month = self.constraint_date.nav_year == today.year()
+                        && self.constraint_date.nav_month == today.month();
+                    if on_today_month {
+                        self.constraint_date.value = Some(today);
+                        self.constraint_date_error = false;
+                        self.close_calendar();
+                    } else {
+                        self.constraint_date.nav_year = today.year();
+                        self.constraint_date.nav_month = today.month();
+                    }
                 } else {
                     let day_1 = first_weekday_offset(
                         self.constraint_date.nav_year,
@@ -2270,9 +2325,23 @@ impl FloatingWindow for MilestoneFormWindow {
             self.set_focus(TextField::Description);
             let x_in_box = x - desc_rect.left;
             let y_in_box = pt_form.y - desc_rect.top;
-            self.description.cursor =
-                self.description
-                    .cursor_for_click(x_in_box, y_in_box, &cache.font);
+            let inner_width = desc_rect.width() - 16.0;
+            self.description.cursor = self.description.cursor_for_click(
+                x_in_box,
+                y_in_box,
+                inner_width,
+                &cache.font,
+                DESC_LINE_H,
+            );
+            // Ctrl+click: open link under cursor
+            if modifiers.state().control_key() {
+                let cursor = self.description.cursor;
+                let content = self.description.content.clone();
+                let links = MultiLineInput::find_links(&content);
+                if let Some(range) = links.iter().find(|r| r.contains(&cursor)) {
+                    MultiLineInput::open_url(&content[range.clone()]);
+                }
+            }
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
         if Self::full_input_rect(ROW_NAME, width, height).contains(pt_form) {
@@ -2336,7 +2405,15 @@ impl FloatingWindow for MilestoneFormWindow {
         FloatingWindowOutcome::default()
     }
 
-    fn on_key_input(&mut self, key: &Key, sender: &PlanRequestSender) -> FloatingWindowOutcome {
+    fn on_key_input(
+        &mut self,
+        key: &Key,
+        sender: &PlanRequestSender,
+        width: f32,
+        height: f32,
+        _plan: &Plan,
+        cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
         if self.calendar_open {
             if *key == Key::Named(NamedKey::Escape) {
                 self.close_calendar();
@@ -2432,10 +2509,17 @@ impl FloatingWindow for MilestoneFormWindow {
 
         // Description (multi-line): Enter inserts newline, not submit
         if self.focused == TextField::Description {
+            let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
+            let inner_width = desc_rect.width() - 16.0;
+            let (_, metrics) = cache.font.metrics();
+            let line_h = metrics.descent - metrics.ascent + 2.0;
+            let visible_h = DESC_H - 8.0;
             match key {
                 Key::Named(NamedKey::Escape) => return FloatingWindowOutcome::close(),
                 Key::Named(NamedKey::Enter) => {
                     self.description.insert_newline();
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::Tab) => {
@@ -2444,26 +2528,55 @@ impl FloatingWindow for MilestoneFormWindow {
                 }
                 Key::Named(NamedKey::Backspace) => {
                     self.description.backspace();
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::ArrowLeft) => {
                     self.description.move_left();
+                    self.description.x_hint = None;
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::ArrowRight) => {
                     self.description.move_right();
+                    self.description.x_hint = None;
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowUp) => {
+                    self.description.move_up(inner_width, &cache.font);
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    self.description.move_down(inner_width, &cache.font);
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::Home) => {
                     self.description.move_to_start();
+                    self.description.x_hint = None;
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::End) => {
                     self.description.move_to_end();
+                    self.description.x_hint = None;
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::Space) => {
                     self.description.insert_char(' ');
+                    self.description.x_hint = None;
+                    self.description
+                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Character(c) => {
@@ -2471,6 +2584,13 @@ impl FloatingWindow for MilestoneFormWindow {
                         for ch in c.chars() {
                             self.description.insert_char(ch);
                         }
+                        self.description.x_hint = None;
+                        self.description.scroll_to_cursor(
+                            inner_width,
+                            &cache.font,
+                            line_h,
+                            visible_h,
+                        );
                         return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                     }
                     return FloatingWindowOutcome::default();
@@ -2614,15 +2734,13 @@ impl FloatingWindow for MilestoneFormWindow {
             let total_h = line_count as f32 * DESC_LINE_H + 8.0;
             let visible_h = DESC_H;
             let max_dscroll = (total_h - visible_h).max(0.0);
-            if max_dscroll > 0.0 {
-                let cur = self.description.scroll_y.get();
-                let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll);
-                if (new_scroll - cur).abs() > f32::EPSILON {
-                    self.description.scroll_y.set(new_scroll);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                return FloatingWindowOutcome::default();
+            let cur = self.description.scroll_y.get();
+            let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll.max(cur));
+            if (new_scroll - cur).abs() > f32::EPSILON {
+                self.description.scroll_y.set(new_scroll);
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
+            return FloatingWindowOutcome::default();
         }
 
         let panel_h = Self::panel_rect(width, height).height();

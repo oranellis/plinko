@@ -1,5 +1,7 @@
 //! Floating window that shows a scrollable list of all team members.
 
+use winit::event::Modifiers;
+
 use skia_safe::{
     Canvas, ClipOp, Color, Contains, Data, Image, Matrix, Paint, PaintStyle, PathBuilder, Point,
     RRect, Rect, TextBlob,
@@ -510,6 +512,7 @@ impl FloatingWindow for UsersWindow {
         pressed: bool,
         width: f32,
         height: f32,
+        _modifiers: &Modifiers,
         plan: &Plan,
         _sender: &PlanRequestSender,
         _cache: &RenderCache,

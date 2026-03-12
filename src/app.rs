@@ -221,8 +221,16 @@ impl ApplicationHandler for Application {
                     && let AppState::InPage(_) = self.app_state
                 {
                     let sender = self.engine.sender();
+                    let plan = self.engine.plan();
                     let dirty = if self.floats.is_open() {
-                        self.floats.on_key_input(&logical_key, &sender)
+                        self.floats.on_key_input(
+                            &logical_key,
+                            &sender,
+                            width,
+                            height,
+                            plan,
+                            &self.cache,
+                        )
                     } else {
                         self.pages
                             .active_page_mut()
@@ -312,6 +320,7 @@ impl ApplicationHandler for Application {
                                         true,
                                         width,
                                         height,
+                                        &self.modifiers,
                                         plan,
                                         &sender,
                                         &self.cache,
@@ -346,6 +355,7 @@ impl ApplicationHandler for Application {
                                         false,
                                         width,
                                         height,
+                                        &self.modifiers,
                                         plan,
                                         &sender,
                                         &self.cache,

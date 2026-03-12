@@ -6,6 +6,7 @@
 use skia_safe::{
     Canvas, ClipOp, Color, Contains, Paint, PaintStyle, PathBuilder, Point, RRect, Rect, TextBlob,
 };
+use winit::event::Modifiers;
 use winit::keyboard::{Key, NamedKey};
 
 use rfd;
@@ -899,6 +900,7 @@ impl FloatingWindow for UserFormWindow {
         pressed: bool,
         width: f32,
         height: f32,
+        _modifiers: &Modifiers,
         plan: &Plan,
         sender: &PlanRequestSender,
         cache: &RenderCache,
@@ -975,7 +977,15 @@ impl FloatingWindow for UserFormWindow {
         FloatingWindowOutcome::default()
     }
 
-    fn on_key_input(&mut self, key: &Key, sender: &PlanRequestSender) -> FloatingWindowOutcome {
+    fn on_key_input(
+        &mut self,
+        key: &Key,
+        sender: &PlanRequestSender,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
         match key {
             Key::Named(NamedKey::Escape) if self.dropdown_open => {
                 self.close_dropdown();
