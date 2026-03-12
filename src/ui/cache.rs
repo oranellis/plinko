@@ -4,7 +4,7 @@ use skia_safe::{Font, FontMgr, FontStyle, Path, TextBlob};
 
 use super::icons::{
     build_icon_daily, build_icon_diamond, build_icon_person, build_icon_planning, build_icon_plus,
-    build_icon_settings, build_icon_tag,
+    build_icon_settings, build_icon_tag, build_icon_today,
 };
 use super::layout::HOME_CARD_ICON_SIZE;
 
@@ -26,6 +26,8 @@ pub struct RenderCache {
     pub icon_tag: Path,
     /// Settings (cogwheel/sliders) icon.
     pub icon_settings: Path,
+    /// "Go to today" icon.
+    pub icon_today: Path,
     pub daily_label: TextBlob,
     pub left_panel_label: TextBlob,
     pub right_panel_label: TextBlob,
@@ -63,6 +65,7 @@ impl RenderCache {
         let icon_diamond = build_icon_diamond(32.0, 32.0);
         let icon_tag = build_icon_tag(32.0, 32.0);
         let icon_settings = build_icon_settings(32.0, 32.0);
+        let icon_today = build_icon_today(32.0, 32.0);
 
         let home_card_labels = [
             TextBlob::new("Daily", &card_font).expect("text blob"),
@@ -85,6 +88,7 @@ impl RenderCache {
             icon_diamond,
             icon_tag,
             icon_settings,
+            icon_today,
             daily_label,
             left_panel_label,
             right_panel_label,

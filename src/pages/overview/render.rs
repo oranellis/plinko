@@ -74,12 +74,13 @@ pub fn draw_overview(
 // ── Toolbar buttons ────────────────────────────────────────────────────────────
 
 fn draw_toolbar_buttons(canvas: &Canvas, state: &OverviewState, cache: &RenderCache, width: f32) {
+    // Left-side buttons: today (0), add-task (1), add-milestone (2)
     icon_button::draw_icon_button(
         canvas,
         toolbar_btn_x(0),
         TOOLBAR_BTN_Y,
         state.toolbar_btn_hovered == Some(0),
-        &cache.icon_person,
+        &cache.icon_today,
     );
     icon_button::draw_icon_button(
         canvas,
@@ -95,11 +96,19 @@ fn draw_toolbar_buttons(canvas: &Canvas, state: &OverviewState, cache: &RenderCa
         state.toolbar_btn_hovered == Some(2),
         &cache.icon_diamond,
     );
+    // Right-side buttons: person (3), settings (4)
+    icon_button::draw_icon_button(
+        canvas,
+        person_right_btn_x(width),
+        TOOLBAR_BTN_Y,
+        state.toolbar_btn_hovered == Some(3),
+        &cache.icon_person,
+    );
     icon_button::draw_icon_button(
         canvas,
         settings_btn_x(width),
         TOOLBAR_BTN_Y,
-        state.toolbar_btn_hovered == Some(3),
+        state.toolbar_btn_hovered == Some(4),
         &cache.icon_settings,
     );
 }
@@ -110,8 +119,11 @@ pub fn hit_test_toolbar_buttons(px: f32, py: f32, width: f32) -> Option<usize> {
             return Some(i as usize);
         }
     }
-    if icon_button::hit_test_icon_button(px, py, settings_btn_x(width), TOOLBAR_BTN_Y) {
+    if icon_button::hit_test_icon_button(px, py, person_right_btn_x(width), TOOLBAR_BTN_Y) {
         return Some(3);
+    }
+    if icon_button::hit_test_icon_button(px, py, settings_btn_x(width), TOOLBAR_BTN_Y) {
+        return Some(4);
     }
     None
 }
@@ -408,6 +420,40 @@ fn draw_gantt_rows(
                     }
                 }
             }
+        }
+    }
+
+    // ── Plan-start marker ──────────────────────────────────────────────────────
+    // Draw a fixed teal diamond at plan.start_date across all rows (always visible).
+    {
+        let cx = date_to_x(plan.start_date, view_start, zoom, scroll_x) + zoom / 2.0;
+        let cy = rows_top + GANTT_ROW_H / 2.0; // first row vertical centre
+        let half = GANTT_MS_HALF * 1.1; // slightly larger for emphasis
+
+        let mut pb = PathBuilder::new();
+        pb.move_to((cx, cy - half));
+        pb.line_to((cx + half, cy));
+        pb.line_to((cx, cy + half));
+        pb.line_to((cx - half, cy));
+        pb.close();
+        let ps_path = pb.detach();
+
+        paint.set_color(Color::from(GANTT_PLAN_START_COLOR));
+        paint.set_style(PaintStyle::Fill);
+        canvas.draw_path(&ps_path, &paint);
+
+        paint.set_color(Color::from(darken(GANTT_PLAN_START_COLOR)));
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_width(1.5);
+        canvas.draw_path(&ps_path, &paint);
+        paint.set_style(PaintStyle::Fill);
+
+        paint.set_color(Color::from(GANTT_PLAN_START_COLOR));
+        let label = "Plan Start";
+        let tw = cache.font.measure_str(label, None).0;
+        let name_y = cy + half + 2.0 - metrics.ascent;
+        if let Some(blob) = TextBlob::new(label, &cache.font) {
+            canvas.draw_text_blob(&blob, (cx - tw / 2.0, name_y), &paint);
         }
     }
 

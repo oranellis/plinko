@@ -151,6 +151,23 @@ pub fn build_icon_tag(w: f32, h: f32) -> Path {
     path.with_transform(&m)
 }
 
+/// Builds a "go to today" icon: a vertical bar (today marker) with a small
+/// filled circle on it, like a play-head or position indicator.
+pub fn build_icon_today(w: f32, h: f32) -> Path {
+    let mut pb = PathBuilder::new();
+    // Vertical line centred horizontally
+    let cx = w * 0.5;
+    pb.move_to((cx, 0.0));
+    pb.line_to((cx, h));
+    // Small filled arrowhead pointing left at mid height
+    let ay = h * 0.5;
+    pb.move_to((cx, ay));
+    pb.line_to((cx - w * 0.32, ay - h * 0.22));
+    pb.line_to((cx - w * 0.32, ay + h * 0.22));
+    pb.close();
+    pb.detach()
+}
+
 /// Builds a three-line slider icon (horizontal rules with circular knobs)
 /// representing settings / configuration.
 pub fn build_icon_settings(w: f32, h: f32) -> Path {

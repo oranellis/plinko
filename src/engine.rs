@@ -349,39 +349,53 @@ impl PlanEngine {
 
     /// Drain all pending requests, process each one, and return the responses
     /// in order. Call this once per event cycle before rendering.
+    ///
+    /// After every successful mutation the scheduler is re-run so the Gantt
+    /// chart always reflects the latest computed dates.
     pub fn process_pending(&mut self) -> Vec<PlanResponse> {
         let mut responses = Vec::new();
         while let Ok(request) = self.rx.try_recv() {
-            responses.push(self.process(request));
+            let response = self.process(request);
+            // If the mutation succeeded but the scheduler wasn't already run
+            // inside `process` (e.g. task lifecycle ops), run it now.
+            if matches!(response, PlanResponse::PlanUpdated) && self.plan.allocation.is_none() {
+                let _ = self.plan.compute_time_optimised_plan();
+            }
+            responses.push(response);
         }
         responses
     }
 
     // ── Validation helper ─────────────────────────────────────────────────────
 
-    /// Apply a mutation `f` to the plan, then validate by re-running the
-    /// scheduler if an allocation was present before the mutation.
+    /// Apply a mutation `f` to the plan, then re-run the scheduler.
     ///
-    /// If the scheduler fails after the mutation, the pre-mutation plan is
-    /// fully restored and [`PlanError::Scheduler`] is returned.
+    /// If there was an existing allocation and the scheduler fails after the
+    /// mutation, the pre-mutation plan is restored and an error is returned.
+    /// If there was no existing allocation, the mutation is kept regardless of
+    /// scheduler outcome (so newly added tasks are visible on the Gantt).
     fn apply_validated<F>(&mut self, f: F) -> PlanResponse
     where
         F: FnOnce(&mut Plan) -> Result<(), PlanError>,
     {
-        // Snapshot the plan only when there is an existing allocation to protect.
+        // Only back up when there is an existing allocation to protect.
         let backup = self.plan.allocation.is_some().then(|| self.plan.clone());
 
         match f(&mut self.plan) {
             Err(e) => PlanResponse::Error(e),
-            Ok(()) => match backup {
-                None => PlanResponse::PlanUpdated,
-                Some(backup_plan) => match self.plan.compute_time_optimised_plan() {
-                    Ok(()) => PlanResponse::PlanUpdated,
-                    Err(e) => {
+            Ok(()) => match self.plan.compute_time_optimised_plan() {
+                Ok(()) => PlanResponse::PlanUpdated,
+                Err(e) => {
+                    if let Some(backup_plan) = backup {
+                        // Had a good schedule before; restore it to keep plan consistent.
                         self.plan = backup_plan;
                         PlanResponse::Error(PlanError::Scheduler(e))
+                    } else {
+                        // No prior schedule to protect; keep the mutation but log failure.
+                        eprintln!("scheduler warning after mutation: {e:?}");
+                        PlanResponse::PlanUpdated
                     }
-                },
+                }
             },
         }
     }
@@ -440,6 +454,7 @@ impl PlanEngine {
             // ── Task CRUD ─────────────────────────────────────────────────────
             PlanRequest::CreateTask(task) => {
                 self.plan.add_task(task);
+                let _ = self.plan.compute_time_optimised_plan();
                 PlanResponse::PlanUpdated
             }
 
@@ -459,6 +474,7 @@ impl PlanEngine {
             // ── Milestone CRUD ────────────────────────────────────────────────
             PlanRequest::CreateMilestone(milestone) => {
                 self.plan.add_milestone(milestone);
+                let _ = self.plan.compute_time_optimised_plan();
                 PlanResponse::PlanUpdated
             }
 

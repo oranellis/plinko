@@ -13,7 +13,8 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::FloatingWindow;
 use crate::ui::layout::{
-    GANTT_ROW_H, GANTT_ZOOM_MAX, GANTT_ZOOM_MIN, TOOLBAR_BTN_SIZE, TOOLBAR_BTN_Y,
+    GANTT_HEADER_H, GANTT_ROW_H, GANTT_ZOOM_DEFAULT, GANTT_ZOOM_MAX, GANTT_ZOOM_MIN,
+    TOOLBAR_BTN_SIZE, TOOLBAR_BTN_Y,
 };
 use crate::ui::milestone_form_window::MilestoneFormWindow;
 use crate::ui::task_form_window::TaskFormWindow;
@@ -77,7 +78,8 @@ impl Page for OverviewPage {
 
             let rows = gantt::pack_rows(plan);
             let max_y = Self::max_scroll_y(rows.len(), height);
-            self.state.scroll_x = (self.state.scroll_x + dx).max(0.0);
+            // No .max(0.0) — allow panning left indefinitely
+            self.state.scroll_x += dx;
             self.state.scroll_y = (self.state.scroll_y + dy).clamp(0.0, max_y);
 
             let alpha = 0.4_f32;
@@ -120,10 +122,23 @@ impl Page for OverviewPage {
                 self.state.vel_y = 0.0;
             } else {
                 match render::hit_test_toolbar_buttons(x, y, width) {
-                    Some(0) => self.state.open_users_window = true,
+                    Some(0) => {
+                        // Today button: centre the Gantt view on today's date
+                        use chrono::Local;
+                        use gantt::compute_date_range;
+                        let today = Local::now().date_naive();
+                        let view_start = compute_date_range(plan)
+                            .map(|(s, _)| s)
+                            .unwrap_or(plan.start_date);
+                        let days = (today - view_start).num_days();
+                        self.state.scroll_x = days as f32 * self.state.zoom - (width * 0.5);
+                        self.state.vel_x = 0.0;
+                        self.state.vel_y = 0.0;
+                    }
                     Some(1) => self.state.open_task_form = true,
                     Some(2) => self.state.open_milestone_form = true,
-                    Some(3) => {
+                    Some(3) => self.state.open_users_window = true,
+                    Some(4) => {
                         self.state.settings_init_name = plan.name.clone();
                         self.state.settings_init_date = plan.start_date.to_string();
                         self.state.settings_init_scheduler_target = plan.scheduler_target;
@@ -213,7 +228,7 @@ impl Page for OverviewPage {
         }
 
         if self.state.vel_x.abs() > 0.1 {
-            self.state.scroll_x = (self.state.scroll_x + self.state.vel_x).max(0.0);
+            self.state.scroll_x += self.state.vel_x; // no left clamp — allow infinite left pan
             self.state.vel_x *= friction;
             dirty = true;
         }

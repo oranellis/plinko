@@ -54,6 +54,11 @@ pub fn settings_btn_x(window_width: f32) -> f32 {
     window_width - TOOLBAR_BTN_SIZE - TOOLBAR_BTN_GAP
 }
 
+/// X position of the person button when placed to the left of settings.
+pub fn person_right_btn_x(window_width: f32) -> f32 {
+    window_width - 2.0 * (TOOLBAR_BTN_SIZE + TOOLBAR_BTN_GAP)
+}
+
 // Planning page list panel
 pub const PLAN_LIST_ITEM_H: f32 = 36.0;
 pub const PLAN_LIST_PADDING: f32 = 8.0;
@@ -163,6 +168,8 @@ pub const GANTT_TASK_LABEL_LIGHT: u32 = 0xff_ffffff; // on dark bars
 pub const GANTT_MS_NOT_STARTED: u32 = 0xff_bdbdbd;
 pub const GANTT_MS_IN_PROGRESS: u32 = 0xff_f5a623;
 pub const GANTT_MS_COMPLETE: u32 = 0xff_66bb6a;
+/// Teal colour used for the Plan Start fixed marker on the Gantt chart.
+pub const GANTT_PLAN_START_COLOR: u32 = DEP_PLAN_START_FG;
 
 // Dependency line color
 pub const GANTT_DEP_LINE_COLOR: u32 = 0x80_888888;
