@@ -7,7 +7,7 @@ use skia_safe::{
 use winit::keyboard::{Key, NamedKey};
 
 use crate::data::constraint::{ConstraintKind, DateConstraint};
-use crate::data::ids::UserId;
+use crate::data::ids::{TagId, UserId};
 use crate::data::task::{Task, TaskStatus, WorkerSlot};
 use crate::data::{Plan, TaskId};
 use crate::engine::{PlanRequest, PlanRequestSender, TaskPatch};
@@ -22,6 +22,7 @@ use crate::ui::layout::{
     PLAN_INPUT_H, PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
+use std::collections::HashSet;
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ const WORKER_INPUT_H: f32 = 28.0;
 const WORKER_WORKLOAD_W: f32 = 64.0;
 const WORKER_REMOVE_SIZE: f32 = 22.0;
 const WORKER_COL_GAP: f32 = 8.0;
+const SLOT_TYPE_W: f32 = 50.0;
 const MAX_VISIBLE_WORKERS: usize = 3;
 const PLUS_BTN_H: f32 = 28.0;
 const WORKER_SECTION_H: f32 = LABEL_H + PLAN_LABEL_GAP + WORKER_ROW_H * 3.0 + PLUS_BTN_H;
@@ -61,7 +63,7 @@ const USER_DROPDOWN_H: f32 =
 
 // Calendar popup
 const CAL_PAD: f32 = 8.0;
-const CAL_CELL: f32 = 28.0;
+const CAL_CELL: f32 = 32.0;
 const CAL_W: f32 = CAL_CELL * 7.0 + CAL_PAD * 2.0;
 const CAL_HEADER_H: f32 = 28.0;
 const CAL_DOW_H: f32 = 20.0;
@@ -146,8 +148,10 @@ struct CalendarPicker {
     nav_year: i32,
     nav_month: u32,
     hovered_day: Option<u32>,
-    hovered_prev: bool,
-    hovered_next: bool,
+    hovered_prev_year: bool,
+    hovered_prev_month: bool,
+    hovered_next_month: bool,
+    hovered_next_year: bool,
     hovered_clear: bool,
     hovered_trigger: bool,
 }
@@ -160,8 +164,10 @@ impl CalendarPicker {
             nav_year: base.year(),
             nav_month: base.month(),
             hovered_day: None,
-            hovered_prev: false,
-            hovered_next: false,
+            hovered_prev_year: false,
+            hovered_prev_month: false,
+            hovered_next_month: false,
+            hovered_next_year: false,
             hovered_clear: false,
             hovered_trigger: false,
         }
@@ -185,10 +191,20 @@ impl CalendarPicker {
         }
     }
 
+    fn prev_year(&mut self) {
+        self.nav_year -= 1;
+    }
+
+    fn next_year(&mut self) {
+        self.nav_year += 1;
+    }
+
     fn reset_hover(&mut self) {
         self.hovered_day = None;
-        self.hovered_prev = false;
-        self.hovered_next = false;
+        self.hovered_prev_year = false;
+        self.hovered_prev_month = false;
+        self.hovered_next_month = false;
+        self.hovered_next_year = false;
         self.hovered_clear = false;
         self.hovered_trigger = false;
     }
@@ -220,10 +236,20 @@ fn first_weekday_offset(year: i32, month: u32) -> u32 {
 
 // ── WorkerSlotEdit ────────────────────────────────────────────────────────────
 
+#[derive(Clone, Copy, PartialEq)]
+enum SlotType {
+    Specific,
+    Placeholder,
+}
+
 struct WorkerSlotEdit {
+    slot_type: SlotType,
     user_id: Option<UserId>,
     user_filter: TextInput,
+    required_tags: HashSet<TagId>,
+    tag_filter: TextInput,
     workload: TextInput,
+    hovered_type: Option<usize>,
     hovered_user_btn: bool,
     hovered_remove: bool,
 }
@@ -231,9 +257,13 @@ struct WorkerSlotEdit {
 impl WorkerSlotEdit {
     fn new() -> Self {
         Self {
+            slot_type: SlotType::Specific,
             user_id: None,
             user_filter: TextInput::new(""),
+            required_tags: HashSet::new(),
+            tag_filter: TextInput::new(""),
             workload: TextInput::new("1"),
+            hovered_type: None,
             hovered_user_btn: false,
             hovered_remove: false,
         }
@@ -245,16 +275,27 @@ impl WorkerSlotEdit {
                 user_id,
                 workload_days,
             } => Self {
+                slot_type: SlotType::Specific,
                 user_id: Some(*user_id),
                 user_filter: TextInput::new(""),
+                required_tags: HashSet::new(),
+                tag_filter: TextInput::new(""),
                 workload: TextInput::new(format_days(*workload_days)),
+                hovered_type: None,
                 hovered_user_btn: false,
                 hovered_remove: false,
             },
-            WorkerSlot::Placeholder { workload_days, .. } => Self {
+            WorkerSlot::Placeholder {
+                required_tags,
+                workload_days,
+            } => Self {
+                slot_type: SlotType::Placeholder,
                 user_id: None,
                 user_filter: TextInput::new(""),
+                required_tags: required_tags.clone(),
+                tag_filter: TextInput::new(""),
                 workload: TextInput::new(format_days(*workload_days)),
+                hovered_type: None,
                 hovered_user_btn: false,
                 hovered_remove: false,
             },
@@ -262,11 +303,13 @@ impl WorkerSlotEdit {
     }
 
     fn is_complete(&self) -> bool {
-        self.user_id.is_some()
+        match self.slot_type {
+            SlotType::Specific => self.user_id.is_some(),
+            SlotType::Placeholder => true,
+        }
     }
 
     fn to_worker_slot(&self) -> Option<WorkerSlot> {
-        let uid = self.user_id?;
         let days: f32 = self
             .workload
             .content
@@ -274,10 +317,19 @@ impl WorkerSlotEdit {
             .parse::<f32>()
             .unwrap_or(1.0)
             .max(0.0);
-        Some(WorkerSlot::Specific {
-            user_id: uid,
-            workload_days: days,
-        })
+        match self.slot_type {
+            SlotType::Specific => {
+                let uid = self.user_id?;
+                Some(WorkerSlot::Specific {
+                    user_id: uid,
+                    workload_days: days,
+                })
+            }
+            SlotType::Placeholder => Some(WorkerSlot::Placeholder {
+                required_tags: self.required_tags.clone(),
+                workload_days: days,
+            }),
+        }
     }
 
     fn filtered_users<'a>(&self, plan: &'a Plan) -> Vec<(&'a UserId, &'a crate::data::User)> {
@@ -287,6 +339,14 @@ impl WorkerSlotEdit {
             .filter(|(_, u)| filter.is_empty() || u.name.to_lowercase().contains(filter.as_str()))
             .collect::<Vec<_>>()
             .tap_sort_by(|(_, a), (_, b)| a.name.cmp(&b.name))
+    }
+
+    fn filtered_tags<'a>(&self, plan: &'a Plan) -> Vec<&'a crate::data::plan::Tag> {
+        let filter = self.tag_filter.content.to_lowercase();
+        plan.tags
+            .iter()
+            .filter(|t| filter.is_empty() || t.name.to_lowercase().contains(filter.as_str()))
+            .collect()
     }
 }
 
@@ -344,6 +404,8 @@ pub struct TaskFormWindow {
     // Buttons
     hovered_back: bool,
     hovered_save: bool,
+    // Scroll
+    form_scroll_y: f32,
 }
 
 impl TaskFormWindow {
@@ -374,6 +436,7 @@ impl TaskFormWindow {
             worker_error: false,
             hovered_back: false,
             hovered_save: false,
+            form_scroll_y: 0.0,
         }
     }
 
@@ -411,6 +474,7 @@ impl TaskFormWindow {
             worker_error: false,
             hovered_back: false,
             hovered_save: false,
+            form_scroll_y: 0.0,
         }
     }
 
@@ -439,11 +503,16 @@ impl TaskFormWindow {
         )
     }
 
+    fn effective_scroll(&self, width: f32, height: f32) -> f32 {
+        let panel_h = Self::panel_rect(width, height).height();
+        self.form_scroll_y.min((PANEL_H - panel_h).max(0.0))
+    }
+
     fn save_btn_rect(width: f32, height: f32) -> Rect {
         let p = Self::panel_rect(width, height);
         Rect::from_xywh(
             p.right - PLAN_FORM_PADDING - SAVE_BTN_W,
-            p.bottom - PLAN_FORM_PADDING - PLAN_BTN_H,
+            p.top + PANEL_H - PLAN_FORM_PADDING - PLAN_BTN_H,
             SAVE_BTN_W,
             PLAN_BTN_H,
         )
@@ -520,12 +589,23 @@ impl TaskFormWindow {
         Rect::from_xywh(list.left, list.bottom, list.width(), PLUS_BTN_H)
     }
 
+    fn slot_type_rect(list: Rect, vis_idx: usize) -> Rect {
+        let row_y = list.top + vis_idx as f32 * WORKER_ROW_H;
+        let vy = row_y + (WORKER_ROW_H - WORKER_INPUT_H) / 2.0;
+        Rect::from_xywh(list.left, vy, SLOT_TYPE_W, WORKER_INPUT_H)
+    }
+
     /// Rect of the user selector button for a visible slot (vis_idx = 0..MAX_VISIBLE_WORKERS).
     fn slot_user_rect(list: Rect, vis_idx: usize) -> Rect {
         let row_y = list.top + vis_idx as f32 * WORKER_ROW_H;
-        let x = list.left;
-        let w =
-            list.width() - WORKER_COL_GAP - WORKER_WORKLOAD_W - WORKER_COL_GAP - WORKER_REMOVE_SIZE;
+        let x = list.left + SLOT_TYPE_W + WORKER_COL_GAP;
+        let w = list.width()
+            - SLOT_TYPE_W
+            - WORKER_COL_GAP
+            - WORKER_COL_GAP
+            - WORKER_WORKLOAD_W
+            - WORKER_COL_GAP
+            - WORKER_REMOVE_SIZE;
         let vy = row_y + (WORKER_ROW_H - WORKER_INPUT_H) / 2.0;
         Rect::from_xywh(x, vy, w, WORKER_INPUT_H)
     }
@@ -603,7 +683,7 @@ impl TaskFormWindow {
         }
     }
 
-    fn cal_prev_btn(cal: Rect) -> Rect {
+    fn cal_prev_year_btn(cal: Rect) -> Rect {
         Rect::from_xywh(
             cal.left + CAL_PAD,
             cal.top + CAL_PAD,
@@ -612,7 +692,25 @@ impl TaskFormWindow {
         )
     }
 
-    fn cal_next_btn(cal: Rect) -> Rect {
+    fn cal_prev_month_btn(cal: Rect) -> Rect {
+        Rect::from_xywh(
+            cal.left + CAL_PAD + CAL_HEADER_H + 2.0,
+            cal.top + CAL_PAD,
+            CAL_HEADER_H,
+            CAL_HEADER_H,
+        )
+    }
+
+    fn cal_next_month_btn(cal: Rect) -> Rect {
+        Rect::from_xywh(
+            cal.right - CAL_PAD - 2.0 * CAL_HEADER_H - 2.0,
+            cal.top + CAL_PAD,
+            CAL_HEADER_H,
+            CAL_HEADER_H,
+        )
+    }
+
+    fn cal_next_year_btn(cal: Rect) -> Rect {
         Rect::from_xywh(
             cal.right - CAL_PAD - CAL_HEADER_H,
             cal.top + CAL_PAD,
@@ -816,6 +914,32 @@ fn draw_text_input(
         rect.width() - 2.0 * h_pad,
         rect.height() - 4.0,
     );
+
+    // Compute cursor pixel position (needed for scroll even when not focused).
+    let cursor_pos = input.cursor.min(input.content.len());
+    let cursor_x_px = if cursor_pos == 0 {
+        0.0f32
+    } else {
+        cache.font.measure_str(&input.content[..cursor_pos], None).0
+    };
+
+    // Keep cursor visible: update scroll_x so cursor stays inside inner rect.
+    let scroll_x = if focused {
+        let inner_w = inner.width();
+        let prev = input.scroll_x.get();
+        let next = if cursor_x_px < prev {
+            cursor_x_px
+        } else if cursor_x_px > prev + inner_w {
+            cursor_x_px - inner_w + 8.0
+        } else {
+            prev
+        };
+        input.scroll_x.set(next);
+        next
+    } else {
+        0.0
+    };
+
     canvas.save();
     canvas.clip_rect(inner, ClipOp::Intersect, false);
     let (_, metrics) = cache.font.metrics();
@@ -825,20 +949,13 @@ fn draw_text_input(
         && let Some(blob) = TextBlob::new(&input.content, &cache.font)
     {
         paint.set_color(Color::from(INPUT_FG));
-        canvas.draw_text_blob(&blob, (inner.left, text_y), &paint);
+        canvas.draw_text_blob(&blob, (inner.left - scroll_x, text_y), &paint);
     }
     if focused {
-        let cursor_pos = input.cursor.min(input.content.len());
-        let cursor_x = if cursor_pos == 0 {
-            0.0
-        } else {
-            let (adv, _) = cache.font.measure_str(&input.content[..cursor_pos], None);
-            adv
-        };
         paint.set_color(Color::from(INPUT_CURSOR_COLOR));
         canvas.draw_rect(
             Rect::from_xywh(
-                inner.left + cursor_x,
+                inner.left + cursor_x_px - scroll_x,
                 rect.top + 5.0,
                 1.5,
                 rect.height() - 10.0,
@@ -854,15 +971,22 @@ fn draw_date_btn(
     rect: Rect,
     picker: &CalendarPicker,
     is_open: bool,
+    disabled: bool,
     cache: &RenderCache,
 ) {
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
     let rrect = RRect::new_rect_xy(rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
-    paint.set_color(Color::from(INPUT_BG));
+    paint.set_color(if disabled {
+        Color::from(0xff_f5f5f5_u32)
+    } else {
+        Color::from(INPUT_BG)
+    });
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(rrect, &paint);
-    paint.set_color(if is_open {
+    paint.set_color(if disabled {
+        Color::from(0xff_e0e0e0_u32)
+    } else if is_open {
         Color::from(INPUT_BORDER_FOCUS)
     } else if picker.hovered_trigger {
         Color::from(0xff_aaaaaa_u32)
@@ -878,7 +1002,9 @@ fn draw_date_btn(
     if let Some(blob) = TextBlob::new(&text, &cache.font) {
         let (_, m) = cache.font.metrics();
         let ty = rect.top + (rect.height() - (m.descent - m.ascent)) / 2.0 - m.ascent;
-        paint.set_color(if picker.value.is_some() {
+        paint.set_color(if disabled {
+            Color::from(0xff_cccccc_u32)
+        } else if picker.value.is_some() {
             Color::from(INPUT_FG)
         } else {
             Color::from(0xff_aaaaaa_u32)
@@ -890,7 +1016,11 @@ fn draw_date_btn(
     let icon_cx = rect.right - 16.0;
     let icon_cy = rect.top + rect.height() / 2.0;
     let hs = 5.0;
-    paint.set_color(Color::from(0xff_999999_u32));
+    paint.set_color(if disabled {
+        Color::from(0xff_cccccc_u32)
+    } else {
+        Color::from(0xff_999999_u32)
+    });
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.2);
     canvas.draw_rect(
@@ -1007,13 +1137,31 @@ fn draw_calendar_popup(
     let (_, sm) = cache.small_font.metrics();
     let sm_h = sm.descent - sm.ascent;
 
-    let prev_btn = TaskFormWindow::cal_prev_btn(cal);
-    let next_btn = TaskFormWindow::cal_next_btn(cal);
+    // 4 nav buttons: «prev_year  ‹prev_month  next_month›  next_year»
+    let nav_btns = [
+        (
+            TaskFormWindow::cal_prev_year_btn(cal),
+            picker.hovered_prev_year,
+            -2i32,
+        ),
+        (
+            TaskFormWindow::cal_prev_month_btn(cal),
+            picker.hovered_prev_month,
+            -1,
+        ),
+        (
+            TaskFormWindow::cal_next_month_btn(cal),
+            picker.hovered_next_month,
+            1,
+        ),
+        (
+            TaskFormWindow::cal_next_year_btn(cal),
+            picker.hovered_next_year,
+            2,
+        ),
+    ];
 
-    for (btn, hov, dir) in [
-        (prev_btn, picker.hovered_prev, -1i32),
-        (next_btn, picker.hovered_next, 1),
-    ] {
+    for (btn, hov, dir) in nav_btns {
         let bg = if hov {
             0xff_e0e0e0_u32
         } else {
@@ -1026,21 +1174,34 @@ fn draw_calendar_popup(
         );
         let cx = btn.left + btn.width() / 2.0;
         let cy = btn.top + btn.height() / 2.0;
-        let s = 5.0;
-        let mut pb = PathBuilder::new();
-        if dir < 0 {
-            pb.move_to((cx + s * 0.4, cy - s));
-            pb.line_to((cx - s * 0.4, cy));
-            pb.line_to((cx + s * 0.4, cy + s));
-        } else {
-            pb.move_to((cx - s * 0.4, cy - s));
-            pb.line_to((cx + s * 0.4, cy));
-            pb.line_to((cx - s * 0.4, cy + s));
-        }
+        // Single chevron (month) or double chevron (year)
+        let double = dir.abs() == 2;
+        let s = 4.0;
+        let offset = if double { 2.5 } else { 0.0 };
         paint.set_color(Color::from(ITEM_FG));
         paint.set_style(PaintStyle::Stroke);
         paint.set_stroke_width(1.5);
-        canvas.draw_path(&pb.detach(), &paint);
+        let double_shifts = [-offset, offset];
+        let single_shift = [0.0f32];
+        let shifts: &[f32] = if double {
+            &double_shifts
+        } else {
+            &single_shift
+        };
+        for shift in shifts {
+            let ox = if dir < 0 { *shift } else { -*shift };
+            let mut pb = PathBuilder::new();
+            if dir < 0 {
+                pb.move_to((cx + ox + s * 0.45, cy - s));
+                pb.line_to((cx + ox - s * 0.45, cy));
+                pb.line_to((cx + ox + s * 0.45, cy + s));
+            } else {
+                pb.move_to((cx + ox - s * 0.45, cy - s));
+                pb.line_to((cx + ox + s * 0.45, cy));
+                pb.line_to((cx + ox - s * 0.45, cy + s));
+            }
+            canvas.draw_path(&pb.detach(), &paint);
+        }
         paint.set_style(PaintStyle::Fill);
     }
 
@@ -1066,7 +1227,8 @@ fn draw_calendar_popup(
     if let Some(blob) = TextBlob::new(&month_str, &cache.small_font) {
         let (adv, _) = cache.small_font.measure_str(&month_str, None);
         let tx = cal.left + (cal.width() - adv) / 2.0;
-        let ty = prev_btn.top + (prev_btn.height() - sm_h) / 2.0 - sm.ascent;
+        let ty =
+            TaskFormWindow::cal_prev_year_btn(cal).top + (CAL_HEADER_H - sm_h) / 2.0 - sm.ascent;
         paint.set_color(Color::from(ITEM_FG));
         canvas.draw_text_blob(&blob, (tx, ty), &paint);
     }
@@ -1165,6 +1327,7 @@ fn draw_worker_row(
     plan: &Plan,
     cache: &RenderCache,
 ) {
+    let type_rect = TaskFormWindow::slot_type_rect(list, vis_idx);
     let user_rect = TaskFormWindow::slot_user_rect(list, vis_idx);
     let wl_rect = TaskFormWindow::slot_workload_rect(list, vis_idx);
     let rm_rect = TaskFormWindow::slot_remove_rect(list, vis_idx);
@@ -1185,7 +1348,52 @@ fn draw_worker_row(
         );
     }
 
-    // User selector button
+    // Type toggle: two small pills "P" | "T"
+    {
+        let half_w = type_rect.width() / 2.0;
+        let labels = ["P", "T"];
+        let sel_idx = match slot.slot_type {
+            SlotType::Specific => 0usize,
+            SlotType::Placeholder => 1,
+        };
+        for (i, lbl) in labels.iter().enumerate() {
+            let rx = type_rect.left + i as f32 * half_w;
+            let pill = Rect::from_xywh(rx, type_rect.top, half_w, type_rect.height());
+            let selected = i == sel_idx;
+            let hov = slot.hovered_type == Some(i);
+            let bg = if selected {
+                BTN_PRIMARY_BG
+            } else if hov {
+                0xff_e0e0e0_u32
+            } else {
+                0xff_f5f5f5_u32
+            };
+            paint.set_color(Color::from(bg));
+            paint.set_style(PaintStyle::Fill);
+            canvas.draw_rrect(
+                RRect::new_rect_xy(pill, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                &paint,
+            );
+            if let Some(blob) = TextBlob::new(lbl, &cache.small_font) {
+                let (adv, _) = cache.small_font.measure_str(lbl, None);
+                let (_, sm) = cache.small_font.metrics();
+                let ty = pill.top + (pill.height() - (sm.descent - sm.ascent)) / 2.0 - sm.ascent;
+                paint.set_color(Color::from(if selected { BTN_PRIMARY_FG } else { ITEM_FG }));
+                canvas.draw_text_blob(&blob, (pill.left + (half_w - adv) / 2.0, ty), &paint);
+            }
+        }
+        // Border around whole toggle
+        paint.set_color(Color::from(INPUT_BORDER));
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_width(1.0);
+        canvas.draw_rrect(
+            RRect::new_rect_xy(type_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+            &paint,
+        );
+        paint.set_style(PaintStyle::Fill);
+    }
+
+    // User/tag selector button
     let rrect = RRect::new_rect_xy(user_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
     paint.set_color(Color::from(INPUT_BG));
     paint.set_style(PaintStyle::Fill);
@@ -1202,17 +1410,34 @@ fn draw_worker_row(
     canvas.draw_rrect(rrect, &paint);
     paint.set_style(PaintStyle::Fill);
 
-    // User name or placeholder
-    let user_text = slot
-        .user_id
-        .and_then(|id| plan.users.get(&id))
-        .map(|u| u.name.as_str())
-        .unwrap_or("Select user…");
-    let user_color = if slot.user_id.is_some() {
-        Color::from(INPUT_FG)
-    } else {
-        Color::from(0xff_aaaaaa_u32)
+    // Picker label text
+    let picker_text: String = match slot.slot_type {
+        SlotType::Specific => slot
+            .user_id
+            .and_then(|id| plan.users.get(&id))
+            .map(|u| u.name.clone())
+            .unwrap_or_else(|| "Select person…".to_string()),
+        SlotType::Placeholder => {
+            if slot.required_tags.is_empty() {
+                "Any user".to_string()
+            } else {
+                let mut names: Vec<&str> = plan
+                    .tags
+                    .iter()
+                    .filter(|t| slot.required_tags.contains(&t.id))
+                    .map(|t| t.name.as_str())
+                    .collect();
+                names.sort_unstable();
+                names.join(", ")
+            }
+        }
     };
+    let picker_color = match slot.slot_type {
+        SlotType::Specific if slot.user_id.is_some() => Color::from(INPUT_FG),
+        SlotType::Placeholder if !slot.required_tags.is_empty() => Color::from(INPUT_FG),
+        _ => Color::from(0xff_aaaaaa_u32),
+    };
+
     canvas.save();
     canvas.clip_rect(
         Rect::from_xywh(
@@ -1224,15 +1449,15 @@ fn draw_worker_row(
         ClipOp::Intersect,
         false,
     );
-    if let Some(blob) = TextBlob::new(user_text, &cache.small_font) {
+    if let Some(blob) = TextBlob::new(&picker_text, &cache.small_font) {
         let (_, sm) = cache.small_font.metrics();
         let ty = user_rect.top + (user_rect.height() - (sm.descent - sm.ascent)) / 2.0 - sm.ascent;
-        paint.set_color(user_color);
+        paint.set_color(picker_color);
         canvas.draw_text_blob(&blob, (user_rect.left + 6.0, ty), &paint);
     }
     canvas.restore();
 
-    // Chevron on user button
+    // Chevron on picker button
     {
         let cx = user_rect.right - 12.0;
         let cy = user_rect.top + user_rect.height() / 2.0;
@@ -1257,12 +1482,12 @@ fn draw_worker_row(
     // Workload input
     draw_text_input(canvas, wl_rect, &slot.workload, wl_focused, cache);
 
-    // "d" label after workload
+    // "d" suffix drawn inside workload box (right-aligned)
     if let Some(blob) = TextBlob::new("d", &cache.small_font) {
         let (_, sm) = cache.small_font.metrics();
         let ty = wl_rect.top + (wl_rect.height() - (sm.descent - sm.ascent)) / 2.0 - sm.ascent;
         paint.set_color(Color::from(LABEL_FG));
-        canvas.draw_text_blob(&blob, (wl_rect.right + 4.0, ty), &paint);
+        canvas.draw_text_blob(&blob, (wl_rect.right - 14.0, ty), &paint);
     }
 
     // Remove button
@@ -1411,6 +1636,121 @@ fn draw_user_dropdown(
     canvas.restore();
 }
 
+fn draw_tag_dropdown(
+    canvas: &Canvas,
+    dd: Rect,
+    slot: &WorkerSlotEdit,
+    hovered_row: Option<usize>,
+    scroll: usize,
+    plan: &Plan,
+    cache: &RenderCache,
+) {
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+
+    // Shadow
+    paint.set_color(Color::from_argb(30, 0, 0, 0));
+    canvas.draw_rrect(
+        RRect::new_rect_xy(
+            Rect::from_xywh(dd.left + 2.0, dd.top + 3.0, dd.width(), dd.height()),
+            PLAN_BTN_CORNER,
+            PLAN_BTN_CORNER,
+        ),
+        &paint,
+    );
+
+    // Background
+    paint.set_color(Color::from(INPUT_BG));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
+    paint.set_color(Color::from(INPUT_BORDER_FOCUS));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.0);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
+    paint.set_style(PaintStyle::Fill);
+
+    // Filter input
+    let filter_rect = Rect::from_xywh(dd.left, dd.top, dd.width(), USER_DROPDOWN_FILTER_H);
+    draw_text_input(canvas, filter_rect, &slot.tag_filter, true, cache);
+
+    // Divider
+    paint.set_color(Color::from(DIVIDER_COLOR));
+    canvas.draw_rect(
+        Rect::from_xywh(dd.left, dd.top + USER_DROPDOWN_FILTER_H, dd.width(), 1.0),
+        &paint,
+    );
+
+    // Tag list
+    let filtered = slot.filtered_tags(plan);
+    let list_top = dd.top + USER_DROPDOWN_FILTER_H + 1.0;
+    let list_rect = Rect::from_xywh(
+        dd.left,
+        list_top,
+        dd.width(),
+        dd.height() - USER_DROPDOWN_FILTER_H - 1.0,
+    );
+
+    canvas.save();
+    canvas.clip_rect(list_rect, ClipOp::Intersect, false);
+
+    if filtered.is_empty() {
+        let msg = if slot.tag_filter.content.trim().is_empty() {
+            "No tags in plan"
+        } else {
+            "No matches"
+        };
+        if let Some(blob) = TextBlob::new(msg, &cache.small_font) {
+            let (_, sm) = cache.small_font.metrics();
+            paint.set_color(Color::from(0xff_aaaaaa_u32));
+            canvas.draw_text_blob(&blob, (dd.left + 8.0, list_top + 8.0 - sm.ascent), &paint);
+        }
+    } else {
+        let end = (scroll + MAX_USER_DROPDOWN_ROWS).min(filtered.len());
+        let (_, sm) = cache.small_font.metrics();
+        let sm_h = sm.descent - sm.ascent;
+        for (vis, tag) in filtered[scroll..end].iter().enumerate() {
+            let abs = scroll + vis;
+            let ry = list_top + vis as f32 * USER_DROPDOWN_ROW_H;
+            let row_rect = Rect::from_xywh(dd.left, ry, dd.width(), USER_DROPDOWN_ROW_H);
+
+            if hovered_row == Some(abs) {
+                paint.set_color(Color::from(LIST_ITEM_HOVER_BG));
+                canvas.draw_rect(row_rect, &paint);
+            }
+
+            // Tick if selected
+            let selected = slot.required_tags.contains(&tag.id);
+            if selected {
+                let tx = dd.left + 10.0;
+                let ty = ry + USER_DROPDOWN_ROW_H / 2.0;
+                paint.set_color(Color::from(BTN_PRIMARY_BG));
+                paint.set_style(PaintStyle::Stroke);
+                paint.set_stroke_width(1.5);
+                let mut pb = PathBuilder::new();
+                pb.move_to((tx, ty));
+                pb.line_to((tx + 3.0, ty + 3.0));
+                pb.line_to((tx + 7.0, ty - 3.0));
+                canvas.draw_path(&pb.detach(), &paint);
+                paint.set_style(PaintStyle::Fill);
+            }
+
+            if let Some(blob) = TextBlob::new(&tag.name, &cache.small_font) {
+                let ty = ry + (USER_DROPDOWN_ROW_H - sm_h) / 2.0 - sm.ascent;
+                paint.set_color(Color::from(ITEM_FG));
+                canvas.draw_text_blob(&blob, (dd.left + 22.0, ty), &paint);
+            }
+        }
+    }
+
+    canvas.restore();
+}
+
 // ── FloatingWindow impl ───────────────────────────────────────────────────────
 
 impl FloatingWindow for TaskFormWindow {
@@ -1419,6 +1759,7 @@ impl FloatingWindow for TaskFormWindow {
         let back_btn = Self::back_btn_rect(width, height);
         let save_btn = Self::save_btn_rect(width, height);
         let today = chrono::Local::now().date_naive();
+        let scroll_y = self.effective_scroll(width, height);
 
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
@@ -1474,6 +1815,17 @@ impl FloatingWindow for TaskFormWindow {
             Rect::from_xywh(panel.left, panel.top + TITLE_H, panel.width(), 1.0),
             &paint,
         );
+
+        // Clip to content zone (below title bar) and apply vertical scroll
+        let content_clip = Rect::from_xywh(
+            panel.left,
+            panel.top + TITLE_H + 1.0,
+            panel.width(),
+            panel.height() - TITLE_H - 1.0,
+        );
+        canvas.save();
+        canvas.clip_rect(content_clip, ClipOp::Intersect, false);
+        canvas.translate((0.0, -scroll_y));
 
         let lx = panel.left + PLAN_FORM_PADDING;
         let (_, sm) = cache.small_font.metrics();
@@ -1606,17 +1958,21 @@ impl FloatingWindow for TaskFormWindow {
                 constraint_trigger,
                 &self.constraint_date,
                 constraint_open,
+                false,
                 cache,
             );
         }
 
         // Actual dates
+        let start_disabled = self.status == TaskStatus::NotStarted;
+        let end_disabled = !matches!(self.status, TaskStatus::Complete | TaskStatus::Dropped);
         label!(ROW_DATES, 0, "Actual Start");
         draw_date_btn(
             canvas,
             Self::left_input_rect(ROW_DATES, width, height),
             &self.actual_start,
             self.open_calendar == Some(OpenCalendar::ActualStart),
+            start_disabled,
             cache,
         );
         label!(ROW_DATES, 1, "Actual End");
@@ -1625,6 +1981,7 @@ impl FloatingWindow for TaskFormWindow {
             Self::right_input_rect(ROW_DATES, width, height),
             &self.actual_end,
             self.open_calendar == Some(OpenCalendar::ActualEnd),
+            end_disabled,
             cache,
         );
 
@@ -1776,30 +2133,87 @@ impl FloatingWindow for TaskFormWindow {
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
 
+        canvas.restore(); // end content scroll region
+
+        // Scroll indicator: up arrow when scrolled down, down arrow when more content below
+        if scroll_y > 0.0 {
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(Color::from(0x88_555555_u32));
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(1.5);
+            let ax = panel.right - 12.0;
+            let ay = panel.top + TITLE_H + 1.0 + 8.0;
+            let mut pb = PathBuilder::new();
+            pb.move_to((ax - 5.0, ay + 5.0));
+            pb.line_to((ax, ay));
+            pb.line_to((ax + 5.0, ay + 5.0));
+            canvas.draw_path(&pb.detach(), &paint);
+        }
+        let panel_h = Self::panel_rect(width, height).height();
+        let max_scroll = (PANEL_H - panel_h).max(0.0);
+        if scroll_y < max_scroll {
+            let mut paint = Paint::default();
+            paint.set_anti_alias(true);
+            paint.set_color(Color::from(0x88_555555_u32));
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(1.5);
+            let ax = panel.right - 12.0;
+            let ay = panel.bottom - 8.0;
+            let mut pb = PathBuilder::new();
+            pb.move_to((ax - 5.0, ay - 5.0));
+            pb.line_to((ax, ay));
+            pb.line_to((ax + 5.0, ay - 5.0));
+            canvas.draw_path(&pb.detach(), &paint);
+        }
+
         // Calendar popup (on top)
         if let Some(target) = self.open_calendar {
             let trigger = Self::trigger_rect_for(target, width, height);
-            let cal_rect = Self::calendar_popup_rect(trigger, panel);
+            let scrolled_trigger = Rect::from_xywh(
+                trigger.left,
+                trigger.top - scroll_y,
+                trigger.width(),
+                trigger.height(),
+            );
+            let cal_rect = Self::calendar_popup_rect(scrolled_trigger, panel);
             let picker = self.picker_ref(target);
             draw_calendar_popup(canvas, cal_rect, picker, today, cache);
         }
 
-        // User picker dropdown (on top of everything)
+        // User/tag picker dropdown (on top of everything)
         if let Some(slot_idx) = self.open_slot_dropdown
             && slot_idx < self.workers.len()
         {
             let vis_idx = slot_idx.saturating_sub(self.worker_scroll);
             let list2 = Self::worker_list_rect(width, height);
-            let dd_rect = TaskFormWindow::slot_dropdown_rect(list2, vis_idx, panel);
-            draw_user_dropdown(
-                canvas,
-                dd_rect,
-                &self.workers[slot_idx],
-                self.slot_dropdown_hovered,
-                self.slot_dropdown_scroll,
-                plan,
-                cache,
+            let scrolled_list2 = Rect::from_xywh(
+                list2.left,
+                list2.top - scroll_y,
+                list2.width(),
+                list2.height(),
             );
+            let dd_rect = TaskFormWindow::slot_dropdown_rect(scrolled_list2, vis_idx, panel);
+            match self.workers[slot_idx].slot_type {
+                SlotType::Specific => draw_user_dropdown(
+                    canvas,
+                    dd_rect,
+                    &self.workers[slot_idx],
+                    self.slot_dropdown_hovered,
+                    self.slot_dropdown_scroll,
+                    plan,
+                    cache,
+                ),
+                SlotType::Placeholder => draw_tag_dropdown(
+                    canvas,
+                    dd_rect,
+                    &self.workers[slot_idx],
+                    self.slot_dropdown_hovered,
+                    self.slot_dropdown_scroll,
+                    plan,
+                    cache,
+                ),
+            }
         }
     }
 
@@ -1812,6 +2226,8 @@ impl FloatingWindow for TaskFormWindow {
         plan: &Plan,
     ) -> FloatingWindowOutcome {
         let pt = Point::new(x, y);
+        let scroll_y = self.effective_scroll(width, height);
+        let pt_form = Point::new(x, y + scroll_y);
         let panel = Self::panel_rect(width, height);
         let mut changed = false;
 
@@ -1831,17 +2247,23 @@ impl FloatingWindow for TaskFormWindow {
         );
         set!(
             self.hovered_save,
-            Self::save_btn_rect(width, height).contains(pt)
+            Self::save_btn_rect(width, height).contains(pt_form)
         );
         set!(
             self.hovered_plus,
-            Self::worker_plus_rect(width, height).contains(pt)
+            Self::worker_plus_rect(width, height).contains(pt_form)
         );
 
         // Calendar hover
         if let Some(target) = self.open_calendar {
             let trigger = Self::trigger_rect_for(target, width, height);
-            let cal = Self::calendar_popup_rect(trigger, panel);
+            let scrolled_trigger = Rect::from_xywh(
+                trigger.left,
+                trigger.top - scroll_y,
+                trigger.width(),
+                trigger.height(),
+            );
+            let cal = Self::calendar_popup_rect(scrolled_trigger, panel);
             let day_1 = first_weekday_offset(
                 self.picker_ref(target).nav_year,
                 self.picker_ref(target).nav_month,
@@ -1851,8 +2273,10 @@ impl FloatingWindow for TaskFormWindow {
                 self.picker_ref(target).nav_month,
             );
 
-            let new_prev = Self::cal_prev_btn(cal).contains(pt);
-            let new_next = Self::cal_next_btn(cal).contains(pt);
+            let new_prev_year = Self::cal_prev_year_btn(cal).contains(pt);
+            let new_prev_month = Self::cal_prev_month_btn(cal).contains(pt);
+            let new_next_month = Self::cal_next_month_btn(cal).contains(pt);
+            let new_next_year = Self::cal_next_year_btn(cal).contains(pt);
             let new_clear = Self::cal_clear_btn(cal).contains(pt);
             let mut new_day: Option<u32> = None;
             for day in 1..=num_days {
@@ -1861,42 +2285,53 @@ impl FloatingWindow for TaskFormWindow {
                     break;
                 }
             }
-            let (op, on, oc, od) = {
+            let (opy, opm, onm, ony, oc, od) = {
                 let p = self.picker_ref(target);
                 (
-                    p.hovered_prev,
-                    p.hovered_next,
+                    p.hovered_prev_year,
+                    p.hovered_prev_month,
+                    p.hovered_next_month,
+                    p.hovered_next_year,
                     p.hovered_clear,
                     p.hovered_day,
                 )
             };
-            if new_prev != op || new_next != on || new_clear != oc || new_day != od {
+            if new_prev_year != opy
+                || new_prev_month != opm
+                || new_next_month != onm
+                || new_next_year != ony
+                || new_clear != oc
+                || new_day != od
+            {
                 let p = self.picker_mut(target);
-                p.hovered_prev = new_prev;
-                p.hovered_next = new_next;
+                p.hovered_prev_year = new_prev_year;
+                p.hovered_prev_month = new_prev_month;
+                p.hovered_next_month = new_next_month;
+                p.hovered_next_year = new_next_year;
                 p.hovered_clear = new_clear;
                 p.hovered_day = new_day;
                 changed = true;
             }
         }
 
-        // User dropdown hover
+        // User/tag dropdown hover
         if let Some(slot_idx) = self.open_slot_dropdown
             && slot_idx < self.workers.len()
         {
             let vis = slot_idx.saturating_sub(self.worker_scroll);
             let list = Self::worker_list_rect(width, height);
-            let dd = TaskFormWindow::slot_dropdown_rect(list, vis, panel);
+            let scrolled_list =
+                Rect::from_xywh(list.left, list.top - scroll_y, list.width(), list.height());
+            let dd = TaskFormWindow::slot_dropdown_rect(scrolled_list, vis, panel);
             let list_top = dd.top + USER_DROPDOWN_FILTER_H + 1.0;
-            let filtered = self.workers[slot_idx].filtered_users(plan);
+            let filtered_len = match self.workers[slot_idx].slot_type {
+                SlotType::Specific => self.workers[slot_idx].filtered_users(plan).len(),
+                SlotType::Placeholder => self.workers[slot_idx].filtered_tags(plan).len(),
+            };
             let new_hov = if y >= list_top && x >= dd.left && x <= dd.right {
                 let abs =
                     ((y - list_top) / USER_DROPDOWN_ROW_H) as usize + self.slot_dropdown_scroll;
-                if abs < filtered.len() {
-                    Some(abs)
-                } else {
-                    None
-                }
+                if abs < filtered_len { Some(abs) } else { None }
             } else {
                 None
             };
@@ -1913,8 +2348,19 @@ impl FloatingWindow for TaskFormWindow {
                 .min(MAX_VISIBLE_WORKERS);
             for vis in 0..vis_count {
                 let abs = self.worker_scroll + vis;
-                let new_ub = TaskFormWindow::slot_user_rect(list, vis).contains(pt);
-                let new_rm = TaskFormWindow::slot_remove_rect(list, vis).contains(pt);
+                let new_ub = TaskFormWindow::slot_user_rect(list, vis).contains(pt_form);
+                let new_rm = TaskFormWindow::slot_remove_rect(list, vis).contains(pt_form);
+                let type_rect = TaskFormWindow::slot_type_rect(list, vis);
+                let new_type = if type_rect.contains(pt_form) {
+                    let half = type_rect.width() / 2.0;
+                    if x < type_rect.left + half {
+                        Some(0)
+                    } else {
+                        Some(1)
+                    }
+                } else {
+                    None
+                };
                 if self.workers[abs].hovered_user_btn != new_ub {
                     self.workers[abs].hovered_user_btn = new_ub;
                     changed = true;
@@ -1923,20 +2369,28 @@ impl FloatingWindow for TaskFormWindow {
                     self.workers[abs].hovered_remove = new_rm;
                     changed = true;
                 }
+                if self.workers[abs].hovered_type != new_type {
+                    self.workers[abs].hovered_type = new_type;
+                    changed = true;
+                }
             }
         }
 
         // Segmented / date trigger hovers
         let new_status = Self::status_btn_rects(width, height)
             .iter()
-            .position(|r| r.contains(pt));
+            .position(|r| r.contains(pt_form));
         let new_ck = Self::constraint_kind_btn_rects(width, height)
             .iter()
-            .position(|r| r.contains(pt));
+            .position(|r| r.contains(pt_form));
         let new_ct = self.constraint_kind != ConstraintSel::None
-            && Self::right_input_rect(ROW_CONSTRAINT, width, height).contains(pt);
-        let new_as = Self::left_input_rect(ROW_DATES, width, height).contains(pt);
-        let new_ae = Self::right_input_rect(ROW_DATES, width, height).contains(pt);
+            && Self::right_input_rect(ROW_CONSTRAINT, width, height).contains(pt_form);
+        let start_disabled = self.status == TaskStatus::NotStarted;
+        let end_disabled = !matches!(self.status, TaskStatus::Complete | TaskStatus::Dropped);
+        let new_as =
+            !start_disabled && Self::left_input_rect(ROW_DATES, width, height).contains(pt_form);
+        let new_ae =
+            !end_disabled && Self::right_input_rect(ROW_DATES, width, height).contains(pt_form);
 
         set!(self.hovered_status, new_status);
         set!(self.hovered_constraint_kind, new_ck);
@@ -1961,31 +2415,48 @@ impl FloatingWindow for TaskFormWindow {
         height: f32,
         plan: &Plan,
         sender: &PlanRequestSender,
+        cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if !pressed {
             return FloatingWindowOutcome::default();
         }
         let pt = Point::new(x, y);
+        let scroll_y = self.effective_scroll(width, height);
+        let pt_form = Point::new(x, y + scroll_y);
         let panel = Self::panel_rect(width, height);
 
         if Self::back_btn_rect(width, height).contains(pt) {
             return FloatingWindowOutcome::close();
         }
-        if Self::save_btn_rect(width, height).contains(pt) {
+        if Self::save_btn_rect(width, height).contains(pt_form) {
             return self.try_submit(sender);
         }
 
         // Calendar popup
         if let Some(target) = self.open_calendar {
             let trigger = Self::trigger_rect_for(target, width, height);
-            let cal = Self::calendar_popup_rect(trigger, panel);
+            let scrolled_trigger = Rect::from_xywh(
+                trigger.left,
+                trigger.top - scroll_y,
+                trigger.width(),
+                trigger.height(),
+            );
+            let cal = Self::calendar_popup_rect(scrolled_trigger, panel);
             if cal.contains(pt) {
-                if TaskFormWindow::cal_prev_btn(cal).contains(pt) {
+                if TaskFormWindow::cal_prev_year_btn(cal).contains(pt) {
+                    self.picker_mut(target).prev_year();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                if TaskFormWindow::cal_prev_month_btn(cal).contains(pt) {
                     self.picker_mut(target).prev_month();
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                if TaskFormWindow::cal_next_btn(cal).contains(pt) {
+                if TaskFormWindow::cal_next_month_btn(cal).contains(pt) {
                     self.picker_mut(target).next_month();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                if TaskFormWindow::cal_next_year_btn(cal).contains(pt) {
+                    self.picker_mut(target).next_year();
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 if TaskFormWindow::cal_clear_btn(cal).contains(pt) {
@@ -2018,30 +2489,48 @@ impl FloatingWindow for TaskFormWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
-        // User dropdown
+        // User/tag dropdown
         if let Some(slot_idx) = self.open_slot_dropdown {
             if slot_idx < self.workers.len() {
                 let vis = slot_idx.saturating_sub(self.worker_scroll);
                 let list = Self::worker_list_rect(width, height);
-                let dd = TaskFormWindow::slot_dropdown_rect(list, vis, panel);
+                let scrolled_list =
+                    Rect::from_xywh(list.left, list.top - scroll_y, list.width(), list.height());
+                let dd = TaskFormWindow::slot_dropdown_rect(scrolled_list, vis, panel);
                 if dd.contains(pt) {
                     let filter_rect =
                         Rect::from_xywh(dd.left, dd.top, dd.width(), USER_DROPDOWN_FILTER_H);
                     if filter_rect.contains(pt) {
-                        // Click on filter input — already focused, do nothing
                         return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                     }
                     let list_top = dd.top + USER_DROPDOWN_FILTER_H + 1.0;
                     if y >= list_top {
                         let abs = ((y - list_top) / USER_DROPDOWN_ROW_H) as usize
                             + self.slot_dropdown_scroll;
-                        let filtered = self.workers[slot_idx].filtered_users(plan);
-                        if let Some((uid, _)) = filtered.get(abs) {
-                            let uid = **uid;
-                            self.workers[slot_idx].user_id = Some(uid);
-                            self.worker_error = false;
+                        match self.workers[slot_idx].slot_type {
+                            SlotType::Specific => {
+                                let filtered = self.workers[slot_idx].filtered_users(plan);
+                                if let Some((uid, _)) = filtered.get(abs) {
+                                    let uid = **uid;
+                                    self.workers[slot_idx].user_id = Some(uid);
+                                    self.worker_error = false;
+                                }
+                                self.close_slot_dropdown();
+                            }
+                            SlotType::Placeholder => {
+                                let filtered = self.workers[slot_idx].filtered_tags(plan);
+                                if let Some(tag) = filtered.get(abs) {
+                                    let tag_id = tag.id;
+                                    if self.workers[slot_idx].required_tags.contains(&tag_id) {
+                                        self.workers[slot_idx].required_tags.remove(&tag_id);
+                                    } else {
+                                        self.workers[slot_idx].required_tags.insert(tag_id);
+                                    }
+                                    self.worker_error = false;
+                                }
+                                // Don't close — allow multi-select
+                            }
                         }
-                        self.close_slot_dropdown();
                     }
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
@@ -2057,7 +2546,7 @@ impl FloatingWindow for TaskFormWindow {
         let list = Self::worker_list_rect(width, height);
         let plus_rect = Self::worker_plus_rect(width, height);
 
-        if plus_rect.contains(pt) {
+        if plus_rect.contains(pt_form) {
             self.workers.push(WorkerSlotEdit::new());
             // Scroll to show new item
             if self.workers.len() > MAX_VISIBLE_WORKERS {
@@ -2066,7 +2555,7 @@ impl FloatingWindow for TaskFormWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
-        if list.contains(pt) {
+        if list.contains(pt_form) {
             let vis_count = self
                 .workers
                 .len()
@@ -2074,7 +2563,7 @@ impl FloatingWindow for TaskFormWindow {
                 .min(MAX_VISIBLE_WORKERS);
             for vis in 0..vis_count {
                 let abs = self.worker_scroll + vis;
-                if TaskFormWindow::slot_remove_rect(list, vis).contains(pt) {
+                if TaskFormWindow::slot_remove_rect(list, vis).contains(pt_form) {
                     self.workers.remove(abs);
                     self.clamp_worker_scroll();
                     if let Some(ref mut fs) = self.focused_slot_workload {
@@ -2086,15 +2575,38 @@ impl FloatingWindow for TaskFormWindow {
                     }
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                if TaskFormWindow::slot_user_rect(list, vis).contains(pt) {
+                if TaskFormWindow::slot_type_rect(list, vis).contains(pt_form) {
+                    let type_rect = TaskFormWindow::slot_type_rect(list, vis);
+                    let new_type = if x < type_rect.left + type_rect.width() / 2.0 {
+                        SlotType::Specific
+                    } else {
+                        SlotType::Placeholder
+                    };
+                    if self.workers[abs].slot_type != new_type {
+                        self.workers[abs].slot_type = new_type;
+                        // Reset picker state when switching types
+                        self.workers[abs].user_id = None;
+                        self.workers[abs].user_filter = TextInput::new("");
+                        self.workers[abs].required_tags = HashSet::new();
+                        self.workers[abs].tag_filter = TextInput::new("");
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                if TaskFormWindow::slot_user_rect(list, vis).contains(pt_form) {
                     self.open_slot_dropdown(abs);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                if TaskFormWindow::slot_workload_rect(list, vis).contains(pt) {
+                if TaskFormWindow::slot_workload_rect(list, vis).contains(pt_form) {
                     self.focused_slot_workload = Some(abs);
                     self.name.focused = false;
                     self.description.focused = false;
                     self.duration.focused = false;
+                    let wl_rect = TaskFormWindow::slot_workload_rect(list, vis);
+                    let x_in_inner =
+                        x - (wl_rect.left + 8.0) + self.workers[abs].workload.scroll_x.get();
+                    self.workers[abs].workload.cursor = self.workers[abs]
+                        .workload
+                        .cursor_for_x(x_in_inner, &cache.font);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
             }
@@ -2108,15 +2620,34 @@ impl FloatingWindow for TaskFormWindow {
                 TextField::Description => Self::full_input_rect(ROW_DESC, width, height),
                 TextField::Duration => Self::left_input_rect(ROW_DURATION, width, height),
             };
-            if rect.contains(pt) {
+            if rect.contains(pt_form) {
                 self.set_focus(field);
+                let inner_left = rect.left + 8.0;
+                let x_in_inner = x - inner_left
+                    + match field {
+                        TextField::Name => self.name.scroll_x.get(),
+                        TextField::Description => self.description.scroll_x.get(),
+                        TextField::Duration => self.duration.scroll_x.get(),
+                    };
+                match field {
+                    TextField::Name => {
+                        self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
+                    }
+                    TextField::Description => {
+                        self.description.cursor =
+                            self.description.cursor_for_x(x_in_inner, &cache.font);
+                    }
+                    TextField::Duration => {
+                        self.duration.cursor = self.duration.cursor_for_x(x_in_inner, &cache.font);
+                    }
+                }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
         }
 
         // Status segmented
         for (i, r) in Self::status_btn_rects(width, height).iter().enumerate() {
-            if r.contains(pt) {
+            if r.contains(pt_form) {
                 self.status = [
                     TaskStatus::NotStarted,
                     TaskStatus::InProgress,
@@ -2133,7 +2664,7 @@ impl FloatingWindow for TaskFormWindow {
             .iter()
             .enumerate()
         {
-            if r.contains(pt) {
+            if r.contains(pt_form) {
                 self.constraint_kind = [
                     ConstraintSel::None,
                     ConstraintSel::Earliest,
@@ -2146,16 +2677,20 @@ impl FloatingWindow for TaskFormWindow {
 
         // Date triggers
         if self.constraint_kind != ConstraintSel::None
-            && Self::right_input_rect(ROW_CONSTRAINT, width, height).contains(pt)
+            && Self::right_input_rect(ROW_CONSTRAINT, width, height).contains(pt_form)
         {
             self.open_calendar_picker(OpenCalendar::Constraint);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
-        if Self::left_input_rect(ROW_DATES, width, height).contains(pt) {
+        if self.status != TaskStatus::NotStarted
+            && Self::left_input_rect(ROW_DATES, width, height).contains(pt_form)
+        {
             self.open_calendar_picker(OpenCalendar::ActualStart);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
-        if Self::right_input_rect(ROW_DATES, width, height).contains(pt) {
+        if matches!(self.status, TaskStatus::Complete | TaskStatus::Dropped)
+            && Self::right_input_rect(ROW_DATES, width, height).contains(pt_form)
+        {
             self.open_calendar_picker(OpenCalendar::ActualEnd);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
@@ -2189,7 +2724,10 @@ impl FloatingWindow for TaskFormWindow {
                 }
                 Key::Named(NamedKey::Backspace) => {
                     if slot_idx < self.workers.len() {
-                        self.workers[slot_idx].user_filter.backspace();
+                        match self.workers[slot_idx].slot_type {
+                            SlotType::Specific => self.workers[slot_idx].user_filter.backspace(),
+                            SlotType::Placeholder => self.workers[slot_idx].tag_filter.backspace(),
+                        }
                         self.slot_dropdown_scroll = 0;
                         self.slot_dropdown_hovered = None;
                     }
@@ -2197,14 +2735,28 @@ impl FloatingWindow for TaskFormWindow {
                 }
                 Key::Named(NamedKey::Space) => {
                     if slot_idx < self.workers.len() {
-                        self.workers[slot_idx].user_filter.insert_str(" ");
+                        match self.workers[slot_idx].slot_type {
+                            SlotType::Specific => {
+                                self.workers[slot_idx].user_filter.insert_str(" ")
+                            }
+                            SlotType::Placeholder => {
+                                self.workers[slot_idx].tag_filter.insert_str(" ")
+                            }
+                        }
                         self.slot_dropdown_scroll = 0;
                     }
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Character(c) => {
                     if c.chars().all(|ch| !ch.is_control()) && slot_idx < self.workers.len() {
-                        self.workers[slot_idx].user_filter.insert_str(c.as_str());
+                        match self.workers[slot_idx].slot_type {
+                            SlotType::Specific => {
+                                self.workers[slot_idx].user_filter.insert_str(c.as_str())
+                            }
+                            SlotType::Placeholder => {
+                                self.workers[slot_idx].tag_filter.insert_str(c.as_str())
+                            }
+                        }
                         self.slot_dropdown_scroll = 0;
                         self.slot_dropdown_hovered = None;
                     }
@@ -2317,13 +2869,16 @@ impl FloatingWindow for TaskFormWindow {
         &mut self,
         delta_y: f32,
         plan: &Plan,
-        _width: f32,
-        _height: f32,
+        width: f32,
+        height: f32,
     ) -> FloatingWindowOutcome {
-        // Scroll user dropdown if open
+        // Scroll user/tag dropdown if open
         if let Some(slot_idx) = self.open_slot_dropdown {
             if slot_idx < self.workers.len() {
-                let total = self.workers[slot_idx].filtered_users(plan).len();
+                let total = match self.workers[slot_idx].slot_type {
+                    SlotType::Specific => self.workers[slot_idx].filtered_users(plan).len(),
+                    SlotType::Placeholder => self.workers[slot_idx].filtered_tags(plan).len(),
+                };
                 let max = total.saturating_sub(MAX_USER_DROPDOWN_ROWS);
                 if max == 0 {
                     return FloatingWindowOutcome::default();
@@ -2341,7 +2896,23 @@ impl FloatingWindow for TaskFormWindow {
             return FloatingWindowOutcome::default();
         }
 
-        // Scroll worker list
+        // Form scroll when there's overflow; worker list scroll otherwise
+        let panel_h = Self::panel_rect(width, height).height();
+        let form_overflow = (PANEL_H - panel_h).max(0.0);
+        if form_overflow > 0.0 {
+            let step = 24.0_f32;
+            let new_scroll = if delta_y > 0.0 {
+                (self.form_scroll_y - step).max(0.0)
+            } else {
+                (self.form_scroll_y + step).min(form_overflow)
+            };
+            if (new_scroll - self.form_scroll_y).abs() > 0.001 {
+                self.form_scroll_y = new_scroll;
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
+        }
+        // Worker list scroll when form fits fully
         let max = self.workers.len().saturating_sub(MAX_VISIBLE_WORKERS);
         if max == 0 {
             return FloatingWindowOutcome::default();
@@ -2369,6 +2940,7 @@ impl FloatingWindow for TaskFormWindow {
         self.actual_start.hovered_trigger = false;
         self.actual_end.hovered_trigger = false;
         for slot in &mut self.workers {
+            slot.hovered_type = None;
             slot.hovered_user_btn = false;
             slot.hovered_remove = false;
         }

@@ -306,9 +306,16 @@ impl ApplicationHandler for Application {
                                 } else if self.floats.is_open() {
                                     let plan = self.engine.plan();
                                     let sender = self.engine.sender();
-                                    let dirty = self
-                                        .floats
-                                        .on_mouse_input(x, y, true, width, height, plan, &sender);
+                                    let dirty = self.floats.on_mouse_input(
+                                        x,
+                                        y,
+                                        true,
+                                        width,
+                                        height,
+                                        plan,
+                                        &sender,
+                                        &self.cache,
+                                    );
                                     self.mark_dirty(dirty);
                                 } else {
                                     let plan = self.engine.plan();
@@ -333,8 +340,16 @@ impl ApplicationHandler for Application {
                                 let plan = self.engine.plan();
                                 let sender = self.engine.sender();
                                 let dirty = if self.floats.is_open() {
-                                    self.floats
-                                        .on_mouse_input(x, y, false, width, height, plan, &sender)
+                                    self.floats.on_mouse_input(
+                                        x,
+                                        y,
+                                        false,
+                                        width,
+                                        height,
+                                        plan,
+                                        &sender,
+                                        &self.cache,
+                                    )
                                 } else {
                                     self.pages
                                         .active_page_mut()

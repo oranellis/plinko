@@ -6,6 +6,10 @@ pub struct TextInput {
     /// Byte index into `content`. Always on a valid UTF-8 char boundary.
     pub cursor: usize,
     pub focused: bool,
+    /// Horizontal scroll offset in pixels.  Interior-mutable so the render
+    /// function can update it without requiring `&mut self` on the containing
+    /// struct (render methods take `&self`).
+    pub scroll_x: std::cell::Cell<f32>,
 }
 
 impl TextInput {
@@ -18,6 +22,7 @@ impl TextInput {
             content,
             cursor,
             focused: false,
+            scroll_x: std::cell::Cell::new(0.0),
         }
     }
 
@@ -25,6 +30,7 @@ impl TextInput {
     pub fn set_content(&mut self, s: impl Into<String>) {
         self.content = s.into();
         self.cursor = self.content.len();
+        self.scroll_x.set(0.0);
     }
 
     /// Insert a string at the cursor position and advance the cursor past it.
@@ -75,6 +81,28 @@ impl TextInput {
     /// Move the cursor to the end of the content.
     pub fn move_end(&mut self) {
         self.cursor = self.content.len();
+    }
+
+    /// Return the byte cursor position closest to `x_in_inner` pixels from the
+    /// left edge of the inner text area (already offset by `scroll_x`).
+    pub fn cursor_for_x(&self, x_in_inner: f32, font: &skia_safe::Font) -> usize {
+        let mut best_pos = 0usize;
+        let mut best_dist = x_in_inner.abs(); // distance to position 0
+
+        for (i, _) in self.content.char_indices() {
+            let adv = font.measure_str(&self.content[..i], None).0;
+            let dist = (adv - x_in_inner).abs();
+            if dist < best_dist {
+                best_dist = dist;
+                best_pos = i;
+            }
+        }
+        // Also check the position after the last character
+        let adv = font.measure_str(&self.content, None).0;
+        if (adv - x_in_inner).abs() < best_dist {
+            best_pos = self.content.len();
+        }
+        best_pos
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

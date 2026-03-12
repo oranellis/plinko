@@ -521,6 +521,7 @@ impl FloatingWindow for UsersWindow {
         height: f32,
         plan: &Plan,
         _sender: &PlanRequestSender,
+        _cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if !pressed {
             return FloatingWindowOutcome::default();

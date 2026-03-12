@@ -68,6 +68,7 @@ pub trait FloatingWindow {
         height: f32,
         plan: &Plan,
         sender: &PlanRequestSender,
+        cache: &RenderCache,
     ) -> FloatingWindowOutcome;
 
     /// Default: close on Escape, ignore everything else.
@@ -159,9 +160,10 @@ impl FloatingWindowManager {
         h: f32,
         plan: &Plan,
         sender: &PlanRequestSender,
+        cache: &RenderCache,
     ) -> DirtyRegion {
         let outcome = match self.stack.last_mut() {
-            Some(win) => win.on_mouse_input(x, y, pressed, w, h, plan, sender),
+            Some(win) => win.on_mouse_input(x, y, pressed, w, h, plan, sender, cache),
             None => return DirtyRegion::None,
         };
         if outcome.close {

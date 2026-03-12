@@ -731,6 +731,7 @@ impl FloatingWindow for TagsWindow {
         height: f32,
         plan: &Plan,
         sender: &PlanRequestSender,
+        _cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         // Handle drag release
         if !pressed {

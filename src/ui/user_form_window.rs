@@ -843,6 +843,7 @@ impl FloatingWindow for UserFormWindow {
         height: f32,
         plan: &Plan,
         sender: &PlanRequestSender,
+        cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if !pressed {
             return FloatingWindowOutcome::default();
@@ -882,8 +883,26 @@ impl FloatingWindow for UserFormWindow {
         }
 
         for field in [Field::Name, Field::AvatarPath] {
-            if Self::input_rect(field, width, height).contains(pt) {
+            let rect = Self::input_rect(field, width, height);
+            if rect.contains(pt) {
                 self.set_focus(field);
+                let inner_left = rect.left + 8.0;
+                let x_in_inner = x - inner_left
+                    + match field {
+                        Field::Name => self.name.scroll_x.get(),
+                        Field::AvatarPath => self.avatar_path.scroll_x.get(),
+                        Field::TagFilter => 0.0,
+                    };
+                match field {
+                    Field::Name => {
+                        self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
+                    }
+                    Field::AvatarPath => {
+                        self.avatar_path.cursor =
+                            self.avatar_path.cursor_for_x(x_in_inner, &cache.font);
+                    }
+                    Field::TagFilter => {}
+                }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
         }

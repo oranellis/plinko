@@ -287,6 +287,30 @@ fn draw_text_input(
         rect.width() - 2.0 * h_pad,
         rect.height() - 4.0,
     );
+
+    let cursor_pos = input.cursor.min(input.content.len());
+    let cursor_x_px = if cursor_pos == 0 {
+        0.0f32
+    } else {
+        cache.font.measure_str(&input.content[..cursor_pos], None).0
+    };
+
+    let scroll_x = if focused {
+        let inner_w = inner.width();
+        let prev = input.scroll_x.get();
+        let next = if cursor_x_px < prev {
+            cursor_x_px
+        } else if cursor_x_px > prev + inner_w {
+            cursor_x_px - inner_w + 8.0
+        } else {
+            prev
+        };
+        input.scroll_x.set(next);
+        next
+    } else {
+        0.0
+    };
+
     canvas.save();
     canvas.clip_rect(inner, ClipOp::Intersect, false);
 
@@ -298,20 +322,13 @@ fn draw_text_input(
         && let Some(blob) = TextBlob::new(&input.content, &cache.font)
     {
         paint.set_color(Color::from(INPUT_FG));
-        canvas.draw_text_blob(&blob, (inner.left, text_y), &paint);
+        canvas.draw_text_blob(&blob, (inner.left - scroll_x, text_y), &paint);
     }
     if focused {
-        let cursor_pos = input.cursor.min(input.content.len());
-        let cursor_x = if cursor_pos == 0 {
-            0.0
-        } else {
-            let (adv, _) = cache.font.measure_str(&input.content[..cursor_pos], None);
-            adv
-        };
         paint.set_color(Color::from(INPUT_CURSOR_COLOR));
         canvas.draw_rect(
             Rect::from_xywh(
-                inner.left + cursor_x,
+                inner.left + cursor_x_px - scroll_x,
                 rect.top + 5.0,
                 1.5,
                 rect.height() - 10.0,
@@ -804,6 +821,7 @@ impl FloatingWindow for AddUserWindow {
         height: f32,
         plan: &Plan,
         sender: &PlanRequestSender,
+        cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if !pressed {
             return FloatingWindowOutcome::default();
@@ -845,8 +863,25 @@ impl FloatingWindow for AddUserWindow {
         }
 
         for field in [Field::Name, Field::AvatarPath] {
-            if Self::input_rect(field, width, height).contains(pt) {
+            let rect = Self::input_rect(field, width, height);
+            if rect.contains(pt) {
                 self.set_focus(field);
+                let inner_left = rect.left + 8.0;
+                let x_in_inner = x - inner_left + match field {
+                    Field::Name => self.name.scroll_x.get(),
+                    Field::AvatarPath => self.avatar_path.scroll_x.get(),
+                    Field::TagFilter => 0.0,
+                };
+                match field {
+                    Field::Name => {
+                        self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
+                    }
+                    Field::AvatarPath => {
+                        self.avatar_path.cursor =
+                            self.avatar_path.cursor_for_x(x_in_inner, &cache.font);
+                    }
+                    Field::TagFilter => {}
+                }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
         }
