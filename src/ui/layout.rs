@@ -87,3 +87,4 @@ pub const BTN_DANGER_FG: u32 = 0xff_ffffff;
 pub const ITEM_FG: u32 = 0xff_222222;
 pub const ITEM_TASK_DOT: u32 = 0xff_4a90d9;
 pub const ITEM_MILESTONE_DOT: u32 = 0xff_f5a623;
+pub const DEP_PLAN_START_FG: u32 = 0xff_00897b; // Teal — Plan Start special node

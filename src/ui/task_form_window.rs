@@ -16,11 +16,12 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
-    BTN_PRIMARY_FG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER,
-    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
-    LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP,
-    PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, TOOLBAR_STROKE_WIDTH,
+    BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_DANGER_BG,
+    BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, DEP_PLAN_START_FG,
+    DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
+    INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG,
+    PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
+    TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 use std::collections::HashSet;
@@ -462,6 +463,7 @@ pub struct TaskFormWindow {
     dep_dropdown_scroll: usize,
     focused_dep_lag: Option<usize>,
     hovered_dep_plus: bool,
+    dep_error: bool,
     name_error: bool,
     duration_error: bool,
     // Buttons
@@ -498,7 +500,10 @@ impl TaskFormWindow {
             focused_slot_workload: None,
             hovered_plus: false,
             worker_error: false,
-            dependencies: Vec::new(),
+            dependencies: vec![DependencyEdit {
+                target: Some(NodeId::PlanStart),
+                ..DependencyEdit::new()
+            }],
             dep_scroll_y: 0.0,
             cursor_in_dep_list: false,
             dep_dropdown_open_for: None,
@@ -506,6 +511,7 @@ impl TaskFormWindow {
             dep_dropdown_scroll: 0,
             focused_dep_lag: None,
             hovered_dep_plus: false,
+            dep_error: false,
             name_error: false,
             duration_error: false,
             hovered_back: false,
@@ -572,6 +578,7 @@ impl TaskFormWindow {
             dep_dropdown_scroll: 0,
             focused_dep_lag: None,
             hovered_dep_plus: false,
+            dep_error: false,
             name_error: false,
             duration_error: false,
             hovered_back: false,
@@ -1018,25 +1025,16 @@ impl TaskFormWindow {
             self.name_error = true;
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
-        // Validate duration is numeric when provided
-        if !self.duration.content.trim().is_empty()
-            && self.duration.content.trim().parse::<f32>().is_err()
-        {
-            self.duration_error = true;
-            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-        }
-        // Validate: at least one complete (user-assigned) worker
-        let worker_slots: Vec<WorkerSlot> = self
-            .workers
-            .iter()
-            .filter_map(|s| s.to_worker_slot())
-            .collect();
-        if worker_slots.is_empty() {
-            self.worker_error = true;
-            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-        }
-        self.worker_error = false;
-
+        // Duration is required and must be a valid positive number
+        let duration_str = self.duration.content.trim().to_string();
+        let duration = match duration_str.parse::<f32>() {
+            Ok(v) if v > 0.0 => v,
+            _ => {
+                self.duration_error = true;
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+        };
+        // At least one dependency with a target must be set
         let dependencies: Vec<Dependency> = self
             .dependencies
             .iter()
@@ -1046,15 +1044,20 @@ impl TaskFormWindow {
                 Some(Dependency { id, lag_days })
             })
             .collect();
+        if dependencies.is_empty() {
+            self.dep_error = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        self.dep_error = false;
+
+        let worker_slots: Vec<WorkerSlot> = self
+            .workers
+            .iter()
+            .filter_map(|s| s.to_worker_slot())
+            .collect();
+        self.worker_error = false;
 
         let description = self.description.content.trim().to_string();
-        let duration: f32 = self
-            .duration
-            .content
-            .trim()
-            .parse::<f32>()
-            .unwrap_or(0.0)
-            .max(0.0);
         let constraint = self
             .constraint_kind
             .to_constraint(self.constraint_date.value);
@@ -2137,7 +2140,12 @@ fn draw_dep_dropdown(
 
             if let Some(blob) = TextBlob::new(name, &cache.small_font) {
                 let ty = ry + (DEP_DROPDOWN_ROW_H - sm_h) / 2.0 - sm.ascent;
-                paint.set_color(Color::from(ITEM_FG));
+                let fg = if *node_id == NodeId::PlanStart {
+                    DEP_PLAN_START_FG
+                } else {
+                    ITEM_FG
+                };
+                paint.set_color(Color::from(fg));
                 canvas.draw_text_blob(&blob, (dd.left + 22.0, ty), &paint);
             }
         }
@@ -2385,17 +2393,8 @@ impl FloatingWindow for TaskFormWindow {
 
         // Workers section
         let wl_y = Self::workers_label_y(width, height);
-        let label_text = if self.worker_error {
-            "Workers (at least one required)"
-        } else {
-            "Workers"
-        };
-        if let Some(blob) = TextBlob::new(label_text, &cache.small_font) {
-            paint.set_color(Color::from(if self.worker_error {
-                0xff_e53935_u32
-            } else {
-                LABEL_FG
-            }));
+        if let Some(blob) = TextBlob::new("Workers", &cache.small_font) {
+            paint.set_color(Color::from(LABEL_FG));
             canvas.draw_text_blob(&blob, (lx, wl_y + lyo), &paint);
         }
 
@@ -2504,16 +2503,29 @@ impl FloatingWindow for TaskFormWindow {
 
         // Dependencies section
         let dep_lbl_y = Self::dep_label_y(width, height);
-        if let Some(blob) = TextBlob::new("Dependencies", &cache.small_font) {
-            paint.set_color(Color::from(LABEL_FG));
+        let dep_label_text = if self.dep_error {
+            "Dependencies (at least one required)"
+        } else {
+            "Dependencies"
+        };
+        if let Some(blob) = TextBlob::new(dep_label_text, &cache.small_font) {
+            paint.set_color(Color::from(if self.dep_error {
+                BTN_DANGER_BG
+            } else {
+                LABEL_FG
+            }));
             canvas.draw_text_blob(&blob, (lx, dep_lbl_y + lyo), &paint);
         }
 
         let dep_list = Self::dep_list_rect(width, height);
 
-        paint.set_color(Color::from(INPUT_BORDER));
+        paint.set_color(Color::from(if self.dep_error {
+            BTN_DANGER_BG
+        } else {
+            INPUT_BORDER
+        }));
         paint.set_style(PaintStyle::Stroke);
-        paint.set_stroke_width(1.0);
+        paint.set_stroke_width(if self.dep_error { 2.0 } else { 1.0 });
         canvas.draw_rrect(
             RRect::new_rect_xy(dep_list, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
             &paint,
@@ -2588,6 +2600,8 @@ impl FloatingWindow for TaskFormWindow {
                         "Select dependency…".to_string(),
                         Color::from(0xff_aaaaaa_u32),
                     )
+                } else if dep.target == Some(NodeId::PlanStart) {
+                    (target_name, Color::from(DEP_PLAN_START_FG))
                 } else {
                     (target_name, Color::from(INPUT_FG))
                 };
@@ -3345,6 +3359,7 @@ impl FloatingWindow for TaskFormWindow {
 
                         if let Some((node_id, _)) = items.get(abs) {
                             self.dependencies[dep_idx].target = Some(*node_id);
+                            self.dep_error = false;
                         }
                         self.close_dep_dropdown();
                     }
