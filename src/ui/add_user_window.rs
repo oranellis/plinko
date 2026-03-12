@@ -213,7 +213,11 @@ impl AddUserWindow {
             None
         } else {
             match std::fs::read(self.avatar_path.content.trim()) {
-                Ok(bytes) => Some(bytes),
+                Ok(bytes) => {
+                    // Resize & crop to square before storing
+                    let processed = crate::ui::avatar::resize_avatar(&bytes).unwrap_or(bytes);
+                    Some(processed)
+                }
                 Err(_) => {
                     self.avatar_error = true;
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);

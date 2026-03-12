@@ -202,7 +202,10 @@ impl EditUserWindow {
             None
         } else {
             match std::fs::read(self.avatar_path.content.trim()) {
-                Ok(bytes) => Some(Some(bytes)),
+                Ok(bytes) => {
+                    let processed = crate::ui::avatar::resize_avatar(&bytes).unwrap_or(bytes);
+                    Some(Some(processed))
+                }
                 Err(_) => {
                     self.avatar_error = true;
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);

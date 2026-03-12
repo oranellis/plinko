@@ -155,7 +155,8 @@ impl Page for OverviewPage {
                 self.state.vel_y = self.state.drag_vel_y * 3.0;
             }
         }
-        DirtyRegion::None
+        // Any press or release may have mutated scroll / opened a window — always redraw.
+        DirtyRegion::PageOnly
     }
 
     fn on_scroll(

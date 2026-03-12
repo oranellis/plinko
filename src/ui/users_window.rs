@@ -2,10 +2,14 @@
 
 use winit::event::Modifiers;
 
+use std::cell::RefCell;
+
 use skia_safe::{
-    Canvas, ClipOp, Color, Contains, Data, Image, Matrix, Paint, PaintStyle, PathBuilder, Point,
-    RRect, Rect, TextBlob,
+    Canvas, ClipOp, Color, Contains, Matrix, Paint, PaintStyle, PathBuilder, Point, RRect, Rect,
+    TextBlob,
 };
+
+use crate::ui::avatar::AvatarCache;
 
 use crate::data::Plan;
 use crate::engine::PlanRequestSender;
@@ -40,6 +44,9 @@ pub struct UsersWindow {
     pending_open_add: bool,
     pending_open_tags: bool,
     pending_edit: Option<crate::data::User>,
+    /// Decoded avatar images, keyed by UserId. Populated lazily, one decode per user.
+    /// Uses `RefCell` for interior mutability because `render` takes `&self`.
+    avatar_cache: RefCell<AvatarCache>,
 }
 
 impl UsersWindow {
@@ -53,6 +60,7 @@ impl UsersWindow {
             pending_open_add: false,
             pending_open_tags: false,
             pending_edit: None,
+            avatar_cache: RefCell::new(AvatarCache::new()),
         }
     }
 
@@ -329,30 +337,25 @@ impl FloatingWindow for UsersWindow {
                     AVATAR_DIAMETER,
                 );
 
-                if let Some(bytes) = &user.avatar {
-                    // Draw image clipped to circle
-                    let skia_data = Data::new_copy(bytes);
-                    if let Some(image) = Image::from_encoded(skia_data) {
-                        canvas.save();
-                        let mut clip_pb = PathBuilder::new();
-                        clip_pb.add_circle(
-                            (avatar_cx, avatar_cy),
-                            AVATAR_RADIUS,
-                            skia_safe::PathDirection::CW,
-                        );
-                        canvas.clip_path(&clip_pb.detach(), None, false);
-                        canvas.draw_image_rect(&image, None, avatar_rect, &paint);
-                        canvas.restore();
-                    } else {
-                        // Fallback: draw color circle if image decode failed
-                        let id_byte = user.id.0.as_bytes()[0];
-                        let color = AVATAR_COLORS[(id_byte % 7) as usize];
-                        paint.set_color(Color::from(color));
-                        paint.set_style(PaintStyle::Fill);
-                        canvas.draw_circle((avatar_cx, avatar_cy), AVATAR_RADIUS, &paint);
-                    }
+                if let Some(image) = self
+                    .avatar_cache
+                    .borrow_mut()
+                    .get(user.id, user.avatar.as_ref())
+                {
+                    // Draw image clipped to circle using the cached decoded Image
+                    let image = image.clone();
+                    canvas.save();
+                    let mut clip_pb = PathBuilder::new();
+                    clip_pb.add_circle(
+                        (avatar_cx, avatar_cy),
+                        AVATAR_RADIUS,
+                        skia_safe::PathDirection::CW,
+                    );
+                    canvas.clip_path(&clip_pb.detach(), None, false);
+                    canvas.draw_image_rect(&image, None, avatar_rect, &paint);
+                    canvas.restore();
                 } else {
-                    // Colored circle with initials
+                    // No avatar or decode failed: colored circle with initials
                     let id_byte = user.id.0.as_bytes()[0];
                     let color = AVATAR_COLORS[(id_byte % 7) as usize];
                     paint.set_color(Color::from(color));
