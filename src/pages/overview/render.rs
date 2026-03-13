@@ -451,41 +451,39 @@ fn draw_gantt_rows(
                         }
                     }
                 }
+
+                GanttItem::PlanStart { date } => {
+                    let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;
+                    let cy = row_y + GANTT_ROW_H / 2.0;
+                    let half = GANTT_MS_HALF * 1.1; // slightly larger for emphasis
+
+                    let mut pb = PathBuilder::new();
+                    pb.move_to((cx, cy - half));
+                    pb.line_to((cx + half, cy));
+                    pb.line_to((cx, cy + half));
+                    pb.line_to((cx - half, cy));
+                    pb.close();
+                    let ps_path = pb.detach();
+
+                    paint.set_color(Color::from(GANTT_PLAN_START_COLOR));
+                    paint.set_style(PaintStyle::Fill);
+                    canvas.draw_path(&ps_path, &paint);
+
+                    paint.set_color(Color::from(darken(GANTT_PLAN_START_COLOR)));
+                    paint.set_style(PaintStyle::Stroke);
+                    paint.set_stroke_width(1.5);
+                    canvas.draw_path(&ps_path, &paint);
+                    paint.set_style(PaintStyle::Fill);
+
+                    paint.set_color(Color::from(GANTT_PLAN_START_COLOR));
+                    let label = "Plan Start";
+                    let tw = cache.font.measure_str(label, None).0;
+                    let name_y = cy + half + 2.0 - metrics.ascent;
+                    if let Some(blob) = TextBlob::new(label, &cache.font) {
+                        canvas.draw_text_blob(&blob, (cx - tw / 2.0, name_y), &paint);
+                    }
+                }
             }
-        }
-    }
-
-    // ── Plan-start marker ──────────────────────────────────────────────────────
-    // Draw a fixed teal diamond at plan.start_date across all rows (always visible).
-    {
-        let cx = date_to_x(plan.start_date, view_start, zoom, scroll_x) + zoom / 2.0;
-        let cy = rows_top + GANTT_ROW_H / 2.0; // first row vertical centre
-        let half = GANTT_MS_HALF * 1.1; // slightly larger for emphasis
-
-        let mut pb = PathBuilder::new();
-        pb.move_to((cx, cy - half));
-        pb.line_to((cx + half, cy));
-        pb.line_to((cx, cy + half));
-        pb.line_to((cx - half, cy));
-        pb.close();
-        let ps_path = pb.detach();
-
-        paint.set_color(Color::from(GANTT_PLAN_START_COLOR));
-        paint.set_style(PaintStyle::Fill);
-        canvas.draw_path(&ps_path, &paint);
-
-        paint.set_color(Color::from(darken(GANTT_PLAN_START_COLOR)));
-        paint.set_style(PaintStyle::Stroke);
-        paint.set_stroke_width(1.5);
-        canvas.draw_path(&ps_path, &paint);
-        paint.set_style(PaintStyle::Fill);
-
-        paint.set_color(Color::from(GANTT_PLAN_START_COLOR));
-        let label = "Plan Start";
-        let tw = cache.font.measure_str(label, None).0;
-        let name_y = cy + half + 2.0 - metrics.ascent;
-        if let Some(blob) = TextBlob::new(label, &cache.font) {
-            canvas.draw_text_blob(&blob, (cx - tw / 2.0, name_y), &paint);
         }
     }
 
@@ -594,6 +592,7 @@ fn draw_gantt_dependencies(
                         },
                     );
                 }
+                GanttItem::PlanStart { .. } => {}
             }
         }
     }

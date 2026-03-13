@@ -6,8 +6,8 @@ use crate::data::Plan;
 use crate::data::ids::{MilestoneId, NodeId, TaskId};
 use crate::data::task::TaskStatus;
 
-/// The x-coordinate in "day units" of one item's end, used for row packing.
-const ROW_GAP_DAYS: i64 = 1; // minimum gap between items on the same row
+/// Minimum gap in day-units between items that may share a row.
+const ROW_GAP_DAYS: i64 = 2;
 
 // ── GanttItem ─────────────────────────────────────────────────────────────────
 
@@ -22,6 +22,8 @@ pub enum GanttItem {
     },
     /// A milestone diamond at a specific date.
     Milestone { id: MilestoneId, date: NaiveDate },
+    /// The fixed plan-start diamond (always row 0, always teal).
+    PlanStart { date: NaiveDate },
 }
 
 impl GanttItem {
@@ -29,19 +31,22 @@ impl GanttItem {
     pub fn start(&self) -> NaiveDate {
         match self {
             GanttItem::Task { start, .. } => *start,
-            GanttItem::Milestone { date, .. } => *date,
+            GanttItem::Milestone { date, .. } | GanttItem::PlanStart { date } => *date,
         }
     }
 
     /// Inclusive end date of the item for row-packing purposes.
     ///
-    /// Milestones add a 2-day visual buffer after their date so the diamond
-    /// (which extends `GANTT_MS_HALF` pixels either side of centre) never
-    /// overlaps a task bar placed in the same row, even at minimum zoom.
+    /// Milestones and the plan-start diamond add a 2-day visual buffer after
+    /// their date so the diamond (which extends `GANTT_MS_HALF` pixels either
+    /// side of centre) never overlaps a task bar placed in the same row, even
+    /// at minimum zoom.
     pub fn end(&self) -> NaiveDate {
         match self {
             GanttItem::Task { end, .. } => *end,
-            GanttItem::Milestone { date, .. } => *date + chrono::Duration::days(2),
+            GanttItem::Milestone { date, .. } | GanttItem::PlanStart { date } => {
+                *date + chrono::Duration::days(2)
+            }
         }
     }
 }
@@ -92,13 +97,33 @@ pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveD
     None
 }
 
-/// Pack all tasks and milestones with known dates into rows, minimising the
-/// number of rows by greedily placing each item in the first row that has
-/// enough space (greedy interval-scheduling / earliest-deadline-first).
+/// Pack all tasks and milestones with known dates into rows using a virtual
+/// day-column grid, guaranteeing no visual overlaps.
+///
+/// The plan-start diamond is always placed in row 0 first, so tasks/milestones
+/// that start on or near the plan start date are pushed to later rows or
+/// positions that don't overlap it.
 pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
-    // Build the flat list of items sorted by start date.
-    let mut items: Vec<GanttItem> = Vec::new();
+    let ref_date = plan.start_date;
 
+    // Virtual grid: for each row, store all occupied intervals as
+    // (start_day_offset, end_day_offset_inclusive_with_gap).
+    // Using day offsets from ref_date for compact integer arithmetic.
+    let mut grid: Vec<Vec<(i64, i64)>> = Vec::new();
+
+    // Reserve row 0 for the plan-start diamond.
+    let ps_start = 0_i64;
+    let ps_end_with_gap = 2 + ROW_GAP_DAYS; // 2-day diamond buffer + gap
+    grid.push(vec![(ps_start, ps_end_with_gap)]);
+    let plan_start_item = GanttItem::PlanStart {
+        date: plan.start_date,
+    };
+    let mut rows: Vec<GanttRow> = vec![GanttRow {
+        items: vec![plan_start_item],
+    }];
+
+    // Collect all schedulable items.
+    let mut items: Vec<GanttItem> = Vec::new();
     for id in plan.tasks.keys() {
         if let Some((start, end)) = task_display_dates(plan, id) {
             items.push(GanttItem::Task {
@@ -108,36 +133,32 @@ pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
             });
         }
     }
-
     for id in plan.milestones.keys() {
         if let Some(date) = plan.dates.milestone(id) {
             items.push(GanttItem::Milestone { id: *id, date });
         }
     }
-
     items.sort_by_key(|i| i.start());
 
-    // Greedy row assignment: for each item find the first row whose last item
-    // ends strictly before `item.start - ROW_GAP_DAYS`, else add a new row.
-    let mut rows: Vec<GanttRow> = Vec::new();
-    // Track the end date of the last item in each row.
-    let mut row_ends: Vec<NaiveDate> = Vec::new();
-
     for item in items {
-        let item_start = item.start();
-        // Find first row where there's enough gap.
-        let target = row_ends.iter().position(|&end| {
-            let gap = (item_start - end).num_days();
-            gap > ROW_GAP_DAYS
+        let item_start = (item.start() - ref_date).num_days();
+        // Include the gap buffer in the end so adjacent items get ROW_GAP_DAYS space.
+        let item_end_with_gap = (item.end() - ref_date).num_days() + ROW_GAP_DAYS;
+
+        // Find the first row with no overlapping interval.
+        let target = grid.iter().position(|row_intervals| {
+            row_intervals
+                .iter()
+                .all(|&(s, e)| item_end_with_gap < s || item_start > e)
         });
 
         match target {
             Some(idx) => {
-                row_ends[idx] = item.end();
+                grid[idx].push((item_start, item_end_with_gap));
                 rows[idx].items.push(item);
             }
             None => {
-                row_ends.push(item.end());
+                grid.push(vec![(item_start, item_end_with_gap)]);
                 rows.push(GanttRow { items: vec![item] });
             }
         }
