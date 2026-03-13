@@ -11,7 +11,7 @@ use crate::data::constraint::{ConstraintKind, DateConstraint};
 use crate::data::dependency::Dependency;
 use crate::data::ids::NodeId;
 use crate::data::{Milestone, MilestoneId, Plan};
-use crate::engine::{MilestonePatch, PlanRequest, PlanRequestSender};
+use crate::engine::{MilestonePatch, PlanRequest, PlanRequestSender, apply_milestone_patch};
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
@@ -359,6 +359,7 @@ pub struct MilestoneFormWindow {
     hovered_dep_plus: bool,
     dep_error: bool,
     form_scroll_y: f32,
+    scheduler_error: Option<String>,
 }
 
 impl MilestoneFormWindow {
@@ -392,6 +393,7 @@ impl MilestoneFormWindow {
             hovered_dep_plus: false,
             dep_error: false,
             form_scroll_y: 0.0,
+            scheduler_error: None,
         }
     }
 
@@ -440,6 +442,7 @@ impl MilestoneFormWindow {
             hovered_dep_plus: false,
             dep_error: false,
             form_scroll_y: 0.0,
+            scheduler_error: None,
         }
     }
 
@@ -658,7 +661,7 @@ impl MilestoneFormWindow {
 
     // ── Submit ────────────────────────────────────────────────────────────────
 
-    fn try_submit(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
+    fn try_submit(&mut self, plan: &Plan, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         // Validate all fields at once so every problem is highlighted together.
         let name = self.name.content.trim().to_string();
         self.name_error = name.is_empty();
@@ -678,12 +681,50 @@ impl MilestoneFormWindow {
         self.dep_error = dependencies.is_empty();
 
         if self.name_error || self.constraint_date_error || self.dep_error {
+            self.scheduler_error = None;
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
         let description = self.description.content.trim().to_string();
         let constraint = self
             .constraint_kind
             .to_constraint(self.constraint_date.value);
+
+        // Dry-run: clone the plan, apply the mutation, run the scheduler.
+        // Only send the real request if the scheduler succeeds.
+        let mut dry_plan = plan.clone();
+        let sched_result: Result<(), String> = match self.mode {
+            Mode::New => {
+                let mut m = Milestone::new(name.clone(), description.clone());
+                m.constraint = constraint;
+                m.dependencies = dependencies.clone();
+                dry_plan.add_milestone(m);
+                dry_plan
+                    .compute_time_optimised_plan()
+                    .map_err(|e| e.to_string())
+            }
+            Mode::Edit(id) => {
+                let patch = MilestonePatch::new()
+                    .name(name.clone())
+                    .description(description.clone())
+                    .constraint(constraint)
+                    .dependencies(dependencies.clone());
+                apply_milestone_patch(&mut dry_plan, id, patch)
+                    .map_err(|e| e.to_string())
+                    .and_then(|()| {
+                        dry_plan
+                            .compute_time_optimised_plan()
+                            .map_err(|e| e.to_string())
+                    })
+            }
+        };
+
+        if let Err(e) = sched_result {
+            self.scheduler_error = Some(e);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+
+        self.scheduler_error = None;
+
         match self.mode {
             Mode::New => {
                 let mut m = Milestone::new(name, description);
@@ -1863,6 +1904,44 @@ impl FloatingWindow for MilestoneFormWindow {
 
         canvas.restore(); // end content scroll region
 
+        // Scheduler error: red border + fixed banner below title bar.
+        if let Some(ref err_msg) = self.scheduler_error {
+            paint.set_color(Color::from(INPUT_BORDER_ERROR));
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(2.5);
+            canvas.draw_rrect(RRect::new_rect_xy(panel, CORNER, CORNER), &paint);
+            paint.set_style(PaintStyle::Fill);
+
+            const BANNER_H: f32 = 36.0;
+            let banner_rect = Rect::from_xywh(
+                panel.left,
+                panel.top + TITLE_H + 1.0,
+                panel.width(),
+                BANNER_H,
+            );
+            paint.set_color(Color::from(ERROR_BG));
+            canvas.draw_rect(banner_rect, &paint);
+            let (_, bm) = cache.small_font.metrics();
+            let by = banner_rect.top + (BANNER_H - (bm.descent - bm.ascent)) / 2.0 - bm.ascent;
+            paint.set_color(Color::from(INPUT_BORDER_ERROR));
+            let max_w = panel.width() - 2.0 * PLAN_FORM_PADDING;
+            let mut msg = err_msg.as_str();
+            while !msg.is_empty() {
+                let (w, _) = cache.small_font.measure_str(msg, None);
+                if w <= max_w {
+                    break;
+                }
+                let mut end = msg.len() - 1;
+                while !msg.is_char_boundary(end) {
+                    end -= 1;
+                }
+                msg = &msg[..end];
+            }
+            if let Some(blob) = TextBlob::new(msg, &cache.small_font) {
+                canvas.draw_text_blob(&blob, (panel.left + PLAN_FORM_PADDING, by), &paint);
+            }
+        }
+
         // Scrollbar
         let content_area_h = panel.height() - TITLE_H - 1.0;
         let full_content_h = PANEL_H - TITLE_H - 1.0;
@@ -2258,7 +2337,7 @@ impl FloatingWindow for MilestoneFormWindow {
             return FloatingWindowOutcome::close();
         }
         if Self::save_btn_rect(width, height).contains(pt_form) {
-            return self.try_submit(sender);
+            return self.try_submit(plan, sender);
         }
 
         // Constraint kind segmented
@@ -2385,7 +2464,7 @@ impl FloatingWindow for MilestoneFormWindow {
         sender: &PlanRequestSender,
         width: f32,
         height: f32,
-        _plan: &Plan,
+        plan: &Plan,
         cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if self.calendar_open {
@@ -2444,7 +2523,7 @@ impl FloatingWindow for MilestoneFormWindow {
                     self.set_focus(TextField::Name);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                Key::Named(NamedKey::Enter) => return self.try_submit(sender),
+                Key::Named(NamedKey::Enter) => return self.try_submit(plan, sender),
                 Key::Named(NamedKey::Backspace) => {
                     self.dependencies[lag_idx].lag_input.backspace();
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
@@ -2575,7 +2654,7 @@ impl FloatingWindow for MilestoneFormWindow {
 
         match key {
             Key::Named(NamedKey::Escape) => FloatingWindowOutcome::close(),
-            Key::Named(NamedKey::Enter) => self.try_submit(sender),
+            Key::Named(NamedKey::Enter) => self.try_submit(plan, sender),
             Key::Named(NamedKey::Tab) => {
                 let next = match self.focused {
                     TextField::Name => TextField::Description,

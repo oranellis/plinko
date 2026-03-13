@@ -579,7 +579,11 @@ impl PlanEngine {
 
 // ── Patch application (free functions to avoid borrow issues in closures) ─────
 
-fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result<(), PlanError> {
+pub(crate) fn apply_task_patch(
+    plan: &mut Plan,
+    id: TaskId,
+    patch: TaskPatch,
+) -> Result<(), PlanError> {
     if !plan.tasks.contains_key(&id) {
         return Err(PlanError::TaskNotFound(id));
     }
@@ -627,7 +631,7 @@ fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result<(),
     Ok(())
 }
 
-fn apply_milestone_patch(
+pub(crate) fn apply_milestone_patch(
     plan: &mut Plan,
     id: MilestoneId,
     patch: MilestonePatch,
