@@ -749,7 +749,17 @@ fn draw_gantt_dependencies(
                         },
                     );
                 }
-                GanttItem::PlanStart { .. } => {}
+                GanttItem::PlanStart { date } => {
+                    let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;
+                    pos_map.insert(
+                        NodeId::PlanStart,
+                        ItemPos {
+                            start_x: cx - GANTT_MS_HALF * 1.1,
+                            end_x: cx + GANTT_MS_HALF * 1.1,
+                            center_y: cy,
+                        },
+                    );
+                }
             }
         }
     }
@@ -762,9 +772,6 @@ fn draw_gantt_dependencies(
             None => continue,
         };
         for dep in &task.dependencies {
-            if dep.id == NodeId::PlanStart {
-                continue;
-            }
             if let Some(from_pos) = pos_map.get(&dep.id) {
                 draw_dep_arrow(
                     canvas,
@@ -785,9 +792,6 @@ fn draw_gantt_dependencies(
             None => continue,
         };
         for dep in &ms.dependencies {
-            if dep.id == NodeId::PlanStart {
-                continue;
-            }
             if let Some(from_pos) = pos_map.get(&dep.id) {
                 draw_dep_arrow(
                     canvas,
@@ -824,20 +828,40 @@ fn draw_dep_arrow(
         return;
     }
 
+    let sign_y = if y2 > y1 { 1.0 } else { -1.0 };
     let r = radius.min(((y2 - y1).abs() / 2.0).max(2.0));
-    let mid_x = if x2 > x1 + r * 2.0 {
+
+    // turn_x: where the first (horizontal→vertical) corner is made.
+    // Needs to be at least x1+r to fit the corner radius coming from x1.
+    // Standard case: use midpoint when there is enough horizontal room.
+    let turn_x = if x2 >= x1 + 2.0 * r {
         (x1 + x2) / 2.0
     } else {
-        x1 + r * 2.0
+        x1 + r
     };
-    let sign_y = if y2 > y1 { 1.0 } else { -1.0 };
+
+    // At the bottom corner the path turns from vertical to horizontal toward x2.
+    // The radius must not overshoot x2: if x2 is to the RIGHT of turn_x, cap at
+    // (x2 - turn_x); if to the LEFT (or equal), cap at (turn_x - x2).
+    let bottom_r = if x2 >= turn_x {
+        r.min(x2 - turn_x)
+    } else {
+        r.min(turn_x - x2)
+    };
 
     let mut pb = PathBuilder::new();
     pb.move_to((x1, y1));
-    pb.line_to((mid_x - r, y1));
-    pb.cubic_to((mid_x, y1), (mid_x, y1), (mid_x, y1 + sign_y * r));
-    pb.line_to((mid_x, y2 - sign_y * r));
-    pb.cubic_to((mid_x, y2), (mid_x, y2), (mid_x + r, y2));
+    // First corner: right-turn from horizontal to downward/upward
+    pb.line_to((turn_x - r, y1));
+    pb.cubic_to((turn_x, y1), (turn_x, y1), (turn_x, y1 + sign_y * r));
+    // Vertical segment
+    pb.line_to((turn_x, y2 - sign_y * r));
+    // Second corner: turn toward x2 (right if x2 > turn_x, left otherwise)
+    if x2 >= turn_x {
+        pb.cubic_to((turn_x, y2), (turn_x, y2), (turn_x + bottom_r, y2));
+    } else {
+        pb.cubic_to((turn_x, y2), (turn_x, y2), (turn_x - bottom_r, y2));
+    }
     pb.line_to((x2, y2));
     canvas.draw_path(&pb.detach(), paint);
     draw_arrowhead(canvas, paint, x2, y2);
