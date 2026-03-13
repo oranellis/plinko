@@ -1,6 +1,7 @@
 //! Mutable state for the overview page.
 
 use crate::data::ids::NodeId;
+use crate::ui::floating_window::FloatingWindow;
 use crate::ui::layout::GANTT_ZOOM_DEFAULT;
 
 /// Full interactive state for the overview page.
@@ -13,6 +14,9 @@ pub struct OverviewState {
     pub open_task_form: bool,
     /// Set when the milestone (diamond) toolbar button is clicked; consumed by `take_open_request`.
     pub open_milestone_form: bool,
+    /// A fully-constructed floating window to open on the next `take_open_request` call.
+    /// Used for edit forms created from Gantt-item clicks (where `plan` is available).
+    pub pending_window: Option<Box<dyn FloatingWindow>>,
 
     // ── Gantt chart state ──────────────────────────────────────────────────
     /// Vertical scroll offset in pixels.
@@ -34,6 +38,9 @@ pub struct OverviewState {
     pub last_drag_y: f32,
     pub drag_vel_x: f32,
     pub drag_vel_y: f32,
+    /// Position where the most recent mouse press began (used to distinguish clicks from drags).
+    pub press_start_x: f32,
+    pub press_start_y: f32,
     // Horizontal scroll (pixels)
     pub scroll_x: f32,
     // Settings window flag
@@ -51,6 +58,7 @@ impl OverviewState {
             open_users_window: false,
             open_task_form: false,
             open_milestone_form: false,
+            pending_window: None,
             scroll_y: 0.0,
             zoom: GANTT_ZOOM_DEFAULT,
             cursor_x: 0.0,
@@ -64,6 +72,8 @@ impl OverviewState {
             last_drag_y: 0.0,
             drag_vel_x: 0.0,
             drag_vel_y: 0.0,
+            press_start_x: 0.0,
+            press_start_y: 0.0,
             scroll_x: 0.0,
             open_settings_window: false,
             settings_init_name: String::new(),

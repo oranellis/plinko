@@ -4,6 +4,7 @@ use chrono::{Datelike, Duration, NaiveDate, Weekday as CWeekday};
 use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, PathBuilder, RRect, Rect, TextBlob};
 
 use crate::data::Plan;
+use crate::data::ids::{MilestoneId, TaskId};
 use crate::data::task::TaskStatus;
 use crate::ui::cache::RenderCache;
 use crate::ui::icon_button;
@@ -13,6 +14,12 @@ use super::gantt::{
     GanttItem, GanttRow, MilestoneStatus, compute_date_range, milestone_display_status, pack_rows,
 };
 use super::state::OverviewState;
+
+/// A clicked item on the Gantt chart.
+pub enum GanttHit {
+    Task(TaskId),
+    Milestone(MilestoneId),
+}
 
 // ── Layout helpers ─────────────────────────────────────────────────────────────
 
@@ -847,4 +854,53 @@ fn draw_arrowhead(canvas: &Canvas, paint: &mut Paint, x: f32, y: f32) {
     pb.close();
     canvas.draw_path(&pb.detach(), paint);
     paint.set_style(saved_style);
+}
+
+// ── Hit testing ────────────────────────────────────────────────────────────────
+
+/// Returns the Gantt item (task or milestone) under pixel coordinates `(x, y)`,
+/// or `None` if the click was on empty space or the Plan Start marker.
+pub fn hit_test_gantt_item(
+    x: f32,
+    y: f32,
+    rows: &[GanttRow],
+    state: &OverviewState,
+    height: f32,
+    view_start: NaiveDate,
+) -> Option<GanttHit> {
+    let zoom = state.zoom;
+    let scroll_x = state.scroll_x;
+    let scroll_y = state.scroll_y;
+    let num_rows = rows.len();
+
+    for (row_idx, row) in rows.iter().enumerate() {
+        let row_y = row_top_y(row_idx, num_rows, height, scroll_y);
+
+        for item in &row.items {
+            match item {
+                GanttItem::Task { id, start, end } => {
+                    let bar_x = date_to_x(*start, view_start, zoom, scroll_x);
+                    let bar_w = (((*end - *start).num_days() + 1) as f32 * zoom).max(4.0);
+                    let bar_y = row_y + GANTT_ROW_PADDING;
+                    let bar_h = GANTT_ROW_H - 2.0 * GANTT_ROW_PADDING;
+
+                    if x >= bar_x && x <= bar_x + bar_w && y >= bar_y && y <= bar_y + bar_h {
+                        return Some(GanttHit::Task(*id));
+                    }
+                }
+                GanttItem::Milestone { id, date } => {
+                    let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;
+                    let cy = row_y + GANTT_ROW_H / 2.0;
+                    // Diamond hit: Manhattan distance from centre.
+                    if (x - cx).abs() + (y - cy).abs() <= GANTT_MS_HALF * 1.5 {
+                        return Some(GanttHit::Milestone(*id));
+                    }
+                }
+                // Plan Start marker is not editable.
+                GanttItem::PlanStart { .. } => {}
+            }
+        }
+    }
+
+    None
 }

@@ -105,7 +105,7 @@ impl Page for OverviewPage {
         y: f32,
         pressed: bool,
         width: f32,
-        _height: f32,
+        height: f32,
         plan: &Plan,
         _sender: &PlanRequestSender,
     ) -> DirtyRegion {
@@ -116,6 +116,8 @@ impl Page for OverviewPage {
                 self.state.is_dragging = true;
                 self.state.last_drag_x = x;
                 self.state.last_drag_y = y;
+                self.state.press_start_x = x;
+                self.state.press_start_y = y;
                 self.state.drag_vel_x = 0.0;
                 self.state.drag_vel_y = 0.0;
                 self.state.vel_x = 0.0;
@@ -149,10 +151,42 @@ impl Page for OverviewPage {
             }
         } else if self.state.is_dragging {
             self.state.is_dragging = false;
-            let speed = (self.state.drag_vel_x.powi(2) + self.state.drag_vel_y.powi(2)).sqrt();
-            if speed > 1.5 {
-                self.state.vel_x = self.state.drag_vel_x * 3.0;
-                self.state.vel_y = self.state.drag_vel_y * 3.0;
+
+            let drag_dist = ((x - self.state.press_start_x).powi(2)
+                + (y - self.state.press_start_y).powi(2))
+            .sqrt();
+
+            if drag_dist < 6.0 {
+                // Short drag / click — hit-test for task or milestone
+                use gantt::{compute_date_range, pack_rows};
+                let rows = pack_rows(plan);
+                let view_start = compute_date_range(plan)
+                    .map(|(s, _)| s)
+                    .unwrap_or(plan.start_date);
+                if let Some(hit) =
+                    render::hit_test_gantt_item(x, y, &rows, &self.state, height, view_start)
+                {
+                    match hit {
+                        render::GanttHit::Task(id) => {
+                            if let Some(task) = plan.tasks.get(&id) {
+                                self.state.pending_window =
+                                    Some(Box::new(TaskFormWindow::from_task(task)));
+                            }
+                        }
+                        render::GanttHit::Milestone(id) => {
+                            if let Some(ms) = plan.milestones.get(&id) {
+                                self.state.pending_window =
+                                    Some(Box::new(MilestoneFormWindow::from_milestone(ms)));
+                            }
+                        }
+                    }
+                }
+            } else {
+                let speed = (self.state.drag_vel_x.powi(2) + self.state.drag_vel_y.powi(2)).sqrt();
+                if speed > 1.5 {
+                    self.state.vel_x = self.state.drag_vel_x * 3.0;
+                    self.state.vel_y = self.state.drag_vel_y * 3.0;
+                }
             }
         }
         // Any press or release may have mutated scroll / opened a window — always redraw.
@@ -185,6 +219,9 @@ impl Page for OverviewPage {
     }
 
     fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+        if let Some(w) = self.state.pending_window.take() {
+            return Some(w);
+        }
         if self.state.open_users_window {
             self.state.open_users_window = false;
             return Some(Box::new(UsersWindow::new()));
