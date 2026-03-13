@@ -1020,7 +1020,7 @@ mod tests {
 
     fn make_plan() -> Plan {
         let mut p = Plan::new("Test");
-        p.start_date = date(2026, 3, 9); // Monday
+        p.start_date = date(2030, 1, 7); // Monday — far future so today-floor never affects tests
         p
     }
 
@@ -1580,7 +1580,7 @@ mod tests {
     #[test]
     fn scheduler_weekend_gap_in_work_segments() {
         let mut p = make_plan();
-        p.start_date = date(2026, 3, 12); // Thursday
+        p.start_date = date(2030, 1, 10); // Thursday — far future so tests remain stable
         let alice = p.add_user(User::new("Alice"));
 
         let mut task = Task::new("T", "");
@@ -1597,11 +1597,11 @@ mod tests {
         // Must have exactly 5 work segments (no weekend)
         assert_eq!(segs.len(), 5);
         let seg_dates: Vec<NaiveDate> = segs.iter().map(|s| s.date).collect();
-        assert_eq!(seg_dates[0], date(2026, 3, 12)); // Thu
-        assert_eq!(seg_dates[1], date(2026, 3, 13)); // Fri
-        assert_eq!(seg_dates[2], date(2026, 3, 16)); // Mon (skipped Sat 14, Sun 15)
-        assert_eq!(seg_dates[3], date(2026, 3, 17)); // Tue
-        assert_eq!(seg_dates[4], date(2026, 3, 18)); // Wed
+        assert_eq!(seg_dates[0], date(2030, 1, 10)); // Thu
+        assert_eq!(seg_dates[1], date(2030, 1, 11)); // Fri
+        assert_eq!(seg_dates[2], date(2030, 1, 14)); // Mon (skipped Sat 12, Sun 13)
+        assert_eq!(seg_dates[3], date(2030, 1, 15)); // Tue
+        assert_eq!(seg_dates[4], date(2030, 1, 16)); // Wed
     }
 
     /// Placeholder slot: two candidates — Alice works 4 h/day (half time),
@@ -1660,14 +1660,14 @@ mod tests {
 
         let mut task = Task::new("T", "");
         task.add_specific_worker(alice, 1.0);
-        task.constraint = Some(crate::data::DateConstraint::latest(date(2026, 3, 11)));
+        task.constraint = Some(crate::data::DateConstraint::latest(date(2030, 1, 9))); // Wed
         let tid = p.add_task(task);
         p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
             .unwrap();
 
         p.compute_time_optimised_plan().unwrap();
         let alloc = p.allocation.as_ref().unwrap();
-        assert!(alloc.tasks[&tid].start_date <= date(2026, 3, 11));
+        assert!(alloc.tasks[&tid].start_date <= date(2030, 1, 9));
     }
 
     /// Latest constraint violated: predecessor forces start after deadline.
@@ -1706,14 +1706,14 @@ mod tests {
 
         let mut task = Task::new("T", "");
         task.add_specific_worker(alice, 1.0);
-        task.constraint = Some(crate::data::DateConstraint::fixed(date(2026, 3, 11))); // Wed
+        task.constraint = Some(crate::data::DateConstraint::fixed(date(2030, 1, 9))); // Wed
         let tid = p.add_task(task);
         p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
             .unwrap();
 
         p.compute_time_optimised_plan().unwrap();
         let alloc = p.allocation.as_ref().unwrap();
-        assert_eq!(alloc.tasks[&tid].start_date, date(2026, 3, 11));
+        assert_eq!(alloc.tasks[&tid].start_date, date(2030, 1, 9));
     }
 
     /// Fixed constraint violated when earliest_possible > required_date.
