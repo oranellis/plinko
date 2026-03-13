@@ -64,6 +64,8 @@ pub fn draw_overview(
     let rows = pack_rows(plan);
     let view_start = view_start_date(plan);
 
+    // Draw in layered order: backgrounds → grid lines → items.
+    draw_gantt_row_backgrounds(canvas, state, &rows, w, h);
     draw_gantt_grid(canvas, state, w, h, view_start);
     draw_gantt_rows(canvas, state, plan, &rows, w, h, view_start, cache);
     draw_gantt_dependencies(canvas, state, plan, &rows, w, h, view_start);
@@ -252,6 +254,42 @@ fn month_abbr(m: u32) -> &'static str {
     }
 }
 
+// ── Alternating row backgrounds ───────────────────────────────────────────────
+
+/// Draw alternating row stripes beneath the grid and task bars.
+/// Must be called before [`draw_gantt_grid`] so day-separator lines render on top.
+fn draw_gantt_row_backgrounds(
+    canvas: &Canvas,
+    state: &OverviewState,
+    rows: &[GanttRow],
+    width: f32,
+    height: f32,
+) {
+    let rows_top = gantt_rows_top();
+    let scroll_y = state.scroll_y;
+
+    canvas.save();
+    canvas.clip_rect(
+        Rect::from_xywh(0.0, rows_top, width, height - rows_top),
+        ClipOp::Intersect,
+        false,
+    );
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(false);
+    paint.set_style(PaintStyle::Fill);
+
+    for (row_idx, _) in rows.iter().enumerate() {
+        if row_idx % 2 == 1 {
+            let row_y = rows_top + row_idx as f32 * GANTT_ROW_H - scroll_y;
+            paint.set_color(Color::from(GANTT_ROW_ALT_BG));
+            canvas.draw_rect(Rect::from_xywh(0.0, row_y, width, GANTT_ROW_H), &paint);
+        }
+    }
+
+    canvas.restore();
+}
+
 // ── Day grid ───────────────────────────────────────────────────────────────────
 
 fn draw_gantt_grid(
@@ -336,12 +374,6 @@ fn draw_gantt_rows(
 
     for (row_idx, row) in rows.iter().enumerate() {
         let row_y = rows_top + row_idx as f32 * GANTT_ROW_H - scroll_y;
-
-        if row_idx % 2 == 1 {
-            paint.set_color(Color::from(GANTT_ROW_ALT_BG));
-            paint.set_style(PaintStyle::Fill);
-            canvas.draw_rect(Rect::from_xywh(0.0, row_y, width, GANTT_ROW_H), &paint);
-        }
 
         for item in &row.items {
             match item {
