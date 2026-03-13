@@ -39,6 +39,20 @@ fn view_start_date(plan: &Plan) -> NaiveDate {
         .unwrap_or(plan.start_date)
 }
 
+/// Vertical offset to center the content rows in the visible Gantt area.
+/// Returns 0 when content exceeds the available height (scrollable).
+fn vertical_center_offset(num_rows: usize, height: f32) -> f32 {
+    let content_h = num_rows as f32 * GANTT_ROW_H;
+    let visible_h = (height - gantt_rows_top()).max(0.0);
+    ((visible_h - content_h) / 2.0).max(0.0)
+}
+
+/// Compute the y pixel of a Gantt row's top edge (accounting for centering).
+fn row_top_y(row_idx: usize, num_rows: usize, height: f32, scroll_y: f32) -> f32 {
+    gantt_rows_top() + vertical_center_offset(num_rows, height) + row_idx as f32 * GANTT_ROW_H
+        - scroll_y
+}
+
 // ── Main entry point ───────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
@@ -257,6 +271,9 @@ fn month_abbr(m: u32) -> &'static str {
 // ── Alternating row backgrounds ───────────────────────────────────────────────
 
 /// Draw alternating row stripes beneath the grid and task bars.
+/// Stripes fill the entire visible Gantt area (not just content rows) and are
+/// positioned using the vertical center offset so the pattern is consistent
+/// with where content rows are rendered.
 /// Must be called before [`draw_gantt_grid`] so day-separator lines render on top.
 fn draw_gantt_row_backgrounds(
     canvas: &Canvas,
@@ -267,10 +284,12 @@ fn draw_gantt_row_backgrounds(
 ) {
     let rows_top = gantt_rows_top();
     let scroll_y = state.scroll_y;
+    let center_off = vertical_center_offset(rows.len(), height);
+    let visible_h = height - rows_top;
 
     canvas.save();
     canvas.clip_rect(
-        Rect::from_xywh(0.0, rows_top, width, height - rows_top),
+        Rect::from_xywh(0.0, rows_top, width, visible_h),
         ClipOp::Intersect,
         false,
     );
@@ -278,11 +297,17 @@ fn draw_gantt_row_backgrounds(
     let mut paint = Paint::default();
     paint.set_anti_alias(false);
     paint.set_style(PaintStyle::Fill);
+    paint.set_color(Color::from(GANTT_ROW_ALT_BG));
 
-    for (row_idx, _) in rows.iter().enumerate() {
-        if row_idx % 2 == 1 {
-            let row_y = rows_top + row_idx as f32 * GANTT_ROW_H - scroll_y;
-            paint.set_color(Color::from(GANTT_ROW_ALT_BG));
+    // Compute which row-index slots are visible (may be negative if scrolled).
+    // row0_rel is the y-position of row 0's top edge relative to rows_top.
+    let row0_rel = center_off - scroll_y;
+    let first = ((-row0_rel) / GANTT_ROW_H).floor() as i64;
+    let last = ((visible_h - row0_rel) / GANTT_ROW_H).ceil() as i64;
+
+    for idx in first..=last {
+        if idx.rem_euclid(2) == 1 {
+            let row_y = rows_top + row0_rel + idx as f32 * GANTT_ROW_H;
             canvas.draw_rect(Rect::from_xywh(0.0, row_y, width, GANTT_ROW_H), &paint);
         }
     }
@@ -373,7 +398,7 @@ fn draw_gantt_rows(
     let (_, metrics) = cache.font.metrics();
 
     for (row_idx, row) in rows.iter().enumerate() {
-        let row_y = rows_top + row_idx as f32 * GANTT_ROW_H - scroll_y;
+        let row_y = row_top_y(row_idx, rows.len(), height, scroll_y);
 
         for item in &row.items {
             match item {
@@ -568,7 +593,7 @@ fn draw_gantt_dependencies(
     let mut pos_map: HashMap<NodeId, ItemPos> = HashMap::new();
 
     for (row_idx, row) in rows.iter().enumerate() {
-        let cy = rows_top + row_idx as f32 * GANTT_ROW_H + GANTT_ROW_H / 2.0 - scroll_y;
+        let cy = row_top_y(row_idx, rows.len(), height, scroll_y) + GANTT_ROW_H / 2.0;
         for item in &row.items {
             match item {
                 GanttItem::Task { id, start, end } => {
