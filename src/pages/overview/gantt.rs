@@ -60,9 +60,10 @@ pub struct GanttRow {
 ///
 /// Priority:
 /// 1. `actual_start_date`..`actual_end_date` (both set → completed)
-/// 2. `actual_start_date`..`actual_start_date + duration` (in progress)
-/// 3. Scheduler start date + duration
-/// 4. `None` if no date information is available
+/// 2. `actual_start_date` + scheduler allocation end (in-progress)
+/// 3. Scheduler allocation start/end (most accurate — accounts for weekends)
+/// 4. Scheduled start + computed duration (fallback)
+/// 5. `None` if no date information is available
 pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveDate)> {
     use chrono::Duration;
 
@@ -73,7 +74,17 @@ pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveD
         return Some((s, e));
     }
     if let Some(s) = task.actual_start_date {
-        return Some((s, s + Duration::days(duration - 1)));
+        let end = plan
+            .allocation
+            .as_ref()
+            .and_then(|a| a.tasks.get(id))
+            .map(|a| a.end_date)
+            .unwrap_or_else(|| s + Duration::days(duration - 1));
+        return Some((s, end));
+    }
+    // Prefer allocation dates: these correctly account for weekends and daily-cap spreading.
+    if let Some(alloc) = plan.allocation.as_ref().and_then(|a| a.tasks.get(id)) {
+        return Some((alloc.start_date, alloc.end_date));
     }
     if let Some(s) = plan.dates.task(id) {
         return Some((s, s + Duration::days(duration - 1)));
