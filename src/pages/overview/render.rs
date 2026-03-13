@@ -824,57 +824,56 @@ fn draw_dep_arrow(
         pb.move_to((x1, y1));
         pb.line_to((x2, y2));
         canvas.draw_path(&pb.detach(), paint);
-        draw_arrowhead(canvas, paint, x2, y2);
+        draw_arrowhead(canvas, paint, x2, y2, false);
         return;
     }
 
     let sign_y = if y2 > y1 { 1.0 } else { -1.0 };
     let r = radius.min(((y2 - y1).abs() / 2.0).max(2.0));
 
-    // turn_x: where the first (horizontal→vertical) corner is made.
-    // Needs to be at least x1+r to fit the corner radius coming from x1.
-    // Standard case: use midpoint when there is enough horizontal room.
-    let turn_x = if x2 >= x1 + 2.0 * r {
-        (x1 + x2) / 2.0
+    if x2 >= x1 + 2.0 * r {
+        // Destination is comfortably to the right: route via midpoint S-curve.
+        let mid_x = (x1 + x2) / 2.0;
+        let mut pb = PathBuilder::new();
+        pb.move_to((x1, y1));
+        pb.line_to((mid_x - r, y1));
+        pb.cubic_to((mid_x, y1), (mid_x, y1), (mid_x, y1 + sign_y * r));
+        pb.line_to((mid_x, y2 - sign_y * r));
+        pb.cubic_to((mid_x, y2), (mid_x, y2), (mid_x + r, y2));
+        pb.line_to((x2, y2));
+        canvas.draw_path(&pb.detach(), paint);
+        draw_arrowhead(canvas, paint, x2, y2, false);
     } else {
-        x1 + r
-    };
-
-    // At the bottom corner the path turns from vertical to horizontal toward x2.
-    // The radius must not overshoot x2: if x2 is to the RIGHT of turn_x, cap at
-    // (x2 - turn_x); if to the LEFT (or equal), cap at (turn_x - x2).
-    let bottom_r = if x2 >= turn_x {
-        r.min(x2 - turn_x)
-    } else {
-        r.min(turn_x - x2)
-    };
-
-    let mut pb = PathBuilder::new();
-    pb.move_to((x1, y1));
-    // First corner: right-turn from horizontal to downward/upward
-    pb.line_to((turn_x - r, y1));
-    pb.cubic_to((turn_x, y1), (turn_x, y1), (turn_x, y1 + sign_y * r));
-    // Vertical segment
-    pb.line_to((turn_x, y2 - sign_y * r));
-    // Second corner: turn toward x2 (right if x2 > turn_x, left otherwise)
-    if x2 >= turn_x {
-        pb.cubic_to((turn_x, y2), (turn_x, y2), (turn_x + bottom_r, y2));
-    } else {
-        pb.cubic_to((turn_x, y2), (turn_x, y2), (turn_x - bottom_r, y2));
+        // Destination is close or to the left: drop straight down (or up) from x1
+        // and arrive with a downward (or upward) arrowhead. This avoids routing
+        // back across the destination bar.
+        let mut pb = PathBuilder::new();
+        pb.move_to((x1, y1));
+        pb.line_to((x1, y2 - sign_y * r));
+        pb.cubic_to((x1, y2), (x1, y2), (x1 + r.min(4.0), y2));
+        pb.line_to((x1 + r.min(4.0), y2));
+        canvas.draw_path(&pb.detach(), paint);
+        draw_arrowhead(canvas, paint, x1, y2, true);
     }
-    pb.line_to((x2, y2));
-    canvas.draw_path(&pb.detach(), paint);
-    draw_arrowhead(canvas, paint, x2, y2);
 }
 
-fn draw_arrowhead(canvas: &Canvas, paint: &mut Paint, x: f32, y: f32) {
+fn draw_arrowhead(canvas: &Canvas, paint: &mut Paint, x: f32, y: f32, vertical: bool) {
     let size = 5.0f32;
     let saved_style = paint.style();
     paint.set_style(PaintStyle::Fill);
     let mut pb = PathBuilder::new();
-    pb.move_to((x, y));
-    pb.line_to((x - size, y - size / 2.0));
-    pb.line_to((x - size, y + size / 2.0));
+    if vertical {
+        // Arrowhead pointing downward (or upward if the path came from below, but
+        // we always drop downward in the vertical case)
+        pb.move_to((x, y));
+        pb.line_to((x - size / 2.0, y - size));
+        pb.line_to((x + size / 2.0, y - size));
+    } else {
+        // Arrowhead pointing rightward
+        pb.move_to((x, y));
+        pb.line_to((x - size, y - size / 2.0));
+        pb.line_to((x - size, y + size / 2.0));
+    }
     pb.close();
     canvas.draw_path(&pb.detach(), paint);
     paint.set_style(saved_style);

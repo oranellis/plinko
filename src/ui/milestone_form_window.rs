@@ -333,6 +333,31 @@ enum Mode {
     Edit(MilestoneId),
 }
 
+// ── Text utilities ────────────────────────────────────────────────────────────
+
+fn wrap_text(text: &str, font: &skia_safe::Font, max_w: f32) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        let candidate = if current.is_empty() {
+            word.to_string()
+        } else {
+            format!("{current} {word}")
+        };
+        let (w, _) = font.measure_str(&candidate, None);
+        if w > max_w && !current.is_empty() {
+            lines.push(std::mem::take(&mut current));
+            current = word.to_string();
+        } else {
+            current = candidate;
+        }
+    }
+    if !current.is_empty() || lines.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
 // ── Main struct ───────────────────────────────────────────────────────────────
 
 pub struct MilestoneFormWindow {
@@ -1912,33 +1937,27 @@ impl FloatingWindow for MilestoneFormWindow {
             canvas.draw_rrect(RRect::new_rect_xy(panel, CORNER, CORNER), &paint);
             paint.set_style(PaintStyle::Fill);
 
-            const BANNER_H: f32 = 36.0;
-            let banner_rect = Rect::from_xywh(
-                panel.left,
-                panel.top + TITLE_H + 1.0,
-                panel.width(),
-                BANNER_H,
-            );
+            const PAD_V: f32 = 8.0;
+            let inset = 2.0;
+            let banner_x = panel.left + inset;
+            let banner_w = panel.width() - 2.0 * inset;
+            let max_w = banner_w - 2.0 * PLAN_FORM_PADDING;
+            let (_, bm) = cache.small_font.metrics();
+            let line_h = (bm.descent - bm.ascent).ceil() + 2.0;
+            let lines = wrap_text(err_msg, &cache.small_font, max_w);
+            let banner_h = PAD_V * 2.0 + line_h * lines.len() as f32;
+            let banner_rect =
+                Rect::from_xywh(banner_x, panel.top + TITLE_H + 1.0, banner_w, banner_h);
             paint.set_color(Color::from(ERROR_BG));
             canvas.draw_rect(banner_rect, &paint);
-            let (_, bm) = cache.small_font.metrics();
-            let by = banner_rect.top + (BANNER_H - (bm.descent - bm.ascent)) / 2.0 - bm.ascent;
             paint.set_color(Color::from(INPUT_BORDER_ERROR));
-            let max_w = panel.width() - 2.0 * PLAN_FORM_PADDING;
-            let mut msg = err_msg.as_str();
-            while !msg.is_empty() {
-                let (w, _) = cache.small_font.measure_str(msg, None);
-                if w <= max_w {
-                    break;
+            let text_x = banner_x + PLAN_FORM_PADDING;
+            let mut text_y = banner_rect.top + PAD_V - bm.ascent;
+            for line in &lines {
+                if let Some(blob) = TextBlob::new(line.as_str(), &cache.small_font) {
+                    canvas.draw_text_blob(&blob, (text_x, text_y), &paint);
                 }
-                let mut end = msg.len() - 1;
-                while !msg.is_char_boundary(end) {
-                    end -= 1;
-                }
-                msg = &msg[..end];
-            }
-            if let Some(blob) = TextBlob::new(msg, &cache.small_font) {
-                canvas.draw_text_blob(&blob, (panel.left + PLAN_FORM_PADDING, by), &paint);
+                text_y += line_h;
             }
         }
 
