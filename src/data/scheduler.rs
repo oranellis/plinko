@@ -367,11 +367,16 @@ impl Plan {
     /// Fill `total_hours` worth of work for `user_id` starting from
     /// `start_date`, deducting from `state.capacity`. Returns the resulting
     /// `WorkSegment` list.
+    ///
+    /// `max_per_day` caps how many hours may be consumed on a single calendar day;
+    /// when `Some`, work is spread across more days so the task spans its full
+    /// `duration_days_target` even when `workload_days < duration_days`.
     fn fill_slot(
         &self,
         user_id: UserId,
         total_hours: f32,
         start_date: NaiveDate,
+        max_per_day: Option<f32>,
         state: &mut SchedulerState,
     ) -> Vec<WorkSegment> {
         let mut remaining = total_hours;
@@ -382,7 +387,8 @@ impl Plan {
         while remaining > EPSILON && current <= limit {
             let avail = self.hours_remaining(state, user_id, current);
             if avail > EPSILON {
-                let take = avail.min(remaining);
+                let cap = max_per_day.unwrap_or(f32::MAX);
+                let take = avail.min(remaining).min(cap);
                 *state
                     .capacity
                     .entry((user_id, current))
@@ -407,6 +413,7 @@ impl Plan {
         user_id: UserId,
         total_hours: f32,
         start_date: NaiveDate,
+        max_per_day: Option<f32>,
         state: &SchedulerState,
     ) -> NaiveDate {
         let mut remaining = total_hours;
@@ -421,7 +428,8 @@ impl Plan {
                 .copied()
                 .unwrap_or_else(|| self.hours_available(&user_id, current));
             if avail > EPSILON {
-                let take = avail.min(remaining);
+                let cap = max_per_day.unwrap_or(f32::MAX);
+                let take = avail.min(remaining).min(cap);
                 remaining -= take;
                 last_date = current;
             }
@@ -439,6 +447,7 @@ impl Plan {
         required_tags: &HashSet<TagId>,
         workload_days: f32,
         earliest_start: NaiveDate,
+        max_per_day: Option<f32>,
         state: &SchedulerState,
     ) -> UserId {
         let total_hours = workload_days * self.default_schedule.hours_per_workload_day();
@@ -456,7 +465,7 @@ impl Plan {
         eligible.sort_by_key(|uid| uid.0);
 
         for uid in eligible {
-            let end = self.simulate_fill(uid, total_hours, earliest_start, state);
+            let end = self.simulate_fill(uid, total_hours, earliest_start, max_per_day, state);
             if end < best_end {
                 best_end = end;
                 best_user = Some(uid);
@@ -512,9 +521,27 @@ impl Plan {
         let mut task_start: Option<NaiveDate> = None;
         let mut task_end: Option<NaiveDate> = None;
 
+        // When duration_days_target is set, spread each slot's hours evenly over
+        // the calendar duration so the task isn't packed into fewer days than intended.
+        let task_duration = task.duration_days_target;
+
         // We need an immutable copy of workers to iterate while we mutate state
         let workers: Vec<WorkerSlot> = task.workers.clone();
         for slot in &workers {
+            let total_hours_for_slot = match slot {
+                WorkerSlot::Specific { workload_days, .. } => {
+                    workload_days * self.default_schedule.hours_per_workload_day()
+                }
+                WorkerSlot::Placeholder { workload_days, .. } => {
+                    workload_days * self.default_schedule.hours_per_workload_day()
+                }
+            };
+            let daily_cap = if task_duration > 0.0 {
+                Some(total_hours_for_slot / task_duration.ceil())
+            } else {
+                None
+            };
+
             let (user_id, workload_days) = match slot {
                 WorkerSlot::Specific {
                     user_id,
@@ -528,6 +555,7 @@ impl Plan {
                         required_tags,
                         *workload_days,
                         start_date,
+                        daily_cap,
                         state,
                     );
                     (uid, *workload_days)
@@ -535,7 +563,7 @@ impl Plan {
             };
 
             let total_hours = workload_days * self.default_schedule.hours_per_workload_day();
-            let segments = self.fill_slot(user_id, total_hours, start_date, state);
+            let segments = self.fill_slot(user_id, total_hours, start_date, daily_cap, state);
 
             if let Some(first) = segments.first() {
                 task_start = Some(task_start.map_or(first.date, |d: NaiveDate| d.min(first.date)));
@@ -547,9 +575,17 @@ impl Plan {
             slot_allocations.push(SlotAllocation { user_id, segments });
         }
 
-        // Tasks with no workers are treated as zero-duration (like milestones)
+        // Enforce that the task's calendar span is at least duration_days_target.
+        // This matters when:
+        //  - a task has workers but workload < duration (partial allocation per day)
+        //  - a task has no workers (pure calendar block)
+        let min_end = if task_duration > 0.0 {
+            start_date + chrono::Duration::days((task_duration.ceil() as i64 - 1).max(0))
+        } else {
+            start_date
+        };
         let task_start = task_start.unwrap_or(start_date);
-        let task_end = task_end.unwrap_or(start_date);
+        let task_end = task_end.map_or(min_end, |e| e.max(min_end));
 
         let alloc = TaskAllocation {
             task_id: id,
