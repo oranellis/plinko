@@ -468,12 +468,21 @@ fn draw_gantt_rows(
                     paint.set_style(PaintStyle::Fill);
 
                     if let Some(ms) = plan.milestones.get(id) {
-                        paint.set_color(Color::from(GANTT_HEADER_FG));
-                        let name_y = cy + half + 2.0 - metrics.ascent;
-                        if let Some(blob) = TextBlob::new(&ms.name, &cache.font) {
-                            let tw = cache.font.measure_str(&ms.name, None).0;
-                            canvas.draw_text_blob(&blob, (cx - tw / 2.0, name_y), &paint);
-                        }
+                        draw_milestone_label(
+                            canvas,
+                            rows,
+                            row_idx,
+                            cx,
+                            cy,
+                            half,
+                            &ms.name,
+                            GANTT_HEADER_FG,
+                            &cache.font,
+                            &metrics,
+                            view_start,
+                            zoom,
+                            scroll_x,
+                        );
                     }
                 }
 
@@ -500,13 +509,21 @@ fn draw_gantt_rows(
                     canvas.draw_path(&ps_path, &paint);
                     paint.set_style(PaintStyle::Fill);
 
-                    paint.set_color(Color::from(GANTT_PLAN_START_COLOR));
-                    let label = "Plan Start";
-                    let tw = cache.font.measure_str(label, None).0;
-                    let name_y = cy + half + 2.0 - metrics.ascent;
-                    if let Some(blob) = TextBlob::new(label, &cache.font) {
-                        canvas.draw_text_blob(&blob, (cx - tw / 2.0, name_y), &paint);
-                    }
+                    draw_milestone_label(
+                        canvas,
+                        rows,
+                        row_idx,
+                        cx,
+                        cy,
+                        half,
+                        "Plan Start",
+                        GANTT_PLAN_START_COLOR,
+                        &cache.font,
+                        &metrics,
+                        view_start,
+                        zoom,
+                        scroll_x,
+                    );
                 }
             }
         }
@@ -552,7 +569,115 @@ fn darken(c: u32) -> u32 {
     (a << 24) | (r << 16) | (g << 8) | b
 }
 
-// ── Dependency lines ───────────────────────────────────────────────────────────
+// ── Milestone label helpers ────────────────────────────────────────────────────
+
+/// Returns the visual pixel x-range `(left, right)` of a Gantt item.
+fn item_pixel_range(
+    item: &GanttItem,
+    view_start: NaiveDate,
+    zoom: f32,
+    scroll_x: f32,
+) -> (f32, f32) {
+    match item {
+        GanttItem::Task { start, end, .. } => {
+            let x1 = date_to_x(*start, view_start, zoom, scroll_x);
+            let x2 = date_to_x(*end, view_start, zoom, scroll_x) + zoom;
+            (x1, x2)
+        }
+        GanttItem::Milestone { date, .. } | GanttItem::PlanStart { date } => {
+            let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;
+            (cx - GANTT_MS_HALF * 1.1, cx + GANTT_MS_HALF * 1.1)
+        }
+    }
+}
+
+/// Returns `true` if any item in `rows[row_idx]` has a visual x-range that
+/// overlaps `[px_start, px_end)`.
+fn row_has_item_in_range(
+    rows: &[GanttRow],
+    row_idx: usize,
+    px_start: f32,
+    px_end: f32,
+    view_start: NaiveDate,
+    zoom: f32,
+    scroll_x: f32,
+) -> bool {
+    rows.get(row_idx).is_some_and(|row| {
+        row.items.iter().any(|item| {
+            let (is, ie) = item_pixel_range(item, view_start, zoom, scroll_x);
+            ie > px_start && is < px_end
+        })
+    })
+}
+
+/// Draw a milestone label, choosing the first clear side in the order
+/// Right → Left → Bottom → Top, or hiding it if no side is clear.
+#[allow(clippy::too_many_arguments)]
+fn draw_milestone_label(
+    canvas: &Canvas,
+    rows: &[GanttRow],
+    row_idx: usize,
+    cx: f32,
+    cy: f32,
+    half: f32,
+    label: &str,
+    color: u32,
+    font: &skia_safe::Font,
+    metrics: &skia_safe::FontMetrics,
+    view_start: NaiveDate,
+    zoom: f32,
+    scroll_x: f32,
+) {
+    let tw = font.measure_str(label, None).0;
+    let pad = 4.0_f32;
+    // Baseline that vertically centres single-line text at `cy`.
+    let vc = cy - (metrics.ascent + metrics.descent) / 2.0;
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    paint.set_color(Color::from(color));
+    paint.set_style(PaintStyle::Fill);
+
+    // Right — text starts at right edge of diamond
+    let r_x = cx + half + pad;
+    if !row_has_item_in_range(rows, row_idx, r_x, r_x + tw, view_start, zoom, scroll_x) {
+        if let Some(blob) = TextBlob::new(label, font) {
+            canvas.draw_text_blob(&blob, (r_x, vc), &paint);
+        }
+        return;
+    }
+
+    // Left — text ends at left edge of diamond
+    let l_x = cx - half - pad - tw;
+    if !row_has_item_in_range(rows, row_idx, l_x, l_x + tw, view_start, zoom, scroll_x) {
+        if let Some(blob) = TextBlob::new(label, font) {
+            canvas.draw_text_blob(&blob, (l_x, vc), &paint);
+        }
+        return;
+    }
+
+    // Bottom — text centred below diamond, checks row below
+    let b_x = cx - tw / 2.0;
+    if !row_has_item_in_range(rows, row_idx + 1, b_x, b_x + tw, view_start, zoom, scroll_x) {
+        let by = cy + half + 2.0 - metrics.ascent;
+        if let Some(blob) = TextBlob::new(label, font) {
+            canvas.draw_text_blob(&blob, (b_x, by), &paint);
+        }
+        return;
+    }
+
+    // Top — text centred above diamond, checks row above (skip for row 0)
+    if row_idx > 0 {
+        let t_x = cx - tw / 2.0;
+        if !row_has_item_in_range(rows, row_idx - 1, t_x, t_x + tw, view_start, zoom, scroll_x) {
+            let ty = cy - half - 2.0 - metrics.descent;
+            if let Some(blob) = TextBlob::new(label, font) {
+                canvas.draw_text_blob(&blob, (t_x, ty), &paint);
+            }
+        }
+    }
+    // If no position is clear, the label is hidden.
+}
 
 fn draw_gantt_dependencies(
     canvas: &Canvas,
