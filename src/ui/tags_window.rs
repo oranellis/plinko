@@ -12,12 +12,12 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
-    BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, DIVIDER_COLOR, ERROR_BG, ICON_DELETE_COLOR, INPUT_BG,
-    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LINK_COLOR,
-    LIST_BG, LIST_ITEM_HOVER_BG, OVERLAY_DARK, OVERLAY_MEDIUM, OVERLAY_SOFT, OVERLAY_XLIGHT,
-    PANEL_BG, PANEL_TEXT, PLAN_BTN_CORNER, PLAN_LIST_ITEM_H, SCROLLBAR_THUMB_COLOR,
-    TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH, TOOLTIP_BG,
+    BACK_BTN_CORNER, BACK_BTN_SIZE, BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG,
+    DIVIDER_COLOR, ERROR_BG, ICON_DELETE_COLOR, INPUT_BG, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS,
+    INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LINK_COLOR, LIST_BG, LIST_ITEM_HOVER_BG, OVERLAY_DARK,
+    OVERLAY_MEDIUM, OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PANEL_TEXT, PLAN_BTN_CORNER,
+    PLAN_LIST_ITEM_H, SCROLLBAR_THUMB_COLOR, TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR,
+    TOOLBAR_STROKE_WIDTH, TOOLTIP_BG,
 };
 use crate::ui::text_input::TextInput;
 
@@ -172,31 +172,6 @@ impl TagsWindow {
         if gap <= src_idx { gap } else { gap - 1 }
     }
 
-    fn draw_back_btn(canvas: &Canvas, btn: Rect, hovered: bool) {
-        let mut paint = Paint::default();
-        paint.set_anti_alias(true);
-        if hovered {
-            paint.set_color(Color::from(BACK_BTN_HOVER_BG));
-            paint.set_style(PaintStyle::Fill);
-            canvas.draw_rrect(
-                RRect::new_rect_xy(btn, BACK_BTN_CORNER, BACK_BTN_CORNER),
-                &paint,
-            );
-        }
-        let cx = btn.left + BACK_BTN_SIZE / 2.0;
-        let cy = btn.top + BACK_BTN_SIZE / 2.0;
-        let aw = BACK_BTN_SIZE * 0.3;
-        let ah = BACK_BTN_SIZE * 0.3;
-        let mut pb = PathBuilder::new();
-        pb.move_to((cx + aw / 2.0, cy - ah / 2.0));
-        pb.line_to((cx - aw / 2.0, cy));
-        pb.line_to((cx + aw / 2.0, cy + ah / 2.0));
-        paint.set_color(Color::from(BACK_BTN_ICON_COLOR));
-        paint.set_style(PaintStyle::Stroke);
-        paint.set_stroke_width(TOOLBAR_STROKE_WIDTH);
-        canvas.draw_path(&pb.detach(), &paint);
-    }
-
     fn draw_plus_btn(canvas: &Canvas, btn: Rect, hovered: bool, icon: &skia_safe::Path) {
         let mut paint = Paint::default();
         paint.set_anti_alias(true);
@@ -336,7 +311,7 @@ impl FloatingWindow for TagsWindow {
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
 
-        Self::draw_back_btn(canvas, back_btn, self.hovered_back);
+        crate::ui::window_chrome::draw_chevron_btn(canvas, back_btn, self.hovered_back);
         Self::draw_plus_btn(canvas, plus_btn, self.hovered_plus, &cache.icon_plus);
 
         // Divider below title

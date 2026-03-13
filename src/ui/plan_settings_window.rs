@@ -14,12 +14,12 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
-    BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, CAL_SELECTED_BG,
-    DEP_PLAN_START_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR,
-    INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LIST_ITEM_HOVER_BG,
-    MUTED_FG, OVERLAY_LIGHT, OVERLAY_XLIGHT, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP,
-    PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, SUBTLE_FG, TOOLBAR_STROKE_WIDTH,
+    BACK_BTN_SIZE, BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG,
+    BTN_SECONDARY_FG, CAL_SELECTED_BG, DEP_PLAN_START_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER,
+    INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
+    LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_LIGHT, OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG,
+    PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
+    SUBTLE_FG,
 };
 use crate::ui::text_input::TextInput;
 
@@ -999,7 +999,7 @@ impl FloatingWindow for PlanSettingsWindow {
         paint.set_anti_alias(true);
 
         // Shadow
-        paint.set_color(Color::from(0x28_000000_u32));
+        paint.set_color(Color::from(OVERLAY_SOFT));
         paint.set_style(PaintStyle::Fill);
         canvas.draw_rrect(
             RRect::new_rect_xy(
@@ -1019,20 +1019,23 @@ impl FloatingWindow for PlanSettingsWindow {
         paint.set_color(Color::from(PANEL_BG));
         canvas.draw_rrect(RRect::new_rect_xy(panel, CORNER, CORNER), &paint);
 
-        // Title bar divider
-        paint.set_color(Color::from(DIVIDER_COLOR));
-        paint.set_style(PaintStyle::Stroke);
-        paint.set_stroke_width(1.0);
-        canvas.draw_line(
-            (panel.left, panel.top + TITLE_H),
-            (panel.right, panel.top + TITLE_H),
+        // Title bar background (rounded top corners only)
+        let title_rect = Rect::from_xywh(panel.left, panel.top, panel.width(), TITLE_H);
+        paint.set_color(Color::from(LIST_BG));
+        canvas.draw_rrect(RRect::new_rect_xy(title_rect, CORNER, CORNER), &paint);
+        canvas.draw_rect(
+            Rect::from_xywh(
+                panel.left,
+                panel.top + CORNER,
+                panel.width(),
+                TITLE_H - CORNER,
+            ),
             &paint,
         );
-        paint.set_style(PaintStyle::Fill);
 
         // Title text (centred in title bar)
         let title = "Plan Settings";
-        paint.set_color(Color::from(0xff_222222_u32));
+        paint.set_color(Color::from(ITEM_FG));
         if let Some(blob) = TextBlob::new(title, &cache.font) {
             let (adv, _) = cache.font.measure_str(title, None);
             let (_, m) = cache.font.metrics();
@@ -1041,25 +1044,17 @@ impl FloatingWindow for PlanSettingsWindow {
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
 
-        // X close button (top-left of title bar)
+        // Back chevron button
         let back_rect = Self::back_btn_rect(width, height);
-        if self.hovered_back {
-            paint.set_color(Color::from(BACK_BTN_HOVER_BG));
-            canvas.draw_rrect(
-                RRect::new_rect_xy(back_rect, BACK_BTN_CORNER, BACK_BTN_CORNER),
-                &paint,
-            );
-        }
-        paint.set_color(Color::from(BACK_BTN_ICON_COLOR));
-        paint.set_style(PaintStyle::Stroke);
-        paint.set_stroke_width(TOOLBAR_STROKE_WIDTH);
-        let m = back_rect.left + back_rect.width() * 0.28;
-        let n = back_rect.left + back_rect.width() * 0.72;
-        let mt = back_rect.top + back_rect.height() * 0.28;
-        let nt = back_rect.top + back_rect.height() * 0.72;
-        canvas.draw_line((m, mt), (n, nt), &paint);
-        canvas.draw_line((n, mt), (m, nt), &paint);
+        crate::ui::window_chrome::draw_chevron_btn(canvas, back_rect, self.hovered_back);
+
+        // Divider below title bar
+        paint.set_color(Color::from(DIVIDER_COLOR));
         paint.set_style(PaintStyle::Fill);
+        canvas.draw_rect(
+            Rect::from_xywh(panel.left, panel.top + TITLE_H, panel.width(), 1.0),
+            &paint,
+        );
 
         // ── Bottom bar (Save / Cancel) — not scrolled ─────────────────────────
         let save_rect = Self::save_btn_rect(width, height);
@@ -1201,6 +1196,19 @@ impl FloatingWindow for PlanSettingsWindow {
         }
 
         canvas.restore(); // end content scroll
+
+        // Scrollbar
+        let sep_y = Self::save_btn_rect(width, height).top - PLAN_FORM_PADDING;
+        let visible_h = sep_y - (panel.top + TITLE_H + 1.0);
+        let total_h = PANEL_H - TITLE_H - 1.0 - PLAN_BTN_H - PLAN_FORM_PADDING * 2.0;
+        crate::ui::window_chrome::draw_window_scrollbar(
+            canvas,
+            panel.right,
+            panel.top + TITLE_H + 1.0,
+            visible_h,
+            total_h,
+            self.scroll_y,
+        );
 
         // ── Overlays: calendar and target dropdown (above everything) ─────────
         let today = chrono::Local::now().date_naive();

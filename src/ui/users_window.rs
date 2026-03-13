@@ -17,10 +17,9 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    AVATAR_COLORS, BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE,
-    DIVIDER_COLOR, ITEM_FG, LIST_BG, LIST_ITEM_HOVER_BG, LIST_SECTION_FG, OVERLAY_SOFT, PANEL_BG,
-    PANEL_TEXT, PLAN_LIST_ITEM_H, SCROLLBAR_THUMB_COLOR, TOOLBAR_BTN_HOVER_BG,
-    TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
+    AVATAR_COLORS, BACK_BTN_CORNER, BACK_BTN_SIZE, DIVIDER_COLOR, ITEM_FG, LIST_BG,
+    LIST_ITEM_HOVER_BG, LIST_SECTION_FG, OVERLAY_SOFT, PANEL_BG, PANEL_TEXT, PLAN_LIST_ITEM_H,
+    SCROLLBAR_THUMB_COLOR, TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
 };
 
 const PANEL_W: f32 = 420.0;
@@ -141,37 +140,6 @@ impl UsersWindow {
         if idx < user_count { Some(idx) } else { None }
     }
 
-    /// Draws a left-pointing chevron button at `btn_rect` without a blur backdrop
-    /// (buttons sit on a solid panel so no backdrop blur is needed).
-    fn draw_chevron_btn(canvas: &Canvas, btn_rect: Rect, hovered: bool) {
-        let mut paint = Paint::default();
-        paint.set_anti_alias(true);
-
-        if hovered {
-            paint.set_color(Color::from(BACK_BTN_HOVER_BG));
-            paint.set_style(PaintStyle::Fill);
-            canvas.draw_rrect(
-                RRect::new_rect_xy(btn_rect, BACK_BTN_CORNER, BACK_BTN_CORNER),
-                &paint,
-            );
-        }
-
-        let cx = btn_rect.left + BACK_BTN_SIZE / 2.0;
-        let cy = btn_rect.top + BACK_BTN_SIZE / 2.0;
-        let aw = BACK_BTN_SIZE * 0.3;
-        let ah = BACK_BTN_SIZE * 0.3;
-
-        let mut pb = PathBuilder::new();
-        pb.move_to((cx + aw / 2.0, cy - ah / 2.0));
-        pb.line_to((cx - aw / 2.0, cy));
-        pb.line_to((cx + aw / 2.0, cy + ah / 2.0));
-
-        paint.set_color(Color::from(BACK_BTN_ICON_COLOR));
-        paint.set_style(PaintStyle::Stroke);
-        paint.set_stroke_width(TOOLBAR_STROKE_WIDTH);
-        canvas.draw_path(&pb.detach(), &paint);
-    }
-
     /// Draws a generic icon button (plus or tag) at `btn_rect`.
     fn draw_icon_btn(canvas: &Canvas, btn_rect: Rect, hovered: bool, icon: &skia_safe::Path) {
         let mut paint = Paint::default();
@@ -265,7 +233,7 @@ impl FloatingWindow for UsersWindow {
         }
 
         // Back (chevron) button
-        Self::draw_chevron_btn(canvas, back_btn, self.hovered_back);
+        crate::ui::window_chrome::draw_chevron_btn(canvas, back_btn, self.hovered_back);
 
         // Plus button
         Self::draw_icon_btn(canvas, plus_btn, self.hovered_plus, &cache.icon_plus);

@@ -11,11 +11,10 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_PRIMARY_BG,
+    BACK_BTN_SIZE, BTN_PRIMARY_BG,
     BTN_PRIMARY_FG, DIVIDER_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR,
     INPUT_FG, ITEM_FG, LABEL_FG, LIST_BG, LIST_ITEM_HOVER_BG, PANEL_BG, PANEL_TEXT,
     PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
-    TOOLBAR_STROKE_WIDTH,
 };
 use crate::ui::text_input::TextInput;
 
@@ -235,31 +234,6 @@ impl AddUserWindow {
 }
 
 // ── Drawing helpers ───────────────────────────────────────────────────────────
-
-fn draw_chevron_btn(canvas: &Canvas, btn_rect: Rect, hovered: bool) {
-    let mut paint = Paint::default();
-    paint.set_anti_alias(true);
-    if hovered {
-        paint.set_color(Color::from(BACK_BTN_HOVER_BG));
-        paint.set_style(PaintStyle::Fill);
-        canvas.draw_rrect(
-            RRect::new_rect_xy(btn_rect, BACK_BTN_CORNER, BACK_BTN_CORNER),
-            &paint,
-        );
-    }
-    let cx = btn_rect.left + BACK_BTN_SIZE / 2.0;
-    let cy = btn_rect.top + BACK_BTN_SIZE / 2.0;
-    let aw = BACK_BTN_SIZE * 0.3;
-    let ah = BACK_BTN_SIZE * 0.3;
-    let mut pb = PathBuilder::new();
-    pb.move_to((cx + aw / 2.0, cy - ah / 2.0));
-    pb.line_to((cx - aw / 2.0, cy));
-    pb.line_to((cx + aw / 2.0, cy + ah / 2.0));
-    paint.set_color(Color::from(BACK_BTN_ICON_COLOR));
-    paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(TOOLBAR_STROKE_WIDTH);
-    canvas.draw_path(&pb.detach(), &paint);
-}
 
 fn draw_text_input(
     canvas: &Canvas,
@@ -653,7 +627,7 @@ impl FloatingWindow for AddUserWindow {
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
 
-        draw_chevron_btn(canvas, back_btn, self.hovered_back);
+        crate::ui::window_chrome::draw_chevron_btn(canvas, back_btn, self.hovered_back);
 
         paint.set_color(Color::from(DIVIDER_COLOR));
         canvas.draw_rect(

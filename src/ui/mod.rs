@@ -22,3 +22,4 @@ pub mod task_form_window;
 pub mod text_input;
 pub mod user_form_window;
 pub mod users_window;
+pub mod window_chrome;

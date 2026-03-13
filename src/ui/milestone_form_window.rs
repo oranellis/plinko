@@ -16,14 +16,13 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    BACK_BTN_CORNER, BACK_BTN_HOVER_BG, BACK_BTN_ICON_COLOR, BACK_BTN_SIZE, BTN_DANGER_BG,
-    BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG,
-    CAL_SELECTED_BG, DEP_PLAN_START_FG, DIVIDER_COLOR, ERROR_BG, GHOST_FG, ICON_DELETE_COLOR,
-    INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG,
-    ITEM_FG, LABEL_FG, LINK_COLOR, LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK,
-    OVERLAY_LIGHT, OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER,
-    PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
-    SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG, TOOLBAR_STROKE_WIDTH,
+    BACK_BTN_SIZE, BTN_DANGER_BG, BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG,
+    BTN_SECONDARY_BG, BTN_SECONDARY_FG, CAL_SELECTED_BG, DEP_PLAN_START_FG, DIVIDER_COLOR,
+    ERROR_BG, GHOST_FG, ICON_DELETE_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR,
+    INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LINK_COLOR, LIST_BG,
+    LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK, OVERLAY_LIGHT, OVERLAY_SOFT, OVERLAY_XLIGHT,
+    PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
+    PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG,
 };
 use crate::ui::multi_line_input::MultiLineInput;
 use crate::ui::text_input::TextInput;
@@ -871,31 +870,6 @@ fn draw_multi_line_input(
     canvas.restore();
 }
 
-fn draw_chevron_btn(canvas: &Canvas, btn_rect: Rect, hovered: bool) {
-    let mut paint = Paint::default();
-    paint.set_anti_alias(true);
-    if hovered {
-        paint.set_color(Color::from(BACK_BTN_HOVER_BG));
-        paint.set_style(PaintStyle::Fill);
-        canvas.draw_rrect(
-            RRect::new_rect_xy(btn_rect, BACK_BTN_CORNER, BACK_BTN_CORNER),
-            &paint,
-        );
-    }
-    let cx = btn_rect.left + BACK_BTN_SIZE / 2.0;
-    let cy = btn_rect.top + BACK_BTN_SIZE / 2.0;
-    let aw = BACK_BTN_SIZE * 0.3;
-    let ah = BACK_BTN_SIZE * 0.3;
-    let mut pb = PathBuilder::new();
-    pb.move_to((cx + aw / 2.0, cy - ah / 2.0));
-    pb.line_to((cx - aw / 2.0, cy));
-    pb.line_to((cx + aw / 2.0, cy + ah / 2.0));
-    paint.set_color(Color::from(BACK_BTN_ICON_COLOR));
-    paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(TOOLBAR_STROKE_WIDTH);
-    canvas.draw_path(&pb.detach(), &paint);
-}
-
 fn draw_text_input(
     canvas: &Canvas,
     rect: Rect,
@@ -1533,7 +1507,7 @@ impl FloatingWindow for MilestoneFormWindow {
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
 
-        draw_chevron_btn(canvas, back_btn, self.hovered_back);
+        crate::ui::window_chrome::draw_chevron_btn(canvas, back_btn, self.hovered_back);
 
         paint.set_color(Color::from(DIVIDER_COLOR));
         canvas.draw_rect(
