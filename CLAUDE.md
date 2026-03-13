@@ -17,6 +17,8 @@ cargo test <filter>  # run a single test or module, e.g. `cargo test data::task`
 
 `cargo fmt` must be run on the entire codebase after any code change. `cargo clippy` must also be run after any code change. All clippy warnings must be resolved before considering work complete.
 
+Each distinct change (feature, fix, refactor, chore) must be committed separately — never bundle two unrelated changes into one commit, even when implemented in the same session.
+
 Tests live in `#[cfg(test)]` modules within each source file.
 
 ## Architecture
