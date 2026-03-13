@@ -4,7 +4,7 @@ use crate::data::allocation::{
 use crate::data::ids::TagId;
 use crate::data::task::{TaskStatus, WorkerSlot};
 use crate::data::{Dependency, MilestoneId, NodeId, Plan, TaskId, UserId, constraint};
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -364,6 +364,34 @@ impl Plan {
         }
     }
 
+    /// Advance `count` working days from `start`, using the plan-wide calendar
+    /// overrides and default schedule to determine which days are working days.
+    /// Returns the date of the Nth working day (the last day of the span).
+    fn advance_working_days(&self, start: NaiveDate, count: u32) -> NaiveDate {
+        if count == 0 {
+            return start;
+        }
+        let mut current = start;
+        let mut remaining = count;
+        let limit = start + chrono::Duration::days(MAX_FILL_DAYS);
+        while current <= limit {
+            let hours = if let Some(h) = self.calendar.get(current) {
+                h
+            } else {
+                let wd = crate::data::schedule::chrono_to_weekday(current.weekday());
+                self.default_schedule.hours_on(wd)
+            };
+            if hours > 0.0 {
+                remaining -= 1;
+                if remaining == 0 {
+                    return current;
+                }
+            }
+            current += chrono::Duration::days(1);
+        }
+        current
+    }
+
     /// Fill `total_hours` worth of work for `user_id` starting from
     /// `start_date`, deducting from `state.capacity`. Returns the resulting
     /// `WorkSegment` list.
@@ -579,8 +607,10 @@ impl Plan {
         // This matters when:
         //  - a task has workers but workload < duration (partial allocation per day)
         //  - a task has no workers (pure calendar block)
+        // Use working-day counting so that tasks never extend into weekend/holiday
+        // days that aren't in the plan's default schedule.
         let min_end = if task_duration > 0.0 {
-            start_date + chrono::Duration::days((task_duration.ceil() as i64 - 1).max(0))
+            self.advance_working_days(start_date, task_duration.ceil() as u32)
         } else {
             start_date
         };
@@ -2469,7 +2499,7 @@ mod tests {
         assert_eq!(
             alloc.tasks[&bid].end_date,
             date(2030, 1, 8),
-            "no-worker task with duration=2 must have end_date = start + 1"
+            "no-worker task with duration=2 must have end_date = 2nd working day (Tuesday)"
         );
         // Blocker must have no slot allocations (no workers)
         assert!(
@@ -2487,6 +2517,64 @@ mod tests {
         assert!(
             (worker_segs[0].hours_worked - 8.0).abs() < EPSILON,
             "Alice must have her full 8 h on Monday"
+        );
+    }
+
+    /// A no-worker task starting on Friday must end on Monday, not Saturday,
+    /// because weekends are not working days in the default schedule.
+    #[test]
+    fn scheduler_no_worker_task_skips_weekends() {
+        let mut p = make_plan();
+        p.start_date = date(2030, 1, 11); // Friday
+
+        let mut task = Task::new("CalBlock", "");
+        task.duration_days_target = 2.0; // 2 working days
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        assert_eq!(
+            alloc.tasks[&tid].start_date,
+            date(2030, 1, 11),
+            "starts Friday"
+        );
+        assert_eq!(
+            alloc.tasks[&tid].end_date,
+            date(2030, 1, 14), // Monday (Sat/Sun skipped)
+            "no-worker 2-day task starting Friday must end Monday"
+        );
+    }
+
+    /// A worker task with duration target 2 starting Friday must also end Monday
+    /// (working-day min_end enforced via advance_working_days).
+    #[test]
+    fn scheduler_worker_task_duration_target_skips_weekends() {
+        let mut p = make_plan();
+        p.start_date = date(2030, 1, 11); // Friday
+        let alice = p.add_user(User::new("Alice"));
+
+        let mut task = Task::new("T", "");
+        task.duration_days_target = 2.0;
+        task.add_specific_worker(alice, 1.0);
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        assert_eq!(
+            alloc.tasks[&tid].start_date,
+            date(2030, 1, 11),
+            "starts Friday"
+        );
+        assert_eq!(
+            alloc.tasks[&tid].end_date,
+            date(2030, 1, 14), // Monday
+            "worker task with duration=2 starting Friday must end Monday"
         );
     }
 }
