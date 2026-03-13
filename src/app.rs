@@ -366,6 +366,16 @@ impl ApplicationHandler for Application {
                                         .on_mouse_input(x, y, false, width, height, plan, &sender)
                                 };
                                 self.mark_dirty(dirty);
+                                // A click-release on the Gantt chart can produce a pending window
+                                // (e.g. edit-task form), so drain take_open_request here too.
+                                if !self.floats.is_open()
+                                    && let Some(window) =
+                                        self.pages.active_page_mut().take_open_request()
+                                {
+                                    self.pages.active_page_mut().reset_hover();
+                                    self.floats.push(window);
+                                    self.mark_dirty(DirtyRegion::All);
+                                }
                             }
                         }
                     }
