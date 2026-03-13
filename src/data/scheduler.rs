@@ -2388,4 +2388,105 @@ mod tests {
             "On-track InProgress task must not have actual_end_date set"
         );
     }
+
+    // ── duration_days_target scheduling tests ─────────────────────────────────
+
+    /// Task with explicit duration=2 and 1 workload-day for Alice (standard 8h/day).
+    /// Expected: task spans 2 calendar days, 4 h/day (0.5 workload-days/day).
+    #[test]
+    fn scheduler_duration_target_spreads_workload_over_calendar_days() {
+        let mut p = make_plan();
+        p.start_date = date(2030, 1, 7); // Monday
+        let alice = p.add_user(User::new("Alice"));
+
+        let mut task = Task::new("T", "");
+        task.duration_days_target = 2.0;
+        task.add_specific_worker(alice, 1.0); // 1 workload-day = 8 hours total
+        let tid = p.add_task(task);
+        p.add_task_dependency(tid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+        let ta = &alloc.tasks[&tid];
+
+        // Calendar span must be 2 days (Mon -> Tue)
+        assert_eq!(ta.start_date, date(2030, 1, 7), "task must start on Monday");
+        assert_eq!(
+            ta.end_date,
+            date(2030, 1, 8),
+            "task must end on Tuesday (2-day span)"
+        );
+
+        // Alice's workload must be spread: 2 segments of 4 h each (0.5 workload-day/day)
+        let segs = &ta.slot_allocations[0].segments;
+        assert_eq!(
+            segs.len(),
+            2,
+            "Alice must have 2 work segments (one per calendar day)"
+        );
+        assert_eq!(segs[0].date, date(2030, 1, 7));
+        assert!(
+            (segs[0].hours_worked - 4.0).abs() < EPSILON,
+            "4 h on day 1 (half of 8 h)"
+        );
+        assert_eq!(segs[1].date, date(2030, 1, 8));
+        assert!(
+            (segs[1].hours_worked - 4.0).abs() < EPSILON,
+            "4 h on day 2 (half of 8 h)"
+        );
+    }
+
+    /// A task with no workers and duration=2 must span 2 calendar days and must
+    /// not consume any user's capacity on the days it covers.
+    #[test]
+    fn scheduler_no_worker_task_spans_duration_days_without_consuming_capacity() {
+        let mut p = make_plan();
+        p.start_date = date(2030, 1, 7); // Monday
+        let alice = p.add_user(User::new("Alice"));
+
+        // Calendar-only task: 2-day block, no workers
+        let mut blocker = Task::new("Blocker", "");
+        blocker.duration_days_target = 2.0;
+        let bid = p.add_task(blocker);
+        p.add_task_dependency(bid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        // Alice's task: 1 workload-day, depends only on PlanStart (runs in parallel)
+        let mut worker_task = Task::new("Worker", "");
+        worker_task.add_specific_worker(alice, 1.0);
+        let wid = p.add_task(worker_task);
+        p.add_task_dependency(wid, Dependency::new(NodeId::PlanStart))
+            .unwrap();
+
+        p.compute_time_optimised_plan().unwrap();
+
+        let alloc = p.allocation.as_ref().unwrap();
+
+        // Blocker must span Mon-Tue (2 calendar days)
+        assert_eq!(alloc.tasks[&bid].start_date, date(2030, 1, 7));
+        assert_eq!(
+            alloc.tasks[&bid].end_date,
+            date(2030, 1, 8),
+            "no-worker task with duration=2 must have end_date = start + 1"
+        );
+        // Blocker must have no slot allocations (no workers)
+        assert!(
+            alloc.tasks[&bid].slot_allocations.is_empty(),
+            "pure calendar task must have no slot allocations"
+        );
+
+        // Alice's task: starts on Monday - Blocker must not consume her capacity
+        let worker_segs = &alloc.tasks[&wid].slot_allocations[0].segments;
+        assert_eq!(
+            worker_segs[0].date,
+            date(2030, 1, 7),
+            "Alice must be able to start on Monday - Blocker must not consume capacity"
+        );
+        assert!(
+            (worker_segs[0].hours_worked - 8.0).abs() < EPSILON,
+            "Alice must have her full 8 h on Monday"
+        );
+    }
 }
