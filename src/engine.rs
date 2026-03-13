@@ -361,6 +361,9 @@ impl PlanEngine {
             if matches!(response, PlanResponse::PlanUpdated) && self.plan.allocation.is_none() {
                 let _ = self.plan.compute_time_optimised_plan();
             }
+            if matches!(response, PlanResponse::PlanUpdated) {
+                debug_print_plan(&self.plan);
+            }
             responses.push(response);
         }
         responses
@@ -657,4 +660,144 @@ fn apply_milestone_patch(
 
     plan.allocation = None;
     Ok(())
+}
+
+// ── Debug helper ──────────────────────────────────────────────────────────────
+
+/// Print a concise summary of the plan to stderr every time a mutation
+/// succeeds.  Useful for diagnosing scheduler or rendering issues.
+///
+/// Output goes to stderr so it doesn't interfere with any stdout consumers.
+/// Remove or gate behind a feature flag once the issues are resolved.
+fn debug_print_plan(plan: &Plan) {
+    use crate::data::ids::NodeId;
+    use crate::data::task::WorkerSlot;
+
+    eprintln!("\n══ Plan: {:?}  start={} ══", plan.name, plan.start_date);
+
+    // Users
+    eprintln!("  Users ({}):", plan.users.len());
+    for (uid, user) in &plan.users {
+        eprintln!("    [{}] {:?}", uid.0, user.name);
+    }
+
+    // Helper to format a dependency node
+    let fmt_node = |id: &NodeId| -> String {
+        match id {
+            NodeId::PlanStart => "PlanStart".into(),
+            NodeId::Task(tid) => plan
+                .tasks
+                .get(tid)
+                .map(|t| format!("Task({:?})", t.name))
+                .unwrap_or_else(|| format!("Task({})", tid.0)),
+            NodeId::Milestone(mid) => plan
+                .milestones
+                .get(mid)
+                .map(|m| format!("MS({:?})", m.name))
+                .unwrap_or_else(|| format!("MS({})", mid.0)),
+        }
+    };
+
+    // Tasks
+    eprintln!("  Tasks ({}):", plan.tasks.len());
+    for (tid, task) in &plan.tasks {
+        let sched_start = plan.dates.task(tid);
+        let duration = task.effective_duration_days();
+
+        let deps: Vec<String> = task
+            .dependencies
+            .iter()
+            .map(|d| {
+                if d.lag_days == 0.0 {
+                    fmt_node(&d.id)
+                } else {
+                    format!("{}(lag={:.1})", fmt_node(&d.id), d.lag_days)
+                }
+            })
+            .collect();
+
+        let workers: Vec<String> = task
+            .workers
+            .iter()
+            .map(|slot| match slot {
+                WorkerSlot::Specific {
+                    user_id,
+                    workload_days,
+                } => {
+                    let name = plan
+                        .users
+                        .get(user_id)
+                        .map(|u| u.name.as_str())
+                        .unwrap_or("?");
+                    format!("{name}={workload_days:.1}d")
+                }
+                WorkerSlot::Placeholder {
+                    required_tags,
+                    workload_days,
+                } => {
+                    format!("placeholder={workload_days:.1}d(tags:{required_tags:?})")
+                }
+            })
+            .collect();
+
+        eprintln!(
+            "    [{}] {:?}  dur={duration:.1}d  status={:?}  sched={:?}",
+            tid.0, task.name, task.status, sched_start
+        );
+        if !workers.is_empty() {
+            eprintln!("         workers: {}", workers.join(", "));
+        }
+        if !deps.is_empty() {
+            eprintln!("         deps: {}", deps.join(", "));
+        }
+        if let Some(c) = &task.constraint {
+            eprintln!("         constraint: {c:?}");
+        }
+    }
+
+    // Milestones
+    eprintln!("  Milestones ({}):", plan.milestones.len());
+    for (mid, ms) in &plan.milestones {
+        let sched_date = plan.dates.milestone(mid);
+        let deps: Vec<String> = ms
+            .dependencies
+            .iter()
+            .map(|d| {
+                if d.lag_days == 0.0 {
+                    fmt_node(&d.id)
+                } else {
+                    format!("{}(lag={:.1})", fmt_node(&d.id), d.lag_days)
+                }
+            })
+            .collect();
+        eprintln!("    [{}] {:?}  sched={:?}", mid.0, ms.name, sched_date);
+        if !deps.is_empty() {
+            eprintln!("         deps: {}", deps.join(", "));
+        }
+    }
+
+    // Allocation summary
+    match &plan.allocation {
+        None => eprintln!("  Allocation: None"),
+        Some(alloc) => {
+            eprintln!(
+                "  Allocation: {} tasks, {} milestones",
+                alloc.tasks.len(),
+                alloc.milestones.len()
+            );
+            for (tid, ta) in &alloc.tasks {
+                let name = plan.tasks.get(tid).map(|t| t.name.as_str()).unwrap_or("?");
+                eprintln!("    task {:?}: {} → {}", name, ta.start_date, ta.end_date);
+            }
+            for (mid, ma) in &alloc.milestones {
+                let name = plan
+                    .milestones
+                    .get(mid)
+                    .map(|m| m.name.as_str())
+                    .unwrap_or("?");
+                eprintln!("    milestone {:?}: {}", name, ma.date);
+            }
+        }
+    }
+    eprintln!("══════════════════════════════════════════");
 }

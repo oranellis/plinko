@@ -34,10 +34,14 @@ impl GanttItem {
     }
 
     /// Inclusive end date of the item for row-packing purposes.
+    ///
+    /// Milestones add a 2-day visual buffer after their date so the diamond
+    /// (which extends `GANTT_MS_HALF` pixels either side of centre) never
+    /// overlaps a task bar placed in the same row, even at minimum zoom.
     pub fn end(&self) -> NaiveDate {
         match self {
             GanttItem::Task { end, .. } => *end,
-            GanttItem::Milestone { date, .. } => *date,
+            GanttItem::Milestone { date, .. } => *date + chrono::Duration::days(2),
         }
     }
 }
