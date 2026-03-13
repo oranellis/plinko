@@ -169,7 +169,7 @@ impl Page for OverviewPage {
     ) -> DirtyRegion {
         if shift {
             // Nudge zoom target; tick_animation lerps toward it smoothly.
-            let factor = if delta_y > 0.0 { 1.04_f32 } else { 1.0 / 1.04 };
+            let factor = if delta_y > 0.0 { 1.01_f32 } else { 1.0 / 1.01 };
             self.state.zoom_target =
                 (self.state.zoom_target * factor).clamp(GANTT_ZOOM_MIN, GANTT_ZOOM_MAX);
             DirtyRegion::PageOnly
@@ -215,14 +215,26 @@ impl Page for OverviewPage {
             || (self.state.zoom_target - self.state.zoom).abs() > 0.05
     }
 
-    fn tick_animation(&mut self, _width: f32, height: f32, plan: &Plan) -> DirtyRegion {
+    fn tick_animation(&mut self, width: f32, height: f32, plan: &Plan) -> DirtyRegion {
         let friction = 0.88_f32;
         let mut dirty = false;
 
-        // Smooth zoom: lerp toward zoom_target
+        // Smooth zoom: lerp toward zoom_target, pivoting around the cursor.
         let zoom_diff = self.state.zoom_target - self.state.zoom;
-        if zoom_diff.abs() > 0.05 {
+        if zoom_diff.abs() > 0.01 {
+            let old_zoom = self.state.zoom;
             self.state.zoom += zoom_diff * 0.18;
+            let new_zoom = self.state.zoom;
+            let ratio = new_zoom / old_zoom;
+            // Use cursor_x as the pivot; fall back to screen centre if off-screen.
+            let pivot_x = if self.state.cursor_x >= 0.0 && self.state.cursor_x <= width {
+                self.state.cursor_x
+            } else {
+                width * 0.5
+            };
+            // Keep the date under pivot_x stationary:
+            // scroll_x_new = (pivot_x + scroll_x_old) * ratio - pivot_x
+            self.state.scroll_x = (pivot_x + self.state.scroll_x) * ratio - pivot_x;
             dirty = true;
         } else if zoom_diff.abs() > f32::EPSILON {
             self.state.zoom = self.state.zoom_target;
