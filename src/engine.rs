@@ -671,17 +671,30 @@ fn apply_milestone_patch(
 /// Remove or gate behind a feature flag once the issues are resolved.
 fn debug_print_plan(plan: &Plan) {
     use crate::data::ids::NodeId;
+    use crate::data::schedule::Weekday;
     use crate::data::task::WorkerSlot;
 
-    eprintln!("\n══ Plan: {:?}  start={} ══", plan.name, plan.start_date);
+    let sep = "══════════════════════════════════════════";
+    eprintln!("\n{sep}");
+    eprintln!("  Plan:  {:?}", plan.name);
+    eprintln!("  Start: {}  scheduler_target: {}", plan.start_date, {
+        match plan.scheduler_target {
+            NodeId::PlanStart => "PlanStart".into(),
+            NodeId::Task(tid) => plan
+                .tasks
+                .get(&tid)
+                .map(|t| format!("Task({:?})", t.name))
+                .unwrap_or_else(|| format!("Task({})", tid.0)),
+            NodeId::Milestone(mid) => plan
+                .milestones
+                .get(&mid)
+                .map(|m| format!("MS({:?})", m.name))
+                .unwrap_or_else(|| format!("MS({})", mid.0)),
+        }
+    });
 
-    // Users
-    eprintln!("  Users ({}):", plan.users.len());
-    for (uid, user) in &plan.users {
-        eprintln!("    [{}] {:?}", uid.0, user.name);
-    }
+    // ── Helper closures ───────────────────────────────────────────────────────
 
-    // Helper to format a dependency node
     let fmt_node = |id: &NodeId| -> String {
         match id {
             NodeId::PlanStart => "PlanStart".into(),
@@ -698,9 +711,112 @@ fn debug_print_plan(plan: &Plan) {
         }
     };
 
-    // Tasks
+    let fmt_schedule = |sched: &crate::data::WorkSchedule| -> String {
+        let days = [
+            Weekday::Monday,
+            Weekday::Tuesday,
+            Weekday::Wednesday,
+            Weekday::Thursday,
+            Weekday::Friday,
+            Weekday::Saturday,
+            Weekday::Sunday,
+        ];
+        let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let parts: Vec<String> = days
+            .iter()
+            .zip(day_names.iter())
+            .filter_map(|(d, name)| {
+                let h = sched.hours_on(*d);
+                if h > 0.0 {
+                    Some(format!("{name}={h:.1}h"))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        format!(
+            "[{}]  hpd={:.1}h  total={:.1}h/wk",
+            parts.join("  "),
+            sched.hours_per_workload_day(),
+            sched.total_hours_per_week()
+        )
+    };
+
+    // ── Tags ─────────────────────────────────────────────────────────────────
+
+    if !plan.tags.is_empty() {
+        eprintln!("  Tags ({}):", plan.tags.len());
+        for tag in &plan.tags {
+            eprintln!("    {:?} ({})", tag.name, tag.id.0);
+        }
+    }
+
+    // ── Default schedule ─────────────────────────────────────────────────────
+
+    eprintln!(
+        "  Default schedule: {}",
+        fmt_schedule(&plan.default_schedule)
+    );
+
+    // ── Plan-wide calendar overrides ──────────────────────────────────────────
+
+    if !plan.calendar.entries.is_empty() {
+        let mut entries: Vec<_> = plan.calendar.entries.iter().collect();
+        entries.sort_by_key(|(d, _)| *d);
+        eprintln!("  Plan calendar overrides ({}):", entries.len());
+        for (date, hours) in entries {
+            eprintln!("    {date} → {hours:.1}h");
+        }
+    }
+
+    // ── Users ─────────────────────────────────────────────────────────────────
+
+    eprintln!("  Users ({}):", plan.users.len());
+    let mut users: Vec<_> = plan.users.values().collect();
+    users.sort_by(|a, b| a.name.cmp(&b.name));
+    for user in users {
+        let uid = user.id;
+        let tag_names: Vec<&str> = user
+            .tags
+            .iter()
+            .filter_map(|tid| {
+                plan.tags
+                    .iter()
+                    .find(|t| t.id == *tid)
+                    .map(|t| t.name.as_str())
+            })
+            .collect();
+        let tags_str = if tag_names.is_empty() {
+            String::new()
+        } else {
+            format!("  tags=[{}]", tag_names.join(", "))
+        };
+
+        if let Some(sched) = plan.user_schedules.get(&uid) {
+            eprintln!("    {:?}{tags_str}", user.name);
+            eprintln!("      schedule: {}", fmt_schedule(sched));
+        } else {
+            eprintln!("    {:?}{tags_str}  schedule: (default)", user.name);
+        }
+
+        if let Some(cal) = plan.user_calendars.get(&uid)
+            && !cal.entries.is_empty()
+        {
+            let mut entries: Vec<_> = cal.entries.iter().collect();
+            entries.sort_by_key(|(d, _)| *d);
+            eprintln!("      calendar overrides ({}):", entries.len());
+            for (date, hours) in entries {
+                eprintln!("        {date} → {hours:.1}h");
+            }
+        }
+    }
+
+    // ── Tasks ─────────────────────────────────────────────────────────────────
+
     eprintln!("  Tasks ({}):", plan.tasks.len());
-    for (tid, task) in &plan.tasks {
+    let mut tasks: Vec<_> = plan.tasks.iter().collect();
+    tasks.sort_by(|(_, a), (_, b)| a.name.cmp(&b.name));
+    for (tid, task) in tasks {
         let sched_start = plan.dates.task(tid);
         let duration = task.effective_duration_days();
 
@@ -729,35 +845,59 @@ fn debug_print_plan(plan: &Plan) {
                         .get(user_id)
                         .map(|u| u.name.as_str())
                         .unwrap_or("?");
-                    format!("{name}={workload_days:.1}d")
+                    format!("{name}={workload_days:.2}wd")
                 }
                 WorkerSlot::Placeholder {
                     required_tags,
                     workload_days,
                 } => {
-                    format!("placeholder={workload_days:.1}d(tags:{required_tags:?})")
+                    let tag_names: Vec<&str> = required_tags
+                        .iter()
+                        .filter_map(|tid| {
+                            plan.tags
+                                .iter()
+                                .find(|t| t.id == *tid)
+                                .map(|t| t.name.as_str())
+                        })
+                        .collect();
+                    format!("placeholder={workload_days:.2}wd({})", tag_names.join("+"))
                 }
             })
             .collect();
 
         eprintln!(
-            "    [{}] {:?}  dur={duration:.1}d  status={:?}  sched={:?}",
-            tid.0, task.name, task.status, sched_start
+            "    {:?}  dur_target={:.1}d  eff_dur={duration:.1}d  status={:?}  sched_start={:?}",
+            task.name, task.duration_days_target, task.status, sched_start
         );
         if !workers.is_empty() {
-            eprintln!("         workers: {}", workers.join(", "));
+            eprintln!("      workers: {}", workers.join(", "));
+        } else {
+            eprintln!("      workers: (none — pure calendar block)");
         }
         if !deps.is_empty() {
-            eprintln!("         deps: {}", deps.join(", "));
+            eprintln!("      deps: {}", deps.join(", "));
         }
         if let Some(c) = &task.constraint {
-            eprintln!("         constraint: {c:?}");
+            eprintln!("      constraint: {:?} on {}", c.kind, c.date);
+        }
+        if let Some(start) = task.actual_start_date {
+            eprintln!("      actual_start: {start}");
+        }
+        if let Some(end) = task.actual_end_date {
+            eprintln!("      actual_end: {end}");
+        }
+        if !task.description.is_empty() {
+            let preview: String = task.description.chars().take(80).collect();
+            eprintln!("      description: {preview:?}...");
         }
     }
 
-    // Milestones
+    // ── Milestones ────────────────────────────────────────────────────────────
+
     eprintln!("  Milestones ({}):", plan.milestones.len());
-    for (mid, ms) in &plan.milestones {
+    let mut milestones: Vec<_> = plan.milestones.iter().collect();
+    milestones.sort_by(|(_, a), (_, b)| a.name.cmp(&b.name));
+    for (mid, ms) in milestones {
         let sched_date = plan.dates.milestone(mid);
         let deps: Vec<String> = ms
             .dependencies
@@ -770,26 +910,92 @@ fn debug_print_plan(plan: &Plan) {
                 }
             })
             .collect();
-        eprintln!("    [{}] {:?}  sched={:?}", mid.0, ms.name, sched_date);
+        eprintln!("    {:?}  sched={:?}", ms.name, sched_date);
         if !deps.is_empty() {
-            eprintln!("         deps: {}", deps.join(", "));
+            eprintln!("      deps: {}", deps.join(", "));
+        }
+        if let Some(c) = &ms.constraint {
+            eprintln!("      constraint: {:?} on {}", c.kind, c.date);
         }
     }
 
-    // Allocation summary
+    // ── Allocation ────────────────────────────────────────────────────────────
+
     match &plan.allocation {
-        None => eprintln!("  Allocation: None"),
+        None => eprintln!("  Allocation: None (scheduler has not run)"),
         Some(alloc) => {
             eprintln!(
                 "  Allocation: {} tasks, {} milestones",
                 alloc.tasks.len(),
                 alloc.milestones.len()
             );
-            for (tid, ta) in &alloc.tasks {
+
+            let mut task_allocs: Vec<_> = alloc.tasks.iter().collect();
+            task_allocs.sort_by(|(a, _), (b, _)| {
+                let na = plan.tasks.get(a).map(|t| t.name.as_str()).unwrap_or("");
+                let nb = plan.tasks.get(b).map(|t| t.name.as_str()).unwrap_or("");
+                na.cmp(nb)
+            });
+
+            for (tid, ta) in task_allocs {
                 let name = plan.tasks.get(tid).map(|t| t.name.as_str()).unwrap_or("?");
-                eprintln!("    task {:?}: {} → {}", name, ta.start_date, ta.end_date);
+                let span_days = (ta.end_date - ta.start_date).num_days() + 1;
+                eprintln!(
+                    "    task {:?}: {} → {}  ({} calendar day{})",
+                    name,
+                    ta.start_date,
+                    ta.end_date,
+                    span_days,
+                    if span_days == 1 { "" } else { "s" }
+                );
+
+                for slot in &ta.slot_allocations {
+                    let user_name = plan
+                        .users
+                        .get(&slot.user_id)
+                        .map(|u| u.name.as_str())
+                        .unwrap_or("?");
+                    let total_h: f32 = slot.segments.iter().map(|s| s.hours_worked).sum();
+                    let hpd = plan.default_schedule.hours_per_workload_day();
+                    let wd = if hpd > 0.0 { total_h / hpd } else { 0.0 };
+                    eprintln!(
+                        "      {user_name}: {total_h:.1}h total ({wd:.2} workload-days)  over {} segment{}:",
+                        slot.segments.len(),
+                        if slot.segments.len() == 1 { "" } else { "s" }
+                    );
+                    for seg in &slot.segments {
+                        eprintln!(
+                            "        {} → {:.1}h  ({:.2} wd)",
+                            seg.date,
+                            seg.hours_worked,
+                            if hpd > 0.0 {
+                                seg.hours_worked / hpd
+                            } else {
+                                0.0
+                            }
+                        );
+                    }
+                }
+                if ta.slot_allocations.is_empty() {
+                    eprintln!("      (no worker slots — pure calendar block)");
+                }
             }
-            for (mid, ma) in &alloc.milestones {
+
+            let mut ms_allocs: Vec<_> = alloc.milestones.iter().collect();
+            ms_allocs.sort_by(|(a, _), (b, _)| {
+                let na = plan
+                    .milestones
+                    .get(a)
+                    .map(|m| m.name.as_str())
+                    .unwrap_or("");
+                let nb = plan
+                    .milestones
+                    .get(b)
+                    .map(|m| m.name.as_str())
+                    .unwrap_or("");
+                na.cmp(nb)
+            });
+            for (mid, ma) in ms_allocs {
                 let name = plan
                     .milestones
                     .get(mid)
@@ -799,5 +1005,6 @@ fn debug_print_plan(plan: &Plan) {
             }
         }
     }
-    eprintln!("══════════════════════════════════════════");
+
+    eprintln!("{sep}\n");
 }
