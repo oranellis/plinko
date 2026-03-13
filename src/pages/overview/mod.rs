@@ -169,7 +169,7 @@ impl Page for OverviewPage {
     ) -> DirtyRegion {
         if shift {
             // Nudge zoom target; tick_animation lerps toward it smoothly.
-            let factor = if delta_y > 0.0 { 1.12_f32 } else { 1.0 / 1.12 };
+            let factor = if delta_y > 0.0 { 1.04_f32 } else { 1.0 / 1.04 };
             self.state.zoom_target =
                 (self.state.zoom_target * factor).clamp(GANTT_ZOOM_MIN, GANTT_ZOOM_MAX);
             DirtyRegion::PageOnly
