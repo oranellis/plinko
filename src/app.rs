@@ -304,6 +304,8 @@ impl ApplicationHandler for Application {
                                         0 => self.navigate_to(PageId::Daily),
                                         1 => self.navigate_to(PageId::Overview),
                                         2 => self.navigate_to(PageId::Settings),
+                                        3 => self.navigate_to(PageId::Allocation),
+                                        4 => self.navigate_to(PageId::CalendarOverrides),
                                         _ => {}
                                     }
                                 }

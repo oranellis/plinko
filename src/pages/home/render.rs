@@ -5,30 +5,44 @@ use skia_safe::{Canvas, Color, Paint, PaintStyle, RRect, Rect};
 use crate::ui::cache::RenderCache;
 use crate::ui::layout::*;
 
-/// Computes the bounding rectangles for the three navigation cards,
-/// centred horizontally and vertically within the given logical dimensions.
-fn card_rects(width: f32, height: f32) -> [Rect; 3] {
-    let total_w = 3.0 * HOME_CARD_SIZE + 2.0 * HOME_CARD_GAP;
-    let start_x = (width - total_w) / 2.0;
-    let start_y = (height - HOME_CARD_SIZE) / 2.0;
+/// Computes the bounding rectangles for five navigation cards:
+/// row 1 (top): Daily (0), Overview (1), Settings (2)
+/// row 2 (bottom, centered): Allocation (3), Calendar (4)
+fn card_rects(width: f32, height: f32) -> [Rect; 5] {
+    let row1_w = 3.0 * HOME_CARD_SIZE + 2.0 * HOME_CARD_GAP;
+    let row2_w = 2.0 * HOME_CARD_SIZE + HOME_CARD_GAP;
+    let total_h = 2.0 * HOME_CARD_SIZE + HOME_CARD_GAP;
+    let start_y = (height - total_h) / 2.0;
+
+    let row1_x = (width - row1_w) / 2.0;
+    let row2_x = (width - row2_w) / 2.0;
+    let row2_y = start_y + HOME_CARD_SIZE + HOME_CARD_GAP;
+
     [
-        Rect::from_xywh(start_x, start_y, HOME_CARD_SIZE, HOME_CARD_SIZE),
+        Rect::from_xywh(row1_x, start_y, HOME_CARD_SIZE, HOME_CARD_SIZE),
         Rect::from_xywh(
-            start_x + HOME_CARD_SIZE + HOME_CARD_GAP,
+            row1_x + HOME_CARD_SIZE + HOME_CARD_GAP,
             start_y,
             HOME_CARD_SIZE,
             HOME_CARD_SIZE,
         ),
         Rect::from_xywh(
-            start_x + 2.0 * (HOME_CARD_SIZE + HOME_CARD_GAP),
+            row1_x + 2.0 * (HOME_CARD_SIZE + HOME_CARD_GAP),
             start_y,
+            HOME_CARD_SIZE,
+            HOME_CARD_SIZE,
+        ),
+        Rect::from_xywh(row2_x, row2_y, HOME_CARD_SIZE, HOME_CARD_SIZE),
+        Rect::from_xywh(
+            row2_x + HOME_CARD_SIZE + HOME_CARD_GAP,
+            row2_y,
             HOME_CARD_SIZE,
             HOME_CARD_SIZE,
         ),
     ]
 }
 
-/// Draws the full home screen: background fill, three navigation cards each
+/// Draws the full home screen: background fill, five navigation cards each
 /// with a hover state, a pre-built icon path, and a centred label.
 pub fn draw_home(
     canvas: &Canvas,

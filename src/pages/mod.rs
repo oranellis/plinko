@@ -8,6 +8,8 @@
 //! Navigation between pages is handled by [`crate::app::Application`]; the
 //! pages themselves only report [`DirtyRegion`] changes in response to input.
 
+pub mod allocation;
+pub mod calendar_overrides;
 pub mod daily;
 pub mod home;
 pub mod overview;
@@ -27,6 +29,8 @@ pub enum PageId {
     Daily,
     Overview,
     Settings,
+    Allocation,
+    CalendarOverrides,
 }
 
 /// Common interface that every full-screen page must implement.
@@ -112,6 +116,8 @@ pub struct PageManager {
     pub daily: daily::DailyPage,
     pub overview: overview::OverviewPage,
     pub settings: settings::SettingsPage,
+    pub allocation: allocation::AllocationPage,
+    pub calendar_overrides: calendar_overrides::CalendarOverridesPage,
 }
 
 impl PageManager {
@@ -122,6 +128,8 @@ impl PageManager {
             daily: daily::DailyPage::new(),
             overview: overview::OverviewPage::new(),
             settings: settings::SettingsPage::new(),
+            allocation: allocation::AllocationPage::new(),
+            calendar_overrides: calendar_overrides::CalendarOverridesPage::new(),
         }
     }
 
@@ -132,6 +140,8 @@ impl PageManager {
             PageId::Daily => &self.daily,
             PageId::Overview => &self.overview,
             PageId::Settings => &self.settings,
+            PageId::Allocation => &self.allocation,
+            PageId::CalendarOverrides => &self.calendar_overrides,
         }
     }
 
@@ -142,6 +152,8 @@ impl PageManager {
             PageId::Daily => &mut self.daily,
             PageId::Overview => &mut self.overview,
             PageId::Settings => &mut self.settings,
+            PageId::Allocation => &mut self.allocation,
+            PageId::CalendarOverrides => &mut self.calendar_overrides,
         }
     }
 
