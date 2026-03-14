@@ -246,6 +246,10 @@ pub enum PlanRequest {
     /// normal schedule.  Validated — restoring capacity is safe but the
     /// closure still runs through the validator for consistency.
     ClearCalendarOverride(NaiveDate),
+    /// Set a per-user calendar override for a specific date.
+    SetUserCalendarOverride(UserId, NaiveDate, f32),
+    /// Remove a per-user calendar override for a specific date.
+    ClearUserCalendarOverride(UserId, NaiveDate),
 
     // ── Tag registry ──────────────────────────────────────────────────────────
     /// Append a new tag to the plan's ordered tag registry. No-op if it already
@@ -565,6 +569,23 @@ impl PlanEngine {
 
             PlanRequest::ClearCalendarOverride(date) => self.apply_validated(|plan| {
                 plan.calendar.remove(&date);
+                Ok(())
+            }),
+
+            PlanRequest::SetUserCalendarOverride(user_id, date, hours) => {
+                self.apply_validated(|plan| {
+                    plan.user_calendars
+                        .entry(user_id)
+                        .or_default()
+                        .set(date, hours);
+                    Ok(())
+                })
+            }
+
+            PlanRequest::ClearUserCalendarOverride(user_id, date) => self.apply_validated(|plan| {
+                if let Some(cal) = plan.user_calendars.get_mut(&user_id) {
+                    cal.remove(&date);
+                }
                 Ok(())
             }),
 
