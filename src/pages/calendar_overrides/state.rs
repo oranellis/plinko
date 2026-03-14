@@ -1,6 +1,6 @@
 //! Mutable state for the calendar overrides page.
 
-use crate::data::ids::NodeId;
+use crate::data::ids::{NodeId, UserId};
 use chrono::{Datelike, Local, NaiveDate};
 
 pub struct CalendarOverridesState {
@@ -21,6 +21,11 @@ pub struct CalendarOverridesState {
     pub settings_init_name: String,
     pub settings_init_date: String,
     pub settings_init_scheduler_target: NodeId,
+    /// The currently selected user for per-user overrides.
+    /// `None` = plan-wide overrides.
+    pub selected_user: Option<UserId>,
+    /// Index of hovered user tab (-1 = "Plan" tab, ≥0 = user index).
+    pub hovered_user_tab: Option<i32>,
 }
 
 impl CalendarOverridesState {
@@ -38,6 +43,8 @@ impl CalendarOverridesState {
             settings_init_name: String::new(),
             settings_init_date: String::new(),
             settings_init_scheduler_target: NodeId::PlanStart,
+            selected_user: None,
+            hovered_user_tab: None,
         }
     }
 

@@ -7,6 +7,7 @@ use skia_safe::Canvas;
 use winit::keyboard::{Key, NamedKey};
 
 use crate::data::Plan;
+use crate::data::ids::UserId;
 use crate::engine::{PlanRequest, PlanRequestSender};
 use crate::pages::Page;
 use crate::ui::cache::RenderCache;
@@ -39,12 +40,19 @@ impl Page for CalendarOverridesPage {
         y: f32,
         width: f32,
         height: f32,
-        _plan: &Plan,
+        plan: &Plan,
     ) -> DirtyRegion {
         let new_hover = render::hit_test_toolbar_buttons(x, y, width);
         let toolbar_dirty = new_hover != self.state.toolbar_btn_hovered;
         if toolbar_dirty {
             self.state.toolbar_btn_hovered = new_hover;
+        }
+
+        // User selector tab hover
+        let new_tab_hover = render::hit_test_user_tab(x, y, plan).map(|i| i as i32);
+        let tab_dirty = new_tab_hover != self.state.hovered_user_tab;
+        if tab_dirty {
+            self.state.hovered_user_tab = new_tab_hover;
         }
 
         let new_day = if y > TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE {
@@ -57,7 +65,7 @@ impl Page for CalendarOverridesPage {
             self.state.hovered_date = new_day;
         }
 
-        if toolbar_dirty || day_dirty {
+        if toolbar_dirty || day_dirty || tab_dirty {
             DirtyRegion::PageOnly
         } else {
             DirtyRegion::None
@@ -105,6 +113,15 @@ impl Page for CalendarOverridesPage {
             return DirtyRegion::PageOnly;
         }
 
+        // User selector tabs (no cache in mouse handler — use a stub for hit-test)
+        if let Some(tab_idx) = render::hit_test_user_tab(x, y, plan) {
+            self.state.editing_date = None;
+            self.state.edit_input.clear();
+            self.state.edit_error = false;
+            self.state.selected_user = render::user_for_tab_index(tab_idx, plan);
+            return DirtyRegion::PageOnly;
+        }
+
         // Day cell click
         if y > TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE
             && let Some(date) =
@@ -114,10 +131,15 @@ impl Page for CalendarOverridesPage {
             if self.state.editing_date == Some(date) {
                 try_commit(&mut self.state, sender);
             } else {
-                // Open edit popup with current value
-                let current = plan
-                    .calendar
-                    .get(date)
+                // Open edit popup with current value.
+                // Show user-specific override if present, else plan override.
+                let current = self
+                    .state
+                    .selected_user
+                    .as_ref()
+                    .and_then(|uid| plan.user_calendars.get(uid))
+                    .and_then(|c| c.get(date))
+                    .or_else(|| plan.calendar.get(date))
                     .map(|h| format!("{h}"))
                     .unwrap_or_default();
                 self.state.editing_date = Some(date);
@@ -180,6 +202,7 @@ impl Page for CalendarOverridesPage {
     fn reset_hover(&mut self) {
         self.state.toolbar_btn_hovered = None;
         self.state.hovered_date = None;
+        self.state.hovered_user_tab = None;
     }
 }
 
@@ -189,13 +212,21 @@ fn try_commit(state: &mut CalendarOverridesState, sender: &PlanRequestSender) {
         let trimmed = state.edit_input.trim();
         if trimmed.is_empty() {
             // Clear the override
-            sender.send(PlanRequest::ClearCalendarOverride(date));
+            if let Some(uid) = state.selected_user {
+                sender.send(PlanRequest::ClearUserCalendarOverride(uid, date));
+            } else {
+                sender.send(PlanRequest::ClearCalendarOverride(date));
+            }
             state.editing_date = None;
             state.edit_input.clear();
             state.edit_error = false;
         } else if let Ok(hours) = trimmed.parse::<f32>() {
             if hours >= 0.0 {
-                sender.send(PlanRequest::SetCalendarOverride(date, hours));
+                if let Some(uid) = state.selected_user {
+                    sender.send(PlanRequest::SetUserCalendarOverride(uid, date, hours));
+                } else {
+                    sender.send(PlanRequest::SetCalendarOverride(date, hours));
+                }
                 state.editing_date = None;
                 state.edit_input.clear();
                 state.edit_error = false;
