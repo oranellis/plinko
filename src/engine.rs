@@ -235,6 +235,9 @@ pub enum PlanRequest {
     SetUserSchedule(UserId, WorkSchedule),
     /// Remove a user's schedule override, reverting to the plan default. Validated.
     ClearUserSchedule(UserId),
+    /// Set the plan's default work schedule. Validated — capacity changes may
+    /// break the existing schedule.
+    SetDefaultSchedule(WorkSchedule),
 
     // ── Tag registry ──────────────────────────────────────────────────────────
     /// Append a new tag to the plan's ordered tag registry. No-op if it already
@@ -539,6 +542,11 @@ impl PlanEngine {
                     return Err(PlanError::UserNotFound(id));
                 }
                 plan.clear_user_schedule(&id);
+                Ok(())
+            }),
+
+            PlanRequest::SetDefaultSchedule(schedule) => self.apply_validated(|plan| {
+                plan.default_schedule = schedule;
                 Ok(())
             }),
 
