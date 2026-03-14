@@ -256,6 +256,21 @@ impl CalendarPicker {
     }
 }
 
+/// Remove transitively redundant dependencies from `deps`.
+/// A dependency `d` is redundant if another dependency `j` already transitively
+/// depends on `d` (i.e. `d` is reachable from `j` in the existing plan graph).
+/// Lag values are preserved on kept dependencies.
+fn simplify_dependencies(deps: Vec<Dependency>, plan: &Plan) -> Vec<Dependency> {
+    deps.iter()
+        .filter(|d| {
+            !deps
+                .iter()
+                .any(|j| j.id != d.id && plan.has_dependency_path(j.id, d.id))
+        })
+        .cloned()
+        .collect()
+}
+
 fn days_in_month(year: i32, month: u32) -> u32 {
     let next = if month == 12 {
         NaiveDate::from_ymd_opt(year + 1, 1, 1)
@@ -1098,6 +1113,7 @@ impl TaskFormWindow {
                 Some(Dependency { id, lag_days })
             })
             .collect();
+        let dependencies = simplify_dependencies(dependencies, plan);
         self.dep_error = dependencies.is_empty();
 
         let worker_slots: Vec<WorkerSlot> = self
@@ -4360,23 +4376,22 @@ impl FloatingWindow for TaskFormWindow {
             }
         }
 
-        // Scroll description box independently when cursor is inside it
+        // Scroll description box independently when cursor is inside it,
+        // but only if the description has enough content to scroll.
         if self.cursor_in_desc {
-            let desc_rect = Self::full_input_rect(ROW_DESC, 800.0, 600.0); // width/height not available here; use inner_width from content
-            let _ = desc_rect;
-            // Use raw split for max_scroll estimation — clamp_scroll in draw handles precision
             let line_count = self.description.content.split('\n').count().max(1);
-            let line_h = DESC_LINE_H;
-            let total_h = line_count as f32 * line_h + 8.0;
-            let visible_h = DESC_H;
-            let max_dscroll = (total_h - visible_h).max(0.0);
-            let cur = self.description.scroll_y.get();
-            let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll.max(cur));
-            if (new_scroll - cur).abs() > f32::EPSILON {
-                self.description.scroll_y.set(new_scroll);
-                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            let total_h = line_count as f32 * DESC_LINE_H + 8.0;
+            let max_dscroll = (total_h - DESC_H).max(0.0);
+            if max_dscroll > 0.0 {
+                let cur = self.description.scroll_y.get();
+                let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll);
+                if (new_scroll - cur).abs() > f32::EPSILON {
+                    self.description.scroll_y.set(new_scroll);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                return FloatingWindowOutcome::default();
             }
-            return FloatingWindowOutcome::default();
+            // Description not scrollable — fall through to form scroll
         }
 
         // Scroll worker list independently when cursor is inside it

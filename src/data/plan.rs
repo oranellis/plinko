@@ -186,6 +186,12 @@ impl Plan {
     }
 
     /// Returns true if `target` is reachable from `start` by following existing dependency edges.
+    /// Public wrapper used by callers that need to check transitive reachability
+    /// (e.g. dependency simplification in form windows).
+    pub fn has_dependency_path(&self, start: NodeId, target: NodeId) -> bool {
+        self.has_path(start, target)
+    }
+
     fn has_path(&self, start: NodeId, target: NodeId) -> bool {
         let mut visited = HashSet::new();
         let mut stack = vec![start];

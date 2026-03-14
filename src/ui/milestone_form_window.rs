@@ -335,6 +335,18 @@ enum Mode {
 
 // ── Text utilities ────────────────────────────────────────────────────────────
 
+/// Remove transitively redundant dependencies from `deps`.
+fn simplify_dependencies(deps: Vec<Dependency>, plan: &Plan) -> Vec<Dependency> {
+    deps.iter()
+        .filter(|d| {
+            !deps
+                .iter()
+                .any(|j| j.id != d.id && plan.has_dependency_path(j.id, d.id))
+        })
+        .cloned()
+        .collect()
+}
+
 fn wrap_text(text: &str, font: &skia_safe::Font, max_w: f32) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let mut current = String::new();
@@ -703,6 +715,7 @@ impl MilestoneFormWindow {
                 Some(Dependency { id, lag_days })
             })
             .collect();
+        let dependencies = simplify_dependencies(dependencies, plan);
         self.dep_error = dependencies.is_empty();
 
         if self.name_error || self.constraint_date_error || self.dep_error {
@@ -2800,19 +2813,22 @@ impl FloatingWindow for MilestoneFormWindow {
             }
         }
 
-        // Scroll description box independently when cursor is inside it
+        // Scroll description box independently when cursor is inside it,
+        // but only if the description has enough content to scroll.
         if self.cursor_in_desc {
             let line_count = self.description.content.split('\n').count().max(1);
             let total_h = line_count as f32 * DESC_LINE_H + 8.0;
-            let visible_h = DESC_H;
-            let max_dscroll = (total_h - visible_h).max(0.0);
-            let cur = self.description.scroll_y.get();
-            let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll.max(cur));
-            if (new_scroll - cur).abs() > f32::EPSILON {
-                self.description.scroll_y.set(new_scroll);
-                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            let max_dscroll = (total_h - DESC_H).max(0.0);
+            if max_dscroll > 0.0 {
+                let cur = self.description.scroll_y.get();
+                let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll);
+                if (new_scroll - cur).abs() > f32::EPSILON {
+                    self.description.scroll_y.set(new_scroll);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                return FloatingWindowOutcome::default();
             }
-            return FloatingWindowOutcome::default();
+            // Description not scrollable — fall through to form scroll
         }
 
         let panel_h = Self::panel_rect(width, height).height();
