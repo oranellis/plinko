@@ -4,6 +4,7 @@ use chrono::{Datelike, NaiveDate};
 use skia_safe::{
     Canvas, ClipOp, Color, Contains, Paint, PaintStyle, PathBuilder, Point, RRect, Rect, TextBlob,
 };
+use std::cell::Cell;
 use winit::event::Modifiers;
 use winit::keyboard::{Key, NamedKey};
 
@@ -396,6 +397,8 @@ pub struct MilestoneFormWindow {
     hovered_dep_plus: bool,
     dep_error: bool,
     form_scroll_y: f32,
+    /// Cached max scroll for the description box, updated each render frame.
+    max_desc_scroll: Cell<f32>,
     scheduler_error: Option<String>,
 }
 
@@ -430,6 +433,7 @@ impl MilestoneFormWindow {
             hovered_dep_plus: false,
             dep_error: false,
             form_scroll_y: 0.0,
+            max_desc_scroll: Cell::new(0.0),
             scheduler_error: None,
         }
     }
@@ -479,6 +483,7 @@ impl MilestoneFormWindow {
             hovered_dep_plus: false,
             dep_error: false,
             form_scroll_y: 0.0,
+            max_desc_scroll: Cell::new(0.0),
             scheduler_error: None,
         }
     }
@@ -644,6 +649,7 @@ impl MilestoneFormWindow {
         self.name.focused = field == TextField::Name;
         self.description.focused = field == TextField::Description;
         self.focused = field;
+        self.focused_dep_lag = None;
     }
 
     fn focused_input(&mut self) -> &mut TextInput {
@@ -1639,6 +1645,18 @@ impl FloatingWindow for MilestoneFormWindow {
             self.focused == TextField::Description,
             cache,
         );
+        // Cache the max scroll for the description box so on_scroll can use it.
+        {
+            let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
+            let inner_w = desc_rect.width() - 16.0;
+            let line_count = self
+                .description
+                .visual_lines(inner_w, &cache.font)
+                .len()
+                .max(1);
+            let total_h = line_count as f32 * DESC_LINE_H + 8.0;
+            self.max_desc_scroll.set((total_h - DESC_H).max(0.0));
+        }
 
         // Constraint row: kind segmented (left) + date button (right)
         let con_label_y = Self::row_label_y(ROW_CONSTRAINT, width, height);
@@ -2816,9 +2834,7 @@ impl FloatingWindow for MilestoneFormWindow {
         // Scroll description box independently when cursor is inside it,
         // but only if the description has enough content to scroll.
         if self.cursor_in_desc {
-            let line_count = self.description.content.split('\n').count().max(1);
-            let total_h = line_count as f32 * DESC_LINE_H + 8.0;
-            let max_dscroll = (total_h - DESC_H).max(0.0);
+            let max_dscroll = self.max_desc_scroll.get();
             if max_dscroll > 0.0 {
                 let cur = self.description.scroll_y.get();
                 let new_scroll = (cur - delta_y * 40.0).clamp(0.0, max_dscroll);
