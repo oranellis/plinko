@@ -3,8 +3,9 @@
 use skia_safe::{Font, FontMgr, FontStyle, Path, TextBlob};
 
 use super::icons::{
-    build_icon_daily, build_icon_diamond, build_icon_person, build_icon_planning, build_icon_plus,
-    build_icon_settings, build_icon_tag, build_icon_today,
+    build_icon_allocation, build_icon_calendar_edit, build_icon_daily, build_icon_diamond,
+    build_icon_person, build_icon_planning, build_icon_plus, build_icon_settings, build_icon_tag,
+    build_icon_today,
 };
 use super::layout::HOME_CARD_ICON_SIZE;
 
@@ -14,8 +15,8 @@ pub struct RenderCache {
     pub font: Font,
     /// Smaller font (12 px) for labels and secondary text.
     pub small_font: Font,
-    pub home_icon_paths: [Path; 3],
-    pub home_card_labels: [TextBlob; 3],
+    pub home_icon_paths: [Path; 5],
+    pub home_card_labels: [TextBlob; 5],
     /// Person silhouette icon used by the overview toolbar.
     pub icon_person: Path,
     /// Plus / add-task icon used by the overview toolbar.
@@ -59,6 +60,8 @@ impl RenderCache {
             build_icon_daily(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
             build_icon_planning(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
             build_icon_settings(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
+            build_icon_allocation(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
+            build_icon_calendar_edit(HOME_CARD_ICON_SIZE, HOME_CARD_ICON_SIZE),
         ];
         let icon_person = build_icon_person(32.0, 32.0);
         let icon_plus = build_icon_plus(32.0, 32.0);
@@ -71,6 +74,8 @@ impl RenderCache {
             TextBlob::new("Daily", &card_font).expect("text blob"),
             TextBlob::new("Overview", &card_font).expect("text blob"),
             TextBlob::new("Settings", &card_font).expect("text blob"),
+            TextBlob::new("Allocation", &card_font).expect("text blob"),
+            TextBlob::new("Calendar", &card_font).expect("text blob"),
         ];
 
         let daily_label = TextBlob::new("Daily", &font).expect("text blob");

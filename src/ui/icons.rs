@@ -168,6 +168,70 @@ pub fn build_icon_today(w: f32, h: f32) -> Path {
     pb.detach()
 }
 
+/// Builds a stacked vertical bar chart icon representing workload allocation.
+pub fn build_icon_allocation(w: f32, h: f32) -> Path {
+    let mut pb = PathBuilder::new();
+    let bar_w = w * 0.18;
+    let gap = (w - 3.0 * bar_w) / 4.0;
+
+    // Bar 1 (left) — tall
+    let x1 = gap;
+    pb.move_to((x1, h * 0.2));
+    pb.line_to((x1 + bar_w, h * 0.2));
+    pb.line_to((x1 + bar_w, h));
+    pb.line_to((x1, h));
+    pb.close();
+
+    // Bar 2 (middle) — medium
+    let x2 = 2.0 * gap + bar_w;
+    pb.move_to((x2, h * 0.45));
+    pb.line_to((x2 + bar_w, h * 0.45));
+    pb.line_to((x2 + bar_w, h));
+    pb.line_to((x2, h));
+    pb.close();
+
+    // Bar 3 (right) — short
+    let x3 = 3.0 * gap + 2.0 * bar_w;
+    pb.move_to((x3, h * 0.65));
+    pb.line_to((x3 + bar_w, h * 0.65));
+    pb.line_to((x3 + bar_w, h));
+    pb.line_to((x3, h));
+    pb.close();
+
+    pb.detach()
+}
+
+/// Builds a calendar grid icon with column and row dividers, representing
+/// the calendar overrides editing view.
+pub fn build_icon_calendar_edit(w: f32, h: f32) -> Path {
+    let mut pb = PathBuilder::new();
+    // Calendar outline
+    pb.move_to((0.0, h * 0.15));
+    pb.line_to((w, h * 0.15));
+    pb.line_to((w, h));
+    pb.line_to((0.0, h));
+    pb.close();
+    // Header bar
+    pb.move_to((0.0, h * 0.35));
+    pb.line_to((w, h * 0.35));
+    // Calendar hangers
+    pb.move_to((w * 0.25, 0.0));
+    pb.line_to((w * 0.25, h * 0.25));
+    pb.move_to((w * 0.75, 0.0));
+    pb.line_to((w * 0.75, h * 0.25));
+    // Vertical grid lines inside calendar body
+    pb.move_to((w * 0.33, h * 0.35));
+    pb.line_to((w * 0.33, h));
+    pb.move_to((w * 0.67, h * 0.35));
+    pb.line_to((w * 0.67, h));
+    // Horizontal grid lines inside calendar body
+    pb.move_to((0.0, h * 0.57));
+    pb.line_to((w, h * 0.57));
+    pb.move_to((0.0, h * 0.79));
+    pb.line_to((w, h * 0.79));
+    pb.detach()
+}
+
 /// Builds a three-line slider icon (horizontal rules with circular knobs)
 /// representing settings / configuration.
 pub fn build_icon_settings(w: f32, h: f32) -> Path {

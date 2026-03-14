@@ -59,6 +59,11 @@ pub fn person_right_btn_x(window_width: f32) -> f32 {
     window_width - 2.0 * (TOOLBAR_BTN_SIZE + TOOLBAR_BTN_GAP)
 }
 
+/// X position of the rightmost settings button.
+pub fn settings_right_btn_x(window_width: f32) -> f32 {
+    window_width - (TOOLBAR_BTN_SIZE + TOOLBAR_BTN_GAP)
+}
+
 // Planning page list panel
 pub const PLAN_LIST_ITEM_H: f32 = 36.0;
 pub const PLAN_LIST_PADDING: f32 = 8.0;
@@ -173,3 +178,34 @@ pub const GANTT_PLAN_START_COLOR: u32 = DEP_PLAN_START_FG;
 
 // Dependency line color
 pub const GANTT_DEP_LINE_COLOR: u32 = 0x80_888888;
+
+// Allocation page
+pub const ALLOC_USER_LABEL_W: f32 = 120.0;
+pub const ALLOC_ROW_ALT_BG: u32 = 0xff_f7f7f7;
+
+// Task color palette for allocation bars
+pub const TASK_COLORS: [u32; 10] = [
+    0xff_4a90d9, // blue
+    0xff_7ed321, // green
+    0xff_f5a623, // amber
+    0xff_d0021b, // red
+    0xff_9b59b6, // purple
+    0xff_1abc9c, // teal
+    0xff_e67e22, // orange
+    0xff_2ecc71, // mint
+    0xff_e74c3c, // coral
+    0xff_3498db, // sky blue
+];
+
+// Calendar overrides page
+pub const CAL_HOLIDAY_BG: u32 = 0xff_ffcccc; // holiday (0h)
+pub const CAL_PARTIAL_BG: u32 = 0xff_fff3cd; // partial-day override
+pub const CAL_NONWORK_BG: u32 = 0xff_f0f0f0; // non-working day (no override)
+pub const CAL_WORK_BG: u32 = 0xff_ffffff; // normal working day
+pub const CAL_HOVER_BG: u32 = 0xff_e8f4ff; // hovered day cell
+pub const CAL_OUTSIDE_BG: u32 = 0xff_fafafa; // outside current month
+pub const CAL_TODAY_BORDER: u32 = 0xff_4a90d9; // today highlight border
+pub const CAL_CELL_BORDER: u32 = 0xff_e0e0e0; // cell border
+pub const CAL_HEADER_BG: u32 = 0xff_f5f5f5; // day-of-week header bg
+pub const CAL_FG: u32 = 0xff_333333; // cell text
+pub const CAL_DIM_FG: u32 = 0xff_aaaaaa; // outside month text
