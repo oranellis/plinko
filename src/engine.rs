@@ -238,6 +238,14 @@ pub enum PlanRequest {
     /// Set the plan's default work schedule. Validated — capacity changes may
     /// break the existing schedule.
     SetDefaultSchedule(WorkSchedule),
+    /// Set a plan-level calendar override for a specific date.
+    /// `hours = 0.0` marks the date as a holiday.  Validated — removing
+    /// capacity may break an existing schedule.
+    SetCalendarOverride(NaiveDate, f32),
+    /// Remove a plan-level calendar override, reverting the date to the
+    /// normal schedule.  Validated — restoring capacity is safe but the
+    /// closure still runs through the validator for consistency.
+    ClearCalendarOverride(NaiveDate),
 
     // ── Tag registry ──────────────────────────────────────────────────────────
     /// Append a new tag to the plan's ordered tag registry. No-op if it already
@@ -547,6 +555,16 @@ impl PlanEngine {
 
             PlanRequest::SetDefaultSchedule(schedule) => self.apply_validated(|plan| {
                 plan.default_schedule = schedule;
+                Ok(())
+            }),
+
+            PlanRequest::SetCalendarOverride(date, hours) => self.apply_validated(|plan| {
+                plan.calendar.set(date, hours);
+                Ok(())
+            }),
+
+            PlanRequest::ClearCalendarOverride(date) => self.apply_validated(|plan| {
+                plan.calendar.remove(&date);
                 Ok(())
             }),
 
