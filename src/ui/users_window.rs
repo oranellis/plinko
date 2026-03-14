@@ -40,9 +40,11 @@ pub struct UsersWindow {
     hovered_plus: bool,
     hovered_tags: bool,
     hovered_row: Option<usize>,
+    hovered_cal_btn: Option<usize>,
     pending_open_add: bool,
     pending_open_tags: bool,
     pending_edit: Option<crate::data::User>,
+    pending_schedule: Option<Box<dyn crate::ui::floating_window::FloatingWindow>>,
     /// Decoded avatar images, keyed by UserId. Populated lazily, one decode per user.
     /// Uses `RefCell` for interior mutability because `render` takes `&self`.
     avatar_cache: RefCell<AvatarCache>,
@@ -56,9 +58,11 @@ impl UsersWindow {
             hovered_plus: false,
             hovered_tags: false,
             hovered_row: None,
+            hovered_cal_btn: None,
             pending_open_add: false,
             pending_open_tags: false,
             pending_edit: None,
+            pending_schedule: None,
             avatar_cache: RefCell::new(AvatarCache::new()),
         }
     }
@@ -115,6 +119,16 @@ impl UsersWindow {
 
     fn row_y(&self, list_top: f32, idx: usize) -> f32 {
         list_top + idx as f32 * ROW_H - self.scroll_offset
+    }
+
+    fn cal_btn_rect(row_y: f32, panel: Rect) -> Rect {
+        const CAL_BTN_SIZE: f32 = 24.0;
+        Rect::from_xywh(
+            panel.right - PADDING - SCROLLBAR_W - 4.0 - CAL_BTN_SIZE,
+            row_y + (ROW_H - CAL_BTN_SIZE) / 2.0,
+            CAL_BTN_SIZE,
+            CAL_BTN_SIZE,
+        )
     }
 
     fn max_scroll(user_count: usize, width: f32, height: f32) -> f32 {
@@ -396,10 +410,61 @@ impl FloatingWindow for UsersWindow {
                     tag_names.sort_unstable();
                     let tags_str = tag_names.join(", ");
                     if let Some(blob) = TextBlob::new(&tags_str, &cache.small_font) {
-                        let tx = panel.right - PADDING - SCROLLBAR_W - 4.0 - blob.bounds().width();
+                        let tx = panel.right
+                            - PADDING
+                            - SCROLLBAR_W
+                            - 4.0
+                            - 24.0  // cal btn size
+                            - 8.0   // gap
+                            - blob.bounds().width();
                         paint.set_color(Color::from(LIST_SECTION_FG));
                         canvas.draw_text_blob(&blob, (tx, ry + sm_row_text_offset), &paint);
                     }
+                }
+
+                // Calendar button (per-row)
+                {
+                    let cal_btn = Self::cal_btn_rect(ry, panel);
+                    let hov = self.hovered_cal_btn == Some(i);
+                    if hov {
+                        paint.set_color(Color::from(TOOLBAR_BTN_HOVER_BG));
+                        paint.set_style(PaintStyle::Fill);
+                        canvas.draw_rrect(RRect::new_rect_xy(cal_btn, 4.0, 4.0), &paint);
+                    }
+                    // Simple calendar icon
+                    let icon_color = if hov {
+                        TOOLBAR_BTN_ICON_COLOR
+                    } else {
+                        0xff_bbbbbb_u32
+                    };
+                    let x = cal_btn.left + 3.0;
+                    let y = cal_btn.top + 4.0;
+                    let w = cal_btn.width() - 6.0;
+                    let h = cal_btn.height() - 7.0;
+                    paint.set_color(Color::from(icon_color));
+                    paint.set_style(PaintStyle::Stroke);
+                    paint.set_stroke_width(1.2);
+                    // Outer rounded rect
+                    canvas.draw_rrect(
+                        RRect::new_rect_xy(Rect::from_xywh(x, y, w, h), 2.0, 2.0),
+                        &paint,
+                    );
+                    // Binding tabs at top
+                    let mut pb = PathBuilder::new();
+                    pb.move_to((x + 3.0, y));
+                    pb.line_to((x + 3.0, cal_btn.top + 2.0));
+                    pb.move_to((x + w - 3.0, y));
+                    pb.line_to((x + w - 3.0, cal_btn.top + 2.0));
+                    canvas.draw_path(&pb.detach(), &paint);
+                    // Horizontal lines (calendar grid)
+                    let row_h = (h - 5.0) / 3.0;
+                    let lines_top = y + 5.0;
+                    paint.set_stroke_width(0.8);
+                    for li in 0..3 {
+                        let ly = lines_top + li as f32 * row_h;
+                        canvas.draw_line((x + 1.0, ly), (x + w - 1.0, ly), &paint);
+                    }
+                    paint.set_style(PaintStyle::Fill);
                 }
 
                 // Row divider (except after last row)
@@ -460,15 +525,31 @@ impl FloatingWindow for UsersWindow {
         let new_tags = Self::tags_btn_rect(width, height).contains(pt);
         let new_row = self.hovered_row_for(x, y, width, height, plan.users.len());
 
+        // Check calendar button hover
+        let panel = Self::panel_rect(width, height);
+        let list = Self::list_rect(width, height);
+        let mut sorted_users: Vec<_> = plan.users.values().collect();
+        sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
+        let new_cal_btn = sorted_users.iter().enumerate().find_map(|(i, _)| {
+            let ry = self.row_y(list.top, i);
+            if ry + ROW_H < list.top || ry > list.bottom {
+                return None;
+            }
+            let btn = Self::cal_btn_rect(ry, panel);
+            if btn.contains(pt) { Some(i) } else { None }
+        });
+
         if new_back != self.hovered_back
             || new_plus != self.hovered_plus
             || new_tags != self.hovered_tags
             || new_row != self.hovered_row
+            || new_cal_btn != self.hovered_cal_btn
         {
             self.hovered_back = new_back;
             self.hovered_plus = new_plus;
             self.hovered_tags = new_tags;
             self.hovered_row = new_row;
+            self.hovered_cal_btn = new_cal_btn;
             FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
         } else {
             FloatingWindowOutcome::default()
@@ -510,6 +591,37 @@ impl FloatingWindow for UsersWindow {
         if !Self::panel_rect(width, height).contains(pt) {
             return FloatingWindowOutcome::close();
         }
+
+        // Calendar button check (before row click so the btn hit-tests first)
+        {
+            let panel = Self::panel_rect(width, height);
+            let list = Self::list_rect(width, height);
+            let mut sorted_users: Vec<_> = plan.users.values().collect();
+            sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
+            for (i, user) in sorted_users.iter().enumerate() {
+                let ry = self.row_y(list.top, i);
+                if ry + ROW_H < list.top || ry > list.bottom {
+                    continue;
+                }
+                let cal_btn = Self::cal_btn_rect(ry, panel);
+                if cal_btn.contains(pt) {
+                    let user_schedule = plan
+                        .user_schedules
+                        .get(&user.id)
+                        .unwrap_or(&plan.default_schedule)
+                        .clone();
+                    self.pending_schedule = Some(Box::new(
+                        crate::ui::schedule_window::ScheduleWindow::for_user(
+                            user.id,
+                            &user.name,
+                            &user_schedule,
+                        ),
+                    ));
+                    return FloatingWindowOutcome::default();
+                }
+            }
+        }
+
         // Row click — open the Edit Team Member form
         if let Some(idx) = self.hovered_row_for(x, y, width, height, plan.users.len()) {
             let mut sorted_users: Vec<_> = plan.users.values().collect();
@@ -543,6 +655,9 @@ impl FloatingWindow for UsersWindow {
     }
 
     fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+        if let Some(w) = self.pending_schedule.take() {
+            return Some(w);
+        }
         if let Some(user) = self.pending_edit.take() {
             return Some(Box::new(
                 crate::ui::user_form_window::UserFormWindow::from_user(&user),
@@ -564,5 +679,6 @@ impl FloatingWindow for UsersWindow {
         self.hovered_plus = false;
         self.hovered_tags = false;
         self.hovered_row = None;
+        self.hovered_cal_btn = None;
     }
 }

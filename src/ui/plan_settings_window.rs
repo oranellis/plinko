@@ -805,6 +805,7 @@ pub struct PlanSettingsWindow {
     hovered_edit_schedule: bool,
     scroll_y: f32,
     error: Option<String>,
+    pending_schedule: Option<Box<dyn crate::ui::floating_window::FloatingWindow>>,
 }
 
 impl PlanSettingsWindow {
@@ -826,6 +827,7 @@ impl PlanSettingsWindow {
             hovered_edit_schedule: false,
             scroll_y: 0.0,
             error: None,
+            pending_schedule: None,
         }
     }
 
@@ -849,6 +851,7 @@ impl PlanSettingsWindow {
             hovered_edit_schedule: false,
             scroll_y: 0.0,
             error: None,
+            pending_schedule: None,
         }
     }
 
@@ -1534,6 +1537,14 @@ impl FloatingWindow for PlanSettingsWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
 
+        // Edit Schedule button (content-space)
+        if Self::edit_schedule_btn_rect(width, height).contains(Point::new(x, cy)) {
+            self.pending_schedule = Some(Box::new(
+                crate::ui::schedule_window::ScheduleWindow::for_plan(&plan.default_schedule),
+            ));
+            return FloatingWindowOutcome::default();
+        }
+
         // Click outside panel
         if !panel.contains(p) {
             return FloatingWindowOutcome::close();
@@ -1676,5 +1687,9 @@ impl FloatingWindow for PlanSettingsWindow {
         self.hovered_cancel = false;
         self.hovered_edit_schedule = false;
         self.start_date.reset_hover();
+    }
+
+    fn take_open_request(&mut self) -> Option<Box<dyn crate::ui::floating_window::FloatingWindow>> {
+        self.pending_schedule.take()
     }
 }
