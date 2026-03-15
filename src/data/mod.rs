@@ -24,17 +24,14 @@ pub mod storage;
 pub mod task;
 pub mod user;
 
-pub use allocation::{
-    ConstraintViolation, MilestoneAllocation, PlanAllocation, SlotAllocation, TaskAllocation,
-    WorkSegment,
-};
+pub use allocation::{TaskAllocation, WorkSegment};
 pub use calendar::CalendarOverrides;
 pub use constraint::{ConstraintKind, DateConstraint};
 pub use dates::StartDates;
 pub use dependency::Dependency;
 pub use ids::{MilestoneId, NodeId, TagId, TaskId, UserId};
 pub use milestone::Milestone;
-pub use plan::{DependencyError, Plan, Tag};
+pub use plan::Plan;
 pub use schedule::{Weekday, WorkSchedule};
 pub use storage::{Storage, StorageError};
 pub use task::{Task, TaskStatus, WorkerSlot};
