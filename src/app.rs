@@ -18,7 +18,9 @@ use skia_safe::{
     gpu::{self, gl::FramebufferInfo},
 };
 
-use crate::engine::{PlanEngine, PlanResponse};
+use crate::data::Storage;
+use crate::data::ids::UserId;
+use crate::engine::{PlanEngine, PlanRequest, PlanResponse};
 use crate::graphics::env::{self, Env};
 use crate::pages::home::render as home_render;
 use crate::pages::{Page, PageId, PageManager};
@@ -71,9 +73,14 @@ pub struct Application {
     back_picture: Option<Picture>,
     /// Stack of floating windows (modal overlays).
     floats: FloatingWindowManager,
+    /// Versioned plan storage.
+    storage: Storage,
+    /// The "current user" ID shown on the settings identity section.
+    current_user: Option<UserId>,
 }
 
 impl Application {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         env: Env,
         fb_info: FramebufferInfo,
@@ -81,6 +88,8 @@ impl Application {
         stencil_size: usize,
         scale_factor: f64,
         engine: PlanEngine,
+        storage: Storage,
+        current_user: Option<UserId>,
     ) -> Self {
         Self {
             env,
@@ -101,6 +110,8 @@ impl Application {
             home_picture: None,
             back_picture: None,
             floats: FloatingWindowManager::new(),
+            storage,
+            current_user,
         }
     }
 
@@ -133,6 +144,11 @@ impl Application {
         self.back_hovered = false;
         self.home_picture = None;
         self.back_picture = None;
+
+        if page == PageId::Settings {
+            self.refresh_settings();
+        }
+
         self.mark_dirty(DirtyRegion::All);
     }
 
@@ -148,6 +164,77 @@ impl Application {
         self.back_picture = None;
         self.floats = FloatingWindowManager::new();
         self.mark_dirty(DirtyRegion::All);
+    }
+
+    /// Populate the settings page state from storage and engine.
+    fn refresh_settings(&mut self) {
+        let current_plan_id = self.engine.plan().id;
+        let plan_ids = self.storage.list_plans().unwrap_or_default();
+        let mut entries = Vec::new();
+        for id in plan_ids {
+            if let Some((name, last_saved)) = self.storage.plan_summary(id) {
+                entries.push(crate::pages::settings::state::PlanEntry {
+                    id,
+                    name,
+                    last_saved,
+                    is_current: id == current_plan_id,
+                });
+            }
+        }
+        // Sort: current first, then by name
+        entries.sort_by(|a, b| {
+            b.is_current
+                .cmp(&a.is_current)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        let s = self.pages.settings_mut();
+        s.state.plan_list = entries;
+        s.state.current_user = self.current_user;
+    }
+
+    /// Process any pending actions from the settings page.
+    fn process_settings_actions(&mut self) {
+        let pending_save = self.pages.settings_mut().state.pending_save;
+        let pending_new = self.pages.settings_mut().state.pending_new;
+        let pending_load = self.pages.settings_mut().state.pending_load.take();
+        let pending_set_user = self.pages.settings_mut().state.pending_set_user.take();
+
+        if pending_save {
+            self.pages.settings_mut().state.pending_save = false;
+            if let Err(e) = self.storage.save(self.engine.plan()) {
+                eprintln!("save error: {e}");
+            }
+            self.refresh_settings();
+            self.mark_dirty(DirtyRegion::PageOnly);
+        }
+
+        if pending_new {
+            self.pages.settings_mut().state.pending_new = false;
+            let new_plan = crate::data::Plan::new("New Plan");
+            self.engine
+                .sender()
+                .send(PlanRequest::ReplacePlan(Box::new(new_plan)));
+            self.refresh_settings();
+        }
+
+        if let Some(plan_id) = pending_load {
+            match self.storage.load_latest(plan_id) {
+                Ok(plan) => {
+                    self.engine
+                        .sender()
+                        .send(PlanRequest::ReplacePlan(Box::new(plan)));
+                    self.refresh_settings();
+                }
+                Err(e) => eprintln!("load error: {e}"),
+            }
+        }
+
+        if let Some(uid) = pending_set_user {
+            self.current_user = uid;
+            self.storage.save_current_user_id(uid);
+            self.pages.settings_mut().state.current_user = uid;
+            self.mark_dirty(DirtyRegion::PageOnly);
+        }
     }
 }
 
@@ -562,6 +649,11 @@ impl ApplicationHandler for Application {
                     eprintln!("plan error: {e}");
                 }
             }
+        }
+
+        // Handle settings page pending actions.
+        if matches!(self.app_state, AppState::InPage(PageId::Settings)) {
+            self.process_settings_actions();
         }
 
         if self.pending_dirty != DirtyRegion::None {
