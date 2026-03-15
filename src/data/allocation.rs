@@ -1,6 +1,7 @@
 //! The result of a scheduler run, storing day-by-day task assignments.
 
-use crate::data::ids::{MilestoneId, TaskId, UserId};
+use crate::data::constraint::ConstraintKind;
+use crate::data::ids::{MilestoneId, NodeId, TaskId, UserId};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -42,11 +43,48 @@ pub struct MilestoneAllocation {
     pub date: NaiveDate,
 }
 
+/// Records that a task or milestone could not meet its scheduled constraint
+/// and was pushed to the earliest possible date instead.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConstraintViolation {
+    /// Display name of the task or milestone.
+    pub node_name: String,
+    /// The kind of constraint that was violated.
+    pub kind: ConstraintKind,
+    /// The date the constraint required.
+    pub required_date: NaiveDate,
+    /// The date the scheduler actually placed it (earliest possible).
+    pub scheduled_date: NaiveDate,
+}
+
+impl ConstraintViolation {
+    /// A human-readable description of the violation.
+    pub fn message(&self) -> String {
+        match self.kind {
+            ConstraintKind::Fixed => format!(
+                "\"{}\" has a Fixed constraint requiring {}, but the earliest possible start is {}.",
+                self.node_name, self.required_date, self.scheduled_date
+            ),
+            ConstraintKind::Latest => format!(
+                "\"{}\" has a Latest constraint of {}, but the earliest possible start is {}.",
+                self.node_name, self.required_date, self.scheduled_date
+            ),
+            ConstraintKind::Earliest => format!(
+                "\"{}\" has an Earliest constraint of {} that could not be met.",
+                self.node_name, self.required_date
+            ),
+        }
+    }
+}
+
 /// The complete output of one scheduler run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanAllocation {
     pub tasks: HashMap<TaskId, TaskAllocation>,
     pub milestones: HashMap<MilestoneId, MilestoneAllocation>,
+    /// Tasks or milestones whose scheduling constraint could not be met.
+    /// The scheduler pushes them to the earliest possible date and records the violation here.
+    pub constraint_violations: HashMap<NodeId, ConstraintViolation>,
 }
 
 impl PlanAllocation {
@@ -54,6 +92,7 @@ impl PlanAllocation {
         Self {
             tasks: HashMap::new(),
             milestones: HashMap::new(),
+            constraint_violations: HashMap::new(),
         }
     }
 }

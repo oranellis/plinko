@@ -1,9 +1,12 @@
 use crate::data::allocation::{
     MilestoneAllocation, PlanAllocation, SlotAllocation, TaskAllocation, WorkSegment,
 };
+use crate::data::constraint::ConstraintKind;
 use crate::data::ids::TagId;
 use crate::data::task::{TaskStatus, WorkerSlot};
-use crate::data::{Dependency, MilestoneId, NodeId, Plan, TaskId, UserId, constraint};
+use crate::data::{
+    ConstraintViolation, Dependency, MilestoneId, NodeId, Plan, TaskId, UserId, constraint,
+};
 use chrono::{Datelike, NaiveDate};
 use std::{
     collections::{HashMap, HashSet},
@@ -27,16 +30,6 @@ pub enum SchedulerError {
         required_tags: HashSet<TagId>,
     },
     NoPathsToNode(NodeId),
-    FixedConstraintViolated {
-        task_name: String,
-        required_date: NaiveDate,
-        earliest_possible: NaiveDate,
-    },
-    LatestConstraintViolated {
-        task_name: String,
-        deadline: NaiveDate,
-        computed_start: NaiveDate,
-    },
     DisconnectedNode(NodeId),
 }
 
@@ -60,24 +53,6 @@ impl fmt::Display for SchedulerError {
             SchedulerError::NoPathsToNode(node_id) => {
                 write!(f, "no path from plan start to node {node_id:?}")
             }
-            SchedulerError::FixedConstraintViolated {
-                task_name,
-                required_date,
-                earliest_possible,
-            } => write!(
-                f,
-                "task \"{task_name}\" has a Fixed constraint on {required_date} but \
-                 cannot start before {earliest_possible}",
-            ),
-            SchedulerError::LatestConstraintViolated {
-                task_name,
-                deadline,
-                computed_start,
-            } => write!(
-                f,
-                "task \"{task_name}\" must start by {deadline} but the earliest \
-                 possible start is {computed_start}",
-            ),
             SchedulerError::DisconnectedNode(node_id) => {
                 write!(f, "node {node_id:?} has no path back to PlanStart")
             }
@@ -524,21 +499,31 @@ impl Plan {
         let start_date = match task.constraint {
             Some(c) if c.kind == constraint::ConstraintKind::Fixed => {
                 if earliest > c.date {
-                    return Err(SchedulerError::FixedConstraintViolated {
-                        task_name: task.name.clone(),
-                        required_date: c.date,
-                        earliest_possible: earliest,
-                    });
+                    state.allocation.constraint_violations.insert(
+                        NodeId::Task(id),
+                        ConstraintViolation {
+                            node_name: task.name.clone(),
+                            kind: ConstraintKind::Fixed,
+                            required_date: c.date,
+                            scheduled_date: earliest,
+                        },
+                    );
+                    earliest
+                } else {
+                    c.date
                 }
-                c.date
             }
             Some(c) if c.kind == constraint::ConstraintKind::Latest => {
                 if earliest > c.date {
-                    return Err(SchedulerError::LatestConstraintViolated {
-                        task_name: task.name.clone(),
-                        deadline: c.date,
-                        computed_start: earliest,
-                    });
+                    state.allocation.constraint_violations.insert(
+                        NodeId::Task(id),
+                        ConstraintViolation {
+                            node_name: task.name.clone(),
+                            kind: ConstraintKind::Latest,
+                            required_date: c.date,
+                            scheduled_date: earliest,
+                        },
+                    );
                 }
                 earliest
             }
@@ -652,21 +637,31 @@ impl Plan {
         let date = match milestone.constraint {
             Some(c) if c.kind == constraint::ConstraintKind::Fixed => {
                 if earliest > c.date {
-                    return Err(SchedulerError::FixedConstraintViolated {
-                        task_name: milestone.name.clone(),
-                        required_date: c.date,
-                        earliest_possible: earliest,
-                    });
+                    state.allocation.constraint_violations.insert(
+                        NodeId::Milestone(id),
+                        ConstraintViolation {
+                            node_name: milestone.name.clone(),
+                            kind: ConstraintKind::Fixed,
+                            required_date: c.date,
+                            scheduled_date: earliest,
+                        },
+                    );
+                    earliest
+                } else {
+                    c.date
                 }
-                c.date
             }
             Some(c) if c.kind == constraint::ConstraintKind::Latest => {
                 if earliest > c.date {
-                    return Err(SchedulerError::LatestConstraintViolated {
-                        task_name: milestone.name.clone(),
-                        deadline: c.date,
-                        computed_start: earliest,
-                    });
+                    state.allocation.constraint_violations.insert(
+                        NodeId::Milestone(id),
+                        ConstraintViolation {
+                            node_name: milestone.name.clone(),
+                            kind: ConstraintKind::Latest,
+                            required_date: c.date,
+                            scheduled_date: earliest,
+                        },
+                    );
                 }
                 earliest
             }
@@ -1737,8 +1732,9 @@ mod tests {
     }
 
     /// Latest constraint violated: predecessor forces start after deadline.
+    /// The scheduler should push the task forward and record a constraint violation.
     #[test]
-    fn scheduler_latest_constraint_violated_returns_error() {
+    fn scheduler_latest_constraint_violated_records_warning() {
         let mut p = make_plan();
         let alice = p.add_user(User::new("Alice"));
 
@@ -1757,11 +1753,20 @@ mod tests {
         p.add_task_dependency(t2id, Dependency::new(NodeId::Task(t1id)))
             .unwrap();
 
-        let err = p.compute_time_optimised_plan().unwrap_err();
-        assert!(matches!(
-            err,
-            SchedulerError::LatestConstraintViolated { .. }
-        ));
+        // Should succeed (not error) and record the violation
+        p.compute_time_optimised_plan().unwrap();
+        let alloc = p.allocation.as_ref().unwrap();
+        assert!(
+            alloc
+                .constraint_violations
+                .contains_key(&NodeId::Task(t2id)),
+            "expected a constraint violation to be recorded for T2"
+        );
+        // T2 should start after T1 ends, not before Monday
+        assert!(
+            alloc.tasks[&t2id].start_date > date(2026, 3, 9),
+            "T2 should be pushed past the Latest deadline"
+        );
     }
 
     /// Fixed constraint respected.
@@ -1783,8 +1788,9 @@ mod tests {
     }
 
     /// Fixed constraint violated when earliest_possible > required_date.
+    /// The scheduler should push the task forward and record a constraint violation.
     #[test]
-    fn scheduler_fixed_constraint_violated_returns_error() {
+    fn scheduler_fixed_constraint_violated_records_warning() {
         let mut p = make_plan();
         let alice = p.add_user(User::new("Alice"));
 
@@ -1802,11 +1808,20 @@ mod tests {
         p.add_task_dependency(t2id, Dependency::new(NodeId::Task(t1id)))
             .unwrap();
 
-        let err = p.compute_time_optimised_plan().unwrap_err();
-        assert!(matches!(
-            err,
-            SchedulerError::FixedConstraintViolated { .. }
-        ));
+        // Should succeed (not error) and record the violation
+        p.compute_time_optimised_plan().unwrap();
+        let alloc = p.allocation.as_ref().unwrap();
+        assert!(
+            alloc
+                .constraint_violations
+                .contains_key(&NodeId::Task(t2id)),
+            "expected a constraint violation to be recorded for T2"
+        );
+        // T2 should start after T1 ends (Thursday at earliest)
+        assert!(
+            alloc.tasks[&t2id].start_date > date(2026, 3, 9),
+            "T2 should be pushed past the Fixed date"
+        );
     }
 
     /// Disconnected node (no path to PlanStart) → DisconnectedNode error.

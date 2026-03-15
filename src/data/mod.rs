@@ -25,7 +25,8 @@ pub mod task;
 pub mod user;
 
 pub use allocation::{
-    MilestoneAllocation, PlanAllocation, SlotAllocation, TaskAllocation, WorkSegment,
+    ConstraintViolation, MilestoneAllocation, PlanAllocation, SlotAllocation, TaskAllocation,
+    WorkSegment,
 };
 pub use calendar::CalendarOverrides;
 pub use constraint::{ConstraintKind, DateConstraint};
