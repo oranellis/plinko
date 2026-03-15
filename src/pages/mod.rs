@@ -161,4 +161,9 @@ impl PageManager {
     pub fn set_active(&mut self, page: PageId) {
         self.active = page;
     }
+
+    /// Returns a mutable reference to the settings page.
+    pub fn settings_mut(&mut self) -> &mut settings::SettingsPage {
+        &mut self.settings
+    }
 }
