@@ -4,7 +4,7 @@ use chrono::{Datelike, Duration, NaiveDate, Weekday as CWeekday};
 use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, PathBuilder, RRect, Rect, TextBlob};
 
 use crate::data::Plan;
-use crate::data::ids::{MilestoneId, TaskId};
+use crate::data::ids::{MilestoneId, NodeId, TaskId};
 use crate::data::task::TaskStatus;
 use crate::ui::cache::RenderCache;
 use crate::ui::icon_button;
@@ -14,6 +14,19 @@ use super::gantt::{
     GanttItem, GanttRow, MilestoneStatus, compute_date_range, milestone_display_status, pack_rows,
 };
 use super::state::OverviewState;
+
+// ── Warning icon constants ─────────────────────────────────────────────────────
+
+/// Size of the warning triangle icon (both width and height).
+const WARN_SIZE: f32 = 14.0;
+/// Amber fill for the warning triangle.
+const WARN_FILL: u32 = 0xff_ffc107;
+/// Dark amber outline.
+const WARN_STROKE: u32 = 0xff_e65100;
+/// Tooltip background.
+const WARN_TOOLTIP_BG: u32 = 0xf0_333333;
+/// Tooltip text color.
+const WARN_TOOLTIP_FG: u32 = 0xff_ffffff;
 
 /// A clicked item on the Gantt chart.
 pub enum GanttHit {
@@ -40,7 +53,7 @@ fn date_to_x(date: NaiveDate, view_start: NaiveDate, zoom: f32, scroll_x: f32) -
     days as f32 * zoom - scroll_x
 }
 
-fn view_start_date(plan: &Plan) -> NaiveDate {
+pub fn view_start_date(plan: &Plan) -> NaiveDate {
     compute_date_range(plan)
         .map(|(s, _)| s)
         .unwrap_or(plan.start_date)
@@ -92,6 +105,23 @@ pub fn draw_overview(
     draw_gantt_dependencies(canvas, state, plan, &rows, w, h, view_start);
     draw_gantt_header(canvas, state, w, view_start, cache);
     draw_toolbar_buttons(canvas, state, cache, w);
+
+    // Draw warning tooltip on top of everything else.
+    if let Some(node_id) = state.hovered_warning {
+        if let Some(allocation) = &plan.allocation {
+            if let Some(violation) = allocation.constraint_violations.get(&node_id) {
+                draw_warning_tooltip(
+                    canvas,
+                    violation,
+                    state.cursor_x,
+                    state.cursor_y,
+                    w,
+                    h,
+                    cache,
+                );
+            }
+        }
+    }
 }
 
 // ── Toolbar buttons ────────────────────────────────────────────────────────────
@@ -447,6 +477,18 @@ fn draw_gantt_rows(
                         }
                         canvas.restore();
                     }
+
+                    // Warning icon if this task has a constraint violation.
+                    let node_id = NodeId::Task(*id);
+                    let has_violation = plan
+                        .allocation
+                        .as_ref()
+                        .map_or(false, |a| a.constraint_violations.contains_key(&node_id));
+                    if has_violation {
+                        let warn_rect = warn_icon_rect_for_task(bar_x, bar_y, bar_w, bar_h);
+                        let hovered = state.hovered_warning == Some(node_id);
+                        draw_warning_icon(canvas, warn_rect, hovered, &mut paint);
+                    }
                 }
 
                 GanttItem::Milestone { id, date } => {
@@ -490,6 +532,18 @@ fn draw_gantt_rows(
                             zoom,
                             scroll_x,
                         );
+                    }
+
+                    // Warning icon if this milestone has a constraint violation.
+                    let node_id = NodeId::Milestone(*id);
+                    let has_violation = plan
+                        .allocation
+                        .as_ref()
+                        .map_or(false, |a| a.constraint_violations.contains_key(&node_id));
+                    if has_violation {
+                        let warn_rect = warn_icon_rect_for_milestone(cx, cy);
+                        let hovered = state.hovered_warning == Some(node_id);
+                        draw_warning_icon(canvas, warn_rect, hovered, &mut paint);
                     }
                 }
 
@@ -537,6 +591,213 @@ fn draw_gantt_rows(
     }
 
     canvas.restore();
+}
+
+// ── Warning icon helpers ───────────────────────────────────────────────────────
+
+/// Returns the rect for a task's warning icon (to the right of the bar, row-centered).
+fn warn_icon_rect_for_task(bar_x: f32, bar_y: f32, bar_w: f32, bar_h: f32) -> Rect {
+    let wx = bar_x + bar_w + 3.0;
+    let wy = bar_y + (bar_h - WARN_SIZE) / 2.0;
+    Rect::from_xywh(wx, wy, WARN_SIZE, WARN_SIZE)
+}
+
+/// Returns the rect for a milestone's warning icon (to the right of the diamond, row-centered).
+fn warn_icon_rect_for_milestone(cx: f32, cy: f32) -> Rect {
+    let wx = cx + GANTT_MS_HALF + 3.0;
+    let wy = cy - WARN_SIZE / 2.0;
+    Rect::from_xywh(wx, wy, WARN_SIZE, WARN_SIZE)
+}
+
+/// Draw a warning triangle icon inside `rect`.
+fn draw_warning_icon(canvas: &Canvas, rect: Rect, hovered: bool, paint: &mut Paint) {
+    let cx = rect.center_x();
+    let top = rect.top();
+    let bot = rect.bottom();
+    let left = rect.left();
+    let right = rect.right();
+
+    // Slightly enlarge on hover.
+    let (cx, top, bot, left, right) = if hovered {
+        let expand = 2.0;
+        (
+            cx,
+            top - expand,
+            bot + expand,
+            left - expand,
+            right + expand,
+        )
+    } else {
+        (cx, top, bot, left, right)
+    };
+
+    let mut pb = PathBuilder::new();
+    pb.move_to((cx, top));
+    pb.line_to((right, bot));
+    pb.line_to((left, bot));
+    pb.close();
+    let tri = pb.detach();
+
+    paint.set_style(PaintStyle::Fill);
+    paint.set_color(Color::from(WARN_FILL));
+    canvas.draw_path(&tri, paint);
+
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.0);
+    paint.set_color(Color::from(WARN_STROKE));
+    canvas.draw_path(&tri, paint);
+    paint.set_style(PaintStyle::Fill);
+
+    // Draw "!" as two small filled rects (line + dot).
+    paint.set_color(Color::from(0xff_333333_u32));
+    let bang_h = (bot - top) * 0.45;
+    let bang_w = 2.0_f32;
+    let bang_top = top + (bot - top) * 0.22;
+    canvas.draw_rect(
+        Rect::from_xywh(cx - bang_w / 2.0, bang_top, bang_w, bang_h),
+        paint,
+    );
+    canvas.draw_circle((cx, bot - (bot - top) * 0.15), bang_w / 2.0 + 0.5, paint);
+}
+
+/// Draw a tooltip near `(cursor_x, cursor_y)` showing the constraint violation details.
+fn draw_warning_tooltip(
+    canvas: &Canvas,
+    violation: &crate::data::ConstraintViolation,
+    cursor_x: f32,
+    cursor_y: f32,
+    width: f32,
+    height: f32,
+    cache: &RenderCache,
+) {
+    let line1 = format!("Constraint violation: {}", violation.node_name);
+    let kind_str = match violation.kind {
+        crate::data::ConstraintKind::Fixed => "Fixed",
+        crate::data::ConstraintKind::Latest => "Latest",
+        crate::data::ConstraintKind::Earliest => "Earliest",
+    };
+    let line2 = format!(
+        "{} required: {}  |  Scheduled: {}",
+        kind_str, violation.required_date, violation.scheduled_date
+    );
+
+    let pad = 8.0_f32;
+    let line_gap = 4.0_f32;
+
+    let blob1 = TextBlob::new(&line1, &cache.small_font);
+    let blob2 = TextBlob::new(&line2, &cache.small_font);
+
+    let (_, metrics) = cache.small_font.metrics();
+    let line_h = (metrics.descent - metrics.ascent).ceil();
+
+    let tip_w = blob1
+        .as_ref()
+        .map(|b| b.bounds().width())
+        .unwrap_or(0.0)
+        .max(blob2.as_ref().map(|b| b.bounds().width()).unwrap_or(0.0))
+        + pad * 2.0;
+    let tip_h = line_h * 2.0 + line_gap + pad * 2.0;
+
+    // Position tooltip above and to the right of cursor, clamped to screen.
+    let mut tx = cursor_x + 12.0;
+    let mut ty = cursor_y - tip_h - 8.0;
+    if tx + tip_w > width - 4.0 {
+        tx = width - tip_w - 4.0;
+    }
+    if ty < gantt_rows_top() {
+        ty = cursor_y + 18.0;
+    }
+    if ty + tip_h > height {
+        ty = height - tip_h - 4.0;
+    }
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+
+    // Background
+    paint.set_color(Color::from(WARN_TOOLTIP_BG));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(Rect::from_xywh(tx, ty, tip_w, tip_h), 4.0, 4.0),
+        &paint,
+    );
+
+    // Text
+    paint.set_color(Color::from(WARN_TOOLTIP_FG));
+    let text_x = tx + pad;
+    let y1 = ty + pad - metrics.ascent;
+    let y2 = y1 + line_h + line_gap;
+    if let Some(b) = blob1 {
+        canvas.draw_text_blob(&b, (text_x, y1), &paint);
+    }
+    if let Some(b) = blob2 {
+        canvas.draw_text_blob(&b, (text_x, y2), &paint);
+    }
+}
+
+/// Returns the `NodeId` of a warning icon hit at `(x, y)`, if any.
+pub fn hit_test_warning_icon(
+    x: f32,
+    y: f32,
+    plan: &Plan,
+    rows: &[GanttRow],
+    state: &OverviewState,
+    height: f32,
+    view_start: NaiveDate,
+) -> Option<NodeId> {
+    let allocation = plan.allocation.as_ref()?;
+    if allocation.constraint_violations.is_empty() {
+        return None;
+    }
+
+    let zoom = state.zoom;
+    let scroll_x = state.scroll_x;
+    let scroll_y = state.scroll_y;
+
+    for (row_idx, row) in rows.iter().enumerate() {
+        let row_y = row_top_y(row_idx, rows.len(), height, scroll_y);
+
+        for item in &row.items {
+            match item {
+                GanttItem::Task { id, start, end } => {
+                    let node_id = NodeId::Task(*id);
+                    if !allocation.constraint_violations.contains_key(&node_id) {
+                        continue;
+                    }
+                    let bar_x = date_to_x(*start, view_start, zoom, scroll_x);
+                    let bar_w = (((*end - *start).num_days() + 1) as f32 * zoom).max(4.0);
+                    let bar_y = row_y + GANTT_ROW_PADDING;
+                    let bar_h = GANTT_ROW_H - 2.0 * GANTT_ROW_PADDING;
+                    let warn_rect = warn_icon_rect_for_task(bar_x, bar_y, bar_w, bar_h);
+                    if x >= warn_rect.left()
+                        && x <= warn_rect.right()
+                        && y >= warn_rect.top()
+                        && y <= warn_rect.bottom()
+                    {
+                        return Some(node_id);
+                    }
+                }
+                GanttItem::Milestone { id, date } => {
+                    let node_id = NodeId::Milestone(*id);
+                    if !allocation.constraint_violations.contains_key(&node_id) {
+                        continue;
+                    }
+                    let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;
+                    let cy = row_y + GANTT_ROW_H / 2.0;
+                    let warn_rect = warn_icon_rect_for_milestone(cx, cy);
+                    if x >= warn_rect.left()
+                        && x <= warn_rect.right()
+                        && y >= warn_rect.top()
+                        && y <= warn_rect.bottom()
+                    {
+                        return Some(node_id);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 fn task_status_color(status: TaskStatus) -> u32 {

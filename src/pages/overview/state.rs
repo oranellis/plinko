@@ -49,6 +49,8 @@ pub struct OverviewState {
     pub settings_init_name: String,
     pub settings_init_date: String,
     pub settings_init_scheduler_target: NodeId,
+    /// The node whose constraint-violation warning icon is currently hovered, if any.
+    pub hovered_warning: Option<NodeId>,
 }
 
 impl OverviewState {
@@ -79,6 +81,7 @@ impl OverviewState {
             settings_init_name: String::new(),
             settings_init_date: String::new(),
             settings_init_scheduler_target: NodeId::PlanStart,
+            hovered_warning: None,
         }
     }
 }

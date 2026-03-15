@@ -92,7 +92,15 @@ impl Page for OverviewPage {
             return DirtyRegion::PageOnly;
         }
 
-        if hover_dirty {
+        // Hit-test warning icons; update hovered_warning.
+        let rows = gantt::pack_rows(plan);
+        let view_start = render::view_start_date(plan);
+        let prev_warning = self.state.hovered_warning;
+        self.state.hovered_warning =
+            render::hit_test_warning_icon(x, y, plan, &rows, &self.state, height, view_start);
+        let warning_dirty = self.state.hovered_warning != prev_warning;
+
+        if hover_dirty || warning_dirty {
             DirtyRegion::PageOnly
         } else {
             DirtyRegion::None
@@ -248,6 +256,7 @@ impl Page for OverviewPage {
 
     fn reset_hover(&mut self) {
         self.state.toolbar_btn_hovered = None;
+        self.state.hovered_warning = None;
     }
 
     fn has_animation(&self) -> bool {
