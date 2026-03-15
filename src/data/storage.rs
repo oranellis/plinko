@@ -3,8 +3,10 @@
 //! Each save call writes a new timestamped snapshot file, allowing the full
 //! history to be browsed and restored.
 
+use crate::data::ids::UserId;
 use crate::data::plan::Plan;
 use chrono::Local;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
@@ -62,6 +64,14 @@ impl From<serde_json::Error> for StorageError {
     }
 }
 
+// ── App config ────────────────────────────────────────────────────────────────
+
+/// Small config blob persisted next to the plans directory.
+#[derive(Serialize, Deserialize, Default)]
+struct AppConfig {
+    current_user_id: Option<Uuid>,
+}
+
 // ── Storage ───────────────────────────────────────────────────────────────────
 
 /// Manages plan persistence under a base directory.
@@ -69,6 +79,7 @@ impl From<serde_json::Error> for StorageError {
 /// Typical layout:
 /// ```text
 /// <base>/
+///   config.json                    ← app-level config (current user id etc.)
 ///   <plan-uuid>/
 ///     2026-03-06T14-23-45.json   ← version snapshot
 ///     2026-03-07T09-01-00.json
@@ -77,6 +88,7 @@ impl From<serde_json::Error> for StorageError {
 /// Create with [`Storage::from_user_data_dir`] for the standard user location
 /// (`$XDG_DATA_HOME/skiatest/plans` or `~/.local/share/skiatest/plans`), or
 /// [`Storage::from_path`] for a custom base (useful in tests).
+#[derive(Clone)]
 pub struct Storage {
     base: PathBuf,
 }
@@ -188,6 +200,60 @@ impl Storage {
     /// Colons replaced with dashes for filesystem compatibility.
     fn version_stamp() -> String {
         Local::now().format("%Y-%m-%dT%H-%M-%S").to_string()
+    }
+
+    /// Path to the app-level config file stored alongside the plans directory.
+    fn config_path(&self) -> PathBuf {
+        self.base
+            .parent()
+            .map(|p| p.join("config.json"))
+            .unwrap_or_else(|| self.base.join("config.json"))
+    }
+
+    // ── Config (current user) ─────────────────────────────────────────────────
+
+    /// Load the app-level config, falling back to defaults on any error.
+    fn load_config(&self) -> AppConfig {
+        let path = self.config_path();
+        if let Ok(data) = fs::read_to_string(&path) {
+            serde_json::from_str(&data).unwrap_or_default()
+        } else {
+            AppConfig::default()
+        }
+    }
+
+    /// Persist the app-level config. Silently ignores write errors.
+    fn save_config(&self, config: &AppConfig) {
+        let path = self.config_path();
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(json) = serde_json::to_string_pretty(config) {
+            let _ = fs::write(path, json);
+        }
+    }
+
+    /// Return the persisted "current user" ID, if any.
+    pub fn load_current_user_id(&self) -> Option<UserId> {
+        self.load_config().current_user_id.map(UserId)
+    }
+
+    /// Persist the "current user" ID (pass `None` to clear it).
+    pub fn save_current_user_id(&self, user_id: Option<UserId>) {
+        let mut config = self.load_config();
+        config.current_user_id = user_id.map(|u| u.0);
+        self.save_config(&config);
+    }
+
+    // ── Plan summary ──────────────────────────────────────────────────────────
+
+    /// Return the plan name and the most-recent version timestamp for a plan.
+    /// Returns `None` if the plan has no saved versions.
+    pub fn plan_summary(&self, plan_id: Uuid) -> Option<(String, String)> {
+        let versions = self.list_versions(plan_id).ok()?;
+        let latest = versions.last()?.clone();
+        let plan = self.load_version(plan_id, &latest).ok()?;
+        Some((plan.name, latest))
     }
 }
 
