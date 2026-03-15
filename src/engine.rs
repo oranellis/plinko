@@ -250,6 +250,8 @@ pub enum PlanRequest {
     SetUserCalendarOverride(UserId, NaiveDate, f32),
     /// Remove a per-user calendar override for a specific date.
     ClearUserCalendarOverride(UserId, NaiveDate),
+    /// Replace the entire plan (used for load / new plan). Runs the scheduler.
+    ReplacePlan(Box<Plan>),
 
     // ── Tag registry ──────────────────────────────────────────────────────────
     /// Append a new tag to the plan's ordered tag registry. No-op if it already
@@ -588,6 +590,12 @@ impl PlanEngine {
                 }
                 Ok(())
             }),
+
+            PlanRequest::ReplacePlan(new_plan) => {
+                self.plan = *new_plan;
+                let _ = self.plan.compute_time_optimised_plan();
+                PlanResponse::PlanUpdated
+            }
 
             // ── Tag registry ──────────────────────────────────────────────────
             PlanRequest::AddTag(name) => {
