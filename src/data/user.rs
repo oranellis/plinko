@@ -1,4 +1,7 @@
-use crate::data::ids::{TagId, UserId};
+use crate::data::{
+    WorkSchedule,
+    ids::{TagId, UserId},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -33,5 +36,32 @@ impl User {
 
     pub fn has_tag(&self, tag_id: &TagId) -> bool {
         self.tags.contains(tag_id)
+    }
+}
+
+pub struct UserData {
+    pub user: User,
+    pub schedule: Option<WorkSchedule>,
+}
+
+impl UserData {
+    pub fn new(user: User) -> Self {
+        Self {
+            user,
+            schedule: WorkSchedule::weekdays(),
+        }
+    }
+
+    pub fn with_schedule(mut self, work_schedule: WorkSchedule) -> UserData {
+        self.schedule = work_schedule;
+        self
+    }
+
+    pub fn user_mut(&mut self) -> &mut User {
+        &mut self.user
+    }
+
+    pub fn schedule_mut(&mut self) -> &mut WorkSchedule {
+        &mut self.schedule
     }
 }

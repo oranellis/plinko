@@ -1,9 +1,12 @@
-use crate::data::allocation::WorkSegment;
+use crate::data::allocation::{NodeAllocations, WorkSegment};
 use crate::data::constraint::ConstraintKind;
 use crate::data::ids::TagId;
-use crate::data::task::{TaskStatus, WorkerSlot};
-use crate::data::{Dependency, MilestoneId, NodeId, Plan, TaskId, UserId, constraint};
+use crate::data::task::WorkerSlot;
+use crate::data::{
+    Dependency, MilestoneId, NodeId, Plan, TaskAllocation, TaskId, UserId, constraint,
+};
 use chrono::{Datelike, NaiveDate};
+use std::ops::Deref;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -13,8 +16,98 @@ type NodeChain = Vec<NodeId>;
 
 const EPSILON: f32 = 1e-6;
 
-const MAX_FILL_DAYS: i64 = 3_650; // ~10 years
+const MAX_FILL_DAYS: i64 = 3650; // ~10 years
 
+// Implementation {{{
+// SchedulerError {{{
+#[derive(Debug, Clone)]
+pub enum SchedulerError {
+    EmptyChain,
+    MissingTaskAffinity {
+        task_name: String,
+        required_tags: HashSet<TagId>,
+    },
+    NoPathsToNode(NodeId),
+    DisconnectedNode(NodeId),
+}
+
+impl fmt::Display for SchedulerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SchedulerError::EmptyChain => write!(f, "expected content in the node chain"),
+            SchedulerError::MissingTaskAffinity {
+                task_name,
+                required_tags,
+            } => {
+                let mut tags: Vec<String> =
+                    required_tags.iter().map(|id| id.0.to_string()).collect();
+                tags.sort_unstable();
+                write!(
+                    f,
+                    "task \"{task_name}\" is not satisfied, needs the following tags: {}",
+                    tags.join(", ")
+                )
+            }
+            SchedulerError::NoPathsToNode(node_id) => {
+                write!(f, "no path from plan start to node {node_id:?}")
+            }
+            SchedulerError::DisconnectedNode(node_id) => {
+                write!(f, "node {node_id:?} has no path back to PlanStart")
+            }
+        }
+    }
+}
+
+// }}}
+
+// SchedulerState {{{
+
+struct SchedulerState {
+    capacity: HashMap<(UserId, NaiveDate), f32>,
+    allocations: NodeAllocations,
+    inserted: HashSet<NodeId>,
+    today: NaiveDate,
+}
+
+impl SchedulerState {
+    fn new(today: NaiveDate) -> Self {
+        Self {
+            capacity: HashMap::new(),
+            allocations: NodeAllocations::default(),
+            inserted: HashSet::new(),
+            today,
+        }
+    }
+}
+
+// }}}
+
+// Scheduler Computation {{{
+impl Plan {
+    pub fn compute_time_optimised_plan(&self) -> Result<NodeAllocations, SchedulerError> {
+        let mut scheduler_state = SchedulerState::new(chrono::Local::now().date_naive());
+
+        // Phase 1 - Validate it is possible to compute the plan
+
+        self.all_tasks_completable()?;
+
+        // Phase 2 - Insert existing tasks
+
+        // Phase 2 - Schedule time constrained nodes
+
+        // Phase 3 - Schedule the plan-prioritised nodes
+
+        // Phase 4 - Schedule the remaining nodes (not affecting the scheduler_target)
+
+        Ok(scheduler_state.allocation)
+    }
+}
+
+// }}}
+// }}}
+
+// Old Implementation: {{{
+/*
 #[derive(Debug, Clone)]
 pub enum SchedulerError {
     EmptyChain,
@@ -949,4 +1042,6 @@ impl Plan {
         }
         Ok(())
     }
-}
+} */
+
+// }}}

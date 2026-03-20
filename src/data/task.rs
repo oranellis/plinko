@@ -8,15 +8,6 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum TaskStatus {
-    NotStarted,
-    InProgress,
-    OnHold,
-    Complete,
-    Dropped,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WorkerSlot {
     Specific {
@@ -50,15 +41,10 @@ pub struct Task {
     pub id: TaskId,
     pub name: String,
     pub description: String,
-    pub status: TaskStatus,
     pub dependencies: Vec<Dependency>,
     pub workers: Vec<WorkerSlot>,
     pub constraint: Option<DateConstraint>,
     pub duration_days_target: f32,
-    #[serde(default)]
-    pub actual_start_date: Option<NaiveDate>,
-    #[serde(default)]
-    pub actual_end_date: Option<NaiveDate>,
 }
 
 impl Task {
@@ -67,13 +53,10 @@ impl Task {
             id: TaskId::new(),
             name: name.into(),
             description: description.into(),
-            status: TaskStatus::NotStarted,
             dependencies: Vec::new(),
             workers: Vec::new(),
             constraint: None,
             duration_days_target: 0.0,
-            actual_start_date: None,
-            actual_end_date: None,
         }
     }
 
@@ -92,7 +75,6 @@ impl Task {
             id: TaskId::new(),
             name: name.into(),
             description: description.into(),
-            status: TaskStatus::NotStarted,
             dependencies: Vec::new(),
             workers: users
                 .iter()
@@ -103,8 +85,6 @@ impl Task {
                 .collect(),
             constraint: None,
             duration_days_target: 0.0,
-            actual_start_date: None,
-            actual_end_date: None,
         }
     }
 
@@ -135,32 +115,6 @@ impl Task {
             WorkerSlot::Specific { user_id, .. } => Some(*user_id),
             WorkerSlot::Placeholder { .. } => None,
         })
-    }
-
-    pub fn start(&mut self) {
-        self.status = TaskStatus::InProgress;
-        if self.actual_start_date.is_none() {
-            self.actual_start_date = Some(chrono::Local::now().date_naive());
-        }
-    }
-
-    pub fn pause(&mut self) {
-        self.status = TaskStatus::OnHold;
-    }
-
-    pub fn resume(&mut self) {
-        self.status = TaskStatus::InProgress;
-    }
-
-    pub fn complete(&mut self) {
-        self.status = TaskStatus::Complete;
-        if self.actual_end_date.is_none() {
-            self.actual_end_date = Some(chrono::Local::now().date_naive());
-        }
-    }
-
-    pub fn drop_task(&mut self) {
-        self.status = TaskStatus::Dropped;
     }
 
     pub fn with_duration(mut self, days: f32) -> Self {

@@ -11,6 +11,9 @@ pub struct MilestoneId(pub Uuid);
 pub struct UserId(pub Uuid);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TagId(pub Uuid);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NodeId {
     Task(TaskId),
     Milestone(MilestoneId),
@@ -34,9 +37,6 @@ impl UserId {
         Self(Uuid::new_v4())
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TagId(pub Uuid);
 
 impl TagId {
     pub fn new() -> Self {

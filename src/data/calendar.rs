@@ -8,10 +8,6 @@ pub struct CalendarOverrides {
 }
 
 impl CalendarOverrides {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn set(&mut self, date: NaiveDate, hours: f32) {
         self.entries.insert(date, hours);
     }
