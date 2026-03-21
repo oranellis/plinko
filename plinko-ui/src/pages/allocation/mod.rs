@@ -121,8 +121,7 @@ impl Page for AllocationPage {
                         self.state.vel_x = 0.0;
                     }
                     Some(1) => {
-                        // Users window — reuse existing
-                        // (handled via open_settings_window flag for simplicity)
+                        self.state.open_users_window = true;
                     }
                     Some(2) => {
                         self.state.settings_init_name = plan.name.clone();
@@ -168,6 +167,10 @@ impl Page for AllocationPage {
     }
 
     fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+        if self.state.open_users_window {
+            self.state.open_users_window = false;
+            return Some(Box::new(UsersWindow::new()));
+        }
         if self.state.open_settings_window {
             self.state.open_settings_window = false;
             let w = crate::ui::plan_settings_window::PlanSettingsWindow::with_values(
