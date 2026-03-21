@@ -33,20 +33,30 @@ fn task_color(idx: usize) -> u32 {
 
 /// Returns the date range covered by the plan, or None if no tasks.
 fn date_range(plan: &Plan) -> Option<(NaiveDate, NaiveDate)> {
-    let alloc = plan.allocation.as_ref()?;
-    let start = alloc
+    use crate::data::TaskAllocation;
+    if !plan.node_allocations.has_schedule() {
+        return None;
+    }
+    let start = plan
+        .node_allocations
         .tasks
         .values()
-        .map(|t| t.start_date)
+        .map(|ts| ts.allocation.start_date())
         .min()
         .unwrap_or(plan.start_date)
         .min(plan.start_date);
-    let end = alloc
+    let end = plan
+        .node_allocations
         .tasks
         .values()
-        .map(|t| t.end_date)
+        .map(|ts| ts.allocation.end_date())
         .max()
         .unwrap_or(plan.start_date);
+    let _ = TaskAllocation::Dynamic {
+        scheduled_start_date: start,
+        scheduled_end_date: end,
+        time_allocation: vec![],
+    };
     // Extend slightly for padding
     Some((start - Duration::days(2), end + Duration::days(5)))
 }
@@ -59,16 +69,20 @@ fn build_day_map(
     let mut map: std::collections::HashMap<(UserId, NaiveDate), Vec<(usize, f32)>> =
         std::collections::HashMap::new();
 
-    if let Some(alloc) = &plan.allocation {
-        for (task_idx, task_id) in sorted_task_ids.iter().enumerate() {
-            if let Some(task_alloc) = alloc.tasks.get(task_id) {
-                for slot in &task_alloc.slot_allocations {
-                    for seg in &slot.segments {
-                        map.entry((slot.user_id, seg.date))
-                            .or_default()
-                            .push((task_idx, seg.hours_worked));
-                    }
-                }
+    for (task_idx, task_id) in sorted_task_ids.iter().enumerate() {
+        if let Some(ts) = plan.node_allocations.tasks.get(task_id) {
+            let time_allocation = match &ts.allocation {
+                crate::data::TaskAllocation::Dynamic {
+                    time_allocation, ..
+                } => time_allocation,
+                crate::data::TaskAllocation::Fixed {
+                    time_allocation, ..
+                } => time_allocation,
+            };
+            for seg in time_allocation {
+                map.entry((seg.user, seg.date))
+                    .or_default()
+                    .push((task_idx, seg.hours_worked));
             }
         }
     }
@@ -97,7 +111,11 @@ pub fn draw_allocation(
     draw_toolbar_buttons(canvas, state, cache, width);
 
     // Sort users and tasks consistently
-    let mut sorted_users: Vec<(&UserId, &crate::data::User)> = plan.users.iter().collect();
+    let mut sorted_users: Vec<(&UserId, &crate::data::User)> = plan
+        .users_data
+        .iter()
+        .map(|(id, ud)| (id, &ud.user))
+        .collect();
     sorted_users.sort_by_key(|(_, u)| &u.name);
 
     let mut sorted_task_ids: Vec<TaskId> = plan.tasks.keys().copied().collect();
@@ -108,7 +126,7 @@ pub fn draw_allocation(
             .unwrap_or_default()
     });
 
-    if plan.allocation.is_none() {
+    if !plan.node_allocations.has_schedule() {
         // No schedule computed — show message
         paint.set_color(Color::from(GANTT_HEADER_FG));
         paint.set_style(PaintStyle::Fill);

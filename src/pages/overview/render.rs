@@ -4,8 +4,8 @@ use chrono::{Datelike, Duration, NaiveDate, Weekday as CWeekday};
 use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, PathBuilder, RRect, Rect, TextBlob};
 
 use crate::data::Plan;
+use crate::data::TaskStatus;
 use crate::data::ids::{MilestoneId, NodeId, TaskId};
-use crate::data::task::TaskStatus;
 use crate::ui::cache::RenderCache;
 use crate::ui::icon_button;
 use crate::ui::layout::*;
@@ -108,18 +108,16 @@ pub fn draw_overview(
 
     // Draw warning tooltip on top of everything else.
     if let Some(node_id) = state.hovered_warning {
-        if let Some(allocation) = &plan.allocation {
-            if let Some(violation) = allocation.constraint_violations.get(&node_id) {
-                draw_warning_tooltip(
-                    canvas,
-                    violation,
-                    state.cursor_x,
-                    state.cursor_y,
-                    w,
-                    h,
-                    cache,
-                );
-            }
+        if let Some(violation) = plan.node_allocations.constraint_violations.get(&node_id) {
+            draw_warning_tooltip(
+                canvas,
+                violation,
+                state.cursor_x,
+                state.cursor_y,
+                w,
+                h,
+                cache,
+            );
         }
     }
 }
@@ -449,7 +447,7 @@ fn draw_gantt_rows(
                     let bar_y = row_y + GANTT_ROW_PADDING;
                     let bar_h = GANTT_ROW_H - 2.0 * GANTT_ROW_PADDING;
 
-                    let bar_color = task_status_color(task.status);
+                    let bar_color = task_status_color(plan.task_status(id));
                     paint.set_color(Color::from(bar_color));
                     paint.set_style(PaintStyle::Fill);
                     canvas.draw_rrect(
@@ -481,9 +479,9 @@ fn draw_gantt_rows(
                     // Warning icon if this task has a constraint violation.
                     let node_id = NodeId::Task(*id);
                     let has_violation = plan
-                        .allocation
-                        .as_ref()
-                        .map_or(false, |a| a.constraint_violations.contains_key(&node_id));
+                        .node_allocations
+                        .constraint_violations
+                        .contains_key(&node_id);
                     if has_violation {
                         let warn_rect = warn_icon_rect_for_task(bar_x, bar_y, bar_w, bar_h);
                         let hovered = state.hovered_warning == Some(node_id);
@@ -537,9 +535,9 @@ fn draw_gantt_rows(
                     // Warning icon if this milestone has a constraint violation.
                     let node_id = NodeId::Milestone(*id);
                     let has_violation = plan
-                        .allocation
-                        .as_ref()
-                        .map_or(false, |a| a.constraint_violations.contains_key(&node_id));
+                        .node_allocations
+                        .constraint_violations
+                        .contains_key(&node_id);
                     if has_violation {
                         let warn_rect = warn_icon_rect_for_milestone(cx, cy);
                         let hovered = state.hovered_warning == Some(node_id);
@@ -745,8 +743,7 @@ pub fn hit_test_warning_icon(
     height: f32,
     view_start: NaiveDate,
 ) -> Option<NodeId> {
-    let allocation = plan.allocation.as_ref()?;
-    if allocation.constraint_violations.is_empty() {
+    if plan.node_allocations.constraint_violations.is_empty() {
         return None;
     }
 
@@ -761,7 +758,11 @@ pub fn hit_test_warning_icon(
             match item {
                 GanttItem::Task { id, start, end } => {
                     let node_id = NodeId::Task(*id);
-                    if !allocation.constraint_violations.contains_key(&node_id) {
+                    if !plan
+                        .node_allocations
+                        .constraint_violations
+                        .contains_key(&node_id)
+                    {
                         continue;
                     }
                     let bar_x = date_to_x(*start, view_start, zoom, scroll_x);
@@ -779,7 +780,11 @@ pub fn hit_test_warning_icon(
                 }
                 GanttItem::Milestone { id, date } => {
                     let node_id = NodeId::Milestone(*id);
-                    if !allocation.constraint_violations.contains_key(&node_id) {
+                    if !plan
+                        .node_allocations
+                        .constraint_violations
+                        .contains_key(&node_id)
+                    {
                         continue;
                     }
                     let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;

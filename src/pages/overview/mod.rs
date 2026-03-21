@@ -178,7 +178,7 @@ impl Page for OverviewPage {
                         render::GanttHit::Task(id) => {
                             if let Some(task) = plan.tasks.get(&id) {
                                 self.state.pending_window =
-                                    Some(Box::new(TaskFormWindow::from_task(task)));
+                                    Some(Box::new(TaskFormWindow::from_task(task, plan)));
                             }
                         }
                         render::GanttHit::Milestone(id) => {

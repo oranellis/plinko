@@ -266,7 +266,11 @@ impl FloatingWindow for UsersWindow {
         canvas.save();
         canvas.clip_rect(list, ClipOp::Intersect, false);
 
-        let mut sorted_users: Vec<_> = plan.users.values().collect();
+        let mut sorted_users: Vec<_> = plan
+            .users_data
+            .values()
+            .map(|ud| &ud.user)
+            .collect::<Vec<_>>();
         sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
 
         if sorted_users.is_empty() {
@@ -319,11 +323,7 @@ impl FloatingWindow for UsersWindow {
                     AVATAR_DIAMETER,
                 );
 
-                if let Some(image) = self
-                    .avatar_cache
-                    .borrow_mut()
-                    .get(user.id, user.avatar.as_ref())
-                {
+                if let Some(image) = self.avatar_cache.borrow_mut().get(user.id, None) {
                     // Draw image clipped to circle using the cached decoded Image
                     let image = image.clone();
                     canvas.save();
@@ -523,12 +523,16 @@ impl FloatingWindow for UsersWindow {
         let new_back = Self::back_btn_rect(width, height).contains(pt);
         let new_plus = Self::plus_btn_rect(width, height).contains(pt);
         let new_tags = Self::tags_btn_rect(width, height).contains(pt);
-        let new_row = self.hovered_row_for(x, y, width, height, plan.users.len());
+        let new_row = self.hovered_row_for(x, y, width, height, plan.users_data.len());
 
         // Check calendar button hover
         let panel = Self::panel_rect(width, height);
         let list = Self::list_rect(width, height);
-        let mut sorted_users: Vec<_> = plan.users.values().collect();
+        let mut sorted_users: Vec<_> = plan
+            .users_data
+            .values()
+            .map(|ud| &ud.user)
+            .collect::<Vec<_>>();
         sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
         let new_cal_btn = sorted_users.iter().enumerate().find_map(|(i, _)| {
             let ry = self.row_y(list.top, i);
@@ -596,7 +600,11 @@ impl FloatingWindow for UsersWindow {
         {
             let panel = Self::panel_rect(width, height);
             let list = Self::list_rect(width, height);
-            let mut sorted_users: Vec<_> = plan.users.values().collect();
+            let mut sorted_users: Vec<_> = plan
+                .users_data
+                .values()
+                .map(|ud| &ud.user)
+                .collect::<Vec<_>>();
             sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
             for (i, user) in sorted_users.iter().enumerate() {
                 let ry = self.row_y(list.top, i);
@@ -605,11 +613,7 @@ impl FloatingWindow for UsersWindow {
                 }
                 let cal_btn = Self::cal_btn_rect(ry, panel);
                 if cal_btn.contains(pt) {
-                    let user_schedule = plan
-                        .user_schedules
-                        .get(&user.id)
-                        .unwrap_or(&plan.default_schedule)
-                        .clone();
+                    let user_schedule = plan.schedule_for(&user.id).clone();
                     self.pending_schedule = Some(Box::new(
                         crate::ui::schedule_window::ScheduleWindow::for_user(
                             user.id,
@@ -623,8 +627,12 @@ impl FloatingWindow for UsersWindow {
         }
 
         // Row click — open the Edit Team Member form
-        if let Some(idx) = self.hovered_row_for(x, y, width, height, plan.users.len()) {
-            let mut sorted_users: Vec<_> = plan.users.values().collect();
+        if let Some(idx) = self.hovered_row_for(x, y, width, height, plan.users_data.len()) {
+            let mut sorted_users: Vec<_> = plan
+                .users_data
+                .values()
+                .map(|ud| &ud.user)
+                .collect::<Vec<_>>();
             sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
             if let Some(user) = sorted_users.get(idx) {
                 self.pending_edit = Some((*user).clone());
@@ -641,7 +649,7 @@ impl FloatingWindow for UsersWindow {
         width: f32,
         height: f32,
     ) -> FloatingWindowOutcome {
-        let max = Self::max_scroll(plan.users.len(), width, height);
+        let max = Self::max_scroll(plan.users_data.len(), width, height);
         if max <= 0.0 {
             return FloatingWindowOutcome::default();
         }

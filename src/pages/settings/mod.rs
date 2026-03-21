@@ -84,7 +84,7 @@ impl Page for SettingsPage {
         }
 
         // User rows
-        let users_len = _plan.users.len();
+        let users_len = _plan.users_data.len();
         let total_user_rows = users_len + 1;
         let ident_y = identity_section_y(self.state.plan_list.len(), self.state.scroll_y);
         let rows_top = ident_y + 20.0 /* SECTION_TITLE_H */ + 12.0 /* SECTION_GAP */;
@@ -143,9 +143,9 @@ impl Page for SettingsPage {
         // User rows
         let users = {
             let mut v: Vec<_> = plan
-                .users
+                .users_data
                 .iter()
-                .map(|(id, u)| (*id, u.name.clone()))
+                .map(|(id, ud)| (*id, ud.user.name.clone()))
                 .collect();
             v.sort_by(|a, b| a.1.cmp(&b.1));
             v

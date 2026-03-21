@@ -102,7 +102,7 @@ fn day_grid_pos(day: u32, year: i32, month: u32) -> (u32, u32) {
 /// Build the ordered list of user tab labels: ("Plan", None) then (name, Some(id)) per user.
 fn user_tabs(plan: &Plan) -> Vec<(String, Option<crate::data::ids::UserId>)> {
     let mut tabs = vec![("Plan".to_string(), None)];
-    let mut users: Vec<_> = plan.users.values().collect();
+    let mut users: Vec<_> = plan.users_data.values().map(|ud| &ud.user).collect();
     users.sort_by(|a, b| a.name.cmp(&b.name));
     for u in users {
         tabs.push((u.name.clone(), Some(u.id)));
@@ -298,7 +298,7 @@ fn draw_month_grid(
     let user_cal = state
         .selected_user
         .as_ref()
-        .and_then(|uid| plan.user_calendars.get(uid));
+        .and_then(|uid| plan.user_calendar_overrides.get(uid));
 
     for day in 1..=dim {
         let date = NaiveDate::from_ymd_opt(state.year, state.month, day).unwrap();

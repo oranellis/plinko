@@ -10,8 +10,8 @@ use winit::keyboard::{Key, NamedKey};
 use crate::data::constraint::{ConstraintKind, DateConstraint};
 use crate::data::dependency::Dependency;
 use crate::data::ids::{MilestoneId, NodeId, TagId, UserId};
-use crate::data::task::{Task, TaskStatus, WorkerSlot};
-use crate::data::{Plan, TaskId};
+use crate::data::task::{Task, WorkerSlot};
+use crate::data::{Plan, TaskId, TaskStatus};
 use crate::engine::{PlanRequest, PlanRequestSender, TaskPatch, apply_task_patch};
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
@@ -389,14 +389,15 @@ impl WorkerSlotEdit {
 
     fn filtered_users<'a>(&self, plan: &'a Plan) -> Vec<(&'a UserId, &'a crate::data::User)> {
         let filter = self.user_filter.content.to_lowercase();
-        plan.users
+        plan.users_data
             .iter()
+            .map(|(id, ud)| (id, &ud.user))
             .filter(|(_, u)| filter.is_empty() || u.name.to_lowercase().contains(filter.as_str()))
             .collect::<Vec<_>>()
             .tap_sort_by(|(_, a), (_, b)| a.name.cmp(&b.name))
     }
 
-    fn filtered_tags<'a>(&self, plan: &'a Plan) -> Vec<&'a crate::data::plan::Tag> {
+    fn filtered_tags<'a>(&self, plan: &'a Plan) -> Vec<&'a crate::data::Tag> {
         let filter = self.tag_filter.content.to_lowercase();
         plan.tags
             .iter()
@@ -581,7 +582,7 @@ impl TaskFormWindow {
         }
     }
 
-    pub fn from_task(task: &Task) -> Self {
+    pub fn from_task(task: &Task, plan: &crate::data::Plan) -> Self {
         let mut name = TextInput::new(&task.name);
         name.focused = true;
         let dur_str = if task.duration_days_target > 0.0 {
@@ -591,19 +592,20 @@ impl TaskFormWindow {
         };
         let (constraint_kind, constraint_val) = ConstraintSel::from_opt(task.constraint);
         let workers = task.workers.iter().map(WorkerSlotEdit::from_slot).collect();
+        let task_id = &task.id;
         Self {
             mode: Mode::Edit(task.id),
             name,
             description: MultiLineInput::new(&task.description),
             duration: TextInput::new(&dur_str),
             focused: TextField::Name,
-            status: task.status,
+            status: plan.task_status(task_id),
             hovered_status: None,
             constraint_kind,
             hovered_constraint_kind: None,
             constraint_date: CalendarPicker::new(constraint_val),
-            actual_start: CalendarPicker::new(task.actual_start_date),
-            actual_end: CalendarPicker::new(task.actual_end_date),
+            actual_start: CalendarPicker::new(plan.task_actual_start(task_id)),
+            actual_end: CalendarPicker::new(plan.task_actual_end(task_id)),
             open_calendar: None,
             workers,
             worker_scroll_y: 0.0,
@@ -1149,14 +1151,14 @@ impl TaskFormWindow {
         let sched_result: Result<(), String> = match self.mode {
             Mode::New => {
                 let mut task = Task::new(name.clone(), description.clone());
-                task.status = self.status;
                 task.duration_days_target = duration;
                 task.constraint = constraint;
-                task.actual_start_date = self.actual_start.value;
-                task.actual_end_date = self.actual_end.value;
                 task.workers = worker_slots.clone();
                 task.dependencies = dependencies.clone();
-                dry_plan.add_task(task);
+                let task_id = dry_plan.add_task(task);
+                dry_plan.set_task_status(task_id, self.status);
+                dry_plan.set_task_actual_start(task_id, self.actual_start.value);
+                dry_plan.set_task_actual_end(task_id, self.actual_end.value);
                 dry_plan
                     .compute_time_optimised_plan()
                     .map_err(|e| e.to_string())
@@ -1192,11 +1194,8 @@ impl TaskFormWindow {
         match self.mode {
             Mode::New => {
                 let mut task = Task::new(name, description);
-                task.status = self.status;
                 task.duration_days_target = duration;
                 task.constraint = constraint;
-                task.actual_start_date = self.actual_start.value;
-                task.actual_end_date = self.actual_end.value;
                 task.workers = worker_slots;
                 task.dependencies = dependencies;
                 sender.send(PlanRequest::CreateTask(task));
@@ -1949,7 +1948,7 @@ fn draw_worker_row(
     let picker_text: String = match slot.slot_type {
         SlotType::Specific => slot
             .user_id
-            .and_then(|id| plan.users.get(&id))
+            .and_then(|id| plan.user(&id))
             .map(|u| u.name.clone())
             .unwrap_or_else(|| "Select person…".to_string()),
         SlotType::Placeholder => {

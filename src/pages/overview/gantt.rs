@@ -3,8 +3,8 @@
 use chrono::NaiveDate;
 
 use crate::data::Plan;
+use crate::data::TaskStatus;
 use crate::data::ids::{MilestoneId, NodeId, TaskId};
-use crate::data::task::TaskStatus;
 
 /// Minimum gap in day-units between items that may share a row.
 const ROW_GAP_DAYS: i64 = 2;
@@ -75,25 +75,23 @@ pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveD
     let task = plan.tasks.get(id)?;
     let duration = task.effective_duration_days().max(1.0) as i64;
 
-    if let (Some(s), Some(e)) = (task.actual_start_date, task.actual_end_date) {
+    if let (Some(s), Some(e)) = (plan.task_actual_start(id), plan.task_actual_end(id)) {
         return Some((s, e));
     }
-    if let Some(s) = task.actual_start_date {
+    if let Some(s) = plan.task_actual_start(id) {
         let end = plan
-            .allocation
-            .as_ref()
-            .and_then(|a| a.tasks.get(id))
-            .map(|a| a.end_date)
+            .node_allocations
+            .tasks
+            .get(id)
+            .map(|ts| ts.allocation.end_date())
             .unwrap_or_else(|| s + Duration::days(duration - 1));
         return Some((s, end));
     }
     // Prefer allocation dates: these correctly account for weekends and daily-cap spreading.
-    if let Some(alloc) = plan.allocation.as_ref().and_then(|a| a.tasks.get(id)) {
-        return Some((alloc.start_date, alloc.end_date));
+    if let Some(ts) = plan.node_allocations.tasks.get(id) {
+        return Some((ts.allocation.start_date(), ts.allocation.end_date()));
     }
-    if let Some(s) = plan.dates.task(id) {
-        return Some((s, s + Duration::days(duration - 1)));
-    }
+    let _ = task;
     None
 }
 
@@ -134,7 +132,7 @@ pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
         }
     }
     for id in plan.milestones.keys() {
-        if let Some(date) = plan.dates.milestone(id) {
+        if let Some(date) = plan.node_allocations.milestones.get(id).map(|ma| ma.date()) {
             items.push(GanttItem::Milestone { id: *id, date });
         }
     }
@@ -185,7 +183,7 @@ pub fn compute_date_range(plan: &Plan) -> Option<(NaiveDate, NaiveDate)> {
     }
 
     for id in plan.milestones.keys() {
-        if let Some(date) = plan.dates.milestone(id) {
+        if let Some(date) = plan.node_allocations.milestones.get(id).map(|ma| ma.date()) {
             min_date = Some(min_date.map_or(date, |m: NaiveDate| m.min(date)));
             max_date = Some(max_date.map_or(date, |m: NaiveDate| m.max(date)));
         }
@@ -225,10 +223,10 @@ pub fn milestone_display_status(plan: &Plan, id: MilestoneId) -> MilestoneStatus
     let mut all_done = true;
     let mut found_any = false;
 
-    for task in plan.tasks.values() {
+    for (tid, task) in plan.tasks.iter() {
         if task.dependencies.iter().any(|d| d.id == node) {
             found_any = true;
-            match task.status {
+            match plan.task_status(tid) {
                 TaskStatus::Complete | TaskStatus::Dropped => {}
                 TaskStatus::InProgress | TaskStatus::OnHold => {
                     any_active = true;

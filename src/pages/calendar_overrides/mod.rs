@@ -137,7 +137,7 @@ impl Page for CalendarOverridesPage {
                     .state
                     .selected_user
                     .as_ref()
-                    .and_then(|uid| plan.user_calendars.get(uid))
+                    .and_then(|uid| plan.user_calendar_overrides.get(uid))
                     .and_then(|c| c.get(date))
                     .or_else(|| plan.calendar.get(date))
                     .map(|h| format!("{h}"))

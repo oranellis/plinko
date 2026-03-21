@@ -290,7 +290,8 @@ impl UserFormWindow {
                 for &tag_id in &self.selected_tags {
                     user.add_tag(tag_id);
                 }
-                user.avatar = avatar_bytes;
+                // avatar field removed from User; ignore avatar_bytes
+                let _ = avatar_bytes;
                 sender.send(PlanRequest::CreateUser(user));
             }
             Mode::Edit(user_id) => {

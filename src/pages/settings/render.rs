@@ -37,7 +37,7 @@ pub fn total_content_height(plan: &Plan, plan_list: &[PlanEntry]) -> f32 {
         + plan_list.len().max(1) as f32 * ROW_H;
 
     // Identity section
-    let users_count = plan.users.len();
+    let users_count = plan.users_data.len();
     let identity_h = SECTION_TITLE_H + SECTION_GAP + (users_count + 1) as f32 * ROW_H;
 
     plan_mgmt_h + DIVIDER_GAP * 2.0 + identity_h + DIVIDER_GAP
@@ -45,9 +45,9 @@ pub fn total_content_height(plan: &Plan, plan_list: &[PlanEntry]) -> f32 {
 
 fn sorted_users(plan: &Plan) -> Vec<(crate::data::ids::UserId, String)> {
     let mut users: Vec<_> = plan
-        .users
+        .users_data
         .iter()
-        .map(|(id, u)| (*id, u.name.clone()))
+        .map(|(id, ud)| (*id, ud.user.name.clone()))
         .collect();
     users.sort_by(|a, b| a.1.cmp(&b.1));
     users

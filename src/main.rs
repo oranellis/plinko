@@ -61,7 +61,8 @@ fn main() {
     };
 
     // Resolve current_user to a UserId that exists in the loaded plan.
-    let current_user = saved_user_id.and_then(|uid| plan.users.contains_key(&uid).then_some(uid));
+    let current_user =
+        saved_user_id.and_then(|uid| plan.users_data.contains_key(&uid).then_some(uid));
 
     let engine = engine::PlanEngine::new(plan);
 

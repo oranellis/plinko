@@ -67,7 +67,7 @@ impl Page for AllocationPage {
         if self.state.is_dragging {
             let dx = prev_x - x;
             let dy = prev_y - y;
-            let num_users = plan.users.len();
+            let num_users = plan.users_data.len();
             let max_y = Self::max_scroll_y(num_users, height);
             self.state.scroll_x += dx;
             self.state.scroll_y = (self.state.scroll_y + dy).clamp(0.0, max_y);
@@ -214,7 +214,7 @@ impl Page for AllocationPage {
             dirty = true;
         }
         if self.state.vel_y.abs() > 0.1 {
-            let max = Self::max_scroll_y(plan.users.len(), height);
+            let max = Self::max_scroll_y(plan.users_data.len(), height);
             self.state.scroll_y = (self.state.scroll_y + self.state.vel_y).clamp(0.0, max);
             self.state.vel_y *= friction;
             dirty = true;
