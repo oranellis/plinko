@@ -197,7 +197,7 @@ pub const VERSION: &str = "0.1";
 pub enum ServerMessage {
     Hello { version: String },
     VersionError { expected: String, got: String },
-    PlanState { plan: Plan },
+    PlanState { plan: Box<Plan> },
     Response { id: u64, response: PlanResponse },
 }
 

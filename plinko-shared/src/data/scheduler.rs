@@ -5,15 +5,13 @@ use crate::data::allocation::{
 use crate::data::constraint::ConstraintKind;
 use crate::data::ids::TagId;
 use crate::data::task::WorkerSlot;
-use crate::data::{Dependency, MilestoneId, NodeId, Plan, TaskId, UserId, constraint};
+use crate::data::{MilestoneId, NodeId, Plan, TaskId, UserId, constraint};
 use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fmt,
 };
-
-type NodeChain = Vec<NodeId>;
 
 const EPSILON: f32 = 1e-6;
 const MAX_FILL_DAYS: i64 = 3_650; // ~10 years

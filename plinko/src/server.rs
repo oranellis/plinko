@@ -63,7 +63,7 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
     if send_msg(
         &mut writer,
         &ServerMessage::PlanState {
-            plan: engine.plan().clone(),
+            plan: Box::new(engine.plan().clone()),
         },
     )
     .is_err()
@@ -116,7 +116,7 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
             if send_msg(
                 &mut writer,
                 &ServerMessage::PlanState {
-                    plan: engine.plan().clone(),
+                    plan: Box::new(engine.plan().clone()),
                 },
             )
             .is_err()
@@ -141,7 +141,7 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                     if send_msg(
                         &mut writer,
                         &ServerMessage::PlanState {
-                            plan: engine.plan().clone(),
+                            plan: Box::new(engine.plan().clone()),
                         },
                     )
                     .is_err()
@@ -205,7 +205,7 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
             if send_msg(
                 &mut writer,
                 &ServerMessage::PlanState {
-                    plan: engine.plan().clone(),
+                    plan: Box::new(engine.plan().clone()),
                 },
             )
             .is_err()

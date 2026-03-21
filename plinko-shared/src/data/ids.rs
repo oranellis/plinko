@@ -26,12 +26,24 @@ impl TaskId {
         Self(Uuid::new_v4())
     }
 }
+
+impl Default for TaskId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 // }}}
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl MilestoneId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
+    }
+}
+
+impl Default for MilestoneId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 // }}}
@@ -42,12 +54,24 @@ impl UserId {
         Self(Uuid::new_v4())
     }
 }
+
+impl Default for UserId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 // }}}
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TagId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
+    }
+}
+
+impl Default for TagId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 // }}}

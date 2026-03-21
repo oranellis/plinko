@@ -78,6 +78,7 @@ impl NetworkEngine {
         let ServerMessage::PlanState { plan } = plan_state else {
             return Err("expected PlanState from server".to_string());
         };
+        let plan = *plan;
 
         let incoming = Arc::new(Mutex::new(VecDeque::new()));
         let incoming_clone = Arc::clone(&incoming);
@@ -125,7 +126,7 @@ impl NetworkEngine {
         };
         for msg in msgs {
             match msg {
-                ServerMessage::PlanState { plan } => self.plan = plan,
+                ServerMessage::PlanState { plan } => self.plan = *plan,
                 ServerMessage::Response { response, .. } => responses.push(response),
                 _ => {}
             }
