@@ -35,6 +35,7 @@ pub struct RenderCache {
     pub settings_label: TextBlob,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl RenderCache {
     /// Builds all cached resources.  Resolves a sans-serif typeface via
     /// [`FontMgr`] and falls back to [`Font::default()`] if none is found.
@@ -101,3 +102,4 @@ impl RenderCache {
         }
     }
 }
+// }}}

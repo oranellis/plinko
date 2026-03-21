@@ -22,6 +22,7 @@ pub enum StorageError {
     Json(serde_json::Error),
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl fmt::Display for StorageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -32,7 +33,9 @@ impl fmt::Display for StorageError {
         }
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl std::error::Error for StorageError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -42,17 +45,22 @@ impl std::error::Error for StorageError {
         }
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl From<std::io::Error> for StorageError {
     fn from(e: std::io::Error) -> Self {
         Self::Io(e)
     }
 }
+// }}}
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl From<serde_json::Error> for StorageError {
     fn from(e: serde_json::Error) -> Self {
         Self::Json(e)
     }
 }
+// }}}
 
 #[derive(Serialize, Deserialize, Default)]
 struct AppConfig {
@@ -64,6 +72,7 @@ pub struct Storage {
     base: PathBuf,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Storage {
     pub fn from_path(base: impl Into<PathBuf>) -> Self {
         Self { base: base.into() }
@@ -192,3 +201,4 @@ impl Storage {
         Some((plan.name, latest))
     }
 }
+// }}}

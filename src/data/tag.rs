@@ -7,6 +7,7 @@ pub struct Tag {
     pub name: String,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Tag {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
@@ -15,3 +16,4 @@ impl Tag {
         }
     }
 }
+// }}}

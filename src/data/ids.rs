@@ -20,26 +20,34 @@ pub enum NodeId {
     PlanStart,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TaskId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl MilestoneId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl UserId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TagId {
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
 }
+// }}}

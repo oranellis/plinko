@@ -16,6 +16,7 @@ pub struct HomePage {
     pub state: state::HomeState,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl HomePage {
     pub fn new() -> Self {
         Self {
@@ -23,7 +24,9 @@ impl HomePage {
         }
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Page for HomePage {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, _plan: &Plan) {
         render::draw_home(canvas, width, height, self.state.hovered_card, cache);
@@ -63,3 +66,4 @@ impl Page for HomePage {
         self.state.hovered_card = None;
     }
 }
+// }}}

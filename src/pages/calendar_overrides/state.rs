@@ -28,6 +28,7 @@ pub struct CalendarOverridesState {
     pub hovered_user_tab: Option<i32>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl CalendarOverridesState {
     pub fn new() -> Self {
         let today = Local::now().date_naive();
@@ -66,3 +67,4 @@ impl CalendarOverridesState {
         }
     }
 }
+// }}}

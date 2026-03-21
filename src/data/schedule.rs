@@ -29,6 +29,7 @@ pub struct WorkSchedule {
     pub days: HashMap<Weekday, f32>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl WorkSchedule {
     pub fn weekdays() -> Self {
         Self {
@@ -101,9 +102,12 @@ impl WorkSchedule {
             .fold(f32::NEG_INFINITY, f32::max)
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Default for WorkSchedule {
     fn default() -> Self {
         Self::weekdays()
     }
 }
+// }}}

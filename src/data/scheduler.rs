@@ -29,6 +29,7 @@ pub enum SchedulerError {
     DisconnectedNode(NodeId),
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl fmt::Display for SchedulerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -56,6 +57,7 @@ impl fmt::Display for SchedulerError {
     }
 }
 // }}}
+// }}}
 
 // SchedulerState {{{
 struct SchedulerState {
@@ -65,6 +67,7 @@ struct SchedulerState {
     today: NaiveDate,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl SchedulerState {
     fn new(today: NaiveDate) -> Self {
         Self {
@@ -76,8 +79,10 @@ impl SchedulerState {
     }
 }
 // }}}
+// }}}
 
 // Scheduler Computation {{{
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Plan {
     pub fn compute_time_optimised_plan(&mut self) -> Result<(), SchedulerError> {
         let today = chrono::Local::now().date_naive();
@@ -745,4 +750,5 @@ impl Plan {
         Ok(())
     }
 }
+// }}}
 // }}}

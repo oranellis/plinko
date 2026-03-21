@@ -17,6 +17,7 @@ pub enum DirtyRegion {
     PageOnly,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl DirtyRegion {
     /// Combines two dirty regions into the least-specific region that covers both.
     ///
@@ -30,8 +31,10 @@ impl DirtyRegion {
         }
     }
 }
+// }}}
 
 #[cfg(test)]
+// ── Tests ──────────────────────────────────────────────────────────────── {{{
 mod tests {
     use super::*;
 
@@ -85,3 +88,4 @@ mod tests {
         }
     }
 }
+// }}}

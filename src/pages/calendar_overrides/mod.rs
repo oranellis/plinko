@@ -21,6 +21,7 @@ pub struct CalendarOverridesPage {
     pub state: CalendarOverridesState,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl CalendarOverridesPage {
     pub fn new() -> Self {
         Self {
@@ -28,7 +29,9 @@ impl CalendarOverridesPage {
         }
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Page for CalendarOverridesPage {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         render::draw_calendar_overrides(canvas, width, height, &self.state, cache, plan);
@@ -205,6 +208,7 @@ impl Page for CalendarOverridesPage {
         self.state.hovered_user_tab = None;
     }
 }
+// }}}
 
 /// Parse `edit_input`, send the appropriate engine request, and close the popup.
 fn try_commit(state: &mut CalendarOverridesState, sender: &PlanRequestSender) {

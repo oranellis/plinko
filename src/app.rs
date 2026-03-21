@@ -79,6 +79,7 @@ pub struct Application {
     current_user: Option<UserId>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Application {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -237,6 +238,7 @@ impl Application {
         }
     }
 }
+// }}}
 
 /// Allocates a GPU-backed off-screen Skia surface at the given physical pixel
 /// dimensions.  Used as the retained intermediate buffer for partial redraws.
@@ -258,6 +260,7 @@ fn create_retained_surface(
     )
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl ApplicationHandler for Application {
     fn resumed(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {}
 
@@ -687,3 +690,4 @@ impl ApplicationHandler for Application {
         });
     }
 }
+// }}}

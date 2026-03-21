@@ -28,6 +28,7 @@ pub struct TaskState {
     pub(crate) allocation: TaskAllocation,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TaskState {
     pub fn not_started() -> Self {
         let sentinel = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
@@ -41,6 +42,7 @@ impl TaskState {
         }
     }
 }
+// }}}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TaskAllocation {
@@ -58,6 +60,7 @@ pub enum TaskAllocation {
     },
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TaskAllocation {
     pub fn start_date(&self) -> NaiveDate {
         match self {
@@ -82,6 +85,7 @@ impl TaskAllocation {
         }
     }
 }
+// }}}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MilestoneAllocation {
@@ -89,6 +93,7 @@ pub struct MilestoneAllocation {
     derived_status: Status,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl MilestoneAllocation {
     pub fn new(date: NaiveDate) -> Self {
         Self {
@@ -101,6 +106,7 @@ impl MilestoneAllocation {
         self.date
     }
 }
+// }}}
 
 /// Records that a task or milestone could not meet its scheduled constraint
 /// and was pushed to the earliest possible date instead.
@@ -112,6 +118,7 @@ pub struct ConstraintViolation {
     pub scheduled_date: NaiveDate,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl ConstraintViolation {
     pub fn message(&self) -> String {
         match self.kind {
@@ -130,6 +137,7 @@ impl ConstraintViolation {
         }
     }
 }
+// }}}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct NodeAllocations {
@@ -138,6 +146,7 @@ pub struct NodeAllocations {
     pub constraint_violations: HashMap<NodeId, ConstraintViolation>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl NodeAllocations {
     /// Keep Fixed allocations (anchored tasks), clear Dynamic ones, milestones,
     /// and constraint violations.
@@ -156,3 +165,4 @@ impl NodeAllocations {
             || !self.milestones.is_empty()
     }
 }
+// }}}

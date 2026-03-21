@@ -20,6 +20,7 @@ pub struct FloatingWindowOutcome {
     pub close: bool,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Default for FloatingWindowOutcome {
     fn default() -> Self {
         Self {
@@ -28,7 +29,9 @@ impl Default for FloatingWindowOutcome {
         }
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl FloatingWindowOutcome {
     /// Close this window and request a full redraw.
     pub fn close() -> Self {
@@ -46,6 +49,7 @@ impl FloatingWindowOutcome {
         }
     }
 }
+// }}}
 
 /// A modal overlay that sits above page content and below the back button.
 pub trait FloatingWindow {
@@ -119,6 +123,7 @@ pub struct FloatingWindowManager {
     stack: Vec<Box<dyn FloatingWindow>>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl FloatingWindowManager {
     pub fn new() -> Self {
         Self { stack: Vec::new() }
@@ -235,6 +240,7 @@ impl FloatingWindowManager {
         }
     }
 }
+// }}}
 
 /// Returns the actual panel dimensions given the window size and the window's
 /// preferred maximum dimensions.  Each axis is `min(window * 0.95, max)`.

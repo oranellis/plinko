@@ -20,6 +20,7 @@ pub struct AllocationPage {
     pub state: AllocationState,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl AllocationPage {
     pub fn new() -> Self {
         Self {
@@ -39,7 +40,9 @@ impl AllocationPage {
         (content_h - visible_h).max(0.0)
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Page for AllocationPage {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         render::draw_allocation(canvas, width, height, &self.state, cache, plan);
@@ -227,3 +230,4 @@ impl Page for AllocationPage {
         }
     }
 }
+// }}}

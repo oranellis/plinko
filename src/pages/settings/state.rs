@@ -42,6 +42,7 @@ pub struct SettingsState {
     pub pending_set_user: Option<Option<UserId>>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Default for SettingsState {
     fn default() -> Self {
         Self {
@@ -60,3 +61,4 @@ impl Default for SettingsState {
         }
     }
 }
+// }}}

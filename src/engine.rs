@@ -78,6 +78,7 @@ pub struct TaskPatch {
     pub dependencies: Option<Vec<Dependency>>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TaskPatch {
     pub fn new() -> Self {
         Self::default()
@@ -120,6 +121,7 @@ impl TaskPatch {
         self
     }
 }
+// }}}
 
 /// A partial update to a [`Milestone`](crate::data::Milestone).
 ///
@@ -134,6 +136,7 @@ pub struct MilestonePatch {
     pub dependencies: Option<Vec<Dependency>>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl MilestonePatch {
     pub fn new() -> Self {
         Self::default()
@@ -156,6 +159,7 @@ impl MilestonePatch {
         self
     }
 }
+// }}}
 
 /// A partial update to a [`User`](crate::data::User).
 #[derive(Default)]
@@ -165,6 +169,7 @@ pub struct UserPatch {
     pub tags: Option<HashSet<TagId>>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl UserPatch {
     pub fn new() -> Self {
         Self::default()
@@ -179,6 +184,7 @@ impl UserPatch {
         self
     }
 }
+// }}}
 
 // ── Requests ──────────────────────────────────────────────────────────────────
 
@@ -295,6 +301,7 @@ pub enum PlanError {
     Dependency(DependencyError),
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl std::fmt::Display for PlanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -311,6 +318,7 @@ impl std::fmt::Display for PlanError {
         }
     }
 }
+// }}}
 
 // ── Sender handle ─────────────────────────────────────────────────────────────
 
@@ -321,6 +329,7 @@ impl std::fmt::Display for PlanError {
 #[derive(Clone)]
 pub struct PlanRequestSender(mpsc::Sender<PlanRequest>);
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl PlanRequestSender {
     /// Submit a request. Returns immediately; processing happens the next time
     /// the application main loop calls [`PlanEngine::process_pending`].
@@ -331,6 +340,7 @@ impl PlanRequestSender {
         let _ = self.0.send(request);
     }
 }
+// }}}
 
 // ── Engine ────────────────────────────────────────────────────────────────────
 
@@ -341,6 +351,7 @@ pub struct PlanEngine {
     tx: mpsc::Sender<PlanRequest>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl PlanEngine {
     /// Create a new engine wrapping `plan`.
     pub fn new(plan: Plan) -> Self {
@@ -636,6 +647,7 @@ impl PlanEngine {
         }
     }
 }
+// }}}
 
 // ── Patch application (free functions to avoid borrow issues in closures) ─────
 

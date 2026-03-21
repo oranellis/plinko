@@ -27,6 +27,7 @@ pub struct AllocationState {
     pub settings_init_scheduler_target: NodeId,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl AllocationState {
     pub fn new() -> Self {
         Self {
@@ -62,3 +63,4 @@ impl AllocationState {
         GANTT_ZOOM_MIN
     }
 }
+// }}}

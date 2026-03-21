@@ -6,8 +6,10 @@ pub struct HomeState {
     pub hovered_card: Option<usize>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl HomeState {
     pub fn new() -> Self {
         Self { hovered_card: None }
     }
 }
+// }}}

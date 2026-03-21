@@ -11,6 +11,7 @@ pub struct Milestone {
     pub constraint: Option<DateConstraint>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Milestone {
     pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
@@ -22,3 +23,4 @@ impl Milestone {
         }
     }
 }
+// }}}

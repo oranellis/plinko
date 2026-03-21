@@ -74,6 +74,7 @@ pub struct UserFormWindow {
     name_error: bool,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl UserFormWindow {
     /// Open the form to create a new team member.
     pub fn new() -> Self {
@@ -259,6 +260,7 @@ impl UserFormWindow {
         }
     }
 }
+// }}}
 
 // ── Drawing helpers ───────────────────────────────────────────────────────────
 
@@ -595,6 +597,7 @@ fn draw_dropdown(
 
 // ── FloatingWindow impl ───────────────────────────────────────────────────────
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl FloatingWindow for UserFormWindow {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         let panel = Self::panel_rect(width, height);
@@ -998,3 +1001,4 @@ impl FloatingWindow for UserFormWindow {
         self.dropdown_hovered = None;
     }
 }
+// }}}

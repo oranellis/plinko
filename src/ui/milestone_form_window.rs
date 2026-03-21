@@ -109,6 +109,7 @@ enum ConstraintSel {
     Latest,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl ConstraintSel {
     fn from_opt(c: Option<DateConstraint>) -> (Self, Option<NaiveDate>) {
         match c {
@@ -134,6 +135,7 @@ impl ConstraintSel {
         }
     }
 }
+// }}}
 
 struct CalendarPicker {
     value: Option<NaiveDate>,
@@ -149,6 +151,7 @@ struct CalendarPicker {
     hovered_trigger: bool,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl CalendarPicker {
     fn new(value: Option<NaiveDate>) -> Self {
         let base = value.unwrap_or_else(|| chrono::Local::now().date_naive());
@@ -211,6 +214,7 @@ impl CalendarPicker {
         }
     }
 }
+// }}}
 
 fn days_in_month(year: i32, month: u32) -> u32 {
     let next = if month == 12 {
@@ -316,6 +320,7 @@ struct DependencyEdit {
     hovered_remove: bool,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl DependencyEdit {
     fn new() -> Self {
         Self {
@@ -327,6 +332,7 @@ impl DependencyEdit {
         }
     }
 }
+// }}}
 
 // ── Mode ──────────────────────────────────────────────────────────────────────
 
@@ -403,6 +409,7 @@ pub struct MilestoneFormWindow {
     scheduler_error: Option<String>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl MilestoneFormWindow {
     pub fn new() -> Self {
         let mut name = TextInput::new("");
@@ -789,6 +796,7 @@ impl MilestoneFormWindow {
         FloatingWindowOutcome::close()
     }
 }
+// }}}
 
 // ── Drawing helpers ───────────────────────────────────────────────────────────
 
@@ -1539,6 +1547,7 @@ fn draw_calendar_popup(
 
 // ── FloatingWindow impl ───────────────────────────────────────────────────────
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl FloatingWindow for MilestoneFormWindow {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         let panel = Self::panel_rect(width, height);
@@ -2873,3 +2882,4 @@ impl FloatingWindow for MilestoneFormWindow {
         }
     }
 }
+// }}}

@@ -67,6 +67,7 @@ struct CalendarPicker {
     hovered_trigger: bool,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl CalendarPicker {
     fn new(value: Option<NaiveDate>) -> Self {
         let base = value.unwrap_or_else(|| chrono::Local::now().date_naive());
@@ -129,6 +130,7 @@ impl CalendarPicker {
         }
     }
 }
+// }}}
 
 fn days_in_month(year: i32, month: u32) -> u32 {
     let next = if month == 12 {
@@ -808,6 +810,7 @@ pub struct PlanSettingsWindow {
     pending_schedule: Option<Box<dyn crate::ui::floating_window::FloatingWindow>>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl PlanSettingsWindow {
     pub fn new(plan: &Plan) -> Self {
         let mut name = TextInput::new(&plan.name);
@@ -994,7 +997,9 @@ impl PlanSettingsWindow {
         self.target_filter = TextInput::new("");
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl FloatingWindow for PlanSettingsWindow {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         let panel = Self::panel_rect(width, height);
@@ -1693,3 +1698,4 @@ impl FloatingWindow for PlanSettingsWindow {
         self.pending_schedule.take()
     }
 }
+// }}}

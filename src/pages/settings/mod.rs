@@ -23,6 +23,7 @@ pub struct SettingsPage {
     pub state: SettingsState,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl SettingsPage {
     pub fn new() -> Self {
         Self {
@@ -36,7 +37,9 @@ impl SettingsPage {
         (content_h - viewport_h).max(0.0)
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Page for SettingsPage {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         render::draw_settings(canvas, width, height, &self.state, plan, cache);
@@ -193,3 +196,4 @@ impl Page for SettingsPage {
         self.state.hovered_user_idx = None;
     }
 }
+// }}}

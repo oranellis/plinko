@@ -53,6 +53,7 @@ pub struct TagsWindow {
     rename_state: Option<(TagId, TextInput)>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TagsWindow {
     pub fn new() -> Self {
         Self {
@@ -254,7 +255,9 @@ impl TagsWindow {
         canvas.draw_path(&pb.detach(), &paint);
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl FloatingWindow for TagsWindow {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         let panel = Self::panel_rect(width, height);
@@ -970,7 +973,9 @@ impl FloatingWindow for TagsWindow {
         self.rename_state = None;
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TagsWindow {
     fn submit_add(&mut self, sender: &PlanRequestSender) -> FloatingWindowOutcome {
         let name = self
@@ -988,3 +993,4 @@ impl TagsWindow {
         FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
     }
 }
+// }}}

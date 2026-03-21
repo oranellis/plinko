@@ -7,6 +7,7 @@ pub struct CalendarOverrides {
     pub entries: HashMap<NaiveDate, f32>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl CalendarOverrides {
     pub fn set(&mut self, date: NaiveDate, hours: f32) {
         self.entries.insert(date, hours);
@@ -20,3 +21,4 @@ impl CalendarOverrides {
         self.entries.get(&date).copied()
     }
 }
+// }}}

@@ -26,6 +26,7 @@ pub enum GanttItem {
     PlanStart { date: NaiveDate },
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl GanttItem {
     /// Inclusive start date of the item for row-packing purposes.
     pub fn start(&self) -> NaiveDate {
@@ -50,6 +51,7 @@ impl GanttItem {
         }
     }
 }
+// }}}
 
 // ── GanttRow ──────────────────────────────────────────────────────────────────
 

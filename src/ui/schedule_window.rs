@@ -135,6 +135,7 @@ pub struct ScheduleWindow {
     scheduler_error: Option<String>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl ScheduleWindow {
     /// Open the window to edit the plan's default schedule.
     pub fn for_plan(schedule: &WorkSchedule) -> Self {
@@ -347,6 +348,7 @@ impl ScheduleWindow {
         FloatingWindowOutcome::close()
     }
 }
+// }}}
 
 // ── Draw helpers (module-local) ───────────────────────────────────────────────
 
@@ -483,6 +485,7 @@ fn draw_btn(
 
 // ── FloatingWindow impl ───────────────────────────────────────────────────────
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl FloatingWindow for ScheduleWindow {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, _plan: &Plan) {
         let panel = Self::panel_rect(width, height);
@@ -953,3 +956,4 @@ impl FloatingWindow for ScheduleWindow {
         self.hovered_reset = false;
     }
 }
+// }}}

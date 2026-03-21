@@ -9,6 +9,7 @@ pub struct StartDates {
     pub milestones: HashMap<MilestoneId, NaiveDate>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl StartDates {
     pub fn new() -> Self {
         Self::default()
@@ -30,3 +31,4 @@ impl StartDates {
         self.milestones.get(id).copied()
     }
 }
+// }}}

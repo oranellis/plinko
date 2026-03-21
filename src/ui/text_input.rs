@@ -12,6 +12,7 @@ pub struct TextInput {
     pub scroll_x: std::cell::Cell<f32>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl TextInput {
     /// Create a new `TextInput` with the given initial content.
     /// The cursor is placed at the end.
@@ -128,3 +129,4 @@ impl TextInput {
         p
     }
 }
+// }}}

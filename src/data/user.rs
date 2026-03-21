@@ -12,6 +12,7 @@ pub struct User {
     pub tags: HashSet<TagId>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl User {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
@@ -38,6 +39,7 @@ impl User {
         self.tags.contains(tag_id)
     }
 }
+// }}}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserData {
@@ -45,6 +47,7 @@ pub struct UserData {
     pub schedule: Option<WorkSchedule>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl UserData {
     pub fn new(user: User) -> Self {
         Self {
@@ -73,3 +76,4 @@ impl UserData {
         self.schedule.get_or_insert_with(WorkSchedule::weekdays)
     }
 }
+// }}}

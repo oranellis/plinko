@@ -14,6 +14,7 @@ pub struct DateConstraint {
     pub kind: ConstraintKind,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl DateConstraint {
     pub fn fixed(date: NaiveDate) -> Self {
         Self {
@@ -36,3 +37,4 @@ impl DateConstraint {
         }
     }
 }
+// }}}

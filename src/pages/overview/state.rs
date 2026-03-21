@@ -53,6 +53,7 @@ pub struct OverviewState {
     pub hovered_warning: Option<NodeId>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl OverviewState {
     pub fn new() -> Self {
         Self {
@@ -85,3 +86,4 @@ impl OverviewState {
         }
     }
 }
+// }}}

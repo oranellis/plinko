@@ -20,6 +20,7 @@ pub enum WorkerSlot {
     },
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl WorkerSlot {
     pub fn workload_days(&self) -> f32 {
         match self {
@@ -35,6 +36,7 @@ impl WorkerSlot {
         }
     }
 }
+// }}}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
@@ -47,6 +49,7 @@ pub struct Task {
     pub duration_days_target: f32,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Task {
     pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
         Self {
@@ -134,3 +137,4 @@ impl Task {
         max * 2.0
     }
 }
+// }}}

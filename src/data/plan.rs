@@ -41,6 +41,7 @@ pub struct Plan {
     pub node_allocations: NodeAllocations,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Plan {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
@@ -678,3 +679,4 @@ impl Plan {
         all_nodes.difference(&depended_upon).copied().collect()
     }
 }
+// }}}

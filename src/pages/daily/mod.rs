@@ -17,6 +17,7 @@ pub struct DailyPage {
     pub state: state::DailyState,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl DailyPage {
     pub fn new() -> Self {
         Self {
@@ -24,7 +25,9 @@ impl DailyPage {
         }
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Page for DailyPage {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, _plan: &Plan) {
         render::draw_daily(canvas, 0.0, 0.0, width, height, cache);
@@ -54,3 +57,4 @@ impl Page for DailyPage {
         DirtyRegion::None
     }
 }
+// }}}

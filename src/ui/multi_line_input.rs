@@ -15,11 +15,13 @@ pub struct VisualLine<'a> {
     pub byte_start: usize,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl VisualLine<'_> {
     pub fn byte_end(&self) -> usize {
         self.byte_start + self.text.len()
     }
 }
+// }}}
 
 // ── Main struct ───────────────────────────────────────────────────────────────
 
@@ -35,6 +37,7 @@ pub struct MultiLineInput {
     pub x_hint: Option<f32>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl MultiLineInput {
     pub fn new(content: impl Into<String>) -> Self {
         let content = content.into();
@@ -343,6 +346,7 @@ impl MultiLineInput {
             .spawn();
     }
 }
+// }}}
 
 // ── Private helpers ───────────────────────────────────────────────────────────
 
@@ -448,6 +452,7 @@ fn wrap_paragraph<'a>(
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+// ── Tests ──────────────────────────────────────────────────────────────── {{{
 mod tests {
     use super::*;
 
@@ -671,3 +676,4 @@ mod tests {
         assert!(MultiLineInput::find_links("just plain text").is_empty());
     }
 }
+// }}}

@@ -27,6 +27,7 @@ pub struct OverviewPage {
     pub state: OverviewState,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl OverviewPage {
     pub fn new() -> Self {
         Self {
@@ -47,7 +48,9 @@ impl OverviewPage {
         (content_h - visible_h).max(0.0)
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Page for OverviewPage {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         render::draw_overview(canvas, 0.0, 0.0, width, height, &self.state, cache, plan);
@@ -310,3 +313,4 @@ impl Page for OverviewPage {
         }
     }
 }
+// }}}

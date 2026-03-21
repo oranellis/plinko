@@ -43,6 +43,7 @@ pub struct UsersWindow {
     pending_schedule: Option<Box<dyn crate::ui::floating_window::FloatingWindow>>,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl UsersWindow {
     pub fn new() -> Self {
         Self {
@@ -181,7 +182,9 @@ impl UsersWindow {
         canvas.draw_path(&scaled, &paint);
     }
 }
+// }}}
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl FloatingWindow for UsersWindow {
     fn render(&self, canvas: &Canvas, width: f32, height: f32, cache: &RenderCache, plan: &Plan) {
         let panel = Self::panel_rect(width, height);
@@ -606,3 +609,4 @@ impl FloatingWindow for UsersWindow {
         self.hovered_cal_btn = None;
     }
 }
+// }}}

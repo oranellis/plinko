@@ -7,6 +7,7 @@ pub struct Dependency {
     pub lag_days: f32,
 }
 
+// ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl Dependency {
     pub fn new(id: NodeId) -> Self {
         Self { id, lag_days: 0.0 }
@@ -23,3 +24,4 @@ impl Dependency {
         }
     }
 }
+// }}}
