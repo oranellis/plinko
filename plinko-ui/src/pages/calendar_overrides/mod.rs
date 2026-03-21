@@ -53,10 +53,30 @@ impl Page for CalendarOverridesPage {
         }
 
         // User selector tab hover
-        let new_tab_hover = render::hit_test_user_tab(x, y, plan).map(|i| i as i32);
+        let new_tab_hover =
+            render::hit_test_user_tab(x, y, plan, self.state.current_user).map(|i| i as i32);
         let tab_dirty = new_tab_hover != self.state.hovered_user_tab;
         if tab_dirty {
             self.state.hovered_user_tab = new_tab_hover;
+        }
+
+        // Dropdown item hover
+        let mut drop_dirty = false;
+        if self.state.user_dropdown_open {
+            let btn_x = render::dropdown_btn_x(plan, self.state.current_user);
+            let new_drop_hover = render::hit_test_dropdown_item(
+                x,
+                y,
+                plan,
+                self.state.current_user,
+                &self.state.user_filter,
+                btn_x,
+                width,
+            );
+            if new_drop_hover != self.state.hovered_dropdown_item {
+                self.state.hovered_dropdown_item = new_drop_hover;
+                drop_dirty = true;
+            }
         }
 
         let new_day = if y > TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE {
@@ -69,7 +89,7 @@ impl Page for CalendarOverridesPage {
             self.state.hovered_date = new_day;
         }
 
-        if toolbar_dirty || day_dirty || tab_dirty {
+        if toolbar_dirty || day_dirty || tab_dirty || drop_dirty {
             DirtyRegion::PageOnly
         } else {
             DirtyRegion::None
@@ -88,6 +108,48 @@ impl Page for CalendarOverridesPage {
     ) -> DirtyRegion {
         if !pressed {
             return DirtyRegion::None;
+        }
+
+        // If dropdown is open, handle dropdown interactions first.
+        if self.state.user_dropdown_open {
+            let btn_x = render::dropdown_btn_x(plan, self.state.current_user);
+
+            // Click inside filter box — handled by key_input; just close nothing
+            if render::hit_test_dropdown_filter(x, y, plan, self.state.current_user, width) {
+                return DirtyRegion::None;
+            }
+
+            // Click on a dropdown item
+            if let Some(item_idx) = render::hit_test_dropdown_item(
+                x,
+                y,
+                plan,
+                self.state.current_user,
+                &self.state.user_filter,
+                btn_x,
+                width,
+            ) {
+                let uid = render::user_for_dropdown_item(
+                    item_idx,
+                    plan,
+                    self.state.current_user,
+                    &self.state.user_filter,
+                );
+                self.state.selected_user = uid;
+                self.state.user_dropdown_open = false;
+                self.state.user_filter.clear();
+                self.state.hovered_dropdown_item = None;
+                self.state.editing_date = None;
+                self.state.edit_input.clear();
+                self.state.edit_error = false;
+                return DirtyRegion::PageOnly;
+            }
+
+            // Click outside — close dropdown
+            self.state.user_dropdown_open = false;
+            self.state.user_filter.clear();
+            self.state.hovered_dropdown_item = None;
+            return DirtyRegion::PageOnly;
         }
 
         // Click outside popup closes it
@@ -117,12 +179,28 @@ impl Page for CalendarOverridesPage {
             return DirtyRegion::PageOnly;
         }
 
-        // User selector tabs (no cache in mouse handler — use a stub for hit-test)
-        if let Some(tab_idx) = render::hit_test_user_tab(x, y, plan) {
+        // User selector quick buttons
+        let others = render::other_users_count(plan, self.state.current_user);
+        if let Some(tab_idx) = render::hit_test_user_tab(x, y, plan, self.state.current_user) {
             self.state.editing_date = None;
             self.state.edit_input.clear();
             self.state.edit_error = false;
-            self.state.selected_user = render::user_for_tab_index(tab_idx, plan);
+
+            let has_current = self.state.current_user.is_some()
+                && plan
+                    .users_data
+                    .contains_key(&self.state.current_user.unwrap());
+            let dropdown_idx = if has_current { 2 } else { 1 };
+
+            if others > 0 && tab_idx == dropdown_idx {
+                // Toggle dropdown
+                self.state.user_dropdown_open = !self.state.user_dropdown_open;
+                self.state.user_filter.clear();
+            } else if tab_idx == 0 {
+                self.state.selected_user = None;
+            } else if has_current && tab_idx == 1 {
+                self.state.selected_user = self.state.current_user;
+            }
             return DirtyRegion::PageOnly;
         }
 
@@ -157,6 +235,27 @@ impl Page for CalendarOverridesPage {
     }
 
     fn on_key_input(&mut self, key: &Key, sender: &PlanRequestSender) -> DirtyRegion {
+        // Handle dropdown filter input
+        if self.state.user_dropdown_open {
+            match key {
+                Key::Named(NamedKey::Escape) => {
+                    self.state.user_dropdown_open = false;
+                    self.state.user_filter.clear();
+                    self.state.hovered_dropdown_item = None;
+                    return DirtyRegion::PageOnly;
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    self.state.user_filter.pop();
+                    return DirtyRegion::PageOnly;
+                }
+                Key::Character(ch) => {
+                    self.state.user_filter.push_str(ch);
+                    return DirtyRegion::PageOnly;
+                }
+                _ => {}
+            }
+        }
+
         if self.state.editing_date.is_none() {
             return DirtyRegion::None;
         }

@@ -166,4 +166,9 @@ impl PageManager {
     pub fn settings_mut(&mut self) -> &mut settings::SettingsPage {
         &mut self.settings
     }
+
+    /// Returns a mutable reference to the calendar overrides page.
+    pub fn calendar_overrides_mut(&mut self) -> &mut calendar_overrides::CalendarOverridesPage {
+        &mut self.calendar_overrides
+    }
 }

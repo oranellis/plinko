@@ -20,6 +20,9 @@ const USER_TAB_PAD_X: f32 = 12.0; // horizontal padding inside each tab
 const USER_TAB_H: f32 = 26.0; // pill height
 const USER_TAB_GAP: f32 = 6.0; // gap between tabs
 const USER_TAB_CORNER: f32 = 6.0;
+const DROPDOWN_ITEM_H: f32 = 32.0;
+const DROPDOWN_MAX_H: f32 = 200.0;
+const DROPDOWN_FILTER_H: f32 = 30.0;
 
 /// Left arrow path (previous month button).
 fn build_left_arrow(w: f32, h: f32) -> skia_safe::Path {
@@ -100,17 +103,39 @@ fn day_grid_pos(day: u32, year: i32, month: u32) -> (u32, u32) {
 }
 
 /// Build the ordered list of user tab labels: ("Plan", None) then (name, Some(id)) per user.
-fn user_tabs(plan: &Plan) -> Vec<(String, Option<plinko_shared::data::ids::UserId>)> {
-    let mut tabs = vec![("Plan".to_string(), None)];
-    let mut users: Vec<_> = plan.users_data.values().map(|ud| &ud.user).collect();
+/// Returns other users (not the current user), sorted by name.
+pub fn other_users(
+    plan: &Plan,
+    current_user: Option<plinko_shared::data::ids::UserId>,
+) -> Vec<&plinko_shared::data::User> {
+    let mut users: Vec<_> = plan
+        .users_data
+        .values()
+        .map(|ud| &ud.user)
+        .filter(|u| current_user != Some(u.id))
+        .collect();
     users.sort_by(|a, b| a.name.cmp(&b.name));
-    for u in users {
-        tabs.push((u.name.clone(), Some(u.id)));
-    }
-    tabs
+    users
 }
 
-/// Returns the Rect for a user selector tab using measured font widths (for drawing).
+/// Count of users other than the current user.
+pub fn other_users_count(
+    plan: &Plan,
+    current_user: Option<plinko_shared::data::ids::UserId>,
+) -> usize {
+    plan.users_data
+        .values()
+        .filter(|ud| current_user != Some(ud.user.id))
+        .count()
+}
+
+fn tab_rect_with_width(text_w: f32, tab_x: f32) -> (Rect, f32) {
+    let tab_w = text_w + USER_TAB_PAD_X * 2.0;
+    let sel_y = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE + (USER_SEL_H - USER_TAB_H) / 2.0;
+    let rect = Rect::from_xywh(tab_x, sel_y, tab_w, USER_TAB_H);
+    (rect, tab_x + tab_w + USER_TAB_GAP)
+}
+
 fn tab_rect(label: &str, cache: &RenderCache, tab_x: f32) -> (Rect, f32) {
     let text_w = if let Some(blob) = TextBlob::new(label, &cache.small_font) {
         blob.bounds().width()
@@ -120,17 +145,14 @@ fn tab_rect(label: &str, cache: &RenderCache, tab_x: f32) -> (Rect, f32) {
     tab_rect_with_width(text_w, tab_x)
 }
 
-/// Returns the Rect for a user selector tab using a fixed char-width estimate (for hit-testing).
 fn tab_rect_approx(label: &str, tab_x: f32) -> (Rect, f32) {
-    let text_w = label.len() as f32 * 7.0;
-    tab_rect_with_width(text_w, tab_x)
+    tab_rect_with_width(label.len() as f32 * 7.0, tab_x)
 }
 
-fn tab_rect_with_width(text_w: f32, tab_x: f32) -> (Rect, f32) {
-    let tab_w = text_w + USER_TAB_PAD_X * 2.0;
-    let sel_y = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE + (USER_SEL_H - USER_TAB_H) / 2.0;
-    let rect = Rect::from_xywh(tab_x, sel_y, tab_w, USER_TAB_H);
-    (rect, tab_x + tab_w + USER_TAB_GAP)
+/// Rect and next-x for the "▾ Other" dropdown button.
+fn dropdown_btn_rect(tab_x: f32) -> (Rect, f32) {
+    let label = "Other \u{25be}";
+    tab_rect_approx(label, tab_x)
 }
 
 pub fn draw_calendar_overrides(
@@ -206,7 +228,6 @@ fn draw_user_selector(
     plan: &Plan,
     width: f32,
 ) {
-    let tabs = user_tabs(plan);
     let sel_bg_y = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE;
 
     let mut paint = Paint::default();
@@ -217,41 +238,219 @@ fn draw_user_selector(
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rect(Rect::from_xywh(0.0, sel_bg_y, width, USER_SEL_H), &paint);
 
+    let (_, font_metrics) = cache.small_font.metrics();
+    let draw_pill =
+        |canvas: &Canvas, label: &str, is_selected: bool, is_hovered: bool, tab_x: f32| -> f32 {
+            let (rect, next_x) = tab_rect(label, cache, tab_x);
+            let bg = if is_selected {
+                0xff_4a90d9
+            } else if is_hovered {
+                0xff_3a3a3a
+            } else {
+                0xff_2a2a2a
+            };
+            let fg = if is_selected {
+                0xff_ffffff
+            } else {
+                0xff_cccccc
+            };
+
+            let rrect = RRect::new_rect_xy(rect, USER_TAB_CORNER, USER_TAB_CORNER);
+            let mut p = Paint::default();
+            p.set_anti_alias(true);
+            p.set_color(Color::from(bg));
+            p.set_style(PaintStyle::Fill);
+            canvas.draw_rrect(rrect, &p);
+
+            if let Some(blob) = TextBlob::new(label, &cache.small_font) {
+                let bounds = blob.bounds();
+                let tx = rect.left() + (rect.width() - bounds.width()) / 2.0 - bounds.left();
+                let ty = rect.top()
+                    + (rect.height() - (font_metrics.descent - font_metrics.ascent)) / 2.0
+                    - font_metrics.ascent;
+                p.set_color(Color::from(fg));
+                p.set_style(PaintStyle::Fill);
+                canvas.draw_text_blob(&blob, (tx, ty), &p);
+            }
+            next_x
+        };
+
     let mut x = SIDE_PAD;
-    for (i, (label, uid)) in tabs.iter().enumerate() {
-        let (rect, next_x) = tab_rect(label, cache, x);
-        x = next_x;
 
-        let is_selected = *uid == state.selected_user;
-        let is_hovered = state.hovered_user_tab == Some(i as i32);
+    // "Plan" pill
+    x = draw_pill(
+        canvas,
+        "Plan",
+        state.selected_user.is_none(),
+        state.hovered_user_tab == Some(0),
+        x,
+    );
 
-        let bg = if is_selected {
-            0xff_4a90d9 // accent blue
-        } else if is_hovered {
-            0xff_3a3a3a
+    // Current user pill (if signed in)
+    let mut btn_idx = 1i32;
+    if let Some(cur_id) = state.current_user
+        && let Some(user) = plan.users_data.get(&cur_id).map(|ud| &ud.user)
+    {
+        x = draw_pill(
+            canvas,
+            &user.name,
+            state.selected_user == Some(cur_id),
+            state.hovered_user_tab == Some(btn_idx),
+            x,
+        );
+        btn_idx += 1;
+    }
+
+    // "Other ▾" dropdown button if there are any other users
+    let others = other_users(plan, state.current_user);
+    if !others.is_empty() {
+        let other_selected = state
+            .selected_user
+            .map(|id| state.current_user != Some(id))
+            .unwrap_or(false);
+        let label = if other_selected {
+            // Show selected user name with chevron
+            plan.users_data
+                .get(&state.selected_user.unwrap())
+                .map(|ud| format!("{} \u{25be}", ud.user.name))
+                .unwrap_or_else(|| "Other \u{25be}".to_string())
         } else {
-            0xff_2a2a2a
+            "Other \u{25be}".to_string()
         };
-        let fg = if is_selected {
-            0xff_ffffff
-        } else {
-            0xff_cccccc
-        };
+        draw_pill(
+            canvas,
+            &label,
+            other_selected,
+            state.hovered_user_tab == Some(btn_idx),
+            x,
+        );
 
-        let rrect = RRect::new_rect_xy(rect, USER_TAB_CORNER, USER_TAB_CORNER);
-        paint.set_color(Color::from(bg));
+        // Draw dropdown if open
+        if state.user_dropdown_open {
+            draw_user_dropdown(canvas, state, cache, plan, &others, x, width);
+        }
+    }
+}
+
+fn draw_user_dropdown(
+    canvas: &Canvas,
+    state: &CalendarOverridesState,
+    cache: &RenderCache,
+    plan: &Plan,
+    others: &[&plinko_shared::data::User],
+    btn_x: f32,
+    width: f32,
+) {
+    let drop_top = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE + USER_SEL_H;
+    let drop_w = 220.0f32;
+    let drop_x = (btn_x - USER_TAB_GAP).min(width - drop_w - SIDE_PAD);
+
+    let filter_lower = state.user_filter.to_lowercase();
+    let filtered: Vec<_> = others
+        .iter()
+        .filter(|u| filter_lower.is_empty() || u.name.to_lowercase().contains(&filter_lower))
+        .collect();
+
+    let items_h = (filtered.len() as f32 * DROPDOWN_ITEM_H).min(DROPDOWN_MAX_H);
+    let total_h = DROPDOWN_FILTER_H + items_h;
+
+    let drop_rect = Rect::from_xywh(drop_x, drop_top, drop_w, total_h);
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+
+    // Background + border
+    paint.set_color(Color::from(0xff_1e1e1e));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(RRect::new_rect_xy(drop_rect, 6.0, 6.0), &paint);
+    paint.set_color(Color::from(0xff_444444));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.0);
+    canvas.draw_rrect(RRect::new_rect_xy(drop_rect, 6.0, 6.0), &paint);
+
+    // Filter input
+    let filter_rect = Rect::from_xywh(
+        drop_x + 4.0,
+        drop_top + 4.0,
+        drop_w - 8.0,
+        DROPDOWN_FILTER_H - 8.0,
+    );
+    paint.set_color(Color::from(0xff_2a2a2a));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(RRect::new_rect_xy(filter_rect, 4.0, 4.0), &paint);
+
+    let display = if state.user_filter.is_empty() {
+        "Filter...".to_string()
+    } else {
+        state.user_filter.clone()
+    };
+    let fg = if state.user_filter.is_empty() {
+        0xff_666666u32
+    } else {
+        0xff_cccccc
+    };
+    if let Some(blob) = TextBlob::new(&display, &cache.small_font) {
+        let (_, m) = cache.small_font.metrics();
+        let tx = filter_rect.left() + 6.0;
+        let ty =
+            filter_rect.top() + (filter_rect.height() - (m.descent - m.ascent)) / 2.0 - m.ascent;
+        paint.set_color(Color::from(fg));
         paint.set_style(PaintStyle::Fill);
-        canvas.draw_rrect(rrect, &paint);
+        canvas.draw_text_blob(&blob, (tx, ty), &paint);
+    }
 
-        if let Some(blob) = TextBlob::new(label, &cache.small_font) {
-            let bounds = blob.bounds();
+    // Clip items area
+    let items_rect = Rect::from_xywh(drop_x, drop_top + DROPDOWN_FILTER_H, drop_w, items_h);
+    canvas.save();
+    canvas.clip_rect(items_rect, ClipOp::Intersect, true);
+
+    for (i, user) in filtered.iter().enumerate() {
+        let iy = drop_top + DROPDOWN_FILTER_H + i as f32 * DROPDOWN_ITEM_H;
+        let item_rect = Rect::from_xywh(drop_x + 2.0, iy, drop_w - 4.0, DROPDOWN_ITEM_H);
+        let is_selected = state.selected_user == Some(user.id);
+        let is_hovered = state.hovered_dropdown_item == Some(i);
+
+        if is_selected || is_hovered {
+            let bg = if is_selected {
+                0xff_4a90d9
+            } else {
+                0xff_2a2a2a
+            };
+            paint.set_color(Color::from(bg));
+            paint.set_style(PaintStyle::Fill);
+            canvas.draw_rrect(RRect::new_rect_xy(item_rect, 4.0, 4.0), &paint);
+        }
+
+        if let Some(blob) = TextBlob::new(&user.name, &cache.small_font) {
             let (_, m) = cache.small_font.metrics();
-            let tx = rect.left() + (rect.width() - bounds.width()) / 2.0 - bounds.left();
-            let ty = rect.top() + (rect.height() - (m.descent - m.ascent)) / 2.0 - m.ascent;
+            let tx = item_rect.left() + 8.0;
+            let ty =
+                item_rect.top() + (item_rect.height() - (m.descent - m.ascent)) / 2.0 - m.ascent;
+            let fg = if is_selected {
+                0xff_ffffff
+            } else {
+                0xff_cccccc
+            };
             paint.set_color(Color::from(fg));
             paint.set_style(PaintStyle::Fill);
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
+    }
+
+    canvas.restore();
+
+    // Draw "no results" if filtered is empty
+    if filtered.is_empty()
+        && !plan.users_data.is_empty()
+        && let Some(blob) = TextBlob::new("No match", &cache.small_font)
+    {
+        let (_, m) = cache.small_font.metrics();
+        let tx = drop_x + 12.0;
+        let ty = drop_top + DROPDOWN_FILTER_H + (DROPDOWN_ITEM_H - (m.descent - m.ascent)) / 2.0
+            - m.ascent;
+        paint.set_color(Color::from(0xff_666666));
+        paint.set_style(PaintStyle::Fill);
+        canvas.draw_text_blob(&blob, (tx, ty), &paint);
     }
 }
 
@@ -489,30 +688,142 @@ pub fn hit_test_toolbar_buttons(x: f32, y: f32, width: f32) -> Option<usize> {
 
 /// Hit-test the user selector tabs. Returns tab index if a tab was hit.
 /// Uses a fixed character-width estimate so it works without font access.
-pub fn hit_test_user_tab(x: f32, y: f32, plan: &Plan) -> Option<usize> {
-    let tabs = user_tabs(plan);
+/// Hit-test the quick-selector bar. Returns button index:
+///   0 = Plan, 1 = current user (if present), last = "Other" dropdown btn.
+pub fn hit_test_user_tab(
+    x: f32,
+    y: f32,
+    plan: &Plan,
+    current_user: Option<plinko_shared::data::ids::UserId>,
+) -> Option<usize> {
     let sel_top = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE + (USER_SEL_H - USER_TAB_H) / 2.0;
     let sel_bot = sel_top + USER_TAB_H;
     if y < sel_top || y > sel_bot {
         return None;
     }
     let mut tab_x = SIDE_PAD;
-    for (i, (label, _)) in tabs.iter().enumerate() {
-        let (rect, next_x) = tab_rect_approx(label, tab_x);
+    let mut idx = 0usize;
+
+    // "Plan" pill
+    let (rect, next_x) = tab_rect_approx("Plan", tab_x);
+    tab_x = next_x;
+    if x >= rect.left() && x <= rect.right() {
+        return Some(idx);
+    }
+    idx += 1;
+
+    // Current user pill
+    if let Some(cur_id) = current_user
+        && let Some(user) = plan.users_data.get(&cur_id).map(|ud| &ud.user)
+    {
+        let (rect, next_x) = tab_rect_approx(&user.name, tab_x);
         tab_x = next_x;
         if x >= rect.left() && x <= rect.right() {
-            return Some(i);
+            return Some(idx);
+        }
+        idx += 1;
+    }
+
+    // "Other" dropdown button
+    let others = other_users(plan, current_user);
+    if !others.is_empty() {
+        let label = "Other \u{25be}";
+        let (rect, _) = tab_rect_approx(label, tab_x);
+        if x >= rect.left() && x <= rect.right() {
+            return Some(idx);
         }
     }
+
     None
 }
 
-/// Returns the `Option<UserId>` for the tab at the given index.
-pub fn user_for_tab_index(idx: usize, plan: &Plan) -> Option<plinko_shared::data::ids::UserId> {
-    user_tabs(plan)
-        .into_iter()
+/// Hit-test the dropdown list. Returns the index into the filtered user list.
+pub fn hit_test_dropdown_item(
+    x: f32,
+    y: f32,
+    plan: &Plan,
+    current_user: Option<plinko_shared::data::ids::UserId>,
+    filter: &str,
+    btn_x_hint: f32,
+    width: f32,
+) -> Option<usize> {
+    let drop_top = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE + USER_SEL_H;
+    let drop_w = 220.0f32;
+    let drop_x = (btn_x_hint - USER_TAB_GAP).min(width - drop_w - SIDE_PAD);
+    let filter_lower = filter.to_lowercase();
+    let others = other_users(plan, current_user);
+    let filtered: Vec<_> = others
+        .iter()
+        .filter(|u| filter_lower.is_empty() || u.name.to_lowercase().contains(&filter_lower))
+        .collect();
+    let items_h = (filtered.len() as f32 * DROPDOWN_ITEM_H).min(DROPDOWN_MAX_H);
+    let items_top = drop_top + DROPDOWN_FILTER_H;
+
+    if x < drop_x || x > drop_x + drop_w || y < items_top || y > items_top + items_h {
+        return None;
+    }
+    let i = ((y - items_top) / DROPDOWN_ITEM_H) as usize;
+    if i < filtered.len() {
+        // Map back to original index in `others`
+        let user_id = filtered[i].id;
+        others.iter().position(|u| u.id == user_id)
+    } else {
+        None
+    }
+}
+
+/// Returns the UserId for a given dropdown item index (filtered list).
+pub fn user_for_dropdown_item(
+    idx: usize,
+    plan: &Plan,
+    current_user: Option<plinko_shared::data::ids::UserId>,
+    filter: &str,
+) -> Option<plinko_shared::data::ids::UserId> {
+    let filter_lower = filter.to_lowercase();
+    let others = other_users(plan, current_user);
+    others
+        .iter()
+        .filter(|u| filter_lower.is_empty() || u.name.to_lowercase().contains(&filter_lower))
         .nth(idx)
-        .and_then(|(_, uid)| uid)
+        .map(|u| u.id)
+}
+
+/// Returns the x coordinate at which the dropdown button starts (approx).
+pub fn dropdown_btn_x(plan: &Plan, current_user: Option<plinko_shared::data::ids::UserId>) -> f32 {
+    let mut x = SIDE_PAD;
+    let (_, next_x) = tab_rect_approx("Plan", x);
+    x = next_x;
+    if let Some(cur_id) = current_user
+        && let Some(user) = plan.users_data.get(&cur_id).map(|ud| &ud.user)
+    {
+        let (_, next_x) = tab_rect_approx(&user.name, x);
+        x = next_x;
+    }
+    x
+}
+
+/// Returns true if (x, y) is inside the dropdown filter input box.
+pub fn hit_test_dropdown_filter(
+    x: f32,
+    y: f32,
+    plan: &Plan,
+    current_user: Option<plinko_shared::data::ids::UserId>,
+    width: f32,
+) -> bool {
+    let btn_x = dropdown_btn_x(plan, current_user);
+    let drop_top = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE + USER_SEL_H;
+    let drop_w = 220.0f32;
+    let drop_x = (btn_x - USER_TAB_GAP).min(width - drop_w - SIDE_PAD);
+    let filter_rect = Rect::from_xywh(
+        drop_x + 4.0,
+        drop_top + 4.0,
+        drop_w - 8.0,
+        DROPDOWN_FILTER_H - 8.0,
+    );
+    x >= filter_rect.left()
+        && x <= filter_rect.right()
+        && y >= filter_rect.top()
+        && y <= filter_rect.bottom()
 }
 
 fn month_name(month: u32) -> &'static str {

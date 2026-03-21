@@ -24,8 +24,16 @@ pub struct CalendarOverridesState {
     /// The currently selected user for per-user overrides.
     /// `None` = plan-wide overrides.
     pub selected_user: Option<UserId>,
-    /// Index of hovered user tab (-1 = "Plan" tab, ≥0 = user index).
+    /// The signed-in user (set from app.rs).
+    pub current_user: Option<UserId>,
+    /// Index of hovered quick-selector button (-1 = unused, ≥0 = index).
     pub hovered_user_tab: Option<i32>,
+    /// Whether the "other users" dropdown is open.
+    pub user_dropdown_open: bool,
+    /// Filter string typed in the dropdown.
+    pub user_filter: String,
+    /// Index of the hovered item in the dropdown list.
+    pub hovered_dropdown_item: Option<usize>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -45,7 +53,11 @@ impl CalendarOverridesState {
             settings_init_date: String::new(),
             settings_init_scheduler_target: NodeId::PlanStart,
             selected_user: None,
+            current_user: None,
             hovered_user_tab: None,
+            user_dropdown_open: false,
+            user_filter: String::new(),
+            hovered_dropdown_item: None,
         }
     }
 

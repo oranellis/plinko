@@ -167,6 +167,7 @@ impl Application {
         self.engine.sender().send(PlanRequest::ListPlans);
         let s = self.pages.settings_mut();
         s.state.current_user = self.current_user;
+        self.pages.calendar_overrides_mut().state.current_user = self.current_user;
     }
 
     /// Process any pending actions from the settings page.
@@ -195,6 +196,7 @@ impl Application {
             self.current_user = uid;
             self.engine.sender().send(PlanRequest::SetCurrentUser(uid));
             self.pages.settings_mut().state.current_user = uid;
+            self.pages.calendar_overrides_mut().state.current_user = uid;
             self.mark_dirty(DirtyRegion::PageOnly);
         }
     }
