@@ -11,7 +11,7 @@ use crate::data::constraint::{ConstraintKind, DateConstraint};
 use crate::data::dependency::Dependency;
 use crate::data::ids::{MilestoneId, NodeId, TagId, UserId};
 use crate::data::task::{Task, WorkerSlot};
-use crate::data::{Plan, TaskId, TaskStatus};
+use crate::data::{Plan, Status, TaskId};
 use crate::engine::{PlanRequest, PlanRequestSender, TaskPatch, apply_task_patch};
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
@@ -489,7 +489,7 @@ pub struct TaskFormWindow {
     description: MultiLineInput,
     duration: TextInput,
     focused: TextField,
-    status: TaskStatus,
+    status: Status,
     hovered_status: Option<usize>,
     constraint_kind: ConstraintSel,
     hovered_constraint_kind: Option<usize>,
@@ -542,7 +542,7 @@ impl TaskFormWindow {
             description: MultiLineInput::new(""),
             duration: TextInput::new(""),
             focused: TextField::Name,
-            status: TaskStatus::NotStarted,
+            status: Status::NotStarted,
             hovered_status: None,
             constraint_kind: ConstraintSel::None,
             hovered_constraint_kind: None,
@@ -2583,11 +2583,11 @@ impl FloatingWindow for TaskFormWindow {
             "Dropped",
         ];
         let status_sel = match self.status {
-            TaskStatus::NotStarted => 0,
-            TaskStatus::InProgress => 1,
-            TaskStatus::OnHold => 2,
-            TaskStatus::Complete => 3,
-            TaskStatus::Dropped => 4,
+            Status::NotStarted => 0,
+            Status::InProgress => 1,
+            Status::OnHold => 2,
+            Status::Complete => 3,
+            Status::Dropped => 4,
         };
         draw_segmented(
             canvas,
@@ -2660,8 +2660,8 @@ impl FloatingWindow for TaskFormWindow {
         }
 
         // Actual dates
-        let start_disabled = self.status == TaskStatus::NotStarted;
-        let end_disabled = !matches!(self.status, TaskStatus::Complete | TaskStatus::Dropped);
+        let start_disabled = self.status == Status::NotStarted;
+        let end_disabled = !matches!(self.status, Status::Complete | Status::Dropped);
         label!(ROW_DATES, 0, "Actual Start");
         draw_date_btn(
             canvas,
@@ -3468,8 +3468,8 @@ impl FloatingWindow for TaskFormWindow {
             .position(|r| r.contains(pt_form));
         let new_ct = self.constraint_kind != ConstraintSel::None
             && Self::right_input_rect(ROW_CONSTRAINT, width, height).contains(pt_form);
-        let start_disabled = self.status == TaskStatus::NotStarted;
-        let end_disabled = !matches!(self.status, TaskStatus::Complete | TaskStatus::Dropped);
+        let start_disabled = self.status == Status::NotStarted;
+        let end_disabled = !matches!(self.status, Status::Complete | Status::Dropped);
         let new_as =
             !start_disabled && Self::left_input_rect(ROW_DATES, width, height).contains(pt_form);
         let new_ae =
@@ -3896,11 +3896,11 @@ impl FloatingWindow for TaskFormWindow {
         for (i, r) in Self::status_btn_rects(width, height).iter().enumerate() {
             if r.contains(pt_form) {
                 self.status = [
-                    TaskStatus::NotStarted,
-                    TaskStatus::InProgress,
-                    TaskStatus::OnHold,
-                    TaskStatus::Complete,
-                    TaskStatus::Dropped,
+                    Status::NotStarted,
+                    Status::InProgress,
+                    Status::OnHold,
+                    Status::Complete,
+                    Status::Dropped,
                 ][i];
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
@@ -3929,13 +3929,13 @@ impl FloatingWindow for TaskFormWindow {
             self.open_calendar_picker(OpenCalendar::Constraint);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
-        if self.status != TaskStatus::NotStarted
+        if self.status != Status::NotStarted
             && Self::left_input_rect(ROW_DATES, width, height).contains(pt_form)
         {
             self.open_calendar_picker(OpenCalendar::ActualStart);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
-        if matches!(self.status, TaskStatus::Complete | TaskStatus::Dropped)
+        if matches!(self.status, Status::Complete | Status::Dropped)
             && Self::right_input_rect(ROW_DATES, width, height).contains(pt_form)
         {
             self.open_calendar_picker(OpenCalendar::ActualEnd);

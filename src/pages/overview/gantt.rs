@@ -3,7 +3,7 @@
 use chrono::NaiveDate;
 
 use crate::data::Plan;
-use crate::data::TaskStatus;
+use crate::data::Status;
 use crate::data::ids::{MilestoneId, NodeId, TaskId};
 
 /// Minimum gap in day-units between items that may share a row.
@@ -227,12 +227,12 @@ pub fn milestone_display_status(plan: &Plan, id: MilestoneId) -> MilestoneStatus
         if task.dependencies.iter().any(|d| d.id == node) {
             found_any = true;
             match plan.task_status(tid) {
-                TaskStatus::Complete | TaskStatus::Dropped => {}
-                TaskStatus::InProgress | TaskStatus::OnHold => {
+                Status::Complete | Status::Dropped => {}
+                Status::InProgress | Status::OnHold => {
                     any_active = true;
                     all_done = false;
                 }
-                TaskStatus::NotStarted => {
+                Status::NotStarted => {
                     all_done = false;
                 }
             }

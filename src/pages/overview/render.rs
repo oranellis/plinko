@@ -4,7 +4,7 @@ use chrono::{Datelike, Duration, NaiveDate, Weekday as CWeekday};
 use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, PathBuilder, RRect, Rect, TextBlob};
 
 use crate::data::Plan;
-use crate::data::TaskStatus;
+use crate::data::Status;
 use crate::data::ids::{MilestoneId, NodeId, TaskId};
 use crate::ui::cache::RenderCache;
 use crate::ui::icon_button;
@@ -805,13 +805,13 @@ pub fn hit_test_warning_icon(
     None
 }
 
-fn task_status_color(status: TaskStatus) -> u32 {
+fn task_status_color(status: Status) -> u32 {
     match status {
-        TaskStatus::NotStarted => GANTT_TASK_NOT_STARTED,
-        TaskStatus::InProgress => GANTT_TASK_IN_PROGRESS,
-        TaskStatus::OnHold => GANTT_TASK_ON_HOLD,
-        TaskStatus::Complete => GANTT_TASK_COMPLETE,
-        TaskStatus::Dropped => GANTT_TASK_DROPPED,
+        Status::NotStarted => GANTT_TASK_NOT_STARTED,
+        Status::InProgress => GANTT_TASK_IN_PROGRESS,
+        Status::OnHold => GANTT_TASK_ON_HOLD,
+        Status::Complete => GANTT_TASK_COMPLETE,
+        Status::Dropped => GANTT_TASK_DROPPED,
     }
 }
 

@@ -29,6 +29,3 @@ pub use storage::{Storage, StorageError};
 pub use tag::Tag;
 pub use task::{Task, WorkerSlot};
 pub use user::{User, UserData};
-
-/// Backward-compatibility alias.
-pub type TaskStatus = Status;

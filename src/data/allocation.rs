@@ -155,18 +155,4 @@ impl NodeAllocations {
             .any(|ts| matches!(ts.allocation, TaskAllocation::Dynamic { .. }))
             || !self.milestones.is_empty()
     }
-
-    pub fn from_old_allocations(old_allocations: &Self) -> Self {
-        let tasks = old_allocations
-            .tasks
-            .iter()
-            .filter(|(_, state)| matches!(state.allocation, TaskAllocation::Fixed { .. }))
-            .map(|(id, state)| (*id, state.clone()))
-            .collect();
-        Self {
-            tasks,
-            milestones: HashMap::new(),
-            constraint_violations: HashMap::new(),
-        }
-    }
 }

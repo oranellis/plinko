@@ -62,7 +62,7 @@ pub struct TaskPatch {
     pub description: Option<String>,
     /// Directly overrides the task status. Bypasses lifecycle date-recording;
     /// use alongside `actual_start_date` / `actual_end_date` when needed.
-    pub status: Option<crate::data::TaskStatus>,
+    pub status: Option<crate::data::Status>,
     /// `Some(None)` clears the recorded start date.
     pub actual_start_date: Option<Option<NaiveDate>>,
     /// `Some(None)` clears the recorded end date.
@@ -91,7 +91,7 @@ impl TaskPatch {
         self.description = Some(v.into());
         self
     }
-    pub fn status(mut self, v: crate::data::TaskStatus) -> Self {
+    pub fn status(mut self, v: crate::data::Status) -> Self {
         self.status = Some(v);
         self
     }
