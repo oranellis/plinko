@@ -1,0 +1,17 @@
+[package]
+name = "plinko-ui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+plinko-shared = { path = "../plinko-shared" }
+gl-rs = { version = "0.14.0", package = "gl" }
+glutin = "0.32.3"
+glutin-winit = "0.5.0"
+raw-window-handle = "0.6.2"
+skia-safe = { version = "0.91.1", features = ["gl"] }
+winit = "0.30.12"
+serde_json = "1"
+rfd = "0.15"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }

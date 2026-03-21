@@ -1,0 +1,9 @@
+[package]
+name = "plinko"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+plinko-shared = { path = "../plinko-shared" }
+serde_json = "1"
+uuid = { version = "1" }
