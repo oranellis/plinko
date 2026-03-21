@@ -53,6 +53,7 @@ const DROPDOWN_H: f32 = DROPDOWN_FILTER_H + MAX_DROPDOWN_ROWS as f32 * DROPDOWN_
 
 #[derive(Clone, Copy, PartialEq)]
 enum Field {
+    None,
     Name,
     TagFilter,
     AvatarPath,
@@ -201,6 +202,7 @@ impl UserFormWindow {
             Field::AvatarPath => {
                 y0 + 2.0 * (FIELD_BLOCK_H + PLAN_FIELD_GAP) + LABEL_H + PLAN_LABEL_GAP
             }
+            Field::None => unreachable!("input_rect called with Field::None"),
         };
         Rect::from_xywh(x, y, w, PLAN_INPUT_H)
     }
@@ -229,9 +231,9 @@ impl UserFormWindow {
     fn cycle_focus_forward(&mut self) {
         self.close_dropdown();
         let next = match self.focused {
+            Field::None | Field::AvatarPath => Field::Name,
             Field::Name => Field::TagFilter,
             Field::TagFilter => Field::AvatarPath,
-            Field::AvatarPath => Field::Name,
         };
         self.set_focus(next);
         if next == Field::TagFilter {
@@ -312,6 +314,7 @@ impl UserFormWindow {
             Field::Name => &mut self.name,
             Field::TagFilter => &mut self.tag_filter,
             Field::AvatarPath => &mut self.avatar_path,
+            Field::None => unreachable!("no input focused"),
         }
     }
 }
@@ -911,6 +914,9 @@ impl FloatingWindow for UserFormWindow {
         }
         let pt = Point::new(x, y);
 
+        // Deselect any focused text input; specific click targets below will re-focus.
+        self.set_focus(Field::None);
+
         if Self::back_btn_rect(width, height).contains(pt) {
             return FloatingWindowOutcome::close();
         }
@@ -1001,6 +1007,9 @@ impl FloatingWindow for UserFormWindow {
             Key::Named(NamedKey::Tab) => {
                 self.cycle_focus_forward();
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
+            }
+            _ if self.focused == Field::None && !self.dropdown_open => {
+                FloatingWindowOutcome::default()
             }
             Key::Named(NamedKey::Backspace) => {
                 if self.dropdown_open {

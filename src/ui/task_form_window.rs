@@ -132,6 +132,7 @@ const SCROLLBAR_W: f32 = 4.0;
 
 #[derive(Clone, Copy, PartialEq)]
 enum TextField {
+    None,
     Name,
     Description,
     Duration,
@@ -1014,8 +1015,8 @@ impl TaskFormWindow {
         match self.focused {
             TextField::Name => &mut self.name,
             TextField::Duration => &mut self.duration,
-            TextField::Description => {
-                unreachable!("description is MultiLineInput; handled separately")
+            TextField::None | TextField::Description => {
+                unreachable!("description/none are not routed through focused_input_mut")
             }
         }
     }
@@ -3508,6 +3509,9 @@ impl FloatingWindow for TaskFormWindow {
         let pt_form = Point::new(x, y + scroll_y);
         let panel = Self::panel_rect(width, height);
 
+        // Deselect any focused text input; specific click targets below will re-focus.
+        self.set_focus(TextField::None);
+
         if Self::back_btn_rect(width, height).contains(pt) {
             return FloatingWindowOutcome::close();
         }
@@ -3864,7 +3868,7 @@ impl FloatingWindow for TaskFormWindow {
             let rect = match field {
                 TextField::Name => Self::full_input_rect(ROW_NAME, width, height),
                 TextField::Duration => Self::left_input_rect(ROW_DURATION, width, height),
-                TextField::Description => unreachable!(),
+                TextField::None | TextField::Description => unreachable!(),
             };
             if rect.contains(pt_form) {
                 self.set_focus(field);
@@ -3873,7 +3877,7 @@ impl FloatingWindow for TaskFormWindow {
                     + match field {
                         TextField::Name => self.name.scroll_x.get(),
                         TextField::Duration => self.duration.scroll_x.get(),
-                        TextField::Description => unreachable!(),
+                        TextField::None | TextField::Description => unreachable!(),
                     };
                 match field {
                     TextField::Name => {
@@ -3882,7 +3886,7 @@ impl FloatingWindow for TaskFormWindow {
                     TextField::Duration => {
                         self.duration.cursor = self.duration.cursor_for_x(x_in_inner, &cache.font);
                     }
-                    TextField::Description => unreachable!(),
+                    TextField::None | TextField::Description => unreachable!(),
                 }
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
@@ -4153,6 +4157,13 @@ impl FloatingWindow for TaskFormWindow {
         }
 
         // Normal text field routing
+        if self.focused == TextField::None {
+            if *key == Key::Named(NamedKey::Escape) {
+                return FloatingWindowOutcome::close();
+            }
+            return FloatingWindowOutcome::default();
+        }
+
         // Description (multi-line): Enter inserts newline, not submit
         if self.focused == TextField::Description {
             let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
@@ -4250,6 +4261,7 @@ impl FloatingWindow for TaskFormWindow {
             Key::Named(NamedKey::Enter) => self.try_submit(plan, sender),
             Key::Named(NamedKey::Tab) => {
                 let next = match self.focused {
+                    TextField::None => TextField::Name,
                     TextField::Name => TextField::Description,
                     TextField::Description => TextField::Duration,
                     TextField::Duration => TextField::Name,

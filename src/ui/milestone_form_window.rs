@@ -96,6 +96,7 @@ const CAL_H: f32 = CAL_PAD + CAL_HEADER_H + CAL_DOW_H + CAL_ROW_H * 6.0 + CAL_FO
 
 #[derive(Clone, Copy, PartialEq)]
 enum TextField {
+    None,
     Name,
     Description,
 }
@@ -655,8 +656,8 @@ impl MilestoneFormWindow {
     fn focused_input(&mut self) -> &mut TextInput {
         match self.focused {
             TextField::Name => &mut self.name,
-            TextField::Description => {
-                unreachable!("description is MultiLineInput; handled separately")
+            TextField::None | TextField::Description => {
+                unreachable!("none/description are not routed through focused_input")
             }
         }
     }
@@ -2251,6 +2252,9 @@ impl FloatingWindow for MilestoneFormWindow {
         let scroll_y = self.effective_scroll(width, height);
         let pt_form = Point::new(x, y + scroll_y);
 
+        // Deselect any focused text input; specific click targets below will re-focus.
+        self.set_focus(TextField::None);
+
         // Calendar popup interactions
         if self.calendar_open {
             let trigger_base = Self::right_input_rect(ROW_CONSTRAINT, width, height);
@@ -2611,6 +2615,13 @@ impl FloatingWindow for MilestoneFormWindow {
         }
 
         // Description (multi-line): Enter inserts newline, not submit
+        if self.focused == TextField::None {
+            if *key == Key::Named(NamedKey::Escape) {
+                return FloatingWindowOutcome::close();
+            }
+            return FloatingWindowOutcome::default();
+        }
+
         if self.focused == TextField::Description {
             let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
             let inner_width = desc_rect.width() - 16.0;
@@ -2707,6 +2718,7 @@ impl FloatingWindow for MilestoneFormWindow {
             Key::Named(NamedKey::Enter) => self.try_submit(plan, sender),
             Key::Named(NamedKey::Tab) => {
                 let next = match self.focused {
+                    TextField::None => TextField::Name,
                     TextField::Name => TextField::Description,
                     TextField::Description => TextField::Name,
                 };
