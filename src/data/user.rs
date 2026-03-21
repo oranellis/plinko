@@ -39,6 +39,7 @@ impl User {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserData {
     pub user: User,
     pub schedule: Option<WorkSchedule>,
@@ -48,12 +49,19 @@ impl UserData {
     pub fn new(user: User) -> Self {
         Self {
             user,
-            schedule: WorkSchedule::weekdays(),
+            schedule: None,
+        }
+    }
+
+    pub fn new_with_schedule(user: User, schedule: WorkSchedule) -> Self {
+        Self {
+            user,
+            schedule: Some(schedule),
         }
     }
 
     pub fn with_schedule(mut self, work_schedule: WorkSchedule) -> UserData {
-        self.schedule = work_schedule;
+        self.schedule = Some(work_schedule);
         self
     }
 
@@ -62,6 +70,6 @@ impl UserData {
     }
 
     pub fn schedule_mut(&mut self) -> &mut WorkSchedule {
-        &mut self.schedule
+        self.schedule.get_or_insert_with(WorkSchedule::weekdays)
     }
 }
