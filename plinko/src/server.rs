@@ -24,6 +24,12 @@ fn send_msg(writer: &mut impl Write, msg: &ServerMessage) -> std::io::Result<()>
 }
 
 fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut Storage) {
+    let peer = stream
+        .peer_addr()
+        .map(|a| a.to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    eprintln!("[connect] client connected from {peer}");
+
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut writer = stream;
 
@@ -31,25 +37,32 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
         version: VERSION.to_string(),
     };
     if send_msg(&mut writer, &hello).is_err() {
+        eprintln!("[connect] {peer}: failed to send Hello");
         return;
     }
 
     let mut line = String::new();
     if reader.read_line(&mut line).is_err() || line.is_empty() {
+        eprintln!("[connect] {peer}: disconnected before handshake");
         return;
     }
     let client_hello: ClientMessage = match serde_json::from_str(line.trim()) {
         Ok(m) => m,
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("[connect] {peer}: invalid handshake message: {e}");
+            return;
+        }
     };
     let ClientMessage::Hello {
         version: client_version,
     } = client_hello
     else {
+        eprintln!("[connect] {peer}: expected Hello, got unexpected message type");
         return;
     };
 
     if client_version != VERSION {
+        eprintln!("[connect] {peer}: version mismatch — server {VERSION}, client {client_version}");
         let _ = send_msg(
             &mut writer,
             &ServerMessage::VersionError {
@@ -60,6 +73,11 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
         return;
     }
 
+    eprintln!(
+        "[connect] {peer}: handshake OK (version {VERSION}), sending plan \"{}\"",
+        engine.plan().name
+    );
+
     if send_msg(
         &mut writer,
         &ServerMessage::PlanState {
@@ -68,9 +86,11 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
     )
     .is_err()
     {
+        eprintln!("[connect] {peer}: failed to send initial PlanState");
         return;
     }
 
+    let mut request_count: u64 = 0;
     loop {
         let mut line = String::new();
         match reader.read_line(&mut line) {
@@ -80,17 +100,19 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
         let msg: ClientMessage = match serde_json::from_str(line.trim()) {
             Ok(m) => m,
             Err(e) => {
-                eprintln!("parse error: {e}");
+                eprintln!("[{peer}] parse error: {e}");
                 continue;
             }
         };
         let ClientMessage::Request { id, request } = msg else {
             continue;
         };
+        request_count += 1;
 
         if matches!(&request, PlanRequest::SavePlan) {
+            eprintln!("[{peer}] SavePlan");
             if let Err(e) = storage.save(engine.plan()) {
-                eprintln!("save error: {e}");
+                eprintln!("[{peer}] save error: {e}");
             }
             let resp = ServerMessage::Response {
                 id,
@@ -150,7 +172,7 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                     }
                 }
                 Err(e) => {
-                    eprintln!("load error: {e}");
+                    eprintln!("[{peer}] load error: {e}");
                     let resp = ServerMessage::Response {
                         id,
                         response: PlanResponse::PlanUpdated,
@@ -214,4 +236,5 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
             }
         }
     }
+    eprintln!("[disconnect] {peer}: disconnected (served {request_count} requests)");
 }
