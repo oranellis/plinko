@@ -42,12 +42,11 @@ fn main() {
         // Pick the most recently modified plan: the one whose latest snapshot is newest.
         let mut best: Option<(String, uuid::Uuid)> = None;
         for id in ids {
-            if let Ok(versions) = storage.list_versions(id) {
-                if let Some(latest) = versions.last() {
-                    if best.as_ref().is_none_or(|(b, _)| latest > b) {
-                        best = Some((latest.clone(), id));
-                    }
-                }
+            if let Ok(versions) = storage.list_versions(id)
+                && let Some(latest) = versions.last()
+                && best.as_ref().is_none_or(|(b, _)| latest > b)
+            {
+                best = Some((latest.clone(), id));
             }
         }
         if let Some((_, id)) = best {

@@ -6,7 +6,6 @@
 //! - [`icons`]       — Skia path builders for the three navigation icons.
 //! - [`back_button`] — drawing and hit-testing for the back-navigation button.
 
-pub mod avatar;
 pub mod back_button;
 pub mod cache;
 pub mod dirty;

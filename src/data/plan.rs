@@ -488,13 +488,13 @@ impl Plan {
         let users: Vec<_> = self.users_data.values().map(|ud| &ud.user).collect();
         for task in self.tasks.values() {
             for slot in &task.workers {
-                if let WorkerSlot::Placeholder { required_tags, .. } = slot {
-                    if !users.iter().any(|u| slot.is_satisfied_by(u)) {
-                        return Err(SchedulerError::MissingTaskAffinity {
-                            task_name: task.name.clone(),
-                            required_tags: required_tags.clone(),
-                        });
-                    }
+                if let WorkerSlot::Placeholder { required_tags, .. } = slot
+                    && !users.iter().any(|u| slot.is_satisfied_by(u))
+                {
+                    return Err(SchedulerError::MissingTaskAffinity {
+                        task_name: task.name.clone(),
+                        required_tags: required_tags.clone(),
+                    });
                 }
             }
         }

@@ -107,18 +107,18 @@ pub fn draw_overview(
     draw_toolbar_buttons(canvas, state, cache, w);
 
     // Draw warning tooltip on top of everything else.
-    if let Some(node_id) = state.hovered_warning {
-        if let Some(violation) = plan.node_allocations.constraint_violations.get(&node_id) {
-            draw_warning_tooltip(
-                canvas,
-                violation,
-                state.cursor_x,
-                state.cursor_y,
-                w,
-                h,
-                cache,
-            );
-        }
+    if let Some(node_id) = state.hovered_warning
+        && let Some(violation) = plan.node_allocations.constraint_violations.get(&node_id)
+    {
+        draw_warning_tooltip(
+            canvas,
+            violation,
+            state.cursor_x,
+            state.cursor_y,
+            w,
+            h,
+            cache,
+        );
     }
 }
 

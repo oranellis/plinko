@@ -215,7 +215,7 @@ impl Plan {
     }
 
     fn pre_insert_anchored_tasks(&self, state: &mut SchedulerState) {
-        for (&id, _task) in &self.tasks {
+        for &id in self.tasks.keys() {
             let is_anchored = self
                 .node_allocations
                 .tasks
@@ -708,29 +708,27 @@ impl Plan {
         }
 
         // Never move anchored (non-NotStarted) tasks
-        if let NodeId::Task(tid) = node_id {
-            if self
+        if let NodeId::Task(tid) = node_id
+            && self
                 .node_allocations
                 .tasks
                 .get(&tid)
                 .map(|ts| ts.status != Status::NotStarted)
                 .unwrap_or(false)
-            {
-                return Ok(());
-            }
+        {
+            return Ok(());
         }
 
         match node_id {
             NodeId::Task(tid) => {
-                if let Some(ts) = state.allocations.tasks.remove(&tid) {
-                    if let TaskAllocation::Dynamic {
+                if let Some(ts) = state.allocations.tasks.remove(&tid)
+                    && let TaskAllocation::Dynamic {
                         time_allocation, ..
                     } = &ts.allocation
-                    {
-                        for seg in time_allocation {
-                            let entry = state.capacity.entry((seg.user, seg.date)).or_insert(0.0);
-                            *entry += seg.hours_worked;
-                        }
+                {
+                    for seg in time_allocation {
+                        let entry = state.capacity.entry((seg.user, seg.date)).or_insert(0.0);
+                        *entry += seg.hours_worked;
                     }
                 }
                 state.inserted.remove(&node_id);

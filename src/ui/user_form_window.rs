@@ -9,8 +9,6 @@ use skia_safe::{
 use winit::event::Modifiers;
 use winit::keyboard::{Key, NamedKey};
 
-use rfd;
-
 use crate::data::{Plan, Tag, TagId, User, ids::UserId};
 use crate::engine::{PlanRequest, PlanRequestSender, UserPatch};
 use crate::ui::cache::RenderCache;
@@ -38,8 +36,6 @@ const PANEL_H: f32 = TITLE_H
     + FIELD_BLOCK_H   // name
     + PLAN_FIELD_GAP
     + FIELD_BLOCK_H   // tags trigger
-    + PLAN_FIELD_GAP
-    + FIELD_BLOCK_H   // avatar path
     + LABEL_H         // error row
     + 20.0
     + PLAN_BTN_H
@@ -56,7 +52,6 @@ enum Field {
     None,
     Name,
     TagFilter,
-    AvatarPath,
 }
 
 /// Whether this form is creating a new user or editing an existing one.
@@ -73,12 +68,9 @@ pub struct UserFormWindow {
     dropdown_open: bool,
     dropdown_scroll: usize,
     dropdown_hovered: Option<usize>,
-    avatar_path: TextInput,
     focused: Field,
     hovered_back: bool,
     hovered_save: bool,
-    hovered_browse: bool,
-    avatar_error: bool,
     name_error: bool,
 }
 
@@ -95,12 +87,9 @@ impl UserFormWindow {
             dropdown_open: false,
             dropdown_scroll: 0,
             dropdown_hovered: None,
-            avatar_path: TextInput::new(""),
             focused: Field::Name,
             hovered_back: false,
             hovered_save: false,
-            hovered_browse: false,
-            avatar_error: false,
             name_error: false,
         }
     }
@@ -118,12 +107,9 @@ impl UserFormWindow {
             dropdown_open: false,
             dropdown_scroll: 0,
             dropdown_hovered: None,
-            avatar_path: TextInput::new(""),
             focused: Field::Name,
             hovered_back: false,
             hovered_save: false,
-            hovered_browse: false,
-            avatar_error: false,
             name_error: false,
         }
     }
@@ -132,13 +118,6 @@ impl UserFormWindow {
         match self.mode {
             Mode::New => "Add Team Member",
             Mode::Edit(_) => "Edit Team Member",
-        }
-    }
-
-    fn avatar_label(&self) -> &'static str {
-        match self.mode {
-            Mode::New => "Avatar image path (optional)",
-            Mode::Edit(_) => "Avatar image path (blank = keep existing)",
         }
     }
 
@@ -168,25 +147,6 @@ impl UserFormWindow {
         )
     }
 
-    fn browse_btn_rect(width: f32, height: f32) -> Rect {
-        let full = Self::input_rect(Field::AvatarPath, width, height);
-        const BROWSE_W: f32 = 72.0;
-        const GAP: f32 = 6.0;
-        Rect::from_xywh(full.right - BROWSE_W, full.top, BROWSE_W, full.height())
-    }
-
-    fn avatar_input_rect(width: f32, height: f32) -> Rect {
-        let full = Self::input_rect(Field::AvatarPath, width, height);
-        const BROWSE_W: f32 = 72.0;
-        const GAP: f32 = 6.0;
-        Rect::from_xywh(
-            full.left,
-            full.top,
-            full.width() - BROWSE_W - GAP,
-            full.height(),
-        )
-    }
-
     fn form_top(width: f32, height: f32) -> f32 {
         Self::panel_rect(width, height).top + TITLE_H + 1.0 + PLAN_FORM_PADDING
     }
@@ -199,9 +159,6 @@ impl UserFormWindow {
         let y = match field {
             Field::Name => y0 + LABEL_H + PLAN_LABEL_GAP,
             Field::TagFilter => y0 + FIELD_BLOCK_H + PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP,
-            Field::AvatarPath => {
-                y0 + 2.0 * (FIELD_BLOCK_H + PLAN_FIELD_GAP) + LABEL_H + PLAN_LABEL_GAP
-            }
             Field::None => unreachable!("input_rect called with Field::None"),
         };
         Rect::from_xywh(x, y, w, PLAN_INPUT_H)
@@ -224,16 +181,15 @@ impl UserFormWindow {
     fn set_focus(&mut self, field: Field) {
         self.name.focused = field == Field::Name;
         self.tag_filter.focused = field == Field::TagFilter;
-        self.avatar_path.focused = field == Field::AvatarPath;
         self.focused = field;
     }
 
     fn cycle_focus_forward(&mut self) {
         self.close_dropdown();
         let next = match self.focused {
-            Field::None | Field::AvatarPath => Field::Name,
+            Field::None => Field::Name,
             Field::Name => Field::TagFilter,
-            Field::TagFilter => Field::AvatarPath,
+            Field::TagFilter => Field::Name,
         };
         self.set_focus(next);
         if next == Field::TagFilter {
@@ -273,18 +229,9 @@ impl UserFormWindow {
         let name = self.name.content.trim().to_string();
         self.name_error = name.is_empty();
 
-        let avatar_path = self.avatar_path.content.trim();
-        let avatar_read: Result<Option<Vec<u8>>, ()> = if avatar_path.is_empty() {
-            Ok(None)
-        } else {
-            std::fs::read(avatar_path).map(Some).map_err(|_| ())
-        };
-        self.avatar_error = avatar_read.is_err();
-
-        if self.name_error || self.avatar_error {
+        if self.name_error {
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
-        let avatar_bytes = avatar_read.unwrap();
 
         match self.mode {
             Mode::New => {
@@ -292,17 +239,12 @@ impl UserFormWindow {
                 for &tag_id in &self.selected_tags {
                     user.add_tag(tag_id);
                 }
-                // avatar field removed from User; ignore avatar_bytes
-                let _ = avatar_bytes;
                 sender.send(PlanRequest::CreateUser(user));
             }
             Mode::Edit(user_id) => {
                 let tags: std::collections::HashSet<TagId> =
                     self.selected_tags.iter().copied().collect();
-                let mut patch = UserPatch::new().name(name).tags(tags);
-                if let Some(bytes) = avatar_bytes {
-                    patch = patch.avatar(Some(bytes));
-                }
+                let patch = UserPatch::new().name(name).tags(tags);
                 sender.send(PlanRequest::UpdateUser(user_id, patch));
             }
         }
@@ -313,7 +255,6 @@ impl UserFormWindow {
         match self.focused {
             Field::Name => &mut self.name,
             Field::TagFilter => &mut self.tag_filter,
-            Field::AvatarPath => &mut self.avatar_path,
             Field::None => unreachable!("no input focused"),
         }
     }
@@ -760,50 +701,6 @@ impl FloatingWindow for UserFormWindow {
             cache,
         );
 
-        // Avatar path
-        let av_y = y0 + 2.0 * (FIELD_BLOCK_H + PLAN_FIELD_GAP);
-        if let Some(blob) = TextBlob::new(self.avatar_label(), &cache.small_font) {
-            paint.set_color(Color::from(LABEL_FG));
-            canvas.draw_text_blob(&blob, (lx, av_y + label_y_offset), &paint);
-        }
-        draw_text_input(
-            canvas,
-            Self::avatar_input_rect(width, height),
-            &self.avatar_path,
-            self.focused == Field::AvatarPath,
-            false,
-            cache,
-        );
-        // Browse button
-        let browse_btn = Self::browse_btn_rect(width, height);
-        paint.set_color(Color::from(if self.hovered_browse {
-            BTN_PRIMARY_HOVER_BG
-        } else {
-            BTN_PRIMARY_BG
-        }));
-        paint.set_style(PaintStyle::Fill);
-        canvas.draw_rrect(
-            RRect::new_rect_xy(browse_btn, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
-            &paint,
-        );
-        if let Some(blob) = TextBlob::new("Browse…", &cache.small_font) {
-            let (_, sm) = cache.small_font.metrics();
-            let (adv, _) = cache.small_font.measure_str("Browse…", None);
-            let tx = browse_btn.left + (browse_btn.width() - adv) / 2.0;
-            let ty =
-                browse_btn.top + (browse_btn.height() - (sm.descent - sm.ascent)) / 2.0 - sm.ascent;
-            paint.set_color(Color::from(BTN_PRIMARY_FG));
-            canvas.draw_text_blob(&blob, (tx, ty), &paint);
-        }
-
-        if self.avatar_error {
-            let err_y = Self::input_rect(Field::AvatarPath, width, height).bottom + 4.0;
-            if let Some(blob) = TextBlob::new("Could not read file", &cache.small_font) {
-                paint.set_color(Color::from(0xff_e53935_u32));
-                canvas.draw_text_blob(&blob, (lx, err_y + label_y_offset), &paint);
-            }
-        }
-
         // Save button
         paint.set_color(Color::from(if self.hovered_save {
             BTN_PRIMARY_HOVER_BG
@@ -880,15 +777,12 @@ impl FloatingWindow for UserFormWindow {
             None
         };
 
-        let new_browse = Self::browse_btn_rect(width, height).contains(pt);
         let changed = new_back != self.hovered_back
             || new_save != self.hovered_save
-            || new_browse != self.hovered_browse
             || new_dd_hovered != self.dropdown_hovered;
         if changed {
             self.hovered_back = new_back;
             self.hovered_save = new_save;
-            self.hovered_browse = new_browse;
             self.dropdown_hovered = new_dd_hovered;
             FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
         } else {
@@ -923,18 +817,6 @@ impl FloatingWindow for UserFormWindow {
         if Self::save_btn_rect(width, height).contains(pt) {
             return self.try_submit(sender);
         }
-        // Browse button opens a native file picker
-        if Self::browse_btn_rect(width, height).contains(pt) {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Images", &["png", "jpg", "jpeg", "gif", "bmp", "webp"])
-                .pick_file()
-            {
-                self.avatar_path
-                    .set_content(path.to_string_lossy().as_ref());
-                self.avatar_error = false;
-            }
-            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-        }
 
         if self.dropdown_open {
             let dd = Self::dropdown_rect(width, height);
@@ -967,14 +849,6 @@ impl FloatingWindow for UserFormWindow {
             self.set_focus(Field::Name);
             let x_in_inner = x - (name_rect.left + 8.0) + self.name.scroll_x.get();
             self.name.cursor = self.name.cursor_for_x(x_in_inner, &cache.font);
-            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-        }
-        // Avatar path field click (narrower rect excluding browse button)
-        let av_rect = Self::avatar_input_rect(width, height);
-        if av_rect.contains(pt) {
-            self.set_focus(Field::AvatarPath);
-            let x_in_inner = x - (av_rect.left + 8.0) + self.avatar_path.scroll_x.get();
-            self.avatar_path.cursor = self.avatar_path.cursor_for_x(x_in_inner, &cache.font);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
@@ -1017,7 +891,6 @@ impl FloatingWindow for UserFormWindow {
                     self.dropdown_scroll = 0;
                 } else if self.focused != Field::TagFilter {
                     self.focused_input().backspace();
-                    self.avatar_error = false;
                     if self.focused == Field::Name {
                         self.name_error = false;
                     }
@@ -1062,7 +935,6 @@ impl FloatingWindow for UserFormWindow {
                     self.dropdown_scroll = 0;
                 } else if self.focused != Field::TagFilter {
                     self.focused_input().insert_str(" ");
-                    self.avatar_error = false;
                     if self.focused == Field::Name {
                         self.name_error = false;
                     }
@@ -1079,7 +951,6 @@ impl FloatingWindow for UserFormWindow {
                         self.tag_filter.insert_str(c.as_str());
                     } else {
                         self.focused_input().insert_str(c.as_str());
-                        self.avatar_error = false;
                         if self.focused == Field::Name {
                             self.name_error = false;
                         }
@@ -1124,7 +995,6 @@ impl FloatingWindow for UserFormWindow {
     fn reset_hover(&mut self) {
         self.hovered_back = false;
         self.hovered_save = false;
-        self.hovered_browse = false;
         self.dropdown_hovered = None;
     }
 }

@@ -2,14 +2,10 @@
 
 use winit::event::Modifiers;
 
-use std::cell::RefCell;
-
 use skia_safe::{
     Canvas, ClipOp, Color, Contains, Matrix, Paint, PaintStyle, PathBuilder, Point, RRect, Rect,
     TextBlob,
 };
-
-use crate::ui::avatar::AvatarCache;
 
 use crate::data::Plan;
 use crate::engine::PlanRequestSender;
@@ -17,9 +13,9 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    AVATAR_COLORS, BACK_BTN_CORNER, BACK_BTN_SIZE, DIVIDER_COLOR, ITEM_FG, LIST_BG,
-    LIST_ITEM_HOVER_BG, LIST_SECTION_FG, OVERLAY_SOFT, PANEL_BG, PANEL_TEXT, PLAN_LIST_ITEM_H,
-    SCROLLBAR_THUMB_COLOR, TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
+    BACK_BTN_CORNER, BACK_BTN_SIZE, DIVIDER_COLOR, ITEM_FG, LIST_BG, LIST_ITEM_HOVER_BG,
+    LIST_SECTION_FG, OVERLAY_SOFT, PANEL_BG, PANEL_TEXT, PLAN_LIST_ITEM_H, SCROLLBAR_THUMB_COLOR,
+    TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
 };
 
 const PANEL_W: f32 = 420.0;
@@ -45,9 +41,6 @@ pub struct UsersWindow {
     pending_open_tags: bool,
     pending_edit: Option<crate::data::User>,
     pending_schedule: Option<Box<dyn crate::ui::floating_window::FloatingWindow>>,
-    /// Decoded avatar images, keyed by UserId. Populated lazily, one decode per user.
-    /// Uses `RefCell` for interior mutability because `render` takes `&self`.
-    avatar_cache: RefCell<AvatarCache>,
 }
 
 impl UsersWindow {
@@ -63,7 +56,6 @@ impl UsersWindow {
             pending_open_tags: false,
             pending_edit: None,
             pending_schedule: None,
-            avatar_cache: RefCell::new(AvatarCache::new()),
         }
     }
 
@@ -291,10 +283,6 @@ impl FloatingWindow for UsersWindow {
             let sm_row_text_offset =
                 (ROW_H - (sm_metrics.descent - sm_metrics.ascent)) / 2.0 - sm_metrics.ascent;
 
-            const AVATAR_RADIUS: f32 = 14.0;
-            const AVATAR_DIAMETER: f32 = AVATAR_RADIUS * 2.0;
-            const AVATAR_TEXT_GAP: f32 = 8.0;
-
             let sorted_len = sorted_users.len();
             for (i, user) in sorted_users.iter().enumerate() {
                 let ry = self.row_y(list.top, i);
@@ -313,84 +301,12 @@ impl FloatingWindow for UsersWindow {
                     );
                 }
 
-                // Avatar circle
-                let avatar_cx = panel.left + PADDING + AVATAR_RADIUS;
-                let avatar_cy = ry + ROW_H / 2.0;
-                let avatar_rect = Rect::from_xywh(
-                    avatar_cx - AVATAR_RADIUS,
-                    avatar_cy - AVATAR_RADIUS,
-                    AVATAR_DIAMETER,
-                    AVATAR_DIAMETER,
-                );
-
-                if let Some(image) = self.avatar_cache.borrow_mut().get(user.id, None) {
-                    // Draw image clipped to circle using the cached decoded Image
-                    let image = image.clone();
-                    canvas.save();
-                    let mut clip_pb = PathBuilder::new();
-                    clip_pb.add_circle(
-                        (avatar_cx, avatar_cy),
-                        AVATAR_RADIUS,
-                        skia_safe::PathDirection::CW,
-                    );
-                    canvas.clip_path(&clip_pb.detach(), None, false);
-                    canvas.draw_image_rect(&image, None, avatar_rect, &paint);
-                    canvas.restore();
-                } else {
-                    // No avatar or decode failed: colored circle with initials
-                    let id_byte = user.id.0.as_bytes()[0];
-                    let color = AVATAR_COLORS[(id_byte % 7) as usize];
-                    paint.set_color(Color::from(color));
-                    paint.set_style(PaintStyle::Fill);
-                    canvas.draw_circle((avatar_cx, avatar_cy), AVATAR_RADIUS, &paint);
-
-                    // Compute initials
-                    let words: Vec<&str> = user.name.split_whitespace().collect();
-                    let initials = if words.is_empty() {
-                        String::new()
-                    } else if words.len() == 1 {
-                        words[0]
-                            .chars()
-                            .next()
-                            .map(|c| c.to_uppercase().to_string())
-                            .unwrap_or_default()
-                    } else {
-                        let first = words[0]
-                            .chars()
-                            .next()
-                            .map(|c| c.to_uppercase().to_string())
-                            .unwrap_or_default();
-                        let last = words[words.len() - 1]
-                            .chars()
-                            .next()
-                            .map(|c| c.to_uppercase().to_string())
-                            .unwrap_or_default();
-                        format!("{first}{last}")
-                    };
-
-                    if !initials.is_empty()
-                        && let Some(blob) = TextBlob::new(&initials, &cache.small_font)
-                    {
-                        let (_, init_metrics) = cache.small_font.metrics();
-                        let (init_advance, _) = cache.small_font.measure_str(&initials, None);
-                        let init_h = init_metrics.descent - init_metrics.ascent;
-                        let tx = avatar_cx - init_advance / 2.0;
-                        let ty = avatar_cy - init_h / 2.0 - init_metrics.ascent;
-                        paint.set_color(Color::WHITE);
-                        canvas.draw_text_blob(&blob, (tx, ty), &paint);
-                    }
-                }
-                paint.set_style(PaintStyle::Fill);
-
-                // Name (left-aligned, shifted right of avatar)
+                // Name
                 if let Some(blob) = TextBlob::new(&user.name, &cache.font) {
                     paint.set_color(Color::from(ITEM_FG));
                     canvas.draw_text_blob(
                         &blob,
-                        (
-                            panel.left + PADDING + AVATAR_DIAMETER + AVATAR_TEXT_GAP,
-                            ry + row_text_offset,
-                        ),
+                        (panel.left + PADDING, ry + row_text_offset),
                         &paint,
                     );
                 }

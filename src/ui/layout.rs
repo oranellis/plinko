@@ -122,16 +122,6 @@ pub const OVERLAY_SOFT: u32 = 0x28_000000;
 pub const OVERLAY_MEDIUM: u32 = 0x64_000000;
 pub const OVERLAY_DARK: u32 = 0x78_000000;
 pub const TOOLTIP_BG: u32 = 0xdc_ffffff;
-pub const AVATAR_COLORS: [u32; 7] = [
-    0xff_7b68ee,
-    0xff_50c878,
-    0xff_e07b54,
-    0xff_9370db,
-    0xff_20b2aa,
-    0xff_e05c8a,
-    0xff_d4a843,
-];
-
 // ── Gantt chart ────────────────────────────────────────────────────────────────
 
 // Layout

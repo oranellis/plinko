@@ -163,8 +163,6 @@ pub struct UserPatch {
     pub name: Option<String>,
     /// Replaces the user's entire tag set.
     pub tags: Option<HashSet<TagId>>,
-    /// `Some(None)` clears the avatar; `Some(Some(v))` sets it to new bytes; `None` leaves it unchanged.
-    pub avatar: Option<Option<Vec<u8>>>,
 }
 
 impl UserPatch {
@@ -178,10 +176,6 @@ impl UserPatch {
     }
     pub fn tags(mut self, v: HashSet<TagId>) -> Self {
         self.tags = Some(v);
-        self
-    }
-    pub fn avatar(mut self, _v: Option<Vec<u8>>) -> Self {
-        // avatar field removed from User; kept for API compatibility
         self
     }
 }
@@ -540,7 +534,6 @@ impl PlanEngine {
                 if let Some(v) = patch.tags {
                     user.tags = v;
                 }
-                // avatar field not present on User; ignore patch.avatar
                 plan.node_allocations.invalidate();
                 Ok(())
             }),
