@@ -62,7 +62,7 @@ pub struct TaskPatch {
     pub description: Option<String>,
     /// Directly overrides the task status. Bypasses lifecycle date-recording;
     /// use alongside `actual_start_date` / `actual_end_date` when needed.
-    pub status: Option<crate::data::task::TaskStatus>,
+    pub status: Option<crate::data::TaskStatus>,
     /// `Some(None)` clears the recorded start date.
     pub actual_start_date: Option<Option<NaiveDate>>,
     /// `Some(None)` clears the recorded end date.
@@ -91,7 +91,7 @@ impl TaskPatch {
         self.description = Some(v.into());
         self
     }
-    pub fn status(mut self, v: crate::data::task::TaskStatus) -> Self {
+    pub fn status(mut self, v: crate::data::TaskStatus) -> Self {
         self.status = Some(v);
         self
     }
@@ -180,8 +180,8 @@ impl UserPatch {
         self.tags = Some(v);
         self
     }
-    pub fn avatar(mut self, v: Option<Vec<u8>>) -> Self {
-        self.avatar = Some(v);
+    pub fn avatar(mut self, _v: Option<Vec<u8>>) -> Self {
+        // avatar field removed from User; kept for API compatibility
         self
     }
 }
@@ -375,7 +375,9 @@ impl PlanEngine {
             let response = self.process(request);
             // If the mutation succeeded but the scheduler wasn't already run
             // inside `process` (e.g. task lifecycle ops), run it now.
-            if matches!(response, PlanResponse::PlanUpdated) && self.plan.allocation.is_none() {
+            if matches!(response, PlanResponse::PlanUpdated)
+                && !self.plan.node_allocations.has_schedule()
+            {
                 let _ = self.plan.compute_time_optimised_plan();
             }
             if matches!(response, PlanResponse::PlanUpdated) {
@@ -399,7 +401,11 @@ impl PlanEngine {
         F: FnOnce(&mut Plan) -> Result<(), PlanError>,
     {
         // Only back up when there is an existing allocation to protect.
-        let backup = self.plan.allocation.is_some().then(|| self.plan.clone());
+        let backup = self
+            .plan
+            .node_allocations
+            .has_schedule()
+            .then(|| self.plan.clone());
 
         match f(&mut self.plan) {
             Err(e) => PlanResponse::Error(e),
@@ -431,45 +437,50 @@ impl PlanEngine {
             },
 
             // ── Task lifecycle (not validated) ────────────────────────────────
-            PlanRequest::StartTask(id) => match self.plan.tasks.get_mut(&id) {
-                Some(task) => {
-                    task.start();
+            PlanRequest::StartTask(id) => {
+                if self.plan.tasks.contains_key(&id) {
+                    self.plan.start_task(id);
                     PlanResponse::PlanUpdated
+                } else {
+                    PlanResponse::Error(PlanError::TaskNotFound(id))
                 }
-                None => PlanResponse::Error(PlanError::TaskNotFound(id)),
-            },
+            }
 
-            PlanRequest::PauseTask(id) => match self.plan.tasks.get_mut(&id) {
-                Some(task) => {
-                    task.pause();
+            PlanRequest::PauseTask(id) => {
+                if self.plan.tasks.contains_key(&id) {
+                    self.plan.pause_task(id);
                     PlanResponse::PlanUpdated
+                } else {
+                    PlanResponse::Error(PlanError::TaskNotFound(id))
                 }
-                None => PlanResponse::Error(PlanError::TaskNotFound(id)),
-            },
+            }
 
-            PlanRequest::ResumeTask(id) => match self.plan.tasks.get_mut(&id) {
-                Some(task) => {
-                    task.resume();
+            PlanRequest::ResumeTask(id) => {
+                if self.plan.tasks.contains_key(&id) {
+                    self.plan.resume_task(id);
                     PlanResponse::PlanUpdated
+                } else {
+                    PlanResponse::Error(PlanError::TaskNotFound(id))
                 }
-                None => PlanResponse::Error(PlanError::TaskNotFound(id)),
-            },
+            }
 
-            PlanRequest::CompleteTask(id) => match self.plan.tasks.get_mut(&id) {
-                Some(task) => {
-                    task.complete();
+            PlanRequest::CompleteTask(id) => {
+                if self.plan.tasks.contains_key(&id) {
+                    self.plan.complete_task(id);
                     PlanResponse::PlanUpdated
+                } else {
+                    PlanResponse::Error(PlanError::TaskNotFound(id))
                 }
-                None => PlanResponse::Error(PlanError::TaskNotFound(id)),
-            },
+            }
 
-            PlanRequest::DropTask(id) => match self.plan.tasks.get_mut(&id) {
-                Some(task) => {
-                    task.drop_task();
+            PlanRequest::DropTask(id) => {
+                if self.plan.tasks.contains_key(&id) {
+                    self.plan.drop_task(id);
                     PlanResponse::PlanUpdated
+                } else {
+                    PlanResponse::Error(PlanError::TaskNotFound(id))
                 }
-                None => PlanResponse::Error(PlanError::TaskNotFound(id)),
-            },
+            }
 
             // ── Task CRUD ─────────────────────────────────────────────────────
             PlanRequest::CreateTask(task) => {
@@ -484,7 +495,7 @@ impl PlanEngine {
 
             PlanRequest::DeleteTask(id) => self.apply_validated(|plan| {
                 if plan.tasks.remove(&id).is_some() {
-                    plan.allocation = None;
+                    plan.node_allocations.invalidate();
                     Ok(())
                 } else {
                     Err(PlanError::TaskNotFound(id))
@@ -504,7 +515,7 @@ impl PlanEngine {
 
             PlanRequest::DeleteMilestone(id) => self.apply_validated(|plan| {
                 if plan.milestones.remove(&id).is_some() {
-                    plan.allocation = None;
+                    plan.node_allocations.invalidate();
                     Ok(())
                 } else {
                     Err(PlanError::MilestoneNotFound(id))
@@ -518,25 +529,26 @@ impl PlanEngine {
             }
 
             PlanRequest::UpdateUser(id, patch) => self.apply_validated(|plan| {
-                let user = plan.users.get_mut(&id).ok_or(PlanError::UserNotFound(id))?;
+                let user = plan
+                    .users_data
+                    .get_mut(&id)
+                    .map(|ud| &mut ud.user)
+                    .ok_or(PlanError::UserNotFound(id))?;
                 if let Some(v) = patch.name {
                     user.name = v;
                 }
                 if let Some(v) = patch.tags {
                     user.tags = v;
                 }
-                if let Some(v) = patch.avatar {
-                    user.avatar = v;
-                }
-                plan.allocation = None;
+                // avatar field not present on User; ignore patch.avatar
+                plan.node_allocations.invalidate();
                 Ok(())
             }),
 
             PlanRequest::DeleteUser(id) => self.apply_validated(|plan| {
-                if plan.users.remove(&id).is_some() {
-                    plan.user_schedules.remove(&id);
-                    plan.user_calendars.remove(&id);
-                    plan.allocation = None;
+                if plan.users_data.remove(&id).is_some() {
+                    plan.user_calendar_overrides.remove(&id);
+                    plan.node_allocations.invalidate();
                     Ok(())
                 } else {
                     Err(PlanError::UserNotFound(id))
@@ -544,7 +556,7 @@ impl PlanEngine {
             }),
 
             PlanRequest::SetUserSchedule(id, schedule) => self.apply_validated(|plan| {
-                if !plan.users.contains_key(&id) {
+                if !plan.users_data.contains_key(&id) {
                     return Err(PlanError::UserNotFound(id));
                 }
                 plan.set_user_schedule(id, schedule);
@@ -552,7 +564,7 @@ impl PlanEngine {
             }),
 
             PlanRequest::ClearUserSchedule(id) => self.apply_validated(|plan| {
-                if !plan.users.contains_key(&id) {
+                if !plan.users_data.contains_key(&id) {
                     return Err(PlanError::UserNotFound(id));
                 }
                 plan.clear_user_schedule(&id);
@@ -576,7 +588,7 @@ impl PlanEngine {
 
             PlanRequest::SetUserCalendarOverride(user_id, date, hours) => {
                 self.apply_validated(|plan| {
-                    plan.user_calendars
+                    plan.user_calendar_overrides
                         .entry(user_id)
                         .or_default()
                         .set(date, hours);
@@ -585,7 +597,7 @@ impl PlanEngine {
             }
 
             PlanRequest::ClearUserCalendarOverride(user_id, date) => self.apply_validated(|plan| {
-                if let Some(cal) = plan.user_calendars.get_mut(&user_id) {
+                if let Some(cal) = plan.user_calendar_overrides.get_mut(&user_id) {
                     cal.remove(&date);
                 }
                 Ok(())
@@ -663,15 +675,6 @@ pub(crate) fn apply_task_patch(
     if let Some(v) = patch.description {
         task.description = v;
     }
-    if let Some(v) = patch.status {
-        task.status = v;
-    }
-    if let Some(v) = patch.actual_start_date {
-        task.actual_start_date = v;
-    }
-    if let Some(v) = patch.actual_end_date {
-        task.actual_end_date = v;
-    }
     if let Some(v) = patch.constraint {
         task.constraint = v;
     }
@@ -682,7 +685,21 @@ pub(crate) fn apply_task_patch(
         task.workers = v;
     }
 
-    plan.allocation = None;
+    if let Some(v) = patch.status {
+        plan.node_allocations
+            .tasks
+            .entry(id)
+            .or_insert_with(crate::data::TaskState::not_started)
+            .status = v;
+    }
+    if let Some(v) = patch.actual_start_date {
+        plan.set_task_actual_start(id, v);
+    }
+    if let Some(v) = patch.actual_end_date {
+        plan.set_task_actual_end(id, v);
+    }
+
+    plan.node_allocations.invalidate();
     Ok(())
 }
 
@@ -717,7 +734,7 @@ pub(crate) fn apply_milestone_patch(
         ms.constraint = v;
     }
 
-    plan.allocation = None;
+    plan.node_allocations.invalidate();
     Ok(())
 }
 
@@ -751,8 +768,6 @@ fn debug_print_plan(plan: &Plan) {
                 .unwrap_or_else(|| format!("MS({})", mid.0)),
         }
     });
-
-    // ── Helper closures ───────────────────────────────────────────────────────
 
     let fmt_node = |id: &NodeId| -> String {
         match id {
@@ -801,8 +816,6 @@ fn debug_print_plan(plan: &Plan) {
         )
     };
 
-    // ── Tags ─────────────────────────────────────────────────────────────────
-
     if !plan.tags.is_empty() {
         eprintln!("  Tags ({}):", plan.tags.len());
         for tag in &plan.tags {
@@ -810,14 +823,10 @@ fn debug_print_plan(plan: &Plan) {
         }
     }
 
-    // ── Default schedule ─────────────────────────────────────────────────────
-
     eprintln!(
         "  Default schedule: {}",
         fmt_schedule(&plan.default_schedule)
     );
-
-    // ── Plan-wide calendar overrides ──────────────────────────────────────────
 
     if !plan.calendar.entries.is_empty() {
         let mut entries: Vec<_> = plan.calendar.entries.iter().collect();
@@ -828,10 +837,8 @@ fn debug_print_plan(plan: &Plan) {
         }
     }
 
-    // ── Users ─────────────────────────────────────────────────────────────────
-
-    eprintln!("  Users ({}):", plan.users.len());
-    let mut users: Vec<_> = plan.users.values().collect();
+    eprintln!("  Users ({}):", plan.users_data.len());
+    let mut users: Vec<_> = plan.users_data.values().map(|ud| &ud.user).collect();
     users.sort_by(|a, b| a.name.cmp(&b.name));
     for user in users {
         let uid = user.id;
@@ -851,14 +858,18 @@ fn debug_print_plan(plan: &Plan) {
             format!("  tags=[{}]", tag_names.join(", "))
         };
 
-        if let Some(sched) = plan.user_schedules.get(&uid) {
+        if let Some(sched) = plan
+            .users_data
+            .get(&uid)
+            .and_then(|ud| ud.schedule.as_ref())
+        {
             eprintln!("    {:?}{tags_str}", user.name);
             eprintln!("      schedule: {}", fmt_schedule(sched));
         } else {
             eprintln!("    {:?}{tags_str}  schedule: (default)", user.name);
         }
 
-        if let Some(cal) = plan.user_calendars.get(&uid)
+        if let Some(cal) = plan.user_calendar_overrides.get(&uid)
             && !cal.entries.is_empty()
         {
             let mut entries: Vec<_> = cal.entries.iter().collect();
@@ -870,13 +881,16 @@ fn debug_print_plan(plan: &Plan) {
         }
     }
 
-    // ── Tasks ─────────────────────────────────────────────────────────────────
-
     eprintln!("  Tasks ({}):", plan.tasks.len());
     let mut tasks: Vec<_> = plan.tasks.iter().collect();
     tasks.sort_by(|(_, a), (_, b)| a.name.cmp(&b.name));
     for (tid, task) in tasks {
-        let sched_start = plan.dates.task(tid);
+        let sched_start = plan
+            .node_allocations
+            .tasks
+            .get(tid)
+            .map(|ts| ts.allocation.start_date());
+        let status = plan.task_status(tid);
         let duration = task.effective_duration_days();
 
         let deps: Vec<String> = task
@@ -900,9 +914,9 @@ fn debug_print_plan(plan: &Plan) {
                     workload_days,
                 } => {
                     let name = plan
-                        .users
+                        .users_data
                         .get(user_id)
-                        .map(|u| u.name.as_str())
+                        .map(|ud| ud.user.name.as_str())
                         .unwrap_or("?");
                     format!("{name}={workload_days:.2}wd")
                 }
@@ -926,7 +940,7 @@ fn debug_print_plan(plan: &Plan) {
 
         eprintln!(
             "    {:?}  dur_target={:.1}d  eff_dur={duration:.1}d  status={:?}  sched_start={:?}",
-            task.name, task.duration_days_target, task.status, sched_start
+            task.name, task.duration_days_target, status, sched_start
         );
         if !workers.is_empty() {
             eprintln!("      workers: {}", workers.join(", "));
@@ -939,10 +953,10 @@ fn debug_print_plan(plan: &Plan) {
         if let Some(c) = &task.constraint {
             eprintln!("      constraint: {:?} on {}", c.kind, c.date);
         }
-        if let Some(start) = task.actual_start_date {
+        if let Some(start) = plan.task_actual_start(tid) {
             eprintln!("      actual_start: {start}");
         }
-        if let Some(end) = task.actual_end_date {
+        if let Some(end) = plan.task_actual_end(tid) {
             eprintln!("      actual_end: {end}");
         }
         if !task.description.is_empty() {
@@ -951,13 +965,15 @@ fn debug_print_plan(plan: &Plan) {
         }
     }
 
-    // ── Milestones ────────────────────────────────────────────────────────────
-
     eprintln!("  Milestones ({}):", plan.milestones.len());
     let mut milestones: Vec<_> = plan.milestones.iter().collect();
     milestones.sort_by(|(_, a), (_, b)| a.name.cmp(&b.name));
     for (mid, ms) in milestones {
-        let sched_date = plan.dates.milestone(mid);
+        let sched_date = plan
+            .node_allocations
+            .milestones
+            .get(mid)
+            .map(|ma| ma.date());
         let deps: Vec<String> = ms
             .dependencies
             .iter()
@@ -978,90 +994,56 @@ fn debug_print_plan(plan: &Plan) {
         }
     }
 
-    // ── Allocation ────────────────────────────────────────────────────────────
-
-    match &plan.allocation {
-        None => eprintln!("  Allocation: None (scheduler has not run)"),
-        Some(alloc) => {
+    let alloc = &plan.node_allocations;
+    if !alloc.has_schedule() {
+        eprintln!("  Allocation: None (scheduler has not run)");
+    } else {
+        eprintln!(
+            "  Allocation: {} tasks, {} milestones",
+            alloc.tasks.len(),
+            alloc.milestones.len()
+        );
+        let mut task_allocs: Vec<_> = alloc.tasks.iter().collect();
+        task_allocs.sort_by(|(a, _), (b, _)| {
+            let na = plan.tasks.get(a).map(|t| t.name.as_str()).unwrap_or("");
+            let nb = plan.tasks.get(b).map(|t| t.name.as_str()).unwrap_or("");
+            na.cmp(nb)
+        });
+        for (tid, ts) in task_allocs {
+            let name = plan.tasks.get(tid).map(|t| t.name.as_str()).unwrap_or("?");
+            let start = ts.allocation.start_date();
+            let end = ts.allocation.end_date();
+            let span_days = (end - start).num_days() + 1;
             eprintln!(
-                "  Allocation: {} tasks, {} milestones",
-                alloc.tasks.len(),
-                alloc.milestones.len()
+                "    task {:?}: {} → {}  ({} calendar day{})",
+                name,
+                start,
+                end,
+                span_days,
+                if span_days == 1 { "" } else { "s" }
             );
-
-            let mut task_allocs: Vec<_> = alloc.tasks.iter().collect();
-            task_allocs.sort_by(|(a, _), (b, _)| {
-                let na = plan.tasks.get(a).map(|t| t.name.as_str()).unwrap_or("");
-                let nb = plan.tasks.get(b).map(|t| t.name.as_str()).unwrap_or("");
-                na.cmp(nb)
-            });
-
-            for (tid, ta) in task_allocs {
-                let name = plan.tasks.get(tid).map(|t| t.name.as_str()).unwrap_or("?");
-                let span_days = (ta.end_date - ta.start_date).num_days() + 1;
-                eprintln!(
-                    "    task {:?}: {} → {}  ({} calendar day{})",
-                    name,
-                    ta.start_date,
-                    ta.end_date,
-                    span_days,
-                    if span_days == 1 { "" } else { "s" }
-                );
-
-                for slot in &ta.slot_allocations {
-                    let user_name = plan
-                        .users
-                        .get(&slot.user_id)
-                        .map(|u| u.name.as_str())
-                        .unwrap_or("?");
-                    let total_h: f32 = slot.segments.iter().map(|s| s.hours_worked).sum();
-                    let hpd = plan.default_schedule.hours_per_workload_day();
-                    let wd = if hpd > 0.0 { total_h / hpd } else { 0.0 };
-                    eprintln!(
-                        "      {user_name}: {total_h:.1}h total ({wd:.2} workload-days)  over {} segment{}:",
-                        slot.segments.len(),
-                        if slot.segments.len() == 1 { "" } else { "s" }
-                    );
-                    for seg in &slot.segments {
-                        eprintln!(
-                            "        {} → {:.1}h  ({:.2} wd)",
-                            seg.date,
-                            seg.hours_worked,
-                            if hpd > 0.0 {
-                                seg.hours_worked / hpd
-                            } else {
-                                0.0
-                            }
-                        );
-                    }
-                }
-                if ta.slot_allocations.is_empty() {
-                    eprintln!("      (no worker slots — pure calendar block)");
-                }
-            }
-
-            let mut ms_allocs: Vec<_> = alloc.milestones.iter().collect();
-            ms_allocs.sort_by(|(a, _), (b, _)| {
-                let na = plan
-                    .milestones
-                    .get(a)
-                    .map(|m| m.name.as_str())
-                    .unwrap_or("");
-                let nb = plan
-                    .milestones
-                    .get(b)
-                    .map(|m| m.name.as_str())
-                    .unwrap_or("");
-                na.cmp(nb)
-            });
-            for (mid, ma) in ms_allocs {
-                let name = plan
-                    .milestones
-                    .get(mid)
-                    .map(|m| m.name.as_str())
-                    .unwrap_or("?");
-                eprintln!("    milestone {:?}: {}", name, ma.date);
-            }
+        }
+        let mut ms_allocs: Vec<_> = alloc.milestones.iter().collect();
+        ms_allocs.sort_by(|(a, _), (b, _)| {
+            let na = plan
+                .milestones
+                .get(a)
+                .map(|m| m.name.as_str())
+                .unwrap_or("");
+            let nb = plan
+                .milestones
+                .get(b)
+                .map(|m| m.name.as_str())
+                .unwrap_or("");
+            na.cmp(nb)
+        });
+        for (mid, ma) in ms_allocs {
+            let name = plan
+                .milestones
+                .get(mid)
+                .map(|m| m.name.as_str())
+                .unwrap_or("?");
+            eprintln!("    milestone {:?}: {}", name, ma.date());
         }
     }
 
