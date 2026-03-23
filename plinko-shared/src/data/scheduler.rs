@@ -325,6 +325,9 @@ impl Plan {
             earliest = earliest.max(ec);
         }
 
+        // Never schedule in the past — all unscheduled work starts no sooner than today.
+        earliest = earliest.max(state.today);
+
         earliest
     }
 
