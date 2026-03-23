@@ -165,12 +165,9 @@ fn draw_plan_section(
 ) {
     // Section title
     paint.set_color(Color::from(0xff_555555_u32));
+    let (_, font_metrics) = cache.font.metrics();
     if let Some(blob) = TextBlob::new("Plan Management", &cache.font) {
-        canvas.draw_text_blob(
-            &blob,
-            (SIDE_PAD, CONTENT_TOP + blob.bounds().height()),
-            paint,
-        );
+        canvas.draw_text_blob(&blob, (SIDE_PAD, CONTENT_TOP - font_metrics.ascent), paint);
     }
 
     let by = btns_y();
@@ -198,8 +195,9 @@ fn draw_plan_section(
     // "Saved Plans" sub-label
     let sub_y = by + BUTTON_H + SECTION_GAP;
     paint.set_color(Color::from(MUTED_FG));
+    let (_, sm_metrics) = cache.small_font.metrics();
     if let Some(blob) = TextBlob::new("Saved Plans", &cache.small_font) {
-        canvas.draw_text_blob(&blob, (SIDE_PAD, sub_y + blob.bounds().height()), paint);
+        canvas.draw_text_blob(&blob, (SIDE_PAD, sub_y - sm_metrics.ascent), paint);
     }
 
     // ── Plan list scroll box ─────────────────────────────────────────────── //
@@ -358,16 +356,18 @@ fn draw_identity_section(
 
     // Title
     paint.set_color(Color::from(0xff_555555_u32));
+    let (_, font_metrics) = cache.font.metrics();
     if let Some(blob) = TextBlob::new("Identity", &cache.font) {
-        canvas.draw_text_blob(&blob, (SIDE_PAD, section_y + blob.bounds().height()), paint);
+        canvas.draw_text_blob(&blob, (SIDE_PAD, section_y - font_metrics.ascent), paint);
     }
 
+    let (_, sm_metrics) = cache.small_font.metrics();
     paint.set_color(Color::from(MUTED_FG));
     if let Some(blob) = TextBlob::new(
         "Who am I? (used to highlight your tasks)",
         &cache.small_font,
     ) {
-        let ty = section_y + SECTION_TITLE_H + blob.bounds().height();
+        let ty = section_y + SECTION_TITLE_H - sm_metrics.ascent;
         canvas.draw_text_blob(&blob, (SIDE_PAD, ty), paint);
     }
 
@@ -498,8 +498,10 @@ fn draw_button(
     );
     paint.set_color(Color::from(fg));
     if let Some(blob) = TextBlob::new(label, &cache.small_font) {
+        let (_, sm_metrics) = cache.small_font.metrics();
         let tx = rect.left() + (rect.width() - blob.bounds().width()) / 2.0 - blob.bounds().left();
-        let ty = rect.top() + (rect.height() + blob.bounds().height()) / 2.0;
+        let ty = rect.top() + (rect.height() - (sm_metrics.descent - sm_metrics.ascent)) / 2.0
+            - sm_metrics.ascent;
         canvas.draw_text_blob(&blob, (tx, ty), paint);
     }
 }
