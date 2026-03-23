@@ -207,28 +207,36 @@ pub fn compute_date_range(plan: &Plan) -> Option<(NaiveDate, NaiveDate)> {
 
 /// Aggregate milestone color category based on the status of tasks that
 /// immediately depend on this milestone (i.e. tasks whose dependency list
-/// contains this milestone's id).
+/// Compute the display status of a milestone based on its predecessor dependencies
+/// (the tasks/milestones this milestone depends on).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MilestoneStatus {
-    /// All immediate successors are NotStarted or Dropped.
+    /// All predecessor dependencies are Complete or Dropped (or there are none).
     NotStarted,
-    /// At least one immediate successor is InProgress or OnHold.
+    /// At least one predecessor is InProgress or OnHold.
     InProgress,
-    /// All immediate successors are Complete or Dropped (or there are none).
+    /// All predecessor dependencies are Complete or Dropped.
     Complete,
 }
 
-/// Compute the display status of a milestone based on its immediate successor tasks.
+/// Compute the display status of a milestone based on its predecessor dependencies
+/// (the tasks/milestones this milestone depends on).
 pub fn milestone_display_status(plan: &Plan, id: MilestoneId) -> MilestoneStatus {
-    let node = NodeId::Milestone(id);
+    let milestone = match plan.milestones.get(&id) {
+        Some(m) => m,
+        None => return MilestoneStatus::NotStarted,
+    };
+
+    if milestone.dependencies.is_empty() {
+        return MilestoneStatus::Complete;
+    }
+
     let mut any_active = false;
     let mut all_done = true;
-    let mut found_any = false;
 
-    for (tid, task) in plan.tasks.iter() {
-        if task.dependencies.iter().any(|d| d.id == node) {
-            found_any = true;
-            match plan.task_status(tid) {
+    for dep in &milestone.dependencies {
+        match dep.id {
+            NodeId::Task(tid) => match plan.task_status(&tid) {
                 Status::Complete | Status::Dropped => {}
                 Status::InProgress | Status::OnHold => {
                     any_active = true;
@@ -237,11 +245,27 @@ pub fn milestone_display_status(plan: &Plan, id: MilestoneId) -> MilestoneStatus
                 Status::NotStarted => {
                     all_done = false;
                 }
+            },
+            NodeId::Milestone(mid) => {
+                let sub = milestone_display_status(plan, mid);
+                match sub {
+                    MilestoneStatus::Complete => {}
+                    MilestoneStatus::InProgress => {
+                        any_active = true;
+                        all_done = false;
+                    }
+                    MilestoneStatus::NotStarted => {
+                        all_done = false;
+                    }
+                }
+            }
+            NodeId::PlanStart => {
+                // PlanStart is always "complete" — no contribution.
             }
         }
     }
 
-    if !found_any || all_done {
+    if all_done {
         MilestoneStatus::Complete
     } else if any_active {
         MilestoneStatus::InProgress
