@@ -18,7 +18,7 @@ use crate::ui::layout::{
 };
 use plinko_shared::data::Plan;
 
-const PANEL_W: f32 = 420.0;
+const PANEL_W: f32 = 500.0;
 const PANEL_H: f32 = 520.0;
 const TITLE_H: f32 = 48.0;
 const ROW_H: f32 = PLAN_LIST_ITEM_H;
@@ -365,14 +365,28 @@ impl FloatingWindow for UsersWindow {
                         .collect();
                     tag_names.sort_unstable();
                     let tags_str = tag_names.join(", ");
-                    if let Some(blob) = TextBlob::new(&tags_str, &cache.small_font) {
-                        let tx = panel.right
-                            - PADDING
-                            - SCROLLBAR_W
-                            - 4.0
-                            - 24.0  // cal btn size
-                            - 8.0   // gap
-                            - blob.bounds().width();
+
+                    let name_w = cache.font.measure_str(&user.name, None).0;
+                    let name_end = panel.left + PADDING + name_w + 12.0;
+                    let tags_right = panel.right - PADDING - SCROLLBAR_W - 4.0 - 24.0 - 8.0;
+                    let max_tags_w = (tags_right - name_end).max(0.0);
+
+                    let mut display = tags_str.clone();
+                    let mut tw = cache.small_font.measure_str(&display, None).0;
+                    if tw > max_tags_w && max_tags_w > 0.0 {
+                        // Truncate with ellipsis
+                        while tw > max_tags_w && !display.is_empty() {
+                            display.pop();
+                            tw = cache
+                                .small_font
+                                .measure_str(format!("{}…", display), None)
+                                .0;
+                        }
+                        display.push('…');
+                    }
+
+                    if let Some(blob) = TextBlob::new(&display, &cache.small_font) {
+                        let tx = tags_right - blob.bounds().width();
                         paint.set_color(Color::from(LIST_SECTION_FG));
                         canvas.draw_text_blob(&blob, (tx, ry + sm_row_text_offset), &paint);
                     }
