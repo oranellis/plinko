@@ -169,9 +169,17 @@ pub const GANTT_PLAN_START_COLOR: u32 = DEP_PLAN_START_FG;
 // Dependency line color
 pub const GANTT_DEP_LINE_COLOR: u32 = 0x80_888888;
 
-// Allocation page
-pub const ALLOC_USER_LABEL_W: f32 = 120.0;
+// Allocation page — user panel (left column)
+pub const ALLOC_USER_LABEL_W: f32 = 120.0; // kept for unused-const compat
+pub const ALLOC_USER_PANEL_W: f32 = 180.0;
+pub const ALLOC_USER_ENTRY_H: f32 = 52.0;
+pub const ALLOC_UTIL_ROW_H: f32 = 28.0;
 pub const ALLOC_ROW_ALT_BG: u32 = 0xff_f7f7f7;
+pub const ALLOC_SELECTED_BG: u32 = 0xff_dde9fb;
+pub const ALLOC_HOVER_BG: u32 = 0xff_f0f4ff;
+pub const ALLOC_UTIL_GREEN: u32 = 0xff_4caf50;
+pub const ALLOC_UTIL_AMBER: u32 = 0xff_ff9800;
+pub const ALLOC_UTIL_RED: u32 = 0xff_f44336;
 
 // Task color palette for allocation bars
 pub const TASK_COLORS: [u32; 10] = [
