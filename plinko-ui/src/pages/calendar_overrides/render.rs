@@ -145,16 +145,6 @@ fn tab_rect(label: &str, cache: &RenderCache, tab_x: f32) -> (Rect, f32) {
     tab_rect_with_width(text_w, tab_x)
 }
 
-fn tab_rect_approx(label: &str, tab_x: f32) -> (Rect, f32) {
-    tab_rect_with_width(label.len() as f32 * 7.0, tab_x)
-}
-
-/// Rect and next-x for the "▾ Other" dropdown button.
-fn dropdown_btn_rect(tab_x: f32) -> (Rect, f32) {
-    let label = "Other \u{25be}";
-    tab_rect_approx(label, tab_x)
-}
-
 pub fn draw_calendar_overrides(
     canvas: &Canvas,
     width: f32,
@@ -228,6 +218,7 @@ fn draw_user_selector(
     plan: &Plan,
     width: f32,
 ) {
+    state.tab_rects.borrow_mut().clear();
     let sel_bg_y = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE;
 
     let mut paint = Paint::default();
@@ -239,69 +230,77 @@ fn draw_user_selector(
     canvas.draw_rect(Rect::from_xywh(0.0, sel_bg_y, width, USER_SEL_H), &paint);
 
     let (_, font_metrics) = cache.small_font.metrics();
-    let draw_pill =
-        |canvas: &Canvas, label: &str, is_selected: bool, is_hovered: bool, tab_x: f32| -> f32 {
-            let (rect, next_x) = tab_rect(label, cache, tab_x);
-            let bg = if is_selected {
-                0xff_4a90d9
-            } else if is_hovered {
-                0xff_3a3a3a
-            } else {
-                0xff_2a2a2a
-            };
-            let fg = if is_selected {
-                0xff_ffffff
-            } else {
-                0xff_cccccc
-            };
-
-            let rrect = RRect::new_rect_xy(rect, USER_TAB_CORNER, USER_TAB_CORNER);
-            let mut p = Paint::default();
-            p.set_anti_alias(true);
-            p.set_color(Color::from(bg));
-            p.set_style(PaintStyle::Fill);
-            canvas.draw_rrect(rrect, &p);
-
-            if let Some(blob) = TextBlob::new(label, &cache.small_font) {
-                let bounds = blob.bounds();
-                let tx = rect.left() + (rect.width() - bounds.width()) / 2.0 - bounds.left();
-                let ty = rect.top()
-                    + (rect.height() - (font_metrics.descent - font_metrics.ascent)) / 2.0
-                    - font_metrics.ascent;
-                p.set_color(Color::from(fg));
-                p.set_style(PaintStyle::Fill);
-                canvas.draw_text_blob(&blob, (tx, ty), &p);
-            }
-            next_x
+    let draw_pill = |canvas: &Canvas,
+                     label: &str,
+                     is_selected: bool,
+                     is_hovered: bool,
+                     tab_x: f32|
+     -> (Rect, f32) {
+        let (rect, next_x) = tab_rect(label, cache, tab_x);
+        let bg = if is_selected {
+            0xff_4a90d9
+        } else if is_hovered {
+            0xff_3a3a3a
+        } else {
+            0xff_2a2a2a
         };
+        let fg = if is_selected {
+            0xff_ffffff
+        } else {
+            0xff_cccccc
+        };
+
+        let rrect = RRect::new_rect_xy(rect, USER_TAB_CORNER, USER_TAB_CORNER);
+        let mut p = Paint::default();
+        p.set_anti_alias(true);
+        p.set_color(Color::from(bg));
+        p.set_style(PaintStyle::Fill);
+        canvas.draw_rrect(rrect, &p);
+
+        if let Some(blob) = TextBlob::new(label, &cache.small_font) {
+            let bounds = blob.bounds();
+            let tx = rect.left() + (rect.width() - bounds.width()) / 2.0 - bounds.left();
+            let ty = rect.top()
+                + (rect.height() - (font_metrics.descent - font_metrics.ascent)) / 2.0
+                - font_metrics.ascent;
+            p.set_color(Color::from(fg));
+            p.set_style(PaintStyle::Fill);
+            canvas.draw_text_blob(&blob, (tx, ty), &p);
+        }
+        (rect, next_x)
+    };
 
     let mut x = SIDE_PAD;
 
     // "Plan" pill
-    x = draw_pill(
+    let (rect, next_x) = draw_pill(
         canvas,
         "Plan",
         state.selected_user.is_none(),
         state.hovered_user_tab == Some(0),
         x,
     );
+    state.tab_rects.borrow_mut().push(rect);
+    x = next_x;
 
     // Current user pill (if signed in)
     let mut btn_idx = 1i32;
     if let Some(cur_id) = state.current_user
         && let Some(user) = plan.users_data.get(&cur_id).map(|ud| &ud.user)
     {
-        x = draw_pill(
+        let (rect, next_x) = draw_pill(
             canvas,
             &user.name,
             state.selected_user == Some(cur_id),
             state.hovered_user_tab == Some(btn_idx),
             x,
         );
+        state.tab_rects.borrow_mut().push(rect);
+        x = next_x;
         btn_idx += 1;
     }
 
-    // "Other ▾" dropdown button if there are any other users
+    // "Other v" dropdown button if there are any other users
     let others = other_users(plan, state.current_user);
     if !others.is_empty() {
         let other_selected = state
@@ -309,21 +308,22 @@ fn draw_user_selector(
             .map(|id| state.current_user != Some(id))
             .unwrap_or(false);
         let label = if other_selected {
-            // Show selected user name with chevron
             plan.users_data
                 .get(&state.selected_user.unwrap())
-                .map(|ud| format!("{} \u{25be}", ud.user.name))
-                .unwrap_or_else(|| "Other \u{25be}".to_string())
+                .map(|ud| format!("{} v", ud.user.name))
+                .unwrap_or_else(|| "Other v".to_string())
         } else {
-            "Other \u{25be}".to_string()
+            "Other v".to_string()
         };
-        draw_pill(
+        let (rect, _) = draw_pill(
             canvas,
             &label,
             other_selected,
             state.hovered_user_tab == Some(btn_idx),
             x,
         );
+        state.tab_rects.borrow_mut().push(rect);
+        *state.dropdown_btn_x_cached.borrow_mut() = x;
 
         // Draw dropdown if open
         if state.user_dropdown_open {
@@ -690,50 +690,18 @@ pub fn hit_test_toolbar_buttons(x: f32, y: f32, width: f32) -> Option<usize> {
 /// Uses a fixed character-width estimate so it works without font access.
 /// Hit-test the quick-selector bar. Returns button index:
 ///   0 = Plan, 1 = current user (if present), last = "Other" dropdown btn.
-pub fn hit_test_user_tab(
-    x: f32,
-    y: f32,
-    plan: &Plan,
-    current_user: Option<plinko_shared::data::ids::UserId>,
-) -> Option<usize> {
+pub fn hit_test_user_tab(x: f32, y: f32, state: &CalendarOverridesState) -> Option<usize> {
     let sel_top = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE + (USER_SEL_H - USER_TAB_H) / 2.0;
     let sel_bot = sel_top + USER_TAB_H;
     if y < sel_top || y > sel_bot {
         return None;
     }
-    let mut tab_x = SIDE_PAD;
-    let mut idx = 0usize;
-
-    // "Plan" pill
-    let (rect, next_x) = tab_rect_approx("Plan", tab_x);
-    tab_x = next_x;
-    if x >= rect.left() && x <= rect.right() {
-        return Some(idx);
-    }
-    idx += 1;
-
-    // Current user pill
-    if let Some(cur_id) = current_user
-        && let Some(user) = plan.users_data.get(&cur_id).map(|ud| &ud.user)
-    {
-        let (rect, next_x) = tab_rect_approx(&user.name, tab_x);
-        tab_x = next_x;
+    let rects = state.tab_rects.borrow();
+    for (i, rect) in rects.iter().enumerate() {
         if x >= rect.left() && x <= rect.right() {
-            return Some(idx);
-        }
-        idx += 1;
-    }
-
-    // "Other" dropdown button
-    let others = other_users(plan, current_user);
-    if !others.is_empty() {
-        let label = "Other \u{25be}";
-        let (rect, _) = tab_rect_approx(label, tab_x);
-        if x >= rect.left() && x <= rect.right() {
-            return Some(idx);
+            return Some(i);
         }
     }
-
     None
 }
 
@@ -788,29 +756,19 @@ pub fn user_for_dropdown_item(
         .map(|u| u.id)
 }
 
-/// Returns the x coordinate at which the dropdown button starts (approx).
-pub fn dropdown_btn_x(plan: &Plan, current_user: Option<plinko_shared::data::ids::UserId>) -> f32 {
-    let mut x = SIDE_PAD;
-    let (_, next_x) = tab_rect_approx("Plan", x);
-    x = next_x;
-    if let Some(cur_id) = current_user
-        && let Some(user) = plan.users_data.get(&cur_id).map(|ud| &ud.user)
-    {
-        let (_, next_x) = tab_rect_approx(&user.name, x);
-        x = next_x;
-    }
-    x
+/// Returns the x coordinate at which the dropdown button starts.
+pub fn dropdown_btn_x(state: &CalendarOverridesState) -> f32 {
+    *state.dropdown_btn_x_cached.borrow()
 }
 
 /// Returns true if (x, y) is inside the dropdown filter input box.
 pub fn hit_test_dropdown_filter(
     x: f32,
     y: f32,
-    plan: &Plan,
-    current_user: Option<plinko_shared::data::ids::UserId>,
+    state: &CalendarOverridesState,
     width: f32,
 ) -> bool {
-    let btn_x = dropdown_btn_x(plan, current_user);
+    let btn_x = dropdown_btn_x(state);
     let drop_top = TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE + USER_SEL_H;
     let drop_w = 220.0f32;
     let drop_x = (btn_x - USER_TAB_GAP).min(width - drop_w - SIDE_PAD);

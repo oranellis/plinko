@@ -53,8 +53,7 @@ impl Page for CalendarOverridesPage {
         }
 
         // User selector tab hover
-        let new_tab_hover =
-            render::hit_test_user_tab(x, y, plan, self.state.current_user).map(|i| i as i32);
+        let new_tab_hover = render::hit_test_user_tab(x, y, &self.state).map(|i| i as i32);
         let tab_dirty = new_tab_hover != self.state.hovered_user_tab;
         if tab_dirty {
             self.state.hovered_user_tab = new_tab_hover;
@@ -63,7 +62,7 @@ impl Page for CalendarOverridesPage {
         // Dropdown item hover
         let mut drop_dirty = false;
         if self.state.user_dropdown_open {
-            let btn_x = render::dropdown_btn_x(plan, self.state.current_user);
+            let btn_x = render::dropdown_btn_x(&self.state);
             let new_drop_hover = render::hit_test_dropdown_item(
                 x,
                 y,
@@ -112,10 +111,10 @@ impl Page for CalendarOverridesPage {
 
         // If dropdown is open, handle dropdown interactions first.
         if self.state.user_dropdown_open {
-            let btn_x = render::dropdown_btn_x(plan, self.state.current_user);
+            let btn_x = render::dropdown_btn_x(&self.state);
 
             // Click inside filter box — handled by key_input; just close nothing
-            if render::hit_test_dropdown_filter(x, y, plan, self.state.current_user, width) {
+            if render::hit_test_dropdown_filter(x, y, &self.state, width) {
                 return DirtyRegion::None;
             }
 
@@ -181,7 +180,7 @@ impl Page for CalendarOverridesPage {
 
         // User selector quick buttons
         let others = render::other_users_count(plan, self.state.current_user);
-        if let Some(tab_idx) = render::hit_test_user_tab(x, y, plan, self.state.current_user) {
+        if let Some(tab_idx) = render::hit_test_user_tab(x, y, &self.state) {
             self.state.editing_date = None;
             self.state.edit_input.clear();
             self.state.edit_error = false;

@@ -2,6 +2,8 @@
 
 use chrono::{Datelike, Local, NaiveDate};
 use plinko_shared::data::ids::{NodeId, UserId};
+use skia_safe::Rect;
+use std::cell::RefCell;
 
 pub struct CalendarOverridesState {
     pub toolbar_btn_hovered: Option<usize>,
@@ -34,6 +36,10 @@ pub struct CalendarOverridesState {
     pub user_filter: String,
     /// Index of the hovered item in the dropdown list.
     pub hovered_dropdown_item: Option<usize>,
+    /// Cached tab rects from the last render, used for hit testing.
+    pub tab_rects: RefCell<Vec<Rect>>,
+    /// Cached x position where the dropdown button starts.
+    pub dropdown_btn_x_cached: RefCell<f32>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -58,6 +64,8 @@ impl CalendarOverridesState {
             user_dropdown_open: false,
             user_filter: String::new(),
             hovered_dropdown_item: None,
+            tab_rects: RefCell::new(Vec::new()),
+            dropdown_btn_x_cached: RefCell::new(0.0),
         }
     }
 
