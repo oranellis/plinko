@@ -287,10 +287,16 @@ impl Plan {
         state: &SchedulerState,
     ) -> NaiveDate {
         let deps = self.get_dependencies(&node_id);
+        let is_milestone = matches!(node_id, NodeId::Milestone(_));
 
-        // If there are no dependencies, fall back to today (or plan start).
+        // Milestones are pure date markers — they sit where their dependencies land.
+        // Tasks cannot start in the past, so fall back to today when there are no deps.
         let mut earliest = if deps.is_empty() {
-            state.today.max(self.start_date)
+            if is_milestone {
+                self.start_date
+            } else {
+                state.today.max(self.start_date)
+            }
         } else {
             self.start_date
         };
@@ -325,8 +331,10 @@ impl Plan {
             earliest = earliest.max(ec);
         }
 
-        // Never schedule in the past — all unscheduled work starts no sooner than today.
-        earliest = earliest.max(state.today);
+        // Tasks cannot start in the past; milestones reflect when their deps finished.
+        if !is_milestone {
+            earliest = earliest.max(state.today);
+        }
 
         earliest
     }
