@@ -14,6 +14,7 @@ use crate::ui::cache::RenderCache;
 use crate::ui::icon_button;
 use crate::ui::layout::*;
 use plinko_shared::data::ids::{TaskId, UserId};
+use plinko_shared::data::task::WorkerSlot;
 use plinko_shared::data::{Plan, TaskAllocation};
 
 use super::state::AllocationState;
@@ -863,11 +864,47 @@ fn draw_hover_info(
     .filter(|s| &s.user == user_id)
     .collect();
 
+    // Collect all unique allocated users across the whole task (all segments).
+    let all_segs = match &ts.allocation {
+        TaskAllocation::Dynamic {
+            time_allocation, ..
+        }
+        | TaskAllocation::Fixed {
+            time_allocation, ..
+        } => time_allocation,
+    };
+    let mut allocated_user_ids: Vec<UserId> = Vec::new();
+    for s in all_segs {
+        if !allocated_user_ids.contains(&s.user) {
+            allocated_user_ids.push(s.user);
+        }
+    }
+    // For Specific slots whose user has no segments yet, include them too.
+    for slot in &task.workers {
+        if let WorkerSlot::Specific { user_id: uid, .. } = slot
+            && !allocated_user_ids.contains(uid)
+        {
+            allocated_user_ids.push(*uid);
+        }
+    }
+
     let total_h: f32 = segs.iter().map(|s| s.hours_worked).sum();
     let first_day = segs.iter().map(|s| s.date).min();
     let last_day = segs.iter().map(|s| s.date).max();
 
     let mut lines: Vec<String> = vec![task_name.to_string()];
+
+    // Workers line: names of allocated users.
+    if !allocated_user_ids.is_empty() {
+        let worker_names: Vec<&str> = allocated_user_ids
+            .iter()
+            .filter_map(|uid| plan.user(uid).map(|u| u.name.as_str()))
+            .collect();
+        if !worker_names.is_empty() {
+            lines.push(format!("Workers: {}", worker_names.join(", ")));
+        }
+    }
+
     if let (Some(s), Some(e)) = (first_day, last_day) {
         lines.push(format!("{} – {}", s.format("%d %b"), e.format("%d %b %Y")));
     }
