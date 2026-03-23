@@ -51,6 +51,8 @@ pub struct OverviewState {
     pub settings_init_scheduler_target: NodeId,
     /// The node whose constraint-violation warning icon is currently hovered, if any.
     pub hovered_warning: Option<NodeId>,
+    /// The gantt item currently hovered, for the info tooltip overlay.
+    pub hovered_node: Option<NodeId>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -83,6 +85,7 @@ impl OverviewState {
             settings_init_date: String::new(),
             settings_init_scheduler_target: NodeId::PlanStart,
             hovered_warning: None,
+            hovered_node: None,
         }
     }
 }

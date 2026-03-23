@@ -19,6 +19,7 @@ use crate::ui::milestone_form_window::MilestoneFormWindow;
 use crate::ui::task_form_window::TaskFormWindow;
 use crate::ui::users_window::UsersWindow;
 use plinko_shared::data::Plan;
+use plinko_shared::data::ids::NodeId;
 
 use state::OverviewState;
 
@@ -103,7 +104,18 @@ impl Page for OverviewPage {
             render::hit_test_warning_icon(x, y, plan, &rows, &self.state, height, view_start);
         let warning_dirty = self.state.hovered_warning != prev_warning;
 
-        if hover_dirty || warning_dirty {
+        // Hit-test gantt items for info tooltip.
+        let prev_node = self.state.hovered_node;
+        self.state.hovered_node =
+            render::hit_test_gantt_item(x, y, &rows, &self.state, height, view_start).map(|hit| {
+                match hit {
+                    render::GanttHit::Task(id) => NodeId::Task(id),
+                    render::GanttHit::Milestone(id) => NodeId::Milestone(id),
+                }
+            });
+        let node_dirty = self.state.hovered_node != prev_node;
+
+        if hover_dirty || warning_dirty || node_dirty {
             DirtyRegion::PageOnly
         } else {
             DirtyRegion::None
@@ -260,6 +272,7 @@ impl Page for OverviewPage {
     fn reset_hover(&mut self) {
         self.state.toolbar_btn_hovered = None;
         self.state.hovered_warning = None;
+        self.state.hovered_node = None;
     }
 
     fn has_animation(&self) -> bool {
