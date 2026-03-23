@@ -163,11 +163,24 @@ pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
         };
         let ms_a = matches!(a, GanttItem::Milestone { .. });
         let ms_b = matches!(b, GanttItem::Milestone { .. });
+        // Stable tiebreaker using the node's UUID so the row assignment is
+        // identical for the same plan state, regardless of HashMap iteration order.
+        let id_a = match a {
+            GanttItem::Task { id, .. } => id.0.to_string(),
+            GanttItem::Milestone { id, .. } => id.0.to_string(),
+            GanttItem::PlanStart { .. } => String::new(),
+        };
+        let id_b = match b {
+            GanttItem::Task { id, .. } => id.0.to_string(),
+            GanttItem::Milestone { id, .. } => id.0.to_string(),
+            GanttItem::PlanStart { .. } => String::new(),
+        };
         // Milestones go first at the same depth.
         depth_a
             .cmp(&depth_b)
             .then(ms_b.cmp(&ms_a))
             .then(a.start().cmp(&b.start()))
+            .then(id_a.cmp(&id_b))
     });
 
     for item in items {
