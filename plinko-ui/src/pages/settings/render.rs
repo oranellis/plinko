@@ -234,6 +234,9 @@ fn draw_plan_row(
         canvas.draw_rrect(RRect::new_rect_xy(row_rect, ROW_CORNER, ROW_CORNER), paint);
     }
 
+    let (_, metrics) = cache.font.metrics();
+    let baseline = row_y + (ROW_H - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
+
     // Plan name
     paint.set_color(Color::from(if entry.is_current {
         BTN_PRIMARY_BG
@@ -241,18 +244,21 @@ fn draw_plan_row(
         0xff_333333_u32
     }));
     paint.set_style(PaintStyle::Fill);
+    let name_end_x;
     if let Some(blob) = TextBlob::new(&entry.name, &cache.font) {
-        let ty = row_y + (ROW_H + blob.bounds().height()) / 2.0;
-        canvas.draw_text_blob(&blob, (SIDE_PAD + 8.0, ty), paint);
+        canvas.draw_text_blob(&blob, (SIDE_PAD + 8.0, baseline), paint);
+        name_end_x = SIDE_PAD + 8.0 + blob.bounds().width() + 12.0;
+    } else {
+        name_end_x = SIDE_PAD + 8.0;
     }
 
-    // Timestamp
+    // Timestamp — placed after the name
+    let (_, small_metrics) = cache.small_font.metrics();
+    let small_baseline = row_y + (ROW_H - (small_metrics.descent - small_metrics.ascent)) / 2.0
+        - small_metrics.ascent;
     paint.set_color(Color::from(MUTED_FG));
     if let Some(blob) = TextBlob::new(&entry.last_saved, &cache.small_font) {
-        // Place it after the name but left of the button
-        let tx = width / 2.0;
-        let ty = row_y + (ROW_H + blob.bounds().height()) / 2.0;
-        canvas.draw_text_blob(&blob, (tx, ty), paint);
+        canvas.draw_text_blob(&blob, (name_end_x, small_baseline), paint);
     }
 
     // Load / Current
@@ -269,8 +275,7 @@ fn draw_plan_row(
     } else if let Some(blob) = TextBlob::new("current", &cache.small_font) {
         paint.set_color(Color::from(BTN_PRIMARY_BG));
         let bx = row_rect.right() - blob.bounds().width() - 12.0;
-        let by = row_y + (ROW_H + blob.bounds().height()) / 2.0;
-        canvas.draw_text_blob(&blob, (bx, by), paint);
+        canvas.draw_text_blob(&blob, (bx, small_baseline), paint);
     }
 }
 
@@ -395,7 +400,8 @@ fn draw_user_row(
         0xff_333333_u32
     }));
     if let Some(blob) = TextBlob::new(name, &cache.font) {
-        let ty = row_y + (ROW_H + blob.bounds().height()) / 2.0;
+        let (_, metrics) = cache.font.metrics();
+        let ty = row_y + (ROW_H - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
         canvas.draw_text_blob(&blob, (SIDE_PAD + 28.0, ty), paint);
     }
 }

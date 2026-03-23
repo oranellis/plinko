@@ -136,8 +136,11 @@ impl Page for SettingsPage {
         }
 
         for idx in 0..self.state.plan_list.len() {
-            if load_btn_rect(idx, self.state.scroll_y, width).contains(Point::new(x, y)) {
-                let id: Uuid = self.state.plan_list[idx].id;
+            let entry = &self.state.plan_list[idx];
+            if !entry.is_current
+                && plan_row_rect(idx, self.state.scroll_y, width).contains(Point::new(x, y))
+            {
+                let id: Uuid = entry.id;
                 self.state.pending_load = Some(id);
                 return DirtyRegion::PageOnly;
             }
