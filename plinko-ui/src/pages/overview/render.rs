@@ -98,11 +98,11 @@ pub fn draw_overview(
     let rows = pack_rows(plan);
     let view_start = view_start_date(plan);
 
-    // Draw in layered order: backgrounds → grid lines → items.
+    // Draw in layered order: backgrounds → grid lines → dependency arrows → items.
     draw_gantt_row_backgrounds(canvas, state, &rows, w, h);
     draw_gantt_grid(canvas, state, w, h, view_start);
-    draw_gantt_rows(canvas, state, plan, &rows, w, h, view_start, cache);
     draw_gantt_dependencies(canvas, state, plan, &rows, w, h, view_start);
+    draw_gantt_rows(canvas, state, plan, &rows, w, h, view_start, cache);
     draw_gantt_header(canvas, state, w, view_start, cache);
     draw_toolbar_buttons(canvas, state, cache, w);
 
