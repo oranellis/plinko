@@ -1,6 +1,7 @@
 //! Gantt chart layout helpers: row packing and date-range computation.
 
 use chrono::NaiveDate;
+use std::collections::HashMap;
 
 use plinko_shared::data::Plan;
 use plinko_shared::data::Status;
@@ -100,11 +101,17 @@ pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveD
 /// Pack all tasks and milestones with known dates into rows using a virtual
 /// day-column grid, guaranteeing no visual overlaps.
 ///
+/// Items are sorted by dependency chain depth first, so items that depend on
+/// many others appear lower in the chart. Milestones are placed before tasks
+/// at the same depth so they act as visual anchors. Within the same depth,
+/// items are sorted by start date.
+///
 /// The plan-start diamond is always placed in row 0 first, so tasks/milestones
 /// that start on or near the plan start date are pushed to later rows or
 /// positions that don't overlap it.
 pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
     let ref_date = plan.start_date;
+    let depths = compute_topo_depths(plan);
 
     // Virtual grid: for each row, store all occupied intervals as
     // (start_day_offset, end_day_offset_inclusive_with_gap).
@@ -138,7 +145,30 @@ pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
             items.push(GanttItem::Milestone { id: *id, date });
         }
     }
-    items.sort_by_key(|i| i.start());
+    // Sort: milestones before tasks at same depth, then by depth, then by start date.
+    items.sort_by(|a, b| {
+        let depth_a = match a {
+            GanttItem::Task { id, .. } => depths.get(&NodeId::Task(*id)).copied().unwrap_or(0),
+            GanttItem::Milestone { id, .. } => {
+                depths.get(&NodeId::Milestone(*id)).copied().unwrap_or(0)
+            }
+            GanttItem::PlanStart { .. } => 0,
+        };
+        let depth_b = match b {
+            GanttItem::Task { id, .. } => depths.get(&NodeId::Task(*id)).copied().unwrap_or(0),
+            GanttItem::Milestone { id, .. } => {
+                depths.get(&NodeId::Milestone(*id)).copied().unwrap_or(0)
+            }
+            GanttItem::PlanStart { .. } => 0,
+        };
+        let ms_a = matches!(a, GanttItem::Milestone { .. });
+        let ms_b = matches!(b, GanttItem::Milestone { .. });
+        // Milestones go first at the same depth.
+        depth_a
+            .cmp(&depth_b)
+            .then(ms_b.cmp(&ms_a))
+            .then(a.start().cmp(&b.start()))
+    });
 
     for item in items {
         let item_start = (item.start() - ref_date).num_days();
@@ -165,6 +195,49 @@ pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
     }
 
     rows
+}
+
+/// Compute the topological depth of each node from the plan start.
+///
+/// Depth 0 = directly depends only on PlanStart or has no deps.
+/// Depth N = max(predecessor depths) + 1.
+fn compute_topo_depths(plan: &Plan) -> HashMap<NodeId, usize> {
+    let mut depths: HashMap<NodeId, usize> = HashMap::new();
+    // Iterative BFS / memoised DFS using a work stack.
+    fn depth_of(node: NodeId, plan: &Plan, memo: &mut HashMap<NodeId, usize>) -> usize {
+        if let Some(&d) = memo.get(&node) {
+            return d;
+        }
+        let deps: Vec<NodeId> = match node {
+            NodeId::Task(id) => plan
+                .tasks
+                .get(&id)
+                .map(|t| t.dependencies.iter().map(|d| d.id).collect())
+                .unwrap_or_default(),
+            NodeId::Milestone(id) => plan
+                .milestones
+                .get(&id)
+                .map(|m| m.dependencies.iter().map(|d| d.id).collect())
+                .unwrap_or_default(),
+            NodeId::PlanStart => Vec::new(),
+        };
+        let d = deps
+            .into_iter()
+            .filter(|dep| *dep != node) // avoid self-loops (shouldn't exist)
+            .map(|dep| depth_of(dep, plan, memo) + 1)
+            .max()
+            .unwrap_or(0);
+        memo.insert(node, d);
+        d
+    }
+
+    for id in plan.tasks.keys() {
+        depth_of(NodeId::Task(*id), plan, &mut depths);
+    }
+    for id in plan.milestones.keys() {
+        depth_of(NodeId::Milestone(*id), plan, &mut depths);
+    }
+    depths
 }
 
 // ── Date range ────────────────────────────────────────────────────────────────
