@@ -388,10 +388,11 @@ impl Plan {
         while remaining > EPSILON && current <= limit {
             let avail = self.hours_remaining(state, user_id, current);
             let scheduled = if strict {
-                // In strict mode allocate exactly cap hours per working day,
-                // regardless of what the user has remaining that day.
+                // In strict mode only schedule on days where the user has at
+                // least cap hours of capacity remaining, so the task never
+                // spreads its daily block across a partially-full day.
                 let cap = max_per_day.unwrap_or(remaining);
-                if self.hours_available(&user_id, current) > EPSILON {
+                if avail >= cap - EPSILON {
                     cap.min(remaining)
                 } else {
                     0.0
@@ -438,7 +439,12 @@ impl Plan {
         while remaining > EPSILON && current <= limit {
             let scheduled = if strict {
                 let cap = max_per_day.unwrap_or(remaining);
-                if self.hours_available(&user_id, current) > EPSILON {
+                let avail = state
+                    .capacity
+                    .get(&(user_id, current))
+                    .copied()
+                    .unwrap_or_else(|| self.hours_available(&user_id, current));
+                if avail >= cap - EPSILON {
                     cap.min(remaining)
                 } else {
                     0.0
