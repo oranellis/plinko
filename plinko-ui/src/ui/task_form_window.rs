@@ -532,6 +532,8 @@ pub struct TaskFormWindow {
     name_error: bool,
     duration_error: bool,
     constraint_date_error: bool,
+    actual_start_error: bool,
+    actual_end_error: bool,
     // Buttons
     hovered_back: bool,
     hovered_save: bool,
@@ -587,7 +589,9 @@ impl TaskFormWindow {
             name_error: false,
             duration_error: false,
             constraint_date_error: false,
+            actual_start_error: false,
             hovered_back: false,
+            actual_end_error: false,
             hovered_save: false,
             cursor_in_desc: false,
             form_scroll_y: 0.0,
@@ -661,7 +665,9 @@ impl TaskFormWindow {
             constraint_date_error: false,
             hovered_back: false,
             hovered_save: false,
+            actual_start_error: false,
             cursor_in_desc: false,
+            actual_end_error: false,
             form_scroll_y: 0.0,
             max_desc_scroll: Cell::new(0.0),
             scheduler_error: None,
@@ -1148,7 +1154,18 @@ impl TaskFormWindow {
         self.constraint_date_error =
             self.constraint_kind != ConstraintSel::None && self.constraint_date.value.is_none();
 
-        if self.name_error || self.duration_error || self.dep_error || self.constraint_date_error {
+        self.actual_start_error =
+            self.status != Status::NotStarted && self.actual_start.value.is_none();
+        self.actual_end_error = matches!(self.status, Status::Complete | Status::Dropped)
+            && self.actual_end.value.is_none();
+
+        if self.name_error
+            || self.duration_error
+            || self.dep_error
+            || self.constraint_date_error
+            || self.actual_start_error
+            || self.actual_end_error
+        {
             self.scheduler_error = None;
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
@@ -1212,7 +1229,19 @@ impl TaskFormWindow {
                 task.constraint = constraint;
                 task.workers = worker_slots;
                 task.dependencies = dependencies;
+                let task_id = task.id;
                 sender.send(PlanRequest::CreateTask(task));
+                // Apply status/actual-dates immediately if non-default.
+                if self.status != Status::NotStarted
+                    || self.actual_start.value.is_some()
+                    || self.actual_end.value.is_some()
+                {
+                    let patch = TaskPatch::new()
+                        .status(self.status)
+                        .actual_start_date(self.actual_start.value)
+                        .actual_end_date(self.actual_end.value);
+                    sender.send(PlanRequest::UpdateTask(task_id, patch));
+                }
             }
             Mode::Edit(id) => {
                 let patch = TaskPatch::new()
@@ -2684,7 +2713,7 @@ impl FloatingWindow for TaskFormWindow {
             &self.actual_start,
             self.open_calendar == Some(OpenCalendar::ActualStart),
             start_disabled,
-            false,
+            self.actual_start_error,
             cache,
         );
         label!(ROW_DATES, 1, "Actual End");
@@ -2694,7 +2723,7 @@ impl FloatingWindow for TaskFormWindow {
             &self.actual_end,
             self.open_calendar == Some(OpenCalendar::ActualEnd),
             end_disabled,
-            false,
+            self.actual_end_error,
             cache,
         );
 
@@ -3248,7 +3277,7 @@ impl FloatingWindow for TaskFormWindow {
         );
         set!(
             self.hovered_plus,
-            Self::worker_plus_rect(width, height).contains(pt_form)
+            self.open_calendar.is_none() && Self::worker_plus_rect(width, height).contains(pt_form)
         );
 
         // Calendar hover
@@ -3736,11 +3765,11 @@ impl FloatingWindow for TaskFormWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
-        // Worker list interactions
+        // Worker list interactions — skip if a calendar popup is open (the popup renders over the workers area)
         let list = Self::worker_list_rect(width, height);
         let plus_rect = Self::worker_plus_rect(width, height);
 
-        if plus_rect.contains(pt_form) {
+        if self.open_calendar.is_none() && plus_rect.contains(pt_form) {
             self.workers.push(WorkerSlotEdit::new());
             // Scroll to show the new item
             let total_h = self.workers.len() as f32 * WORKER_ROW_H;
