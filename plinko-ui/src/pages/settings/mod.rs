@@ -13,8 +13,8 @@ use crate::ui::dirty::DirtyRegion;
 use plinko_shared::data::Plan;
 
 use render::{
-    CONTENT_TOP, ROW_H, identity_section_y, load_btn_rect, new_btn_rect, plan_row_rect,
-    save_btn_rect, total_content_height, user_row_rect,
+    CONTENT_TOP, ROW_H, identity_section_y, load_btn_rect, new_btn_rect, plan_box_rect,
+    plan_list_max_scroll, plan_row_rect, save_btn_rect, total_content_height, user_row_rect,
 };
 use state::SettingsState;
 
@@ -54,6 +54,7 @@ impl Page for SettingsPage {
         _plan: &Plan,
     ) -> DirtyRegion {
         let mut dirty = false;
+        self.state.cursor_y = y;
 
         let in_save = save_btn_rect(width).contains(Point::new(x, y));
         if in_save != self.state.hovered_save {
@@ -66,15 +67,22 @@ impl Page for SettingsPage {
             dirty = true;
         }
 
-        // Plan rows
+        // Plan rows — hover only counts if cursor is inside the box
+        let box_rect = plan_box_rect(width);
         let mut new_hov_row = None;
         let mut new_hov_load = None;
-        for idx in 0..self.state.plan_list.len() {
-            if load_btn_rect(idx, self.state.scroll_y, width).contains(Point::new(x, y)) {
-                new_hov_load = Some(idx);
-                new_hov_row = Some(idx);
-            } else if plan_row_rect(idx, self.state.scroll_y, width).contains(Point::new(x, y)) {
-                new_hov_row = Some(idx);
+        if box_rect.contains(Point::new(x, y)) {
+            for idx in 0..self.state.plan_list.len() {
+                if load_btn_rect(idx, self.state.plan_list_scroll_y, width)
+                    .contains(Point::new(x, y))
+                {
+                    new_hov_load = Some(idx);
+                    new_hov_row = Some(idx);
+                } else if plan_row_rect(idx, self.state.plan_list_scroll_y, width)
+                    .contains(Point::new(x, y))
+                {
+                    new_hov_row = Some(idx);
+                }
             }
         }
         if new_hov_row != self.state.hovered_plan_row {
@@ -89,7 +97,7 @@ impl Page for SettingsPage {
         // User rows
         let users_len = _plan.users_data.len();
         let total_user_rows = users_len + 1;
-        let ident_y = identity_section_y(self.state.plan_list.len(), self.state.scroll_y);
+        let ident_y = identity_section_y(self.state.scroll_y);
         let rows_top = ident_y + 20.0 /* SECTION_TITLE_H */ + 12.0 /* SECTION_GAP */;
         let mut new_hov_user = None;
         for idx in 0..total_user_rows {
@@ -135,15 +143,21 @@ impl Page for SettingsPage {
             return DirtyRegion::PageOnly;
         }
 
-        for idx in 0..self.state.plan_list.len() {
-            let entry = &self.state.plan_list[idx];
-            if !entry.is_current
-                && plan_row_rect(idx, self.state.scroll_y, width).contains(Point::new(x, y))
-            {
-                let id: Uuid = entry.id;
-                self.state.pending_load = Some(id);
-                return DirtyRegion::PageOnly;
+        // Plan rows — only hit-test if click is within the box
+        let box_rect = plan_box_rect(width);
+        if box_rect.contains(Point::new(x, y)) {
+            for idx in 0..self.state.plan_list.len() {
+                let entry = &self.state.plan_list[idx];
+                if !entry.is_current
+                    && plan_row_rect(idx, self.state.plan_list_scroll_y, width)
+                        .contains(Point::new(x, y))
+                {
+                    let id: Uuid = entry.id;
+                    self.state.pending_load = Some(id);
+                    return DirtyRegion::PageOnly;
+                }
             }
+            return DirtyRegion::None;
         }
 
         // User rows
@@ -157,7 +171,7 @@ impl Page for SettingsPage {
             v
         };
         let total_user_rows = users.len() + 1;
-        let ident_y = identity_section_y(self.state.plan_list.len(), self.state.scroll_y);
+        let ident_y = identity_section_y(self.state.scroll_y);
         let rows_top = ident_y + 20.0 + 12.0;
         for idx in 0..total_user_rows {
             let row_y = rows_top + idx as f32 * ROW_H;
@@ -177,10 +191,21 @@ impl Page for SettingsPage {
         &mut self,
         delta_y: f32,
         _shift: bool,
-        _width: f32,
+        width: f32,
         height: f32,
         plan: &Plan,
     ) -> DirtyRegion {
+        let box_rect = plan_box_rect(width);
+        if self.state.cursor_y >= box_rect.top && self.state.cursor_y <= box_rect.bottom {
+            // Scroll the plan list box
+            let max = plan_list_max_scroll(self.state.plan_list.len());
+            let new_scroll = (self.state.plan_list_scroll_y - delta_y * 40.0).clamp(0.0, max);
+            if (new_scroll - self.state.plan_list_scroll_y).abs() > 0.5 {
+                self.state.plan_list_scroll_y = new_scroll;
+                return DirtyRegion::PageOnly;
+            }
+            return DirtyRegion::None;
+        }
         let max = Self::max_scroll(plan, &self.state, height);
         let new_scroll = (self.state.scroll_y - delta_y * 40.0).clamp(0.0, max);
         if (new_scroll - self.state.scroll_y).abs() > 0.5 {

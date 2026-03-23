@@ -25,16 +25,15 @@ pub const ROW_H: f32 = 36.0;
 const ROW_CORNER: f32 = 4.0;
 const SCROLLBAR_W: f32 = 6.0;
 const SCROLLBAR_PAD: f32 = 4.0;
+/// Fixed visible height of the saved-plans scroll box.
+const PLAN_BOX_H: f32 = ROW_H * 5.0;
+const PLAN_BOX_BORDER: u32 = 0xff_d8d8d8;
 
-/// Total scrollable content height.
-pub fn total_content_height(plan: &Plan, plan_list: &[PlanEntry]) -> f32 {
-    // Plan Management section
-    let plan_mgmt_h = SECTION_TITLE_H
-        + SECTION_GAP
-        + BUTTON_H
-        + SECTION_GAP
-        + SECTION_GAP  // "Saved Plans" label row
-        + plan_list.len().max(1) as f32 * ROW_H;
+/// Total scrollable content height (page-level scroll only covers identity section).
+pub fn total_content_height(plan: &Plan, _plan_list: &[PlanEntry]) -> f32 {
+    // Plan Management section: title + buttons + sub-label + fixed box
+    let plan_mgmt_h =
+        SECTION_TITLE_H + SECTION_GAP + BUTTON_H + SECTION_GAP + SECTION_GAP + PLAN_BOX_H;
 
     // Identity section
     let users_count = plan.users_data.len();
@@ -69,23 +68,33 @@ pub fn new_btn_rect(width: f32) -> Rect {
     Rect::from_xywh(SIDE_PAD + btn_w + 8.0, btns_y(), btn_w, BUTTON_H)
 }
 
-/// Top of the plan list rows (before scroll).
-fn plan_rows_top_raw() -> f32 {
-    CONTENT_TOP + SECTION_TITLE_H + SECTION_GAP + BUTTON_H + SECTION_GAP + SECTION_GAP // "Saved Plans" label
+/// Top of the plan scroll box.
+fn plan_box_top() -> f32 {
+    btns_y() + BUTTON_H + SECTION_GAP + SECTION_GAP // gap for "Saved Plans" label
 }
 
-/// Y position of plan row `idx` accounting for scroll.
-pub fn plan_row_y(idx: usize, scroll_y: f32) -> f32 {
-    plan_rows_top_raw() + idx as f32 * ROW_H - scroll_y
+/// The fixed-height bordered box that contains the scrollable plan list.
+pub fn plan_box_rect(width: f32) -> Rect {
+    Rect::from_xywh(SIDE_PAD, plan_box_top(), width - 2.0 * SIDE_PAD, PLAN_BOX_H)
 }
 
-pub fn plan_row_rect(idx: usize, scroll_y: f32, width: f32) -> Rect {
-    let y = plan_row_y(idx, scroll_y);
+/// Maximum scroll offset for the plan list box.
+pub fn plan_list_max_scroll(count: usize) -> f32 {
+    (count as f32 * ROW_H - PLAN_BOX_H).max(0.0)
+}
+
+/// Y position of plan row `idx` within the box (accounts for box-internal scroll).
+pub fn plan_row_y(idx: usize, plan_list_scroll_y: f32) -> f32 {
+    plan_box_top() + idx as f32 * ROW_H - plan_list_scroll_y
+}
+
+pub fn plan_row_rect(idx: usize, plan_list_scroll_y: f32, width: f32) -> Rect {
+    let y = plan_row_y(idx, plan_list_scroll_y);
     Rect::from_xywh(SIDE_PAD, y, width - 2.0 * SIDE_PAD, ROW_H)
 }
 
-pub fn load_btn_rect(idx: usize, scroll_y: f32, width: f32) -> Rect {
-    let row = plan_row_rect(idx, scroll_y, width);
+pub fn load_btn_rect(idx: usize, plan_list_scroll_y: f32, width: f32) -> Rect {
+    let row = plan_row_rect(idx, plan_list_scroll_y, width);
     let btn_w = 70.0_f32;
     Rect::from_xywh(
         row.right() - btn_w - 4.0,
@@ -95,16 +104,16 @@ pub fn load_btn_rect(idx: usize, scroll_y: f32, width: f32) -> Rect {
     )
 }
 
-fn identity_top_raw(plan_list_len: usize) -> f32 {
-    plan_rows_top_raw() + plan_list_len.max(1) as f32 * ROW_H + DIVIDER_GAP
+fn identity_top_raw() -> f32 {
+    plan_box_top() + PLAN_BOX_H + DIVIDER_GAP
 }
 
-pub fn identity_section_y(plan_list_len: usize, scroll_y: f32) -> f32 {
-    identity_top_raw(plan_list_len) - scroll_y
+pub fn identity_section_y(scroll_y: f32) -> f32 {
+    identity_top_raw() - scroll_y
 }
 
-pub fn user_row_rect(idx: usize, plan_list_len: usize, scroll_y: f32, width: f32) -> Rect {
-    let top = identity_section_y(plan_list_len, scroll_y) + SECTION_TITLE_H + SECTION_GAP;
+pub fn user_row_rect(idx: usize, scroll_y: f32, width: f32) -> Rect {
+    let top = identity_section_y(scroll_y) + SECTION_TITLE_H + SECTION_GAP;
     Rect::from_xywh(
         SIDE_PAD,
         top + idx as f32 * ROW_H,
@@ -193,13 +202,29 @@ fn draw_plan_section(
         canvas.draw_text_blob(&blob, (SIDE_PAD, sub_y + blob.bounds().height()), paint);
     }
 
-    // Plan rows
+    // ── Plan list scroll box ─────────────────────────────────────────────── //
+    let box_rect = plan_box_rect(width);
+
+    // Box background
+    paint.set_color(Color::from(0xff_fafafa_u32));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(RRect::new_rect_xy(box_rect, ROW_CORNER, ROW_CORNER), paint);
+
+    // Clip to box interior before drawing rows
+    canvas.save();
+    canvas.clip_rect(box_rect, None, Some(true));
+
     for (idx, entry) in state.plan_list.iter().enumerate() {
+        // Skip rows fully outside the visible box
+        let row_y = plan_row_y(idx, state.plan_list_scroll_y);
+        if row_y + ROW_H < box_rect.top || row_y > box_rect.bottom {
+            continue;
+        }
         draw_plan_row(canvas, idx, entry, state, width, paint, cache);
     }
 
     if state.plan_list.is_empty() {
-        let empty_y = plan_rows_top_raw() - state.scroll_y + 10.0;
+        let empty_y = box_rect.top + (box_rect.height() - ROW_H) / 2.0 + 10.0;
         paint.set_color(Color::from(MUTED_FG));
         if let Some(blob) = TextBlob::new("No saved plans", &cache.small_font) {
             canvas.draw_text_blob(
@@ -208,6 +233,35 @@ fn draw_plan_section(
                 paint,
             );
         }
+    }
+
+    canvas.restore();
+
+    // Box border (drawn after restore so it renders on top of clipped rows)
+    paint.set_color(Color::from(PLAN_BOX_BORDER));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.0);
+    canvas.draw_rrect(RRect::new_rect_xy(box_rect, ROW_CORNER, ROW_CORNER), paint);
+    paint.set_style(PaintStyle::Fill);
+
+    // Box-internal scrollbar
+    let max_scroll = plan_list_max_scroll(state.plan_list.len());
+    if max_scroll > 0.0 {
+        let thumb_h = ((PLAN_BOX_H / (state.plan_list.len() as f32 * ROW_H)) * PLAN_BOX_H)
+            .clamp(24.0, PLAN_BOX_H - 4.0);
+        let thumb_y = box_rect.top
+            + 2.0
+            + (state.plan_list_scroll_y / max_scroll) * (PLAN_BOX_H - thumb_h - 4.0);
+        let sx = box_rect.right - SCROLLBAR_W - 2.0;
+        paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
+        canvas.draw_rrect(
+            RRect::new_rect_xy(
+                Rect::from_xywh(sx, thumb_y, SCROLLBAR_W, thumb_h),
+                SCROLLBAR_W / 2.0,
+                SCROLLBAR_W / 2.0,
+            ),
+            paint,
+        );
     }
 }
 
@@ -220,7 +274,7 @@ fn draw_plan_row(
     paint: &mut Paint,
     cache: &RenderCache,
 ) {
-    let row_y = plan_row_y(idx, state.scroll_y);
+    let row_y = plan_row_y(idx, state.plan_list_scroll_y);
     let row_rect = Rect::from_xywh(SIDE_PAD, row_y, width - 2.0 * SIDE_PAD, ROW_H);
 
     let hovered = state.hovered_plan_row == Some(idx);
@@ -265,7 +319,7 @@ fn draw_plan_row(
     if !entry.is_current {
         draw_button(
             canvas,
-            load_btn_rect(idx, state.scroll_y, width),
+            load_btn_rect(idx, state.plan_list_scroll_y, width),
             "Load",
             state.hovered_load_btn == Some(idx),
             true,
@@ -289,7 +343,7 @@ fn draw_identity_section(
     paint: &mut Paint,
     cache: &RenderCache,
 ) {
-    let section_y = identity_section_y(state.plan_list.len(), state.scroll_y);
+    let section_y = identity_section_y(state.scroll_y);
 
     // Divider
     paint.set_color(Color::from(0xff_e0e0e0_u32));

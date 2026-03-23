@@ -26,8 +26,12 @@ pub struct SettingsState {
     pub hovered_new: bool,
     /// Which user row (if any) is currently hovered in the identity section.
     pub hovered_user_idx: Option<usize>,
-    /// Scroll offset for the content area.
+    /// Scroll offset for the overall content area (identity section).
     pub scroll_y: f32,
+    /// Scroll offset within the plan list box.
+    pub plan_list_scroll_y: f32,
+    /// Last known cursor Y position (used to route scroll events).
+    pub cursor_y: f32,
     /// Currently selected user ID (set from Application).
     pub current_user: Option<UserId>,
 
@@ -53,6 +57,8 @@ impl Default for SettingsState {
             hovered_new: false,
             hovered_user_idx: None,
             scroll_y: 0.0,
+            plan_list_scroll_y: 0.0,
+            cursor_y: 0.0,
             current_user: None,
             pending_save: false,
             pending_new: false,
