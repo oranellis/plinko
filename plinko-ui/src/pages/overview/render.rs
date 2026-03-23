@@ -1285,18 +1285,24 @@ fn draw_node_info_panel(
                             required_tags,
                             ..
                         } => {
+                            // Resolve tag names for this slot (shown as suffix).
+                            let tag_names: Vec<&str> = required_tags
+                                .iter()
+                                .filter_map(|tid| plan.tags.iter().find(|t| &t.id == tid))
+                                .map(|t| t.name.as_str())
+                                .collect();
+                            let tag_suffix = if tag_names.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" ({})", tag_names.join(", "))
+                            };
                             // Use the resolved user for this placeholder if available.
                             if placeholder_idx < placeholder_workers.len() {
                                 let uid = placeholder_workers[placeholder_idx];
                                 placeholder_idx += 1;
-                                plan.user(&uid).map(|u| u.name.clone())
+                                plan.user(&uid).map(|u| format!("{}{}", u.name, tag_suffix))
                             } else {
-                                // Fallback: show tag requirements.
-                                let tag_names: Vec<&str> = required_tags
-                                    .iter()
-                                    .filter_map(|tid| plan.tags.iter().find(|t| &t.id == tid))
-                                    .map(|t| t.name.as_str())
-                                    .collect();
+                                // Fallback: show tag requirements only.
                                 if tag_names.is_empty() {
                                     Some(String::from("(unassigned)"))
                                 } else {
