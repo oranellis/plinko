@@ -576,8 +576,11 @@ impl Plan {
             .flatten()
             .map(|p| (self.calculate_path_duration(&p), p))
             .collect();
-        all_paths_with_dur
-            .sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        all_paths_with_dur.sort_by(|(a, path_a), (b, path_b)| {
+            b.partial_cmp(a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| path_a.cmp(path_b))
+        });
         let mut seen = HashSet::new();
         let sorted_task_list = all_paths_with_dur
             .into_iter()
@@ -634,8 +637,11 @@ impl Plan {
             .into_iter()
             .map(|p| (self.calculate_path_duration(&p), p))
             .collect();
-        paths_with_dur
-            .sort_by(|(a, _), (b, _)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+        paths_with_dur.sort_by(|(a, path_a), (b, path_b)| {
+            b.partial_cmp(a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| path_a.cmp(path_b))
+        });
         Ok(paths_with_dur.into_iter().map(|(_, p)| p).collect())
     }
 
