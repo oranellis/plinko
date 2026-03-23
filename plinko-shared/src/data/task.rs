@@ -46,10 +46,11 @@ pub struct Task {
     pub workers: Vec<WorkerSlot>,
     pub constraint: Option<DateConstraint>,
     pub duration_days_target: f32,
-    /// When true the scheduler allocates exactly workload/duration hours per day,
-    /// ignoring per-user daily capacity limits.
+    /// When true the scheduler uses relaxed allocation, filling any available
+    /// capacity each day. When false (default) the scheduler only schedules on
+    /// days with enough capacity for the full daily block.
     #[serde(default)]
-    pub strict_mode: bool,
+    pub relaxed_mode: bool,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -63,7 +64,7 @@ impl Task {
             workers: Vec::new(),
             constraint: None,
             duration_days_target: 0.0,
-            strict_mode: false,
+            relaxed_mode: false,
         }
     }
 
@@ -92,7 +93,7 @@ impl Task {
                 .collect(),
             constraint: None,
             duration_days_target: 0.0,
-            strict_mode: false,
+            relaxed_mode: false,
         }
     }
 

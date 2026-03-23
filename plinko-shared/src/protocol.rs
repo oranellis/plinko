@@ -20,7 +20,7 @@ pub struct TaskPatch {
     pub duration_days_target: Option<f32>,
     pub workers: Option<Vec<WorkerSlot>>,
     pub dependencies: Option<Vec<Dependency>>,
-    pub strict_mode: Option<bool>,
+    pub relaxed_mode: Option<bool>,
 }
 
 impl TaskPatch {
@@ -63,8 +63,8 @@ impl TaskPatch {
         self.dependencies = Some(v);
         self
     }
-    pub fn strict_mode(mut self, v: bool) -> Self {
-        self.strict_mode = Some(v);
+    pub fn relaxed_mode(mut self, v: bool) -> Self {
+        self.relaxed_mode = Some(v);
         self
     }
 }
@@ -245,8 +245,8 @@ pub fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result
     if let Some(v) = patch.workers {
         task.workers = v;
     }
-    if let Some(v) = patch.strict_mode {
-        task.strict_mode = v;
+    if let Some(v) = patch.relaxed_mode {
+        task.relaxed_mode = v;
     }
     if let Some(v) = patch.status {
         plan.node_allocations

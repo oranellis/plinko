@@ -559,7 +559,7 @@ impl Plan {
         let mut task_end: Option<NaiveDate> = None;
 
         let task_duration = task.duration_days_target;
-        let strict = task.strict_mode;
+        let strict = !task.relaxed_mode;
         let workers: Vec<WorkerSlot> = task.workers.clone();
 
         for slot in &workers {

@@ -541,8 +541,8 @@ pub struct TaskFormWindow {
     constraint_date_error: bool,
     actual_start_error: bool,
     actual_end_error: bool,
-    strict_mode: bool,
-    hovered_strict: bool,
+    relaxed_mode: bool,
+    hovered_relaxed: bool,
     // Buttons
     hovered_back: bool,
     hovered_save: bool,
@@ -601,8 +601,8 @@ impl TaskFormWindow {
             actual_start_error: false,
             hovered_back: false,
             actual_end_error: false,
-            strict_mode: false,
-            hovered_strict: false,
+            relaxed_mode: false,
+            hovered_relaxed: false,
             hovered_save: false,
             cursor_in_desc: false,
             form_scroll_y: 0.0,
@@ -679,8 +679,8 @@ impl TaskFormWindow {
             actual_start_error: false,
             cursor_in_desc: false,
             actual_end_error: false,
-            strict_mode: task.strict_mode,
-            hovered_strict: false,
+            relaxed_mode: task.relaxed_mode,
+            hovered_relaxed: false,
             form_scroll_y: 0.0,
             max_desc_scroll: Cell::new(0.0),
             scheduler_error: None,
@@ -958,7 +958,7 @@ impl TaskFormWindow {
         std::array::from_fn(|i| Rect::from_xywh(r.left + i as f32 * bw, r.top, bw, r.height()))
     }
 
-    fn strict_btn_rect(width: f32, height: f32) -> Rect {
+    fn relaxed_btn_rect(width: f32, height: f32) -> Rect {
         Self::right_input_rect(ROW_DURATION, width, height)
     }
 
@@ -1235,7 +1235,7 @@ impl TaskFormWindow {
                     .actual_end_date(self.actual_end.value)
                     .workers(worker_slots.clone())
                     .dependencies(dependencies.clone())
-                    .strict_mode(self.strict_mode);
+                    .relaxed_mode(self.relaxed_mode);
                 apply_task_patch(&mut dry_plan, id, patch)
                     .map_err(|e| e.to_string())
                     .and_then(|()| {
@@ -1260,7 +1260,7 @@ impl TaskFormWindow {
                 task.constraint = constraint;
                 task.workers = worker_slots;
                 task.dependencies = dependencies;
-                task.strict_mode = self.strict_mode;
+                task.relaxed_mode = self.relaxed_mode;
                 let task_id = task.id;
                 sender.send(PlanRequest::CreateTask(task));
                 // Apply status/actual-dates immediately if non-default.
@@ -1286,7 +1286,7 @@ impl TaskFormWindow {
                     .actual_end_date(self.actual_end.value)
                     .workers(worker_slots)
                     .dependencies(dependencies)
-                    .strict_mode(self.strict_mode);
+                    .relaxed_mode(self.relaxed_mode);
                 sender.send(PlanRequest::UpdateTask(id, patch));
             }
         }
@@ -2685,47 +2685,46 @@ impl FloatingWindow for TaskFormWindow {
             self.duration_error,
             cache,
         );
-        // Strict mode toggle
-        label!(ROW_DURATION, 1, "Strict");
+        // Relaxed mode toggle (default = strict / relaxed_mode false)
+        label!(ROW_DURATION, 1, "Mode");
         {
-            let strict_rect = Self::strict_btn_rect(width, height);
-            let (bg, label_text) = if self.strict_mode {
-                (BTN_PRIMARY_BG, "On")
-            } else {
+            let btn_rect = Self::relaxed_btn_rect(width, height);
+            let (bg, label_text) = if self.relaxed_mode {
                 (
-                    if self.hovered_strict {
+                    if self.hovered_relaxed {
                         0xff_e0e0e0_u32
                     } else {
                         SUBTLE_BG
                     },
-                    "Off",
+                    "Relaxed",
                 )
+            } else {
+                (BTN_PRIMARY_BG, "Strict")
             };
             paint.set_color(Color::from(bg));
             paint.set_style(PaintStyle::Fill);
             canvas.draw_rrect(
-                RRect::new_rect_xy(strict_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                RRect::new_rect_xy(btn_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
                 &paint,
             );
             paint.set_color(Color::from(INPUT_BORDER));
             paint.set_style(PaintStyle::Stroke);
             paint.set_stroke_width(1.0);
             canvas.draw_rrect(
-                RRect::new_rect_xy(strict_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                RRect::new_rect_xy(btn_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
                 &paint,
             );
             paint.set_style(PaintStyle::Fill);
             if let Some(blob) = TextBlob::new(label_text, &cache.small_font) {
                 let (_, sm2) = cache.small_font.metrics();
                 let (adv, _) = cache.small_font.measure_str(label_text, None);
-                let tx = strict_rect.left + (strict_rect.width() - adv) / 2.0;
-                let ty = strict_rect.top
-                    + (strict_rect.height() - (sm2.descent - sm2.ascent)) / 2.0
+                let tx = btn_rect.left + (btn_rect.width() - adv) / 2.0;
+                let ty = btn_rect.top + (btn_rect.height() - (sm2.descent - sm2.ascent)) / 2.0
                     - sm2.ascent;
-                paint.set_color(Color::from(if self.strict_mode {
-                    BTN_PRIMARY_FG
-                } else {
+                paint.set_color(Color::from(if self.relaxed_mode {
                     BTN_SECONDARY_FG
+                } else {
+                    BTN_PRIMARY_FG
                 }));
                 canvas.draw_text_blob(&blob, (tx, ty), &paint);
             }
@@ -3668,14 +3667,14 @@ impl FloatingWindow for TaskFormWindow {
             !start_disabled && Self::left_input_rect(ROW_DATES, width, height).contains(pt_form);
         let new_ae =
             !end_disabled && Self::right_input_rect(ROW_DATES, width, height).contains(pt_form);
-        let new_strict = Self::strict_btn_rect(width, height).contains(pt_form);
+        let new_relaxed = Self::relaxed_btn_rect(width, height).contains(pt_form);
 
         set!(self.hovered_status, new_status);
         set!(self.hovered_constraint_kind, new_ck);
         set!(self.constraint_date.hovered_trigger, new_ct);
         set!(self.actual_start.hovered_trigger, new_as);
         set!(self.actual_end.hovered_trigger, new_ae);
-        set!(self.hovered_strict, new_strict);
+        set!(self.hovered_relaxed, new_relaxed);
 
         if changed {
             FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
@@ -4119,8 +4118,8 @@ impl FloatingWindow for TaskFormWindow {
         }
 
         // Strict mode toggle
-        if Self::strict_btn_rect(width, height).contains(pt_form) {
-            self.strict_mode = !self.strict_mode;
+        if Self::relaxed_btn_rect(width, height).contains(pt_form) {
+            self.relaxed_mode = !self.relaxed_mode;
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
