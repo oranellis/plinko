@@ -38,7 +38,12 @@ fn util_row_top() -> f32 {
 
 fn date_to_x(date: NaiveDate, view_start: NaiveDate, zoom: f32, scroll_x: f32) -> f32 {
     let days = (date - view_start).num_days();
-    days as f32 * zoom - scroll_x + ALLOC_USER_PANEL_W
+    days as f32 * zoom - scroll_x + ALLOC_USER_PANEL_W + ALLOC_TASK_LABEL_W
+}
+
+/// Left edge of the timeline area (after user panel + task label column).
+fn timeline_left() -> f32 {
+    ALLOC_USER_PANEL_W + ALLOC_TASK_LABEL_W
 }
 
 fn task_color(idx: usize) -> u32 {
@@ -220,8 +225,8 @@ pub fn draw_allocation(
         paint.set_color(Color::from(GANTT_HEADER_FG));
         if let Some(blob) = TextBlob::new("Select a user to view their allocation.", &cache.font) {
             let bounds = blob.bounds();
-            let x = ALLOC_USER_PANEL_W + (width - ALLOC_USER_PANEL_W - bounds.width()) / 2.0
-                - bounds.left();
+            let x =
+                timeline_left() + (width - timeline_left() - bounds.width()) / 2.0 - bounds.left();
             let y = (height - bounds.height()) / 2.0 - bounds.top();
             canvas.draw_text_blob(&blob, (x, y), &paint);
         }
@@ -383,9 +388,9 @@ fn draw_date_header(
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rect(
         Rect::from_xywh(
-            ALLOC_USER_PANEL_W,
+            timeline_left(),
             top,
-            width - ALLOC_USER_PANEL_W,
+            width - timeline_left(),
             GANTT_HEADER_H,
         ),
         &paint,
@@ -408,9 +413,9 @@ fn draw_date_header(
                 canvas.save();
                 canvas.clip_rect(
                     Rect::from_xywh(
-                        ALLOC_USER_PANEL_W,
+                        timeline_left(),
                         top,
-                        width - ALLOC_USER_PANEL_W,
+                        width - timeline_left(),
                         GANTT_MONTH_ROW_H,
                     ),
                     ClipOp::Intersect,
@@ -419,7 +424,7 @@ fn draw_date_header(
                 canvas.draw_text_blob(
                     &blob,
                     (
-                        x.max(ALLOC_USER_PANEL_W + 4.0),
+                        x.max(timeline_left() + 4.0),
                         top + GANTT_MONTH_ROW_H / 2.0 - m.ascent / 2.0,
                     ),
                     &paint,
@@ -441,9 +446,9 @@ fn draw_date_header(
     canvas.save();
     canvas.clip_rect(
         Rect::from_xywh(
-            ALLOC_USER_PANEL_W,
+            timeline_left(),
             day_top,
-            width - ALLOC_USER_PANEL_W,
+            width - timeline_left(),
             GANTT_DAY_ROW_H,
         ),
         ClipOp::Intersect,
@@ -456,7 +461,7 @@ fn draw_date_header(
         if x > width {
             break;
         }
-        if x >= ALLOC_USER_PANEL_W && show_days {
+        if x >= timeline_left() && show_days {
             let label = d.day().to_string();
             if let Some(blob) = TextBlob::new(&label, &cache.small_font) {
                 let bounds = blob.bounds();
@@ -482,7 +487,7 @@ fn draw_date_header(
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.0);
     canvas.draw_line(
-        (ALLOC_USER_PANEL_W, top + GANTT_HEADER_H),
+        (timeline_left(), top + GANTT_HEADER_H),
         (width, top + GANTT_HEADER_H),
         &paint,
     );
@@ -511,9 +516,9 @@ fn draw_util_row(
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rect(
         Rect::from_xywh(
-            ALLOC_USER_PANEL_W,
+            timeline_left(),
             top,
-            width - ALLOC_USER_PANEL_W,
+            width - timeline_left(),
             ALLOC_UTIL_ROW_H,
         ),
         paint,
@@ -522,9 +527,9 @@ fn draw_util_row(
     canvas.save();
     canvas.clip_rect(
         Rect::from_xywh(
-            ALLOC_USER_PANEL_W,
+            timeline_left(),
             top,
-            width - ALLOC_USER_PANEL_W,
+            width - timeline_left(),
             ALLOC_UTIL_ROW_H,
         ),
         ClipOp::Intersect,
@@ -537,7 +542,7 @@ fn draw_util_row(
         if x > width {
             break;
         }
-        if x + state.zoom < ALLOC_USER_PANEL_W {
+        if x + state.zoom < timeline_left() {
             d += Duration::days(1);
             continue;
         }
@@ -592,7 +597,7 @@ fn draw_util_row(
     paint.set_color(Color::from(GANTT_HEADER_BORDER));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.0);
-    canvas.draw_line((ALLOC_USER_PANEL_W, bottom), (width, bottom), paint);
+    canvas.draw_line((timeline_left(), bottom), (width, bottom), paint);
 }
 
 // }}}
@@ -629,12 +634,7 @@ fn draw_task_rows(
 
     canvas.save();
     canvas.clip_rect(
-        Rect::from_xywh(
-            ALLOC_USER_PANEL_W,
-            top,
-            width - ALLOC_USER_PANEL_W,
-            content_h,
-        ),
+        Rect::from_xywh(timeline_left(), top, width - timeline_left(), content_h),
         ClipOp::Intersect,
         false,
     );
@@ -648,7 +648,7 @@ fn draw_task_rows(
         if x > width {
             break;
         }
-        if x + state.zoom < ALLOC_USER_PANEL_W {
+        if x + state.zoom < timeline_left() {
             d += Duration::days(1);
             continue;
         }
@@ -666,7 +666,7 @@ fn draw_task_rows(
     }
 
     // Row backgrounds and task bars
-    for (row_idx, (task_id, task_name)) in user_tasks.iter().enumerate() {
+    for (row_idx, (task_id, _task_name)) in user_tasks.iter().enumerate() {
         let row_y = top + row_idx as f32 * GANTT_ROW_H;
         let bg = if row_idx % 2 == 1 {
             ALLOC_ROW_ALT_BG
@@ -676,12 +676,7 @@ fn draw_task_rows(
         paint.set_color(Color::from(bg));
         paint.set_style(PaintStyle::Fill);
         canvas.draw_rect(
-            Rect::from_xywh(
-                ALLOC_USER_PANEL_W,
-                row_y,
-                width - ALLOC_USER_PANEL_W,
-                GANTT_ROW_H,
-            ),
+            Rect::from_xywh(timeline_left(), row_y, width - timeline_left(), GANTT_ROW_H),
             paint,
         );
 
@@ -702,7 +697,7 @@ fn draw_task_rows(
                     continue;
                 }
                 let x = date_to_x(seg.date, view_start, state.zoom, state.scroll_x);
-                if x + state.zoom < ALLOC_USER_PANEL_W || x > width {
+                if x + state.zoom < timeline_left() || x > width {
                     continue;
                 }
 
@@ -721,41 +716,7 @@ fn draw_task_rows(
                 canvas.draw_rect(Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h), paint);
             }
 
-            // Task name overlay — draw once at the span start
-            let first_seg_x = segs
-                .iter()
-                .filter(|s| &s.user == user_id)
-                .map(|s| date_to_x(s.date, view_start, state.zoom, state.scroll_x))
-                .filter(|&x| x >= ALLOC_USER_PANEL_W && x <= width)
-                .reduce(f32::min);
-
-            let last_seg_x = segs
-                .iter()
-                .filter(|s| &s.user == user_id)
-                .map(|s| date_to_x(s.date, view_start, state.zoom, state.scroll_x) + state.zoom)
-                .filter(|&x| x >= ALLOC_USER_PANEL_W && x <= width)
-                .reduce(f32::max);
-
-            if let (Some(tx), Some(tx_end)) = (first_seg_x, last_seg_x) {
-                let label_x = tx + 4.0;
-                let label_w = (tx_end - tx - 8.0).max(0.0);
-                if label_w > 8.0
-                    && let Some(blob) = TextBlob::new(task_name, &cache.small_font)
-                {
-                    let (_, m) = cache.small_font.metrics();
-                    let ly = row_y + (GANTT_ROW_H - (m.descent - m.ascent)) / 2.0 - m.ascent;
-                    canvas.save();
-                    canvas.clip_rect(
-                        Rect::from_xywh(label_x, row_y, label_w, GANTT_ROW_H),
-                        ClipOp::Intersect,
-                        false,
-                    );
-                    paint.set_color(Color::from(0xff_222222));
-                    paint.set_style(PaintStyle::Fill);
-                    canvas.draw_text_blob(&blob, (label_x, ly), paint);
-                    canvas.restore();
-                }
-            }
+            // (Task names are drawn in the fixed label column below)
         }
 
         // Row bottom separator
@@ -763,7 +724,7 @@ fn draw_task_rows(
         paint.set_style(PaintStyle::Stroke);
         paint.set_stroke_width(1.0);
         canvas.draw_line(
-            (ALLOC_USER_PANEL_W, row_y + GANTT_ROW_H),
+            (timeline_left(), row_y + GANTT_ROW_H),
             (width, row_y + GANTT_ROW_H),
             paint,
         );
@@ -774,7 +735,7 @@ fn draw_task_rows(
         use chrono::Local;
         let today = Local::now().date_naive();
         let tx = date_to_x(today, view_start, state.zoom, state.scroll_x);
-        if tx >= ALLOC_USER_PANEL_W && tx <= width {
+        if tx >= timeline_left() && tx <= width {
             paint.set_color(Color::from(0xcc_4a90d9));
             paint.set_style(PaintStyle::Stroke);
             paint.set_stroke_width(2.0);
@@ -783,6 +744,76 @@ fn draw_task_rows(
     }
 
     canvas.restore();
+
+    // ── Fixed task-name label column ──────────────────────────────────────
+    {
+        let label_left = ALLOC_USER_PANEL_W;
+        let label_w = ALLOC_TASK_LABEL_W;
+
+        // Background
+        paint.set_color(Color::from(GANTT_HEADER_BG));
+        paint.set_style(PaintStyle::Fill);
+        canvas.draw_rect(Rect::from_xywh(label_left, top, label_w, content_h), paint);
+
+        canvas.save();
+        canvas.clip_rect(
+            Rect::from_xywh(label_left, top, label_w, content_h),
+            ClipOp::Intersect,
+            false,
+        );
+
+        let (_, m) = cache.small_font.metrics();
+        for (row_idx, (_task_id, task_name)) in user_tasks.iter().enumerate() {
+            let row_y = top + row_idx as f32 * GANTT_ROW_H;
+            let bg = if row_idx % 2 == 1 {
+                ALLOC_ROW_ALT_BG
+            } else {
+                GANTT_HEADER_BG
+            };
+            paint.set_color(Color::from(bg));
+            paint.set_style(PaintStyle::Fill);
+            canvas.draw_rect(
+                Rect::from_xywh(label_left, row_y, label_w, GANTT_ROW_H),
+                paint,
+            );
+
+            // Label text, clipped to column width
+            if let Some(blob) = TextBlob::new(task_name, &cache.small_font) {
+                let ly = row_y + (GANTT_ROW_H - (m.descent - m.ascent)) / 2.0 - m.ascent;
+                canvas.save();
+                canvas.clip_rect(
+                    Rect::from_xywh(label_left + 6.0, row_y, label_w - 12.0, GANTT_ROW_H),
+                    ClipOp::Intersect,
+                    false,
+                );
+                paint.set_color(Color::from(0xff_222222));
+                paint.set_style(PaintStyle::Fill);
+                canvas.draw_text_blob(&blob, (label_left + 6.0, ly), paint);
+                canvas.restore();
+            }
+
+            // Row separator
+            paint.set_color(Color::from(GANTT_HEADER_BORDER));
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(1.0);
+            canvas.draw_line(
+                (label_left, row_y + GANTT_ROW_H),
+                (label_left + label_w, row_y + GANTT_ROW_H),
+                paint,
+            );
+        }
+        canvas.restore();
+
+        // Right border of label column
+        paint.set_color(Color::from(GANTT_HEADER_BORDER));
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_width(1.0);
+        canvas.draw_line(
+            (label_left + label_w, top),
+            (label_left + label_w, height),
+            paint,
+        );
+    }
 
     // Hover info panel
     if let Some(hovered) = state.hovered_task_idx
@@ -855,7 +886,7 @@ fn draw_hover_info(
     let pad = 8.0;
     let panel_h = pad * 2.0 + lines.len() as f32 * line_h;
     let panel_w = 240.0_f32;
-    let panel_x = (width - panel_w - 16.0).max(ALLOC_USER_PANEL_W + 8.0);
+    let panel_x = (width - panel_w - 16.0).max(timeline_left() + 8.0);
     let panel_y = height - panel_h - 16.0;
 
     let mut paint = Paint::default();
@@ -956,7 +987,7 @@ pub fn hit_test_user_panel<'a>(
 
 /// Returns the task row index hovered in the timeline, or None.
 pub fn hit_test_task_row(x: f32, y: f32, plan: &Plan, user_id: &UserId) -> Option<usize> {
-    if x <= ALLOC_USER_PANEL_W {
+    if x <= timeline_left() {
         return None;
     }
     let top = timeline_top();

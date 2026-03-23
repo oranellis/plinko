@@ -171,6 +171,7 @@ pub const GANTT_DEP_LINE_COLOR: u32 = 0x80_888888;
 
 // Allocation page — user panel (left column)
 pub const ALLOC_USER_LABEL_W: f32 = 120.0; // kept for unused-const compat
+pub const ALLOC_TASK_LABEL_W: f32 = 140.0;
 pub const ALLOC_USER_PANEL_W: f32 = 180.0;
 pub const ALLOC_USER_ENTRY_H: f32 = 52.0;
 pub const ALLOC_UTIL_ROW_H: f32 = 28.0;

@@ -11,8 +11,8 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::FloatingWindow;
 use crate::ui::layout::{
-    ALLOC_USER_ENTRY_H, ALLOC_USER_PANEL_W, GANTT_ZOOM_MAX, GANTT_ZOOM_MIN, TOOLBAR_BTN_SIZE,
-    TOOLBAR_BTN_Y,
+    ALLOC_TASK_LABEL_W, ALLOC_USER_ENTRY_H, ALLOC_USER_PANEL_W, GANTT_ZOOM_MAX, GANTT_ZOOM_MIN,
+    TOOLBAR_BTN_SIZE, TOOLBAR_BTN_Y,
 };
 use crate::ui::users_window::UsersWindow;
 use plinko_shared::data::Plan;
@@ -111,6 +111,8 @@ impl Page for AllocationPage {
     ) -> DirtyRegion {
         let is_toolbar = y <= TOOLBAR_BTN_Y + TOOLBAR_BTN_SIZE;
         let in_user_panel = x <= ALLOC_USER_PANEL_W;
+        let in_label_column =
+            x > ALLOC_USER_PANEL_W && x <= ALLOC_USER_PANEL_W + ALLOC_TASK_LABEL_W;
 
         if pressed {
             if is_toolbar {
@@ -145,7 +147,7 @@ impl Page for AllocationPage {
                         self.state.hovered_task_idx = None;
                     }
                 }
-            } else {
+            } else if !in_label_column {
                 // Timeline drag
                 self.state.is_dragging = true;
                 self.state.press_start_x = x;

@@ -1,13 +1,10 @@
 # Development Notes
 
-## In Progress
+## Fixes/Requests
 
-I am rewriting the planning and task allocation to be structured better, exploiting more of the rust type system to encode logic.
-
-- [ ] In particular I am working on the `allocation.rs`, rebuilding the types to represent how tasks are represented. `NodeAllocations` contains all of the dynamic data associated with the tasks and milestones, including the dates and hour allocations from the scheduling process, the state of tasks, and any additional dates such as extended in-progress tasks.
-
-- [ ] In addition I am rewriting `plan.rs` rebuilding the functions required for the scheduling process from the ground up as a learning experience.
-
-- [ ] Once complete I need to move on and rewrite `scheduler.rs` to compute the time optimised plan in the way I want, mostly maintaining the existing behaviour with easier to understand rust logic and structure. Also through rewriting it I will learn how Claude originally implemented it.
-
-- [ ] Once all that is done I will review the queue logic and begin seperating out the UI application from the data side, eventually splitting the application into a server and client program.
+- [ ] When the plan allocates the workload for a task where there are more than one people working on the task, allocations between users must be on the same day, for exmaple, if person a has 0.5 days per day and person b has 0.25 days per day on a task over 5 days, the scheduler must find the first 5 days where both person a and person b have the required number of hours free. This applies to only strict mode tasks as it does not really make sense in relaxed mode.
+- [ ] Can the allocation screen task names be stuck to the left edge rather than overlapping the tasks, such that they stay in the same position on the screen even when the calendar scrolls? since there is only one task per row.
+- [ ] On the allocation screen can you use the same box style as on the gantt screen and have it be in the bottom left corner of the screen.
+- [ ] The hitbox for clicking on the calendar screen is off for selecting the user, and my font does not have the symbol in the other box, can you change the hitbox to be correct and change the symbols to something in most default fonts?
+- [ ] The plan settings screen has visual issues where text is overlapping (the saved plans) and the UI currently cannot select any other plans, only the save plan and new plan buttons are usable. The names for the identity selection are too low as well in the box and not alligned with the radio button. Can you fix these layout issues on the plan screen?
+- [ ] The tags on the Team Members screen clip into the user name when there are more than one or two tags, can you make the Team Members window a bit wider and have long lists of tags have just the start of the text then an elipse to indicate more tags?
