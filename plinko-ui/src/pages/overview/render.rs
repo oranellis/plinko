@@ -8,7 +8,7 @@ use crate::ui::icon_button;
 use crate::ui::layout::*;
 use plinko_shared::data::Plan;
 use plinko_shared::data::Status;
-use plinko_shared::data::ids::{MilestoneId, NodeId, TaskId};
+use plinko_shared::data::ids::{MilestoneId, NodeId, TaskId, UserId};
 
 use super::gantt::{
     GanttItem, GanttRow, MilestoneStatus, compute_date_range, milestone_display_status, pack_rows,
@@ -1235,6 +1235,45 @@ fn draw_node_info_panel(
                 if let Some(end) = plan.task_actual_end(&id) {
                     lines.push(format!("Ended: {}", end));
                 }
+                // Collect users that are actually allocated via segments
+                // (used to resolve Placeholder slots).
+                let placeholder_workers: Vec<UserId> = {
+                    let specific_ids: std::collections::HashSet<UserId> = task
+                        .workers
+                        .iter()
+                        .filter_map(|s| {
+                            if let plinko_shared::data::task::WorkerSlot::Specific {
+                                user_id, ..
+                            } = s
+                            {
+                                Some(*user_id)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if let Some(ts) = plan.node_allocations.tasks.get(&id) {
+                        let segs = match &ts.allocation {
+                            plinko_shared::data::TaskAllocation::Dynamic {
+                                time_allocation,
+                                ..
+                            }
+                            | plinko_shared::data::TaskAllocation::Fixed {
+                                time_allocation, ..
+                            } => time_allocation,
+                        };
+                        let mut seen: Vec<UserId> = Vec::new();
+                        for s in segs {
+                            if !specific_ids.contains(&s.user) && !seen.contains(&s.user) {
+                                seen.push(s.user);
+                            }
+                        }
+                        seen
+                    } else {
+                        Vec::new()
+                    }
+                };
+                let mut placeholder_idx = 0;
                 let worker_names: Vec<String> = task
                     .workers
                     .iter()
@@ -1246,15 +1285,23 @@ fn draw_node_info_panel(
                             required_tags,
                             ..
                         } => {
-                            let tag_names: Vec<&str> = required_tags
-                                .iter()
-                                .filter_map(|tid| plan.tags.iter().find(|t| &t.id == tid))
-                                .map(|t| t.name.as_str())
-                                .collect();
-                            if tag_names.is_empty() {
-                                Some(String::from("(any)"))
+                            // Use the resolved user for this placeholder if available.
+                            if placeholder_idx < placeholder_workers.len() {
+                                let uid = placeholder_workers[placeholder_idx];
+                                placeholder_idx += 1;
+                                plan.user(&uid).map(|u| u.name.clone())
                             } else {
-                                Some(format!("[{}]", tag_names.join(", ")))
+                                // Fallback: show tag requirements.
+                                let tag_names: Vec<&str> = required_tags
+                                    .iter()
+                                    .filter_map(|tid| plan.tags.iter().find(|t| &t.id == tid))
+                                    .map(|t| t.name.as_str())
+                                    .collect();
+                                if tag_names.is_empty() {
+                                    Some(String::from("(unassigned)"))
+                                } else {
+                                    Some(format!("needs: {}", tag_names.join(", ")))
+                                }
                             }
                         }
                     })
