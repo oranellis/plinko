@@ -425,6 +425,62 @@ impl Plan {
         segments
     }
 
+    /// Allocate multiple workers on the same days in strict mode.
+    /// Only schedules on days where every worker has enough remaining capacity
+    /// for their respective daily cap.
+    fn fill_slots_synchronized(
+        &self,
+        workers: &[(UserId, f32, Option<f32>, f32)],
+        start_date: NaiveDate,
+        state: &mut SchedulerState,
+    ) -> Vec<WorkSegment> {
+        let mut remaining: Vec<f32> = workers.iter().map(|&(_, _, _, total)| total).collect();
+        let mut segments: Vec<WorkSegment> = Vec::new();
+        let mut current = start_date;
+        let limit = start_date + chrono::Duration::days(MAX_FILL_DAYS);
+
+        while remaining.iter().any(|&r| r > EPSILON) && current <= limit {
+            // Check that every worker with remaining hours can work on this day.
+            let all_can_work = workers
+                .iter()
+                .enumerate()
+                .all(|(i, &(uid, _, daily_cap, _))| {
+                    if remaining[i] <= EPSILON {
+                        return true; // already done
+                    }
+                    let cap = daily_cap.unwrap_or(remaining[i]);
+                    let avail = self.hours_remaining(state, uid, current);
+                    avail >= cap - EPSILON
+                });
+
+            if all_can_work {
+                for (i, &(uid, _, daily_cap, _)) in workers.iter().enumerate() {
+                    if remaining[i] <= EPSILON {
+                        continue;
+                    }
+                    let cap = daily_cap.unwrap_or(remaining[i]);
+                    let scheduled = cap.min(remaining[i]);
+                    if scheduled > EPSILON {
+                        let entry = state
+                            .capacity
+                            .entry((uid, current))
+                            .or_insert_with(|| self.hours_available(&uid, current));
+                        *entry -= scheduled;
+                        segments.push(WorkSegment {
+                            user: uid,
+                            date: current,
+                            hours_worked: scheduled,
+                        });
+                        remaining[i] -= scheduled;
+                    }
+                }
+            }
+            current += chrono::Duration::days(1);
+        }
+
+        segments
+    }
+
     fn simulate_fill(
         &self,
         user_id: UserId,
@@ -565,6 +621,8 @@ impl Plan {
         let strict = !task.relaxed_mode;
         let workers: Vec<WorkerSlot> = task.workers.clone();
 
+        // Resolve all worker slots to (user_id, workload_days, daily_cap, total_hours).
+        let mut resolved_workers: Vec<(UserId, f32, Option<f32>, f32)> = Vec::new();
         for slot in &workers {
             let total_hours_for_slot = match slot {
                 WorkerSlot::Specific { workload_days, .. }
@@ -600,17 +658,33 @@ impl Plan {
             };
 
             let total_hours = workload_days * self.default_schedule.hours_per_workload_day();
-            let segments =
-                self.fill_slot(user_id, total_hours, start_date, daily_cap, strict, state);
+            resolved_workers.push((user_id, workload_days, daily_cap, total_hours));
+        }
 
-            if let Some(first) = segments.first() {
-                task_start = Some(task_start.map_or(first.date, |d: NaiveDate| d.min(first.date)));
+        // In strict mode with multiple workers, allocate all workers on the same
+        // days so their work stays synchronised.
+        if strict && resolved_workers.len() > 1 {
+            let segments = self.fill_slots_synchronized(&resolved_workers, start_date, state);
+            for seg in &segments {
+                task_start = Some(task_start.map_or(seg.date, |d: NaiveDate| d.min(seg.date)));
+                task_end = Some(task_end.map_or(seg.date, |d: NaiveDate| d.max(seg.date)));
             }
-            if let Some(last) = segments.last() {
-                task_end = Some(task_end.map_or(last.date, |d: NaiveDate| d.max(last.date)));
-            }
-
             time_allocation.extend(segments);
+        } else {
+            for &(user_id, _workload_days, daily_cap, total_hours) in &resolved_workers {
+                let segments =
+                    self.fill_slot(user_id, total_hours, start_date, daily_cap, strict, state);
+
+                if let Some(first) = segments.first() {
+                    task_start =
+                        Some(task_start.map_or(first.date, |d: NaiveDate| d.min(first.date)));
+                }
+                if let Some(last) = segments.last() {
+                    task_end = Some(task_end.map_or(last.date, |d: NaiveDate| d.max(last.date)));
+                }
+
+                time_allocation.extend(segments);
+            }
         }
 
         let min_end = if task_duration > 0.0 {
