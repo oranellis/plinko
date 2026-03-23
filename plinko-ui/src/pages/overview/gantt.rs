@@ -66,36 +66,38 @@ pub struct GanttRow {
 
 /// Resolve the display date range for a task.
 ///
-/// Priority:
-/// 1. `actual_start_date`..`actual_end_date` (both set → completed)
-/// 2. `actual_start_date` + scheduler allocation end (in-progress)
-/// 3. Scheduler allocation start/end (most accurate — accounts for weekends)
-/// 4. Scheduled start + computed duration (fallback)
-/// 5. `None` if no date information is available
+/// The bar start is the earliest `WorkSegment` date across all workers — i.e.
+/// the first day anyone actually works on the task. The bar end is the latest
+/// work segment date or the allocation end date, whichever is later.
+///
+/// Falls back to stored `allocation.start_date()` / `end_date()` when no work
+/// segments exist (e.g. task has no workers yet).
+///
+/// Returns `None` if no allocation information is available at all.
 pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveDate)> {
-    use chrono::Duration;
+    let _task = plan.tasks.get(id)?;
 
-    let task = plan.tasks.get(id)?;
-    let duration = task.effective_duration_days().max(1.0) as i64;
+    let ts = plan.node_allocations.tasks.get(id)?;
 
-    if let (Some(s), Some(e)) = (plan.task_actual_start(id), plan.task_actual_end(id)) {
-        return Some((s, e));
-    }
-    if let Some(s) = plan.task_actual_start(id) {
-        let end = plan
-            .node_allocations
-            .tasks
-            .get(id)
-            .map(|ts| ts.allocation.end_date())
-            .unwrap_or_else(|| s + Duration::days(duration - 1));
-        return Some((s, end));
-    }
-    // Prefer allocation dates: these correctly account for weekends and daily-cap spreading.
-    if let Some(ts) = plan.node_allocations.tasks.get(id) {
-        return Some((ts.allocation.start_date(), ts.allocation.end_date()));
-    }
-    let _ = task;
-    None
+    let segs = match &ts.allocation {
+        plinko_shared::data::TaskAllocation::Dynamic {
+            time_allocation, ..
+        }
+        | plinko_shared::data::TaskAllocation::Fixed {
+            time_allocation, ..
+        } => time_allocation.as_slice(),
+    };
+
+    let first_seg = segs.iter().map(|s| s.date).min();
+    let last_seg = segs.iter().map(|s| s.date).max();
+
+    let start = first_seg.unwrap_or_else(|| ts.allocation.start_date());
+    let end = match last_seg {
+        Some(last) => last.max(ts.allocation.end_date()),
+        None => ts.allocation.end_date(),
+    };
+
+    Some((start, end))
 }
 
 /// Pack all tasks and milestones with known dates into rows using a virtual
