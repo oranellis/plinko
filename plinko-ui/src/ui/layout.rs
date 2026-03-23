@@ -166,6 +166,9 @@ pub const GANTT_MS_COMPLETE: u32 = 0xff_66bb6a;
 /// Teal colour used for the Plan Start fixed marker on the Gantt chart.
 pub const GANTT_PLAN_START_COLOR: u32 = DEP_PLAN_START_FG;
 
+/// Indigo flag drawn on tasks/milestones that have no dependents (end nodes).
+pub const GANTT_END_NODE_COLOR: u32 = 0xff_5c6bc0;
+
 // Dependency line color
 pub const GANTT_DEP_LINE_COLOR: u32 = 0x80_888888;
 

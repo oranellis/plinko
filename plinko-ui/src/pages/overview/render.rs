@@ -2,6 +2,7 @@
 
 use chrono::{Datelike, Duration, NaiveDate, Weekday as CWeekday};
 use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, PathBuilder, RRect, Rect, TextBlob};
+use std::collections::HashSet;
 
 use crate::ui::cache::RenderCache;
 use crate::ui::icon_button;
@@ -426,6 +427,16 @@ fn draw_gantt_rows(
     let zoom = state.zoom;
     let scroll_x = state.scroll_x;
 
+    // Nodes with no dependents — drawn with an end-node flag.
+    let dependents_map = plan.build_dependents_map();
+    let end_nodes: HashSet<NodeId> = plan
+        .tasks
+        .keys()
+        .map(|id| NodeId::Task(*id))
+        .chain(plan.milestones.keys().map(|id| NodeId::Milestone(*id)))
+        .filter(|nid| dependents_map.get(nid).is_none_or(|v| v.is_empty()))
+        .collect();
+
     canvas.save();
     canvas.clip_rect(
         Rect::from_xywh(0.0, rows_top, width, height - rows_top),
@@ -492,6 +503,13 @@ fn draw_gantt_rows(
                         let hovered = state.hovered_warning == Some(node_id);
                         draw_warning_icon(canvas, warn_rect, hovered, &mut paint);
                     }
+
+                    // End-node flag if nothing depends on this task.
+                    if end_nodes.contains(&node_id) {
+                        let flag_x = bar_x + bar_w;
+                        let mid_y = bar_y + bar_h / 2.0;
+                        draw_end_node_flag(canvas, flag_x, mid_y, bar_h, &mut paint);
+                    }
                 }
 
                 GanttItem::Milestone { id, date } => {
@@ -547,6 +565,11 @@ fn draw_gantt_rows(
                         let warn_rect = warn_icon_rect_for_milestone(cx, cy);
                         let hovered = state.hovered_warning == Some(node_id);
                         draw_warning_icon(canvas, warn_rect, hovered, &mut paint);
+                    }
+
+                    // End-node flag if nothing depends on this milestone.
+                    if end_nodes.contains(&node_id) {
+                        draw_end_node_flag(canvas, cx + half, cy, half * 2.0, &mut paint);
                     }
                 }
 
@@ -845,6 +868,38 @@ fn darken(c: u32) -> u32 {
     let g = (((c >> 8) & 0xff) as f32 * 0.7) as u32;
     let b = ((c & 0xff) as f32 * 0.7) as u32;
     (a << 24) | (r << 16) | (g << 8) | b
+}
+
+/// Draws a small flag (vertical staff + right-pointing triangle) to mark end nodes.
+///
+/// The flag is drawn at `(x, mid_y)` where `x` is just to the right of the bar/diamond
+/// and `mid_y` is the vertical centre of the row.  `height` is the full available height
+/// of the staff (equal to the bar height or `GANTT_MS_HALF * 2`).
+fn draw_end_node_flag(canvas: &Canvas, x: f32, mid_y: f32, height: f32, paint: &mut Paint) {
+    let staff_h = height;
+    let flag_w = (height * 0.45).max(6.0);
+    let flag_h = (height * 0.45).max(6.0);
+    let gap = 3.0_f32;
+
+    let top_y = mid_y - staff_h / 2.0;
+    let bot_y = mid_y + staff_h / 2.0;
+    let staff_x = x + gap;
+
+    paint.set_color(Color::from(GANTT_END_NODE_COLOR));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.5);
+    canvas.draw_line((staff_x, top_y), (staff_x, bot_y), paint);
+
+    let mut pb = PathBuilder::new();
+    pb.move_to((staff_x, top_y));
+    pb.line_to((staff_x + flag_w, top_y + flag_h / 2.0));
+    pb.line_to((staff_x, top_y + flag_h));
+    pb.close();
+    let flag_path = pb.detach();
+
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_path(&flag_path, paint);
+    paint.set_style(PaintStyle::Fill); // reset
 }
 
 // ── Milestone label helpers ────────────────────────────────────────────────────
