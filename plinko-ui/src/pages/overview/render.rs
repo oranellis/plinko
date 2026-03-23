@@ -1235,8 +1235,32 @@ fn draw_node_info_panel(
                 if let Some(end) = plan.task_actual_end(&id) {
                     lines.push(format!("Ended: {}", end));
                 }
-                if !task.workers.is_empty() {
-                    lines.push(format!("Workers: {}", task.workers.len()));
+                let worker_names: Vec<String> = task
+                    .workers
+                    .iter()
+                    .filter_map(|slot| match slot {
+                        plinko_shared::data::task::WorkerSlot::Specific { user_id, .. } => {
+                            plan.user(user_id).map(|u| u.name.clone())
+                        }
+                        plinko_shared::data::task::WorkerSlot::Placeholder {
+                            required_tags,
+                            ..
+                        } => {
+                            let tag_names: Vec<&str> = required_tags
+                                .iter()
+                                .filter_map(|tid| plan.tags.iter().find(|t| &t.id == tid))
+                                .map(|t| t.name.as_str())
+                                .collect();
+                            if tag_names.is_empty() {
+                                Some(String::from("(any)"))
+                            } else {
+                                Some(format!("[{}]", tag_names.join(", ")))
+                            }
+                        }
+                    })
+                    .collect();
+                if !worker_names.is_empty() {
+                    lines.push(format!("Workers: {}", worker_names.join(", ")));
                 }
             }
         }
