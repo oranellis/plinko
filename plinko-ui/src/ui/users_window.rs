@@ -29,6 +29,43 @@ const BTN_GAP: f32 = 4.0;
 const CORNER: f32 = 8.0;
 const SCROLLBAR_W: f32 = 4.0;
 
+/// Returns a sort key for a user: `(primary_tag_name, user_name)`.
+/// Users with no tags sort after all tagged users.
+fn user_sort_key<'a>(
+    user: &'a plinko_shared::data::User,
+    plan: &'a plinko_shared::data::Plan,
+) -> (Option<String>, &'a str) {
+    let primary_tag = user
+        .tags
+        .iter()
+        .filter_map(|id| {
+            plan.tags
+                .iter()
+                .find(|t| &t.id == id)
+                .map(|t| t.name.clone())
+        })
+        .min(); // first alphabetically
+    (primary_tag, &user.name)
+}
+
+/// Sort a mutable slice of users by primary tag name then user name.
+fn sort_users_by_tag<'a>(
+    users: &mut Vec<&'a plinko_shared::data::User>,
+    plan: &plinko_shared::data::Plan,
+) {
+    users.sort_by(|a, b| {
+        let (ta, na) = user_sort_key(a, plan);
+        let (tb, nb) = user_sort_key(b, plan);
+        // None (no tag) sorts last
+        match (&ta, &tb) {
+            (None, None) => na.cmp(nb),
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (Some(a_tag), Some(b_tag)) => a_tag.cmp(b_tag).then(na.cmp(nb)),
+        }
+    });
+}
+
 /// Floating window displaying a scrollable list of all [`User`]s in the plan.
 pub struct UsersWindow {
     scroll_offset: f32,
@@ -266,7 +303,7 @@ impl FloatingWindow for UsersWindow {
             .values()
             .map(|ud| &ud.user)
             .collect::<Vec<_>>();
-        sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
+        sort_users_by_tag(&mut sorted_users, plan);
 
         if sorted_users.is_empty() {
             if let Some(blob) = TextBlob::new("No team members yet", &cache.font) {
@@ -452,7 +489,7 @@ impl FloatingWindow for UsersWindow {
             .values()
             .map(|ud| &ud.user)
             .collect::<Vec<_>>();
-        sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
+        sort_users_by_tag(&mut sorted_users, plan);
         let new_cal_btn = sorted_users.iter().enumerate().find_map(|(i, _)| {
             let ry = self.row_y(list.top, i);
             if ry + ROW_H < list.top || ry > list.bottom {
@@ -524,7 +561,7 @@ impl FloatingWindow for UsersWindow {
                 .values()
                 .map(|ud| &ud.user)
                 .collect::<Vec<_>>();
-            sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
+            sort_users_by_tag(&mut sorted_users, plan);
             for (i, user) in sorted_users.iter().enumerate() {
                 let ry = self.row_y(list.top, i);
                 if ry + ROW_H < list.top || ry > list.bottom {
@@ -552,7 +589,7 @@ impl FloatingWindow for UsersWindow {
                 .values()
                 .map(|ud| &ud.user)
                 .collect::<Vec<_>>();
-            sorted_users.sort_by(|a, b| a.name.cmp(&b.name));
+            sort_users_by_tag(&mut sorted_users, plan);
             if let Some(user) = sorted_users.get(idx) {
                 self.pending_edit = Some((*user).clone());
                 return FloatingWindowOutcome::default();
