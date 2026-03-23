@@ -8,7 +8,7 @@
 //!     - One task row per task that has work for this user
 
 use chrono::{Datelike, Duration, NaiveDate};
-use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, Rect, TextBlob};
+use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, RRect, Rect, TextBlob};
 
 use crate::ui::cache::RenderCache;
 use crate::ui::icon_button;
@@ -835,7 +835,7 @@ fn draw_hover_info(
     canvas: &Canvas,
     _state: &AllocationState,
     plan: &Plan,
-    width: f32,
+    _width: f32,
     height: f32,
     task_id: &TaskId,
     task_name: &str,
@@ -881,30 +881,64 @@ fn draw_hover_info(
         lines.push(desc);
     }
 
+    if lines.is_empty() {
+        return;
+    }
+
     let (_, metrics) = cache.small_font.metrics();
-    let line_h = metrics.descent - metrics.ascent + 3.0;
-    let pad = 8.0;
-    let panel_h = pad * 2.0 + lines.len() as f32 * line_h;
-    let panel_w = 240.0_f32;
-    let panel_x = (width - panel_w - 16.0).max(timeline_left() + 8.0);
-    let panel_y = height - panel_h - 16.0;
+    let line_h = (metrics.descent - metrics.ascent).ceil();
+    let line_gap = 3.0_f32;
+    let pad = 10.0_f32;
+    let margin = 8.0_f32;
+
+    let max_w = lines
+        .iter()
+        .map(|l| cache.small_font.measure_str(l.as_str(), None).0)
+        .fold(0.0_f32, f32::max);
+
+    let panel_w = max_w + pad * 2.0;
+    let panel_h = lines.len() as f32 * line_h + (lines.len() - 1) as f32 * line_gap + pad * 2.0;
+    let px = timeline_left() + margin;
+    let py = height - margin - panel_h;
 
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
-    paint.set_color(Color::from(0xf0_ffffff));
+
+    // Shadow
+    paint.set_color(Color::from(0x30_000000_u32));
+    canvas.draw_rrect(
+        RRect::new_rect_xy(
+            Rect::from_xywh(px + 2.0, py + 3.0, panel_w, panel_h),
+            6.0,
+            6.0,
+        ),
+        &paint,
+    );
+
+    // Background
+    paint.set_color(Color::from(0xf4_ffffff_u32));
     paint.set_style(PaintStyle::Fill);
-    canvas.draw_rect(Rect::from_xywh(panel_x, panel_y, panel_w, panel_h), &paint);
-    paint.set_color(Color::from(GANTT_HEADER_BORDER));
+    canvas.draw_rrect(
+        RRect::new_rect_xy(Rect::from_xywh(px, py, panel_w, panel_h), 6.0, 6.0),
+        &paint,
+    );
+
+    // Border
+    paint.set_color(Color::from(INPUT_BORDER));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.0);
-    canvas.draw_rect(Rect::from_xywh(panel_x, panel_y, panel_w, panel_h), &paint);
-
-    paint.set_color(Color::from(0xff_222222));
+    canvas.draw_rrect(
+        RRect::new_rect_xy(Rect::from_xywh(px, py, panel_w, panel_h), 6.0, 6.0),
+        &paint,
+    );
     paint.set_style(PaintStyle::Fill);
+
     for (i, line) in lines.iter().enumerate() {
-        if let Some(blob) = TextBlob::new(line, &cache.small_font) {
-            let ly = panel_y + pad + i as f32 * line_h - metrics.ascent;
-            canvas.draw_text_blob(&blob, (panel_x + pad, ly), &paint);
+        if let Some(blob) = TextBlob::new(line.as_str(), &cache.small_font) {
+            let color = if i == 0 { INPUT_FG } else { MUTED_FG };
+            paint.set_color(Color::from(color));
+            let ty = py + pad + i as f32 * (line_h + line_gap) - metrics.ascent;
+            canvas.draw_text_blob(&blob, (px + pad, ty), &paint);
         }
     }
 }
