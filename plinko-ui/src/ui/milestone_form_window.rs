@@ -59,6 +59,11 @@ const MAX_DEP_DROPDOWN_ROWS: usize = 5;
 const DEP_DROPDOWN_H: f32 =
     DEP_DROPDOWN_FILTER_H + MAX_DEP_DROPDOWN_ROWS as f32 * DEP_DROPDOWN_ROW_H;
 
+// Forward dependents section (read-only, edit mode only)
+const FWD_ROW_H: f32 = 28.0;
+const FWD_MAX_ROWS: usize = 3;
+const FWD_SECTION_H: f32 = LABEL_H + PLAN_LABEL_GAP + FWD_ROW_H * FWD_MAX_ROWS as f32;
+
 // Multi-line description box
 const DESC_LINE_H: f32 = 18.0;
 const DESC_LINES: usize = 8;
@@ -79,6 +84,8 @@ const PANEL_H: f32 = TITLE_H
     + FIELD_BLOCK_H   // constraint kind + date
     + PLAN_FIELD_GAP
     + DEP_SECTION_H   // dependencies
+    + PLAN_FIELD_GAP
+    + FWD_SECTION_H   // forward dependents (edit mode)
     + 20.0
     + PLAN_BTN_H
     + PLAN_FORM_PADDING;
@@ -650,6 +657,19 @@ impl MilestoneFormWindow {
             above
         };
         Rect::from_xywh(target.left, top, target.width(), DEP_DROPDOWN_H)
+    }
+
+    fn fwd_label_y(width: f32, height: f32) -> f32 {
+        let dep_plus = Self::dep_plus_rect(width, height);
+        dep_plus.bottom + PLAN_FIELD_GAP
+    }
+
+    fn fwd_list_rect(width: f32, height: f32) -> Rect {
+        let p = Self::panel_rect(width, height);
+        let x = p.left + PLAN_FORM_PADDING;
+        let w = p.width() - 2.0 * PLAN_FORM_PADDING;
+        let y = Self::fwd_label_y(width, height) + LABEL_H + PLAN_LABEL_GAP;
+        Rect::from_xywh(x, y, w, FWD_ROW_H * FWD_MAX_ROWS as f32)
     }
 
     // ── Focus / state ─────────────────────────────────────────────────────────
@@ -1946,6 +1966,79 @@ impl FloatingWindow for MilestoneFormWindow {
             paint.set_stroke_width(1.5);
             canvas.draw_path(&pb.detach(), &paint);
             paint.set_style(PaintStyle::Fill);
+        }
+
+        // Forward dependents (read-only, edit mode only)
+        if let Mode::Edit(ms_id) = self.mode {
+            let fwd_lbl_y = Self::fwd_label_y(width, height);
+            if let Some(blob) = TextBlob::new("Required by", &cache.small_font) {
+                paint.set_color(Color::from(LABEL_FG));
+                canvas.draw_text_blob(&blob, (lx, fwd_lbl_y + label_y_offset), &paint);
+            }
+
+            let fwd_list = Self::fwd_list_rect(width, height);
+            paint.set_color(Color::from(INPUT_BORDER));
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(1.0);
+            canvas.draw_rrect(
+                RRect::new_rect_xy(fwd_list, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                &paint,
+            );
+            paint.set_style(PaintStyle::Fill);
+
+            let node = NodeId::Milestone(ms_id);
+            let mut fwd_items: Vec<String> = Vec::new();
+            for task in plan.tasks.values() {
+                if task.dependencies.iter().any(|d| d.id == node) {
+                    fwd_items.push(task.name.clone());
+                }
+            }
+            for ms in plan.milestones.values() {
+                if ms.dependencies.iter().any(|d| d.id == node) {
+                    fwd_items.push(ms.name.clone());
+                }
+            }
+            fwd_items.sort();
+
+            canvas.save();
+            canvas.clip_rect(fwd_list, ClipOp::Intersect, false);
+
+            if fwd_items.is_empty() {
+                if let Some(blob) =
+                    TextBlob::new("Nothing depends on this milestone", &cache.small_font)
+                {
+                    let (_, sm2) = cache.small_font.metrics();
+                    let ty =
+                        fwd_list.top + (FWD_ROW_H - (sm2.descent - sm2.ascent)) / 2.0 - sm2.ascent;
+                    paint.set_color(Color::from(MUTED_FG));
+                    canvas.draw_text_blob(&blob, (fwd_list.left + 12.0, ty), &paint);
+                }
+            } else {
+                for (i, name) in fwd_items.iter().enumerate() {
+                    if i > 0 {
+                        paint.set_color(Color::from(DIVIDER_COLOR));
+                        canvas.draw_rect(
+                            Rect::from_xywh(
+                                fwd_list.left,
+                                fwd_list.top + i as f32 * FWD_ROW_H,
+                                fwd_list.width(),
+                                1.0,
+                            ),
+                            &paint,
+                        );
+                    }
+                    if let Some(blob) = TextBlob::new(name.as_str(), &cache.small_font) {
+                        let (_, sm2) = cache.small_font.metrics();
+                        let ty = fwd_list.top
+                            + i as f32 * FWD_ROW_H
+                            + (FWD_ROW_H - (sm2.descent - sm2.ascent)) / 2.0
+                            - sm2.ascent;
+                        paint.set_color(Color::from(INPUT_FG));
+                        canvas.draw_text_blob(&blob, (fwd_list.left + 12.0, ty), &paint);
+                    }
+                }
+            }
+            canvas.restore();
         }
 
         // Save button

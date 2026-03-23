@@ -49,8 +49,8 @@ fn user_sort_key<'a>(
 }
 
 /// Sort a mutable slice of users by primary tag name then user name.
-fn sort_users_by_tag<'a>(
-    users: &mut Vec<&'a plinko_shared::data::User>,
+fn sort_users_by_tag(
+    users: &mut Vec<&plinko_shared::data::User>,
     plan: &plinko_shared::data::Plan,
 ) {
     users.sort_by(|a, b| {
