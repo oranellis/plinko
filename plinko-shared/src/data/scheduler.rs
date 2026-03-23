@@ -305,9 +305,18 @@ impl Plan {
         for dep in deps {
             let pred_end = self.node_end_date_in_state(dep.id, state);
             let lag = dep.lag_days.round() as i64;
+            // For task predecessors: tasks need the *next* day to start work, so add 1.
+            // Milestones are date-point markers, so they sit on (or after) the last day
+            // the predecessor is "done" — no +1 offset needed.
             let start_after = match dep.id {
                 NodeId::PlanStart | NodeId::Milestone(_) => pred_end + chrono::Duration::days(lag),
-                NodeId::Task(_) => pred_end + chrono::Duration::days(lag + 1),
+                NodeId::Task(_) => {
+                    if is_milestone {
+                        pred_end + chrono::Duration::days(lag)
+                    } else {
+                        pred_end + chrono::Duration::days(lag + 1)
+                    }
+                }
             };
             earliest = earliest.max(start_after);
         }
@@ -381,6 +390,26 @@ impl Plan {
             current += chrono::Duration::days(1);
         }
         current
+    }
+
+    /// Advances `date` forward until it lands on a day with plan-level capacity > 0.
+    /// Returns `date` unchanged if it is already a working day.
+    fn next_working_day_on_or_after(&self, date: NaiveDate) -> NaiveDate {
+        let mut d = date;
+        let limit = date + chrono::Duration::days(MAX_FILL_DAYS);
+        while d <= limit {
+            let hours = if let Some(h) = self.calendar.get(d) {
+                h
+            } else {
+                let wd = crate::data::schedule::chrono_to_weekday(d.weekday());
+                self.default_schedule.hours_on(wd)
+            };
+            if hours > 0.0 {
+                return d;
+            }
+            d += chrono::Duration::days(1);
+        }
+        date
     }
 
     fn fill_slot(
@@ -769,6 +798,9 @@ impl Plan {
             }
             _ => earliest,
         };
+
+        // Milestones must land on a day when the team is working.
+        let date = self.next_working_day_on_or_after(date);
 
         state
             .allocations
