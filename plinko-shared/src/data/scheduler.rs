@@ -287,7 +287,13 @@ impl Plan {
         state: &SchedulerState,
     ) -> NaiveDate {
         let deps = self.get_dependencies(&node_id);
-        let mut earliest = state.today;
+
+        // If there are no dependencies, fall back to today (or plan start).
+        let mut earliest = if deps.is_empty() {
+            state.today.max(self.start_date)
+        } else {
+            self.start_date
+        };
 
         for dep in deps {
             let pred_end = self.node_end_date_in_state(dep.id, state);
