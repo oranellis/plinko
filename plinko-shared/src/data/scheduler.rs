@@ -377,6 +377,7 @@ impl Plan {
         total_hours: f32,
         start_date: NaiveDate,
         max_per_day: Option<f32>,
+        strict: bool,
         state: &mut SchedulerState,
     ) -> Vec<WorkSegment> {
         let mut remaining = total_hours;
@@ -386,19 +387,33 @@ impl Plan {
 
         while remaining > EPSILON && current <= limit {
             let avail = self.hours_remaining(state, user_id, current);
-            if avail > EPSILON {
+            let scheduled = if strict {
+                // In strict mode allocate exactly cap hours per working day,
+                // regardless of what the user has remaining that day.
+                let cap = max_per_day.unwrap_or(remaining);
+                if self.hours_available(&user_id, current) > EPSILON {
+                    cap.min(remaining)
+                } else {
+                    0.0
+                }
+            } else if avail > EPSILON {
                 let cap = max_per_day.unwrap_or(f32::MAX);
-                let take = avail.min(remaining).min(cap);
-                *state
+                avail.min(remaining).min(cap)
+            } else {
+                0.0
+            };
+            if scheduled > EPSILON {
+                let entry = state
                     .capacity
                     .entry((user_id, current))
-                    .or_insert_with(|| self.hours_available(&user_id, current)) -= take;
+                    .or_insert_with(|| self.hours_available(&user_id, current));
+                *entry -= scheduled;
                 segments.push(WorkSegment {
                     user: user_id,
                     date: current,
-                    hours_worked: take,
+                    hours_worked: scheduled,
                 });
-                remaining -= take;
+                remaining -= scheduled;
             }
             current += chrono::Duration::days(1);
         }
@@ -412,6 +427,7 @@ impl Plan {
         total_hours: f32,
         start_date: NaiveDate,
         max_per_day: Option<f32>,
+        strict: bool,
         state: &SchedulerState,
     ) -> NaiveDate {
         let mut remaining = total_hours;
@@ -420,15 +436,28 @@ impl Plan {
         let limit = start_date + chrono::Duration::days(MAX_FILL_DAYS);
 
         while remaining > EPSILON && current <= limit {
-            let avail = state
-                .capacity
-                .get(&(user_id, current))
-                .copied()
-                .unwrap_or_else(|| self.hours_available(&user_id, current));
-            if avail > EPSILON {
-                let cap = max_per_day.unwrap_or(f32::MAX);
-                let take = avail.min(remaining).min(cap);
-                remaining -= take;
+            let scheduled = if strict {
+                let cap = max_per_day.unwrap_or(remaining);
+                if self.hours_available(&user_id, current) > EPSILON {
+                    cap.min(remaining)
+                } else {
+                    0.0
+                }
+            } else {
+                let avail = state
+                    .capacity
+                    .get(&(user_id, current))
+                    .copied()
+                    .unwrap_or_else(|| self.hours_available(&user_id, current));
+                if avail > EPSILON {
+                    let cap = max_per_day.unwrap_or(f32::MAX);
+                    avail.min(remaining).min(cap)
+                } else {
+                    0.0
+                }
+            };
+            if scheduled > EPSILON {
+                remaining -= scheduled;
                 last_date = current;
             }
             current += chrono::Duration::days(1);
@@ -443,6 +472,7 @@ impl Plan {
         workload_days: f32,
         earliest_start: NaiveDate,
         max_per_day: Option<f32>,
+        strict: bool,
         state: &SchedulerState,
     ) -> UserId {
         let total_hours = workload_days * self.default_schedule.hours_per_workload_day();
@@ -459,7 +489,8 @@ impl Plan {
         eligible.sort_by_key(|uid| uid.0);
 
         for uid in eligible {
-            let end = self.simulate_fill(uid, total_hours, earliest_start, max_per_day, state);
+            let end =
+                self.simulate_fill(uid, total_hours, earliest_start, max_per_day, strict, state);
             if end < best_end {
                 best_end = end;
                 best_user = Some(uid);
@@ -522,6 +553,7 @@ impl Plan {
         let mut task_end: Option<NaiveDate> = None;
 
         let task_duration = task.duration_days_target;
+        let strict = task.strict_mode;
         let workers: Vec<WorkerSlot> = task.workers.clone();
 
         for slot in &workers {
@@ -551,6 +583,7 @@ impl Plan {
                         *workload_days,
                         start_date,
                         daily_cap,
+                        strict,
                         state,
                     );
                     (uid, *workload_days)
@@ -558,7 +591,8 @@ impl Plan {
             };
 
             let total_hours = workload_days * self.default_schedule.hours_per_workload_day();
-            let segments = self.fill_slot(user_id, total_hours, start_date, daily_cap, state);
+            let segments =
+                self.fill_slot(user_id, total_hours, start_date, daily_cap, strict, state);
 
             if let Some(first) = segments.first() {
                 task_start = Some(task_start.map_or(first.date, |d: NaiveDate| d.min(first.date)));
