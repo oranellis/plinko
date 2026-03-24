@@ -24,23 +24,17 @@ impl PlanEngine {
     where
         F: FnOnce(&mut Plan) -> Result<(), PlanError>,
     {
-        let backup = self
-            .plan
-            .node_allocations
-            .has_schedule()
-            .then(|| self.plan.clone());
+        let backup = self.plan.clone();
         match f(&mut self.plan) {
-            Err(e) => PlanResponse::Error(e),
+            Err(e) => {
+                self.plan = backup;
+                PlanResponse::Error(e)
+            }
             Ok(()) => match self.plan.compute_time_optimised_plan() {
                 Ok(()) => PlanResponse::PlanUpdated,
                 Err(e) => {
-                    if let Some(backup_plan) = backup {
-                        self.plan = backup_plan;
-                        PlanResponse::Error(PlanError::Scheduler(e))
-                    } else {
-                        eprintln!("scheduler warning after mutation: {e:?}");
-                        PlanResponse::PlanUpdated
-                    }
+                    self.plan = backup;
+                    PlanResponse::Error(PlanError::Scheduler(e))
                 }
             },
         }

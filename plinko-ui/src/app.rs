@@ -25,6 +25,7 @@ use crate::pages::{Page, PageId, PageManager};
 use crate::ui::back_button;
 use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
+use crate::ui::error_window::ErrorWindow;
 use crate::ui::floating_window::FloatingWindowManager;
 use crate::ui::layout::{BACK_BTN_SIZE, BACK_BTN_X, BACK_BTN_Y, HOME_BG, PANEL_BG};
 use plinko_shared::data::ids::UserId;
@@ -611,7 +612,8 @@ impl ApplicationHandler for Application {
             match response {
                 PlanResponse::PlanUpdated => self.mark_dirty(DirtyRegion::All),
                 PlanResponse::Error(e) => {
-                    eprintln!("plan error: {e}");
+                    self.floats.push(Box::new(ErrorWindow::new(e.to_string())));
+                    self.mark_dirty(DirtyRegion::All);
                 }
                 PlanResponse::PlanList(list) => {
                     if matches!(self.app_state, AppState::InPage(PageId::Settings)) {

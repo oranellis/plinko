@@ -9,6 +9,7 @@
 pub mod back_button;
 pub mod cache;
 pub mod dirty;
+pub mod error_window;
 pub mod floating_window;
 pub mod icon_button;
 pub mod icons;
