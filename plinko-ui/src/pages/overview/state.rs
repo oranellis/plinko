@@ -3,6 +3,7 @@
 use crate::ui::floating_window::FloatingWindow;
 use crate::ui::layout::GANTT_ZOOM_DEFAULT;
 use plinko_shared::data::ids::NodeId;
+use std::collections::HashSet;
 
 /// Full interactive state for the overview page.
 pub struct OverviewState {
@@ -53,6 +54,10 @@ pub struct OverviewState {
     pub hovered_warning: Option<NodeId>,
     /// The gantt item currently hovered, for the info tooltip overlay.
     pub hovered_node: Option<NodeId>,
+    /// Nodes that `hovered_node` directly depends on (upstream).
+    pub hovered_deps: HashSet<NodeId>,
+    /// Nodes that directly depend on `hovered_node` (downstream).
+    pub hovered_dependents: HashSet<NodeId>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -86,6 +91,8 @@ impl OverviewState {
             settings_init_scheduler_target: NodeId::PlanStart,
             hovered_warning: None,
             hovered_node: None,
+            hovered_deps: HashSet::new(),
+            hovered_dependents: HashSet::new(),
         }
     }
 }

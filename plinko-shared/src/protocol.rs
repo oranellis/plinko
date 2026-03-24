@@ -9,13 +9,28 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+/// Deserializes an `Option<Option<T>>` field so that an absent JSON field
+/// produces `None` (no-op / don't update) while an explicit JSON `null`
+/// produces `Some(None)` (clear the value).  Without this, both cases
+/// round-trip as `None` because serde maps JSON `null` to the outer `None`.
+fn deserialize_optional_field<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
+{
+    Ok(Some(Option::deserialize(de)?))
+}
+
 #[derive(Default, Serialize, Deserialize, Clone, Debug)]
 pub struct TaskPatch {
     pub name: Option<String>,
     pub description: Option<String>,
     pub status: Option<Status>,
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub actual_start_date: Option<Option<NaiveDate>>,
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub actual_end_date: Option<Option<NaiveDate>>,
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub constraint: Option<Option<DateConstraint>>,
     pub duration_days_target: Option<f32>,
     pub workers: Option<Vec<WorkerSlot>>,
@@ -73,6 +88,7 @@ impl TaskPatch {
 pub struct MilestonePatch {
     pub name: Option<String>,
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_field")]
     pub constraint: Option<Option<DateConstraint>>,
     pub dependencies: Option<Vec<Dependency>>,
 }
@@ -296,4 +312,32 @@ pub fn apply_milestone_patch(
     }
     plan.node_allocations.invalidate();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clearing_constraint_via_json_roundtrip() {
+        // Some(None) must survive JSON serialisation so the server can
+        // distinguish "clear constraint" from "no change".
+        let patch = MilestonePatch::new().constraint(None);
+        let json = serde_json::to_string(&patch).unwrap();
+        let decoded: MilestonePatch = serde_json::from_str(&json).unwrap();
+        assert!(
+            decoded.constraint == Some(None),
+            "constraint should round-trip as Some(None) (clear), got {:?}",
+            decoded.constraint
+        );
+
+        let patch2 = TaskPatch::new().constraint(None);
+        let json2 = serde_json::to_string(&patch2).unwrap();
+        let decoded2: TaskPatch = serde_json::from_str(&json2).unwrap();
+        assert!(
+            decoded2.constraint == Some(None),
+            "constraint should round-trip as Some(None) (clear), got {:?}",
+            decoded2.constraint
+        );
+    }
 }

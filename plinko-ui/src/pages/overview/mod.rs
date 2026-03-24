@@ -115,6 +115,36 @@ impl Page for OverviewPage {
             });
         let node_dirty = self.state.hovered_node != prev_node;
 
+        if node_dirty {
+            self.state.hovered_deps.clear();
+            self.state.hovered_dependents.clear();
+            if let Some(node_id) = self.state.hovered_node {
+                match node_id {
+                    NodeId::Task(id) => {
+                        if let Some(task) = plan.tasks.get(&id) {
+                            for dep in &task.dependencies {
+                                self.state.hovered_deps.insert(dep.id);
+                            }
+                        }
+                    }
+                    NodeId::Milestone(id) => {
+                        if let Some(ms) = plan.milestones.get(&id) {
+                            for dep in &ms.dependencies {
+                                self.state.hovered_deps.insert(dep.id);
+                            }
+                        }
+                    }
+                    NodeId::PlanStart => {}
+                }
+                let dependents_map = plan.build_dependents_map();
+                if let Some(deps) = dependents_map.get(&node_id) {
+                    for &dep_node in deps {
+                        self.state.hovered_dependents.insert(dep_node);
+                    }
+                }
+            }
+        }
+
         if hover_dirty || warning_dirty || node_dirty {
             DirtyRegion::PageOnly
         } else {
@@ -273,6 +303,8 @@ impl Page for OverviewPage {
         self.state.toolbar_btn_hovered = None;
         self.state.hovered_warning = None;
         self.state.hovered_node = None;
+        self.state.hovered_deps.clear();
+        self.state.hovered_dependents.clear();
     }
 
     fn has_animation(&self) -> bool {

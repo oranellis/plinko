@@ -510,11 +510,11 @@ impl Plan {
         let mut queue = std::collections::VecDeque::new();
         queue.push_back(NodeId::PlanStart);
         while let Some(node) = queue.pop_front() {
-            if reachable.insert(node) {
-                if let Some(deps) = dependents_map.get(&node) {
-                    for &d in deps {
-                        queue.push_back(d);
-                    }
+            if reachable.insert(node)
+                && let Some(deps) = dependents_map.get(&node)
+            {
+                for &d in deps {
+                    queue.push_back(d);
                 }
             }
         }

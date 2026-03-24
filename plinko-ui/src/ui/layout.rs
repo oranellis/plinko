@@ -98,6 +98,7 @@ pub const BTN_PRIMARY_FG: u32 = 0xff_ffffff;
 pub const BTN_SECONDARY_BG: u32 = 0xff_f0f0f0;
 pub const BTN_SECONDARY_FG: u32 = 0xff_333333;
 pub const BTN_DANGER_BG: u32 = 0xff_e53935;
+pub const BTN_DANGER_HOVER_BG: u32 = 0xff_c62828;
 pub const BTN_DANGER_FG: u32 = 0xff_ffffff;
 pub const ITEM_FG: u32 = 0xff_222222;
 pub const ITEM_TASK_DOT: u32 = 0xff_4a90d9;

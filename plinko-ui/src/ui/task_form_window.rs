@@ -12,13 +12,14 @@ use crate::ui::cache::RenderCache;
 use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
-    BACK_BTN_SIZE, BTN_DANGER_BG, BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG,
-    BTN_SECONDARY_BG, BTN_SECONDARY_FG, CAL_SELECTED_BG, DEP_PLAN_START_FG, DIVIDER_COLOR,
-    ERROR_BG, GHOST_FG, ICON_DELETE_COLOR, INPUT_BG, INPUT_BORDER, INPUT_BORDER_ERROR,
-    INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG, LINK_COLOR, LIST_BG,
-    LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK, OVERLAY_LIGHT, OVERLAY_SOFT, OVERLAY_XLIGHT,
-    PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
-    PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR, SUBTLE_BG, SUBTLE_FG,
+    BACK_BTN_SIZE, BTN_DANGER_BG, BTN_DANGER_FG, BTN_DANGER_HOVER_BG, BTN_PRIMARY_BG,
+    BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, CAL_SELECTED_BG,
+    DEP_PLAN_START_FG, DIVIDER_COLOR, ERROR_BG, GHOST_FG, ICON_DELETE_COLOR, INPUT_BG,
+    INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG,
+    LABEL_FG, LINK_COLOR, LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK, OVERLAY_LIGHT,
+    OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H,
+    PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR,
+    SUBTLE_BG, SUBTLE_FG,
 };
 use crate::ui::multi_line_input::MultiLineInput;
 use crate::ui::text_input::TextInput;
@@ -41,6 +42,7 @@ const LABEL_H: f32 = 14.0;
 const FIELD_BLOCK_H: f32 = LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H;
 const COL_GAP: f32 = 12.0;
 const SAVE_BTN_W: f32 = 80.0;
+const DELETE_BTN_W: f32 = 80.0;
 
 // Multi-line description box
 const DESC_LINE_H: f32 = 18.0;
@@ -546,6 +548,7 @@ pub struct TaskFormWindow {
     // Buttons
     hovered_back: bool,
     hovered_save: bool,
+    hovered_delete: bool,
     // Scroll
     cursor_in_desc: bool,
     form_scroll_y: f32,
@@ -604,6 +607,7 @@ impl TaskFormWindow {
             relaxed_mode: false,
             hovered_relaxed: false,
             hovered_save: false,
+            hovered_delete: false,
             cursor_in_desc: false,
             form_scroll_y: 0.0,
             max_desc_scroll: Cell::new(0.0),
@@ -676,6 +680,7 @@ impl TaskFormWindow {
             constraint_date_error: false,
             hovered_back: false,
             hovered_save: false,
+            hovered_delete: false,
             actual_start_error: false,
             cursor_in_desc: false,
             actual_end_error: false,
@@ -723,6 +728,16 @@ impl TaskFormWindow {
             p.right - PLAN_FORM_PADDING - SAVE_BTN_W,
             p.top + PANEL_H - PLAN_FORM_PADDING - PLAN_BTN_H,
             SAVE_BTN_W,
+            PLAN_BTN_H,
+        )
+    }
+
+    fn delete_btn_rect(width: f32, height: f32) -> Rect {
+        let p = Self::panel_rect(width, height);
+        Rect::from_xywh(
+            p.left + PLAN_FORM_PADDING,
+            p.top + PANEL_H - PLAN_FORM_PADDING - PLAN_BTN_H,
+            DELETE_BTN_W,
             PLAN_BTN_H,
         )
     }
@@ -2515,6 +2530,7 @@ impl FloatingWindow for TaskFormWindow {
         let panel = Self::panel_rect(width, height);
         let back_btn = Self::back_btn_rect(width, height);
         let save_btn = Self::save_btn_rect(width, height);
+        let delete_btn = Self::delete_btn_rect(width, height);
         let today = chrono::Local::now().date_naive();
         let scroll_y = self.effective_scroll(width, height);
 
@@ -3258,6 +3274,28 @@ impl FloatingWindow for TaskFormWindow {
             canvas.draw_text_blob(&blob, (tx, ty), &paint);
         }
 
+        // Delete button — only shown when editing an existing task.
+        if matches!(self.mode, Mode::Edit(_)) {
+            paint.set_color(Color::from(if self.hovered_delete {
+                BTN_DANGER_HOVER_BG
+            } else {
+                BTN_DANGER_BG
+            }));
+            paint.set_style(PaintStyle::Fill);
+            canvas.draw_rrect(
+                RRect::new_rect_xy(delete_btn, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                &paint,
+            );
+            if let Some(blob) = TextBlob::new("Delete", &cache.font) {
+                let (_, m) = cache.font.metrics();
+                let (adv, _) = cache.font.measure_str("Delete", None);
+                let tx = delete_btn.left + (DELETE_BTN_W - adv) / 2.0;
+                let ty = delete_btn.top + (PLAN_BTN_H - (m.descent - m.ascent)) / 2.0 - m.ascent;
+                paint.set_color(Color::from(BTN_DANGER_FG));
+                canvas.draw_text_blob(&blob, (tx, ty), &paint);
+            }
+        }
+
         canvas.restore(); // end content scroll region
 
         // Scheduler error: red border around the panel + fixed banner below title bar.
@@ -3423,6 +3461,11 @@ impl FloatingWindow for TaskFormWindow {
         set!(
             self.hovered_save,
             Self::save_btn_rect(width, height).contains(pt_form)
+        );
+        set!(
+            self.hovered_delete,
+            matches!(self.mode, Mode::Edit(_))
+                && Self::delete_btn_rect(width, height).contains(pt_form)
         );
         set!(
             self.hovered_plus,
@@ -3712,6 +3755,12 @@ impl FloatingWindow for TaskFormWindow {
         }
         if Self::save_btn_rect(width, height).contains(pt_form) {
             return self.try_submit(plan, sender);
+        }
+        if let Mode::Edit(task_id) = self.mode
+            && Self::delete_btn_rect(width, height).contains(pt_form)
+        {
+            sender.send(PlanRequest::DeleteTask(task_id));
+            return FloatingWindowOutcome::close();
         }
 
         // Calendar popup
@@ -4656,6 +4705,7 @@ impl FloatingWindow for TaskFormWindow {
     fn reset_hover(&mut self) {
         self.hovered_back = false;
         self.hovered_save = false;
+        self.hovered_delete = false;
         self.hovered_plus = false;
         self.hovered_status = None;
         self.hovered_constraint_kind = None;

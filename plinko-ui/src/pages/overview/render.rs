@@ -2,7 +2,7 @@
 
 use chrono::{Datelike, Duration, NaiveDate, Weekday as CWeekday};
 use skia_safe::{Canvas, ClipOp, Color, Paint, PaintStyle, PathBuilder, RRect, Rect, TextBlob};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::ui::cache::RenderCache;
 use crate::ui::icon_button;
@@ -28,6 +28,21 @@ const WARN_STROKE: u32 = 0xff_e65100;
 const WARN_TOOLTIP_BG: u32 = 0xf0_333333;
 /// Tooltip text color.
 const WARN_TOOLTIP_FG: u32 = 0xff_ffffff;
+
+// Hover highlight colors — hovered node (blue)
+const HOVER_SELF_GLOW: u32 = 0xff_1e88e5;
+const HOVER_SELF_BORDER: u32 = 0xff_1e88e5;
+// Upstream dependencies (orange — nodes/arrows pointing into the hovered node)
+const HOVER_UPSTREAM_GLOW: u32 = 0x90_7b1fa2;
+const HOVER_UPSTREAM_BORDER: u32 = 0xff_7b1fa2;
+const HOVER_ARROW_UPSTREAM_GLOW: u32 = 0x25_7b1fa2;
+const HOVER_ARROW_UPSTREAM: u32 = 0xa8_7b1fa2;
+// Downstream dependents (teal — nodes/arrows pointing out of the hovered node)
+const HOVER_DOWNSTREAM_GLOW: u32 = 0x90_00897b;
+const HOVER_DOWNSTREAM_BORDER: u32 = 0xff_00897b;
+const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_00897b;
+const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_00897b;
+const GANTT_DEP_LINE_DIMMED: u32 = 0x20_888888;
 
 /// A clicked item on the Gantt chart.
 pub enum GanttHit {
@@ -103,6 +118,9 @@ pub fn draw_overview(
     draw_gantt_row_backgrounds(canvas, state, &rows, w, h);
     draw_gantt_grid(canvas, state, w, h, view_start);
     draw_gantt_dependencies(canvas, state, plan, &rows, w, h, view_start);
+    if state.hovered_node.is_some() {
+        draw_highlighted_dep_arrows(canvas, state, plan, &rows, w, h, view_start);
+    }
     draw_gantt_rows(canvas, state, plan, &rows, w, h, view_start, cache);
     draw_gantt_header(canvas, state, w, view_start, cache);
     draw_toolbar_buttons(canvas, state, cache, w);
@@ -462,6 +480,53 @@ fn draw_gantt_rows(
                     let bar_w = (((*end - *start).num_days() + 1) as f32 * zoom).max(4.0);
                     let bar_y = row_y + GANTT_ROW_PADDING;
                     let bar_h = GANTT_ROW_H - 2.0 * GANTT_ROW_PADDING;
+                    let node_id = NodeId::Task(*id);
+
+                    let is_hovered = state.hovered_node == Some(node_id);
+                    let is_upstream = !is_hovered && state.hovered_deps.contains(&node_id);
+                    let is_downstream =
+                        !is_hovered && !is_upstream && state.hovered_dependents.contains(&node_id);
+                    if is_hovered || is_upstream || is_downstream {
+                        let (glow_color, border_color, glow_w, border_w) = if is_hovered {
+                            (HOVER_SELF_GLOW, HOVER_SELF_BORDER, 7.0_f32, 1.75_f32)
+                        } else if is_upstream {
+                            (
+                                HOVER_UPSTREAM_GLOW,
+                                HOVER_UPSTREAM_BORDER,
+                                4.5_f32,
+                                1.25_f32,
+                            )
+                        } else {
+                            (
+                                HOVER_DOWNSTREAM_GLOW,
+                                HOVER_DOWNSTREAM_BORDER,
+                                4.5_f32,
+                                1.25_f32,
+                            )
+                        };
+                        paint.set_style(PaintStyle::Stroke);
+                        paint.set_stroke_width(glow_w);
+                        paint.set_color(Color::from(glow_color));
+                        canvas.draw_rrect(
+                            RRect::new_rect_xy(
+                                Rect::from_xywh(bar_x, bar_y, bar_w, bar_h),
+                                GANTT_BAR_CORNER,
+                                GANTT_BAR_CORNER,
+                            ),
+                            &paint,
+                        );
+                        paint.set_stroke_width(border_w);
+                        paint.set_color(Color::from(border_color));
+                        canvas.draw_rrect(
+                            RRect::new_rect_xy(
+                                Rect::from_xywh(bar_x, bar_y, bar_w, bar_h),
+                                GANTT_BAR_CORNER,
+                                GANTT_BAR_CORNER,
+                            ),
+                            &paint,
+                        );
+                        paint.set_style(PaintStyle::Fill);
+                    }
 
                     let bar_color = task_status_color(plan.task_status(id));
                     paint.set_color(Color::from(bar_color));
@@ -493,7 +558,6 @@ fn draw_gantt_rows(
                     }
 
                     // Warning icon if this task has a constraint violation.
-                    let node_id = NodeId::Task(*id);
                     let has_violation = plan
                         .node_allocations
                         .constraint_violations
@@ -513,6 +577,7 @@ fn draw_gantt_rows(
                 }
 
                 GanttItem::Milestone { id, date } => {
+                    let node_id = NodeId::Milestone(*id);
                     let ms_status = milestone_display_status(plan, *id);
                     let ms_color = milestone_color(ms_status);
                     let cx = date_to_x(*date, view_start, zoom, scroll_x) + zoom / 2.0;
@@ -526,6 +591,38 @@ fn draw_gantt_rows(
                     pb.line_to((cx - half, cy));
                     pb.close();
                     let ms_path = pb.detach();
+
+                    let is_hovered = state.hovered_node == Some(node_id);
+                    let is_upstream = !is_hovered && state.hovered_deps.contains(&node_id);
+                    let is_downstream =
+                        !is_hovered && !is_upstream && state.hovered_dependents.contains(&node_id);
+                    if is_hovered || is_upstream || is_downstream {
+                        let (glow_color, border_color, glow_w, border_w) = if is_hovered {
+                            (HOVER_SELF_GLOW, HOVER_SELF_BORDER, 7.0_f32, 1.75_f32)
+                        } else if is_upstream {
+                            (
+                                HOVER_UPSTREAM_GLOW,
+                                HOVER_UPSTREAM_BORDER,
+                                4.5_f32,
+                                1.25_f32,
+                            )
+                        } else {
+                            (
+                                HOVER_DOWNSTREAM_GLOW,
+                                HOVER_DOWNSTREAM_BORDER,
+                                4.5_f32,
+                                1.25_f32,
+                            )
+                        };
+                        paint.set_style(PaintStyle::Stroke);
+                        paint.set_stroke_width(glow_w);
+                        paint.set_color(Color::from(glow_color));
+                        canvas.draw_path(&ms_path, &paint);
+                        paint.set_stroke_width(border_w);
+                        paint.set_color(Color::from(border_color));
+                        canvas.draw_path(&ms_path, &paint);
+                        paint.set_style(PaintStyle::Fill);
+                    }
 
                     paint.set_color(Color::from(ms_color));
                     paint.set_style(PaintStyle::Fill);
@@ -556,7 +653,6 @@ fn draw_gantt_rows(
                     }
 
                     // Warning icon if this milestone has a constraint violation.
-                    let node_id = NodeId::Milestone(*id);
                     let has_violation = plan
                         .node_allocations
                         .constraint_violations
@@ -1012,44 +1108,21 @@ fn draw_milestone_label(
     // If no position is clear, the label is hidden.
 }
 
-fn draw_gantt_dependencies(
-    canvas: &Canvas,
-    state: &OverviewState,
-    plan: &Plan,
+struct ItemPos {
+    start_x: f32,
+    end_x: f32,
+    center_y: f32,
+}
+
+fn build_item_pos_map(
     rows: &[GanttRow],
-    width: f32,
     height: f32,
+    scroll_y: f32,
+    zoom: f32,
+    scroll_x: f32,
     view_start: NaiveDate,
-) {
-    use plinko_shared::data::ids::NodeId;
-    use std::collections::HashMap;
-
-    let rows_top = gantt_rows_top();
-    let scroll_y = state.scroll_y;
-    let zoom = state.zoom;
-    let scroll_x = state.scroll_x;
-
-    canvas.save();
-    canvas.clip_rect(
-        Rect::from_xywh(0.0, rows_top, width, height - rows_top),
-        ClipOp::Intersect,
-        false,
-    );
-
-    let mut paint = Paint::default();
-    paint.set_anti_alias(true);
-    paint.set_color(Color::from(GANTT_DEP_LINE_COLOR));
-    paint.set_style(PaintStyle::Stroke);
-    paint.set_stroke_width(1.5);
-
-    struct ItemPos {
-        start_x: f32,
-        end_x: f32,
-        center_y: f32,
-    }
-
+) -> HashMap<NodeId, ItemPos> {
     let mut pos_map: HashMap<NodeId, ItemPos> = HashMap::new();
-
     for (row_idx, row) in rows.iter().enumerate() {
         let cy = row_top_y(row_idx, rows.len(), height, scroll_y) + GANTT_ROW_H / 2.0;
         for item in &row.items {
@@ -1089,16 +1162,60 @@ fn draw_gantt_dependencies(
             }
         }
     }
+    pos_map
+}
 
+fn draw_gantt_dependencies(
+    canvas: &Canvas,
+    state: &OverviewState,
+    plan: &Plan,
+    rows: &[GanttRow],
+    width: f32,
+    height: f32,
+    view_start: NaiveDate,
+) {
+    let rows_top = gantt_rows_top();
+    let scroll_y = state.scroll_y;
+    let zoom = state.zoom;
+    let scroll_x = state.scroll_x;
+
+    canvas.save();
+    canvas.clip_rect(
+        Rect::from_xywh(0.0, rows_top, width, height - rows_top),
+        ClipOp::Intersect,
+        false,
+    );
+
+    let has_hover = state.hovered_node.is_some();
+    let arrow_color = if has_hover {
+        GANTT_DEP_LINE_DIMMED
+    } else {
+        GANTT_DEP_LINE_COLOR
+    };
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    paint.set_color(Color::from(arrow_color));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.5);
+
+    let pos_map = build_item_pos_map(rows, height, scroll_y, zoom, scroll_x, view_start);
     let radius = 6.0f32;
 
     for task in plan.tasks.values() {
-        let to_pos = match pos_map.get(&NodeId::Task(task.id)) {
+        let to_id = NodeId::Task(task.id);
+        let to_pos = match pos_map.get(&to_id) {
             Some(p) => p,
             None => continue,
         };
         for dep in &task.dependencies {
-            if let Some(from_pos) = pos_map.get(&dep.id) {
+            let from_id = dep.id;
+            if has_hover
+                && (state.hovered_node == Some(from_id) || state.hovered_node == Some(to_id))
+            {
+                continue;
+            }
+            if let Some(from_pos) = pos_map.get(&from_id) {
                 draw_dep_arrow(
                     canvas,
                     &mut paint,
@@ -1113,12 +1230,19 @@ fn draw_gantt_dependencies(
     }
 
     for ms in plan.milestones.values() {
-        let to_pos = match pos_map.get(&NodeId::Milestone(ms.id)) {
+        let to_id = NodeId::Milestone(ms.id);
+        let to_pos = match pos_map.get(&to_id) {
             Some(p) => p,
             None => continue,
         };
         for dep in &ms.dependencies {
-            if let Some(from_pos) = pos_map.get(&dep.id) {
+            let from_id = dep.id;
+            if has_hover
+                && (state.hovered_node == Some(from_id) || state.hovered_node == Some(to_id))
+            {
+                continue;
+            }
+            if let Some(from_pos) = pos_map.get(&from_id) {
                 draw_dep_arrow(
                     canvas,
                     &mut paint,
@@ -1129,6 +1253,121 @@ fn draw_gantt_dependencies(
                     radius,
                 );
             }
+        }
+    }
+
+    canvas.restore();
+}
+
+fn draw_highlighted_dep_arrows(
+    canvas: &Canvas,
+    state: &OverviewState,
+    plan: &Plan,
+    rows: &[GanttRow],
+    width: f32,
+    height: f32,
+    view_start: NaiveDate,
+) {
+    let rows_top = gantt_rows_top();
+    let scroll_y = state.scroll_y;
+    let zoom = state.zoom;
+    let scroll_x = state.scroll_x;
+
+    canvas.save();
+    canvas.clip_rect(
+        Rect::from_xywh(0.0, rows_top, width, height - rows_top),
+        ClipOp::Intersect,
+        false,
+    );
+
+    let pos_map = build_item_pos_map(rows, height, scroll_y, zoom, scroll_x, view_start);
+    let radius = 6.0f32;
+
+    // Collect highlighted arrows into upstream (into hovered) and downstream (out of hovered).
+    struct Arrow {
+        from_x: f32,
+        from_y: f32,
+        to_x: f32,
+        to_y: f32,
+    }
+    let mut upstream: Vec<Arrow> = Vec::new();
+    let mut downstream: Vec<Arrow> = Vec::new();
+
+    let collect = |deps: &[plinko_shared::data::dependency::Dependency],
+                   to_id: NodeId,
+                   to_pos: &ItemPos,
+                   upstream: &mut Vec<Arrow>,
+                   downstream: &mut Vec<Arrow>| {
+        for dep in deps {
+            let from_id = dep.id;
+            let Some(from_pos) = pos_map.get(&from_id) else {
+                continue;
+            };
+            let arrow = Arrow {
+                from_x: from_pos.end_x,
+                from_y: from_pos.center_y,
+                to_x: to_pos.start_x,
+                to_y: to_pos.center_y,
+            };
+            if state.hovered_node == Some(to_id) {
+                upstream.push(arrow);
+            } else if state.hovered_node == Some(from_id) {
+                downstream.push(arrow);
+            }
+        }
+    };
+
+    for task in plan.tasks.values() {
+        let to_id = NodeId::Task(task.id);
+        if let Some(to_pos) = pos_map.get(&to_id) {
+            collect(
+                &task.dependencies,
+                to_id,
+                to_pos,
+                &mut upstream,
+                &mut downstream,
+            );
+        }
+    }
+    for ms in plan.milestones.values() {
+        let to_id = NodeId::Milestone(ms.id);
+        if let Some(to_pos) = pos_map.get(&to_id) {
+            collect(
+                &ms.dependencies,
+                to_id,
+                to_pos,
+                &mut upstream,
+                &mut downstream,
+            );
+        }
+    }
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    paint.set_style(PaintStyle::Stroke);
+
+    // Draw all glows first, then all cores, per direction.
+    for (arrows, glow_color, core_color) in [
+        (&upstream, HOVER_ARROW_UPSTREAM_GLOW, HOVER_ARROW_UPSTREAM),
+        (
+            &downstream,
+            HOVER_ARROW_DOWNSTREAM_GLOW,
+            HOVER_ARROW_DOWNSTREAM,
+        ),
+    ] {
+        paint.set_stroke_width(3.5);
+        paint.set_color(Color::from(glow_color));
+        for a in arrows.iter() {
+            draw_dep_arrow(
+                canvas, &mut paint, a.from_x, a.from_y, a.to_x, a.to_y, radius,
+            );
+        }
+        paint.set_stroke_width(1.8);
+        paint.set_color(Color::from(core_color));
+        for a in arrows.iter() {
+            draw_dep_arrow(
+                canvas, &mut paint, a.from_x, a.from_y, a.to_x, a.to_y, radius,
+            );
         }
     }
 
@@ -1266,7 +1505,7 @@ fn draw_node_info_panel(
     let line_gap = 3.0_f32;
     let margin = 8.0_f32;
 
-    let (_, metrics) = cache.small_font.metrics();
+    let (_, metrics) = cache.font.metrics();
     let line_h = (metrics.descent - metrics.ascent).ceil();
 
     let mut lines: Vec<String> = Vec::new();
@@ -1393,7 +1632,7 @@ fn draw_node_info_panel(
 
     let max_w = lines
         .iter()
-        .map(|l| cache.small_font.measure_str(l.as_str(), None).0)
+        .map(|l| cache.font.measure_str(l.as_str(), None).0)
         .fold(0.0_f32, f32::max);
 
     let panel_w = max_w + pad * 2.0;
@@ -1434,7 +1673,7 @@ fn draw_node_info_panel(
     paint.set_style(PaintStyle::Fill);
 
     for (i, line) in lines.iter().enumerate() {
-        if let Some(blob) = TextBlob::new(line.as_str(), &cache.small_font) {
+        if let Some(blob) = TextBlob::new(line.as_str(), &cache.font) {
             let color = if i == 0 { INPUT_FG } else { MUTED_FG };
             paint.set_color(Color::from(color));
             let ty = py + pad + i as f32 * (line_h + line_gap) - metrics.ascent;

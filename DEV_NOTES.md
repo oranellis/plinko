@@ -2,9 +2,10 @@
 
 ## Fixes/Requests
 
-- [x] When the plan allocates the workload for a task where there are more than one people working on the task, allocations between users must be on the same day, for exmaple, if person a has 0.5 days per day and person b has 0.25 days per day on a task over 5 days, the scheduler must find the first 5 days where both person a and person b have the required number of hours free. This applies to only strict mode tasks as it does not really make sense in relaxed mode.
-- [x] Can the allocation screen task names be stuck to the left edge rather than overlapping the tasks, such that they stay in the same position on the screen even when the calendar scrolls? since there is only one task per row.
-- [x] On the allocation screen can you use the same box style as on the gantt screen and have it be in the bottom left corner of the screen.
-- [x] The hitbox for clicking on the calendar screen is off for selecting the user, and my font does not have the symbol in the other box, can you change the hitbox to be correct and change the symbols to something in most default fonts?
-- [x] The plan settings screen has visual issues where text is overlapping (the saved plans) and the UI currently cannot select any other plans, only the save plan and new plan buttons are usable. The names for the identity selection are too low as well in the box and not alligned with the radio button. Can you fix these layout issues on the plan screen?
-- [x] The tags on the Team Members screen clip into the user name when there are more than one or two tags, can you make the Team Members window a bit wider and have long lists of tags have just the start of the text then an elipse to indicate more tags?
+- [ ] Can you include the workload of in-progress tasks in the allocation screen to indicate when work for currently running tasks was supposed to be done
+- [ ] Can you increase the text size on the hover info in the bottom left corner of the screen on the gantt view for task and milestone hover? Especially the name which I would like to be visible here for tasks where it doesn't fit on the task bar
+- [ ] Can you have on the allocation screen each sliver for the task show the hours numbers on each day on the tasks to show what the allocation is? Also have this on the hours summary at the top
+- [ ] Can you fix the allocation screen so the task bars show through the background vertical columns and colours, including the darker shade for the weekend
+- [ ] Can you have the gray colour for the weekends and the gray colour for the seperator on all the gantt and calendar based screens (including the gantt view and the allocation screen) be slightly darker? Also can the background be slightly darker?
+- [ ] Can you have the today button on all the screens it's on actually center today on the middle of the screen?
+- [ ] Can you have it so when I hover a task or milestone on the gantt screen it highlights all the dependent and dependency tasks? (also highlighting the dependency arrows)?

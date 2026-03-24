@@ -64,6 +64,9 @@ struct SchedulerState {
     allocations: NodeAllocations,
     inserted: HashSet<NodeId>,
     today: NaiveDate,
+    /// InProgress tasks that have no future work segments and need to be
+    /// scheduled dynamically from today rather than locked as anchored.
+    inprogress_ids: HashSet<TaskId>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -74,6 +77,7 @@ impl SchedulerState {
             allocations: NodeAllocations::default(),
             inserted: HashSet::new(),
             today,
+            inprogress_ids: HashSet::new(),
         }
     }
 }
@@ -229,50 +233,56 @@ impl Plan {
 
     fn pre_insert_anchored_tasks(&self, state: &mut SchedulerState) {
         for &id in self.tasks.keys() {
-            let is_anchored = self
-                .node_allocations
-                .tasks
-                .get(&id)
-                .map(|ts| ts.status != Status::NotStarted)
-                .unwrap_or(false);
-            if !is_anchored {
-                continue;
-            }
+            let ts = match self.node_allocations.tasks.get(&id) {
+                Some(ts) if ts.status != Status::NotStarted => ts,
+                _ => continue,
+            };
 
-            let (start, end, status, time_alloc) = match self
-                .node_allocations
-                .tasks
-                .get(&id)
-                .map(|ts| &ts.allocation)
-            {
-                Some(TaskAllocation::Fixed {
+            let (start, end, status, time_alloc) = match &ts.allocation {
+                TaskAllocation::Fixed {
                     start_date,
                     end_date,
                     corrected_end_date,
                     time_allocation,
-                }) => (
+                } => (
                     *start_date,
                     corrected_end_date.unwrap_or(*end_date),
-                    self.node_allocations.tasks[&id].status,
+                    ts.status,
                     time_allocation.clone(),
                 ),
-                _ => {
-                    let task = &self.tasks[&id];
-                    let s = state.today;
-                    let d = task.effective_duration_days().ceil() as i64;
-                    let e = s + chrono::Duration::days(d.max(0));
-                    (
-                        s,
-                        e,
-                        self.node_allocations
-                            .tasks
-                            .get(&id)
-                            .map(|ts| ts.status)
-                            .unwrap_or(Status::NotStarted),
-                        vec![],
-                    )
-                }
+                TaskAllocation::Dynamic {
+                    scheduled_start_date,
+                    scheduled_end_date,
+                    time_allocation,
+                } => (
+                    *scheduled_start_date,
+                    *scheduled_end_date,
+                    ts.status,
+                    time_allocation.clone(),
+                ),
             };
+
+            // InProgress tasks with no future work segments need their remaining
+            // work scheduled dynamically from today rather than being locked.
+            if status == Status::InProgress {
+                let has_future_work = time_alloc.iter().any(|s| s.date >= state.today);
+                if !has_future_work {
+                    state.inprogress_ids.insert(id);
+                    // Deduct past segments from capacity (none — they're in the past).
+                    // Don't pre-insert; insert_task will schedule from today.
+                    continue;
+                }
+            }
+
+            // Deduct future time allocation from capacity so subsequently scheduled
+            // tasks cannot double-book hours already consumed by this anchored task.
+            for seg in &time_alloc {
+                if seg.date >= state.today {
+                    let avail = self.hours_available(&seg.user, seg.date);
+                    let entry = state.capacity.entry((seg.user, seg.date)).or_insert(avail);
+                    *entry = (*entry - seg.hours_worked).max(0.0);
+                }
+            }
 
             state.allocations.tasks.insert(
                 id,
@@ -351,8 +361,18 @@ impl Plan {
         }
 
         // Tasks cannot start in the past; unstarted tasks start no sooner than tomorrow.
+        // InProgress tasks that are being rescheduled may start today (they already started).
         if !is_milestone {
-            earliest = earliest.max(tomorrow);
+            let floor = if let NodeId::Task(tid) = node_id {
+                if state.inprogress_ids.contains(&tid) {
+                    state.today
+                } else {
+                    tomorrow
+                }
+            } else {
+                tomorrow
+            };
+            earliest = earliest.max(floor);
         }
 
         earliest
@@ -745,14 +765,42 @@ impl Plan {
         let task_start = task_start.unwrap_or(start_date);
         let task_end = task_end.map_or(min_end, |e| e.max(min_end));
 
+        // For InProgress tasks being rescheduled, preserve any past work segments
+        // and set the correct status.
+        let (final_status, final_time_alloc) = if state.inprogress_ids.contains(&id) {
+            let past_segs: Vec<WorkSegment> = match self
+                .node_allocations
+                .tasks
+                .get(&id)
+                .map(|ts| &ts.allocation)
+            {
+                Some(TaskAllocation::Fixed {
+                    time_allocation, ..
+                })
+                | Some(TaskAllocation::Dynamic {
+                    time_allocation, ..
+                }) => time_allocation
+                    .iter()
+                    .filter(|s| s.date < state.today)
+                    .cloned()
+                    .collect(),
+                None => vec![],
+            };
+            let mut all_segs = past_segs;
+            all_segs.extend(time_allocation);
+            (Status::InProgress, all_segs)
+        } else {
+            (Status::NotStarted, time_allocation)
+        };
+
         state.allocations.tasks.insert(
             id,
             TaskState {
-                status: Status::NotStarted,
+                status: final_status,
                 allocation: TaskAllocation::Dynamic {
                     scheduled_start_date: task_start,
                     scheduled_end_date: task_end,
-                    time_allocation,
+                    time_allocation: final_time_alloc,
                 },
             },
         );
@@ -1186,6 +1234,64 @@ mod tests {
             end_gapped <= window_end,
             "GAPPED should finish by Fri May 8 after compact; got {}",
             end_gapped
+        );
+    }
+
+    /// When a task is set to InProgress with no future work segments (e.g. it was
+    /// just started today on a task with no prior allocation), the scheduler must
+    /// reschedule its remaining work starting from today — not leave it as a
+    /// zero-duration task ending today.
+    #[test]
+    fn inprogress_task_gets_rescheduled_from_today() {
+        let today = chrono::Local::now().date_naive();
+        // Plan start well in the past so the task isn't blocked by it.
+        let plan_start = today - chrono::Duration::days(10);
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays();
+
+        let uid = plan.add_user(User::new("Alice"));
+        let dep_ps = Dependency::new(NodeId::PlanStart);
+
+        let mut task = Task::new("IP", "");
+        task.add_specific_worker(uid, 4.0); // 4 workload days → 32h total
+        task.duration_days_target = 4.0; // explicit duration → daily cap = 8h/day
+        task.relaxed_mode = false;
+        task.dependencies.push(dep_ps);
+        let task_id = plan.add_task(task);
+
+        // Simulate starting the task (sets Fixed{start:today, end:today, segs:[]}).
+        plan.start_task(task_id);
+
+        // Schedule.
+        plan.compute_time_optimised_plan().unwrap();
+
+        let ts = &plan.node_allocations.tasks[&task_id];
+        assert_eq!(
+            ts.status,
+            crate::data::allocation::Status::InProgress,
+            "task should remain InProgress after rescheduling"
+        );
+
+        // The task must have actual future work segments (not zero-duration).
+        let future_segs: Vec<_> = match &ts.allocation {
+            TaskAllocation::Dynamic {
+                time_allocation, ..
+            } => time_allocation.iter().filter(|s| s.date >= today).collect(),
+            TaskAllocation::Fixed {
+                time_allocation, ..
+            } => time_allocation.iter().filter(|s| s.date >= today).collect(),
+        };
+        assert!(
+            !future_segs.is_empty(),
+            "InProgress task should have future work segments after rescheduling"
+        );
+
+        let end_date = ts.allocation.end_date();
+        assert!(
+            end_date > today,
+            "InProgress task should end after today (got {}), not be zero-duration",
+            end_date
         );
     }
 }
