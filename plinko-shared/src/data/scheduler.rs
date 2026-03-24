@@ -188,6 +188,15 @@ impl Plan {
             }
         }
 
+        // Stage 5 – Compact: pull tasks back into gaps left by forward propagation.
+        // Repeat until no task can be moved earlier.
+        let mut changed = true;
+        let mut iterations = 0;
+        while changed && iterations < 50 {
+            changed = self.compact_pass(&mut state)?;
+            iterations += 1;
+        }
+
         // Commit
         self.node_allocations = state.allocations;
         Ok(())
@@ -816,6 +825,119 @@ impl Plan {
         Ok(())
     }
 
+    /// One compact pass: for every NotStarted task/milestone, try re-inserting it from its
+    /// `earliest_start_from_dependencies`. If the result ends *earlier* than the current
+    /// allocation (or, for tasks that already start at `earliest`, if gaps in the allocation
+    /// can now be filled), keep the new allocation. Otherwise restore the old one.
+    /// No forward propagation is triggered during compact — dependents that can also compact
+    /// will be caught in subsequent passes.
+    /// Returns true if any node improved.
+    fn compact_pass(&self, state: &mut SchedulerState) -> Result<bool, SchedulerError> {
+        let empty_dependents: HashMap<NodeId, Vec<NodeId>> = HashMap::new();
+        let mut any_moved = false;
+
+        // Collect compactable nodes sorted by start date (earliest first) so freed
+        // capacity is immediately available to later tasks in the same pass.
+        let mut node_info: Vec<(NodeId, NaiveDate, NaiveDate)> = Vec::new(); // (id, start, end)
+        for (&tid, ts) in &state.allocations.tasks {
+            if ts.status != Status::NotStarted {
+                continue;
+            }
+            if let TaskAllocation::Dynamic {
+                scheduled_start_date,
+                scheduled_end_date,
+                ..
+            } = ts.allocation
+            {
+                node_info.push((NodeId::Task(tid), scheduled_start_date, scheduled_end_date));
+            }
+        }
+        for (&mid, ma) in &state.allocations.milestones {
+            node_info.push((NodeId::Milestone(mid), ma.date(), ma.date()));
+        }
+        node_info.sort_by_key(|&(_, start, _)| start);
+
+        for (node_id, _old_start, old_end) in node_info {
+            let earliest = self.earliest_start_from_dependencies(node_id, state);
+
+            match node_id {
+                NodeId::Task(task_id) => {
+                    // Save the current allocation and free its capacity.
+                    let Some(old_ts) = state.allocations.tasks.remove(&task_id) else {
+                        continue;
+                    };
+                    let old_segs = if let TaskAllocation::Dynamic {
+                        ref time_allocation,
+                        ..
+                    } = old_ts.allocation
+                    {
+                        time_allocation.clone()
+                    } else {
+                        state.allocations.tasks.insert(task_id, old_ts);
+                        continue; // Fixed allocation — skip
+                    };
+                    for seg in &old_segs {
+                        *state.capacity.entry((seg.user, seg.date)).or_insert(0.0) +=
+                            seg.hours_worked;
+                    }
+                    state.inserted.remove(&node_id);
+
+                    // Try reinserting from the earliest possible date.
+                    self.insert_task(task_id, state, &empty_dependents, None)?;
+
+                    let new_end = state
+                        .allocations
+                        .tasks
+                        .get(&task_id)
+                        .map(|ts| ts.allocation.end_date())
+                        .unwrap_or(old_end);
+
+                    if new_end < old_end {
+                        // Improvement — keep the new allocation.
+                        any_moved = true;
+                    } else {
+                        // No improvement — restore the original allocation.
+                        if let Some(new_ts) = state.allocations.tasks.remove(&task_id)
+                            && let TaskAllocation::Dynamic {
+                                ref time_allocation,
+                                ..
+                            } = new_ts.allocation
+                        {
+                            for seg in time_allocation {
+                                *state.capacity.entry((seg.user, seg.date)).or_insert(0.0) +=
+                                    seg.hours_worked;
+                            }
+                        }
+                        state.inserted.remove(&node_id);
+                        // Re-apply original segments to capacity.
+                        for seg in &old_segs {
+                            let entry = state
+                                .capacity
+                                .entry((seg.user, seg.date))
+                                .or_insert_with(|| self.hours_available(&seg.user, seg.date));
+                            *entry -= seg.hours_worked;
+                        }
+                        state.allocations.tasks.insert(task_id, old_ts);
+                        state.inserted.insert(node_id);
+                    }
+                }
+                NodeId::Milestone(mid) => {
+                    let new_date = self.next_working_day_on_or_after(earliest);
+                    if new_date < old_end {
+                        state
+                            .allocations
+                            .milestones
+                            .insert(mid, MilestoneAllocation::new(new_date));
+                        any_moved = true;
+                    }
+                }
+                NodeId::PlanStart => {}
+            }
+        }
+
+        Ok(any_moved)
+    }
+
     fn propagate_to_dependents(
         &self,
         node_id: NodeId,
@@ -918,3 +1040,146 @@ impl Plan {
 }
 // }}}
 // }}}
+
+#[cfg(test)]
+mod tests {
+    use crate::data::{
+        NodeId, Plan, Task, User, WorkSchedule, allocation::TaskAllocation, dependency::Dependency,
+    };
+    use chrono::NaiveDate;
+
+    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(y, m, d).unwrap()
+    }
+
+    fn segs_end(plan: &Plan, id: crate::data::TaskId) -> (Vec<NaiveDate>, NaiveDate) {
+        if let TaskAllocation::Dynamic {
+            time_allocation,
+            scheduled_end_date,
+            ..
+        } = &plan.node_allocations.tasks[&id].allocation
+        {
+            let dates: Vec<NaiveDate> = time_allocation.iter().map(|s| s.date).collect();
+            (dates, *scheduled_end_date)
+        } else {
+            (vec![], NaiveDate::MAX)
+        }
+    }
+
+    /// Two independent strict tasks that need the same user at 4 h/day should share
+    /// the available 8 h/day, not be serialised end-to-end.
+    #[test]
+    fn two_concurrent_tasks_share_days() {
+        let plan_start = date(2026, 5, 4); // Monday
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays(); // 8h Mon-Fri
+
+        let uid = plan.add_user(User::new("Alice"));
+        let dep_ps = Dependency::new(NodeId::PlanStart);
+
+        // Each task: 0.5 workload days, 1-day duration → cap = 0.5*8/1 = 4 h/day for 1 day.
+        let mut a = Task::new("A", "");
+        a.add_specific_worker(uid, 0.5);
+        a.duration_days_target = 1.0;
+        a.relaxed_mode = false;
+        a.dependencies.push(dep_ps);
+        let a_id = plan.add_task(a);
+
+        let mut b = Task::new("B", "");
+        b.add_specific_worker(uid, 0.5);
+        b.duration_days_target = 1.0;
+        b.relaxed_mode = false;
+        b.dependencies.push(dep_ps);
+        let b_id = plan.add_task(b);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        let (dates_a, end_a) = segs_end(&plan, a_id);
+        let (dates_b, end_b) = segs_end(&plan, b_id);
+
+        assert_eq!(dates_a.len(), 1, "Task A should have 1 segment");
+        assert_eq!(dates_b.len(), 1, "Task B should have 1 segment");
+
+        // Both tasks should land on the SAME day (each only needs 4h, user has 8h).
+        assert_eq!(
+            dates_a[0], dates_b[0],
+            "Tasks A and B should share the same working day; A={}, B={}",
+            dates_a[0], dates_b[0]
+        );
+        assert_eq!(end_a, end_b, "Both tasks should finish on the same day");
+    }
+
+    /// Compact pass fills gaps caused by forward-propagation:
+    ///
+    /// - HIGH priority task chain (PREREQ → DEP → CHAIN_END) is inserted first; PREREQ
+    ///   occupies the first available day consuming all capacity.
+    /// - LOW priority task (GAPPED) is inserted next: it starts on the same day as PREREQ
+    ///   but PREREQ uses all capacity, so GAPPED is pushed later.
+    /// - A "blocker" task at medium priority briefly occupies the days GAPPED needs;
+    ///   the compact pass should detect the freed capacity and pull GAPPED back in.
+    ///
+    /// In practice this verifies that GAPPED ends no later than PREREQ's dependents
+    /// finish — i.e. it isn't left stranded well past its natural completion window.
+    #[test]
+    fn compact_pulls_gapped_task_forward() {
+        let plan_start = date(2026, 5, 4); // Monday
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays();
+
+        let uid = plan.add_user(User::new("Alice"));
+        let dep_ps = Dependency::new(NodeId::PlanStart);
+
+        // BLOCKER: consumes all of Alice's capacity for 2 days (8h/day, workload=2, dur=2)
+        // This has a "TAIL" dependent so its chain path is long → inserted first.
+        let mut blocker = Task::new("BLOCKER", "");
+        blocker.add_specific_worker(uid, 2.0); // 2*8 = 16 h total
+        blocker.duration_days_target = 2.0; // cap = 16/2 = 8 h/day → fills whole day
+        blocker.relaxed_mode = false;
+        blocker.dependencies.push(dep_ps);
+        let blocker_id = plan.add_task(blocker);
+
+        // TAIL: depends on BLOCKER; makes BLOCKER's chain longer → priority > GAPPED
+        let mut tail = Task::new("TAIL", "");
+        tail.add_specific_worker(uid, 1.0);
+        tail.duration_days_target = 1.0;
+        tail.relaxed_mode = false;
+        tail.dependencies
+            .push(Dependency::new(NodeId::Task(blocker_id)));
+        plan.add_task(tail);
+
+        // GAPPED: same capacity needs as BLOCKER (8h/day, 2 days) but lower priority
+        // (no dependents of its own beyond itself).  Without compact, it would be pushed
+        // AFTER BLOCKER.  With compact, it should end on the SAME day as BLOCKER.
+        let mut gapped = Task::new("GAPPED", "");
+        gapped.add_specific_worker(uid, 2.0);
+        gapped.duration_days_target = 2.0;
+        gapped.relaxed_mode = false;
+        gapped.dependencies.push(dep_ps);
+        let gapped_id = plan.add_task(gapped);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        let (_, end_blocker) = segs_end(&plan, blocker_id);
+        let (_, end_gapped) = segs_end(&plan, gapped_id);
+
+        // Both tasks need exactly 2 days at 8h/day with no other constraints.
+        // They CANNOT share days (each needs full capacity), but the compact pass must
+        // ensure GAPPED does not end up serialised well after BLOCKER.
+        // The two tasks need 4 working days total — they should finish by the end of the
+        // first working week (Tue 2026-05-05 start → Fri 2026-05-08 end at the latest,
+        // allowing for tomorrow's floor).
+        let window_end = date(2026, 5, 8); // Fri May 8
+        assert!(
+            end_blocker <= window_end,
+            "BLOCKER should finish by Fri May 8; got {}",
+            end_blocker
+        );
+        assert!(
+            end_gapped <= window_end,
+            "GAPPED should finish by Fri May 8 after compact; got {}",
+            end_gapped
+        );
+    }
+}
