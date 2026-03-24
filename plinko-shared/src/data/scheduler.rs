@@ -148,15 +148,15 @@ impl Plan {
 
         // Stage 1 – Validate
         self.all_tasks_completable()?;
-        self.check_all_nodes_connected()?;
         let dependents_map = self.build_dependents_map();
+        self.check_all_nodes_connected(&dependents_map)?;
         let mut state = SchedulerState::new(today);
         self.pre_insert_anchored_tasks(&mut state);
 
         // Stage 2 – Time-constrained nodes
         let time_constrained = self.get_time_constrained_nodes();
         for node in time_constrained {
-            let list = self.get_priority_sorted_task_list_to_node(node)?;
+            let list = self.get_priority_sorted_task_list_to_node(node, &dependents_map)?;
             for id in list {
                 if !state.inserted.contains(&id) {
                     self.insert_node(id, &mut state, &dependents_map, None)?;
@@ -167,7 +167,7 @@ impl Plan {
         // Stage 3 – scheduler_target dependents
         let target = self.scheduler_target;
         if !matches!(target, NodeId::PlanStart) {
-            let list = self.get_priority_sorted_task_list_to_node(target)?;
+            let list = self.get_priority_sorted_task_list_to_node(target, &dependents_map)?;
             for id in list {
                 if !state.inserted.contains(&id) {
                     self.insert_node(id, &mut state, &dependents_map, Some(target))?;
@@ -181,7 +181,7 @@ impl Plan {
         } else {
             Some(target)
         };
-        let list = self.get_priority_sorted_task_list_to_ends()?;
+        let list = self.get_priority_sorted_task_list_to_ends(&dependents_map)?;
         for id in list {
             if !state.inserted.contains(&id) {
                 self.insert_node(id, &mut state, &dependents_map, protect)?;
@@ -859,6 +859,12 @@ impl Plan {
 
         for (node_id, _old_start, old_end) in node_info {
             let earliest = self.earliest_start_from_dependencies(node_id, state);
+
+            // Quick rejection: if the earliest possible start is at or after the
+            // current end, there is no way to improve — skip the expensive reinsertion.
+            if earliest >= old_end {
+                continue;
+            }
 
             match node_id {
                 NodeId::Task(task_id) => {

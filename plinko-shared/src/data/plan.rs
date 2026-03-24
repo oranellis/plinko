@@ -15,8 +15,6 @@ use crate::data::{
 };
 use crate::data::{Tag, UserData};
 
-pub type NodeChain = Vec<NodeId>;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DependencyError {
     Cycle,
@@ -468,19 +466,19 @@ impl Plan {
         }
     }
 
-    pub fn get_dependencies(&self, node_id: &NodeId) -> Vec<Dependency> {
+    pub fn get_dependencies(&self, node_id: &NodeId) -> &[Dependency] {
         match node_id {
             NodeId::Task(task_id) => self
                 .tasks
                 .get(task_id)
-                .map(|t| t.dependencies.clone())
+                .map(|t| t.dependencies.as_slice())
                 .unwrap_or_default(),
             NodeId::Milestone(milestone_id) => self
                 .milestones
                 .get(milestone_id)
-                .map(|m| m.dependencies.clone())
+                .map(|m| m.dependencies.as_slice())
                 .unwrap_or_default(),
-            NodeId::PlanStart => vec![],
+            NodeId::PlanStart => &[],
         }
     }
 
@@ -502,14 +500,33 @@ impl Plan {
         Ok(())
     }
 
-    pub fn check_all_nodes_connected(&self) -> Result<(), SchedulerError> {
+    pub fn check_all_nodes_connected(
+        &self,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
+    ) -> Result<(), SchedulerError> {
+        // Forward BFS from PlanStart through the dependents map.
+        // Any task/milestone not reached is not connected to PlanStart.
+        let mut reachable: HashSet<NodeId> = HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(NodeId::PlanStart);
+        while let Some(node) = queue.pop_front() {
+            if reachable.insert(node) {
+                if let Some(deps) = dependents_map.get(&node) {
+                    for &d in deps {
+                        queue.push_back(d);
+                    }
+                }
+            }
+        }
         for &id in self.tasks.keys() {
-            self.get_all_paths_to_node(NodeId::Task(id))
-                .map_err(|_| SchedulerError::DisconnectedNode(NodeId::Task(id)))?;
+            if !reachable.contains(&NodeId::Task(id)) {
+                return Err(SchedulerError::DisconnectedNode(NodeId::Task(id)));
+            }
         }
         for &id in self.milestones.keys() {
-            self.get_all_paths_to_node(NodeId::Milestone(id))
-                .map_err(|_| SchedulerError::DisconnectedNode(NodeId::Milestone(id)))?;
+            if !reachable.contains(&NodeId::Milestone(id)) {
+                return Err(SchedulerError::DisconnectedNode(NodeId::Milestone(id)));
+            }
         }
         Ok(())
     }
@@ -555,134 +572,117 @@ impl Plan {
     pub fn get_priority_sorted_task_list_to_node(
         &self,
         node_id: NodeId,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
     ) -> Result<Vec<NodeId>, SchedulerError> {
-        let sorted_paths = self.get_paths_to_node_sorted(node_id)?;
-        let mut seen = HashSet::new();
-        let sorted_task_list = sorted_paths
-            .into_iter()
-            .flatten()
-            .filter(|node_id| seen.insert(*node_id))
-            .collect();
-        Ok(sorted_task_list)
+        let ancestors = self.collect_ancestors(node_id);
+        if !ancestors.contains(&NodeId::PlanStart) {
+            return Err(SchedulerError::NoPathsToNode(node_id));
+        }
+        Ok(self.topological_critical_path_sort(&ancestors, dependents_map))
     }
 
-    pub fn get_priority_sorted_task_list_to_ends(&self) -> Result<Vec<NodeId>, SchedulerError> {
-        let end_nodes = self.get_end_nodes();
-        let mut all_paths_with_dur: Vec<(f32, NodeChain)> = end_nodes
-            .iter()
-            .map(|&node| self.get_all_paths_to_node(node))
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .flatten()
-            .map(|p| (self.calculate_path_duration(&p), p))
+    pub fn get_priority_sorted_task_list_to_ends(
+        &self,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
+    ) -> Result<Vec<NodeId>, SchedulerError> {
+        let all_nodes: HashSet<NodeId> = std::iter::once(NodeId::PlanStart)
+            .chain(self.tasks.keys().map(|&id| NodeId::Task(id)))
+            .chain(self.milestones.keys().map(|&id| NodeId::Milestone(id)))
             .collect();
-        all_paths_with_dur.sort_by(|(a, path_a), (b, path_b)| {
-            b.partial_cmp(a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| path_a.cmp(path_b))
-        });
-        let mut seen = HashSet::new();
-        let sorted_task_list = all_paths_with_dur
-            .into_iter()
-            .flat_map(|(_, p)| p)
-            .filter(|node_id| seen.insert(*node_id))
-            .collect();
-        Ok(sorted_task_list)
-    }
-
-    pub fn get_all_paths_to_node(&self, target: NodeId) -> Result<Vec<NodeChain>, SchedulerError> {
-        if matches!(target, NodeId::PlanStart) {
-            return Ok(vec![vec![NodeId::PlanStart]]);
-        }
-        let paths: Vec<NodeChain> = self
-            .get_all_paths_to_root(vec![target])
-            .unwrap_or_default()
-            .into_iter()
-            .map(|mut p| {
-                p.reverse();
-                p
-            })
-            .collect();
-        if paths.is_empty() {
-            return Err(SchedulerError::NoPathsToNode(target));
-        }
-        Ok(paths)
+        Ok(self.topological_critical_path_sort(&all_nodes, dependents_map))
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    fn get_all_paths_to_root(
-        &self,
-        current_chain: NodeChain,
-    ) -> Result<Vec<NodeChain>, SchedulerError> {
-        let node_id = current_chain
-            .iter()
-            .last()
-            .ok_or(SchedulerError::EmptyChain)?;
-        if matches!(node_id, NodeId::PlanStart) {
-            return Ok(vec![current_chain]);
+    /// BFS backward from `target`, collecting all ancestor NodeIds (including `target`).
+    fn collect_ancestors(&self, target: NodeId) -> HashSet<NodeId> {
+        let mut visited = HashSet::new();
+        let mut stack = vec![target];
+        while let Some(node) = stack.pop() {
+            if visited.insert(node) {
+                for dep in self.get_dependencies(&node) {
+                    stack.push(dep.id);
+                }
+            }
         }
-        let deps = self.get_dependencies(node_id);
-        deps.iter().try_fold(vec![], |mut acc, dependency| {
-            let mut new_chain = current_chain.clone();
-            new_chain.push(dependency.id);
-            acc.extend(self.get_all_paths_to_root(new_chain)?);
-            Ok(acc)
-        })
+        visited
     }
 
-    fn get_paths_to_node_sorted(&self, target: NodeId) -> Result<Vec<NodeChain>, SchedulerError> {
-        let mut paths_with_dur: Vec<(f32, NodeChain)> = self
-            .get_all_paths_to_node(target)?
-            .into_iter()
-            .map(|p| (self.calculate_path_duration(&p), p))
+    /// Topological sort (Kahn's algorithm) of the nodes in `subset`, with a
+    /// forward DP to compute critical-path lengths. Returns nodes sorted by
+    /// descending critical-path length (most constrained first), excluding
+    /// PlanStart.
+    fn topological_critical_path_sort(
+        &self,
+        subset: &HashSet<NodeId>,
+        dependents_map: &HashMap<NodeId, Vec<NodeId>>,
+    ) -> Vec<NodeId> {
+        // Compute in-degree within the subset.
+        let mut in_degree: HashMap<NodeId, usize> = subset.iter().map(|&n| (n, 0usize)).collect();
+        for &node in subset {
+            for dep in self.get_dependencies(&node) {
+                if subset.contains(&dep.id) {
+                    *in_degree.get_mut(&node).unwrap() += 1;
+                }
+            }
+        }
+
+        // Kahn's BFS from zero-in-degree nodes.
+        let mut queue: std::collections::VecDeque<NodeId> = in_degree
+            .iter()
+            .filter(|(_, d)| **d == 0)
+            .map(|(&n, _)| n)
             .collect();
-        paths_with_dur.sort_by(|(a, path_a), (b, path_b)| {
-            b.partial_cmp(a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| path_a.cmp(path_b))
-        });
-        Ok(paths_with_dur.into_iter().map(|(_, p)| p).collect())
-    }
 
-    fn calculate_path_duration(&self, path: &NodeChain) -> f32 {
-        let mut total_days = 0.0;
-        for i in 0..path.len() {
-            let current_node = path[i];
-            match current_node {
-                NodeId::Task(id) => {
-                    if let Some(task) = self.tasks.get(&id) {
-                        total_days += task.effective_duration_days();
+        // Forward DP: crit_to[v] = longest (weighted) path from PlanStart to
+        // the end of v, counting task durations and dependency lags.
+        let mut crit_to: HashMap<NodeId, f32> = HashMap::new();
+        crit_to.insert(NodeId::PlanStart, 0.0);
+
+        let mut topo_order = Vec::with_capacity(subset.len());
+
+        while let Some(node) = queue.pop_front() {
+            topo_order.push(node);
+
+            let node_dur = match node {
+                NodeId::Task(id) => self
+                    .tasks
+                    .get(&id)
+                    .map(|t| t.effective_duration_days())
+                    .unwrap_or(0.0),
+                _ => 0.0,
+            };
+            let mut best: f32 = 0.0;
+            for dep in self.get_dependencies(&node) {
+                if subset.contains(&dep.id) {
+                    let pred = crit_to.get(&dep.id).copied().unwrap_or(0.0);
+                    best = best.max(pred + dep.lag_days.max(0.0));
+                }
+            }
+            crit_to.insert(node, best + node_dur);
+
+            if let Some(dependents) = dependents_map.get(&node) {
+                for &dep in dependents {
+                    if let Some(deg) = in_degree.get_mut(&dep) {
+                        *deg -= 1;
+                        if *deg == 0 {
+                            queue.push_back(dep);
+                        }
                     }
                 }
-                NodeId::Milestone(_) | NodeId::PlanStart => {}
-            }
-            if i + 1 < path.len() {
-                let next_node = path[i + 1];
-                let deps = self.get_dependencies(&current_node);
-                if let Some(dep) = deps.iter().find(|d| d.id == next_node) {
-                    total_days += dep.lag_days;
-                }
             }
         }
-        total_days
-    }
 
-    fn get_end_nodes(&self) -> Vec<NodeId> {
-        let all_nodes: HashSet<NodeId> = self
-            .tasks
-            .keys()
-            .map(|&id| NodeId::Task(id))
-            .chain(self.milestones.keys().map(|&id| NodeId::Milestone(id)))
-            .collect();
-        let depended_upon: HashSet<NodeId> = self
-            .tasks
-            .values()
-            .flat_map(|task| &task.dependencies)
-            .chain(self.milestones.values().flat_map(|m| &m.dependencies))
-            .map(|dep| dep.id)
-            .collect();
-        all_nodes.difference(&depended_upon).copied().collect()
+        // Exclude PlanStart from result, sort longest critical path first.
+        topo_order.retain(|n| !matches!(n, NodeId::PlanStart));
+        topo_order.sort_by(|a, b| {
+            let ca = crit_to.get(a).copied().unwrap_or(0.0);
+            let cb = crit_to.get(b).copied().unwrap_or(0.0);
+            cb.partial_cmp(&ca)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.cmp(b))
+        });
+        topo_order
     }
 }
 // }}}
