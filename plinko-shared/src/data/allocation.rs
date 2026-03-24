@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::data::constraint::ConstraintKind;
 use crate::data::ids::{MilestoneId, NodeId, TaskId, UserId};
@@ -139,10 +140,41 @@ impl ConstraintViolation {
 }
 // }}}
 
+// ── Serde helpers for HashMap<NodeId, V> (JSON requires string keys) ─────── {{{
+mod nodeid_map_serde {
+    use super::*;
+
+    pub fn serialize<S, V>(map: &HashMap<NodeId, V>, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        V: Serialize,
+    {
+        s.collect_map(map.iter().map(|(k, v)| (k.to_string(), v)))
+    }
+
+    pub fn deserialize<'de, D, V>(d: D) -> Result<HashMap<NodeId, V>, D::Error>
+    where
+        D: Deserializer<'de>,
+        V: Deserialize<'de>,
+    {
+        let string_map = HashMap::<String, V>::deserialize(d)?;
+        string_map
+            .into_iter()
+            .map(|(k, v)| {
+                NodeId::from_str(&k)
+                    .map(|id| (id, v))
+                    .map_err(serde::de::Error::custom)
+            })
+            .collect()
+    }
+}
+// }}}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct NodeAllocations {
     pub tasks: HashMap<TaskId, TaskState>,
     pub milestones: HashMap<MilestoneId, MilestoneAllocation>,
+    #[serde(with = "nodeid_map_serde")]
     pub constraint_violations: HashMap<NodeId, ConstraintViolation>,
 }
 

@@ -1,3 +1,6 @@
+use std::fmt;
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -72,6 +75,37 @@ impl TagId {
 impl Default for TagId {
     fn default() -> Self {
         Self::new()
+    }
+}
+// }}}
+
+// ── NodeId string representation (needed for JSON map keys) ────────────────── {{{
+impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NodeId::Task(id) => write!(f, "task:{}", id.0),
+            NodeId::Milestone(id) => write!(f, "milestone:{}", id.0),
+            NodeId::PlanStart => write!(f, "plan_start"),
+        }
+    }
+}
+
+impl FromStr for NodeId {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "plan_start" {
+            Ok(NodeId::PlanStart)
+        } else if let Some(rest) = s.strip_prefix("task:") {
+            Uuid::parse_str(rest)
+                .map(|u| NodeId::Task(TaskId(u)))
+                .map_err(|e| e.to_string())
+        } else if let Some(rest) = s.strip_prefix("milestone:") {
+            Uuid::parse_str(rest)
+                .map(|u| NodeId::Milestone(MilestoneId(u)))
+                .map_err(|e| e.to_string())
+        } else {
+            Err(format!("invalid NodeId string: {s}"))
+        }
     }
 }
 // }}}
