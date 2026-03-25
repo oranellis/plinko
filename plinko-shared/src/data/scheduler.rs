@@ -90,6 +90,26 @@ impl Plan {
     pub fn compute_time_optimised_plan(&mut self) -> Result<(), SchedulerError> {
         let today = chrono::Local::now().date_naive();
 
+        // If a task has actual_start set but its status is NotStarted, the user
+        // has reset it — clear actual_start to defer to the status.
+        let not_started_ids: Vec<TaskId> = self
+            .tasks
+            .keys()
+            .filter(|id| {
+                self.node_allocations
+                    .tasks
+                    .get(id)
+                    .map(|ts| ts.status == Status::NotStarted)
+                    .unwrap_or(true)
+            })
+            .copied()
+            .collect();
+        for id in not_started_ids {
+            if let Some(task) = self.tasks.get_mut(&id) {
+                task.actual_start = None;
+            }
+        }
+
         // Stretch any overrunning InProgress tasks
         let in_progress_ids: Vec<TaskId> = self
             .tasks
