@@ -322,6 +322,24 @@ impl Plan {
         node_id: NodeId,
         state: &SchedulerState,
     ) -> NaiveDate {
+        // InProgress tasks have already started — their actual_start is the
+        // definitive start date regardless of dependencies.
+        if let NodeId::Task(tid) = node_id {
+            if state.inprogress_ids.contains(&tid) {
+                return self
+                    .tasks
+                    .get(&tid)
+                    .and_then(|t| t.actual_start)
+                    .or_else(|| {
+                        self.node_allocations.tasks.get(&tid).and_then(|ts| match &ts.allocation {
+                            TaskAllocation::Fixed { start_date, .. } => Some(*start_date),
+                            _ => None,
+                        })
+                    })
+                    .unwrap_or(state.today);
+            }
+        }
+
         let deps = self.get_dependencies(&node_id);
         let is_milestone = matches!(node_id, NodeId::Milestone(_));
 
@@ -378,32 +396,8 @@ impl Plan {
         }
 
         // Tasks cannot start in the past; unstarted tasks start no sooner than tomorrow.
-        // InProgress tasks that are being rescheduled start from their actual_start date.
         if !is_milestone {
-            let floor = if let NodeId::Task(tid) = node_id {
-                if state.inprogress_ids.contains(&tid) {
-                    // Use the task's actual_start if recorded.
-                    // Fall back to Fixed allocation start_date for legacy plans
-                    // that don't have actual_start on the task struct yet.
-                    self.tasks
-                        .get(&tid)
-                        .and_then(|t| t.actual_start)
-                        .or_else(|| {
-                            self.node_allocations.tasks.get(&tid).and_then(|ts| {
-                                match &ts.allocation {
-                                    TaskAllocation::Fixed { start_date, .. } => Some(*start_date),
-                                    _ => None,
-                                }
-                            })
-                        })
-                        .unwrap_or(state.today)
-                } else {
-                    tomorrow
-                }
-            } else {
-                tomorrow
-            };
-            earliest = earliest.max(floor);
+            earliest = earliest.max(tomorrow);
         }
 
         earliest
