@@ -183,8 +183,14 @@ impl NodeAllocations {
     /// Keep Fixed allocations (anchored tasks), clear Dynamic ones, milestones,
     /// and constraint violations.
     pub fn invalidate(&mut self) {
-        self.tasks
-            .retain(|_, state| matches!(state.allocation, TaskAllocation::Fixed { .. }));
+        // Keep Fixed allocations (anchored tasks: Complete, OnHold, etc.) and
+        // any entry whose status is not NotStarted (e.g. InProgress tasks that
+        // have Dynamic scheduler output — we must preserve their status so the
+        // scheduler can recognise them in the next pass).
+        self.tasks.retain(|_, state| {
+            matches!(state.allocation, TaskAllocation::Fixed { .. })
+                || state.status != Status::NotStarted
+        });
         self.milestones.clear();
         self.constraint_violations.clear();
     }
