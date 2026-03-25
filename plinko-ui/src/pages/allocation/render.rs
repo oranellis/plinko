@@ -283,7 +283,7 @@ fn draw_user_panel(
         } else if idx % 2 == 1 {
             ALLOC_ROW_ALT_BG
         } else {
-            0xff_ffffff
+            GANTT_BG
         };
         paint.set_color(Color::from(bg));
         paint.set_style(PaintStyle::Fill);
@@ -299,7 +299,7 @@ fn draw_user_panel(
         let text_h = descent - ascent;
 
         let name_y = entry_y + 10.0 - ascent;
-        paint.set_color(Color::from(0xff_222222));
+        paint.set_color(Color::from(INPUT_FG));
         paint.set_style(PaintStyle::Fill);
         // Clip name to panel width - padding
         canvas.save();
@@ -320,7 +320,7 @@ fn draw_user_panel(
         let bar_h = 6.0;
 
         // Bar track
-        paint.set_color(Color::from(0xff_e0e0e0));
+        paint.set_color(Color::from(GANTT_DAY_LINE_COLOR));
         paint.set_style(PaintStyle::Fill);
         canvas.draw_rect(Rect::from_xywh(bar_x, bar_y, bar_w, bar_h), &paint);
 
@@ -766,8 +766,15 @@ fn draw_task_rows(
                         let tw = cache.small_font.measure_str(&label, None).0;
                         let tx = x + 1.0 + (bar_w - tw) / 2.0;
                         let ty = bar_y + (bar_h - sm_line_h) / 2.0 - sm.ascent;
-                        // Dark text on light bars
-                        paint.set_color(Color::from(0xff_333333_u32));
+                        // Pick label color based on bar luminance
+                        let lum = {
+                            let r = ((base_color >> 16) & 0xff) as f32;
+                            let g = ((base_color >> 8) & 0xff) as f32;
+                            let b = (base_color & 0xff) as f32;
+                            0.299 * r + 0.587 * g + 0.114 * b
+                        };
+                        let label_fg = if lum > 160.0 { 0xff_333333_u32 } else { 0xff_ffffff_u32 };
+                        paint.set_color(Color::from(label_fg));
                         paint.set_style(PaintStyle::Fill);
                         canvas.save();
                         canvas.clip_rect(
@@ -852,7 +859,7 @@ fn draw_task_rows(
                     ClipOp::Intersect,
                     false,
                 );
-                paint.set_color(Color::from(0xff_222222));
+                paint.set_color(Color::from(INPUT_FG));
                 paint.set_style(PaintStyle::Fill);
                 canvas.draw_text_blob(&blob, (label_left + 6.0, ly), paint);
                 canvas.restore();

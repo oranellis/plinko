@@ -771,7 +771,7 @@ fn draw_warning_icon(canvas: &Canvas, rect: Rect, hovered: bool, paint: &mut Pai
     paint.set_style(PaintStyle::Fill);
 
     // Draw "!" as two small filled rects (line + dot).
-    paint.set_color(Color::from(0xff_333333_u32));
+    paint.set_color(Color::from(0xcc_000000_u32)); // dark glyph on amber triangle
     let bang_h = (bot - top) * 0.45;
     let bang_w = 2.0_f32;
     let bang_top = top + (bot - top) * 0.22;

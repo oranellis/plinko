@@ -124,12 +124,12 @@ impl ConstraintViolation {
     pub fn message(&self) -> String {
         match self.kind {
             ConstraintKind::Fixed => format!(
-                "\"{}\" has a Fixed constraint requiring {}, but the earliest possible start is {}.",
-                self.node_name, self.required_date, self.scheduled_date
+                "\"{}\" has a Fixed constraint for {} but its dependencies push it past that date.",
+                self.node_name, self.required_date
             ),
             ConstraintKind::Latest => format!(
-                "\"{}\" has a Latest constraint of {}, but the earliest possible start is {}.",
-                self.node_name, self.required_date, self.scheduled_date
+                "\"{}\" has a Latest constraint of {} but its dependencies push it past that date.",
+                self.node_name, self.required_date
             ),
             ConstraintKind::Earliest => format!(
                 "\"{}\" has an Earliest constraint of {} that could not be met.",

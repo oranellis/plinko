@@ -262,16 +262,13 @@ impl Plan {
                 ),
             };
 
-            // InProgress tasks with no future work segments need their remaining
-            // work scheduled dynamically from today rather than being locked.
+            // InProgress tasks are always scheduled dynamically from their actual_start
+            // date rather than being locked. They go into inprogress_ids so the scheduler
+            // treats them as needing fresh allocation.
             if status == Status::InProgress {
-                let has_future_work = time_alloc.iter().any(|s| s.date >= state.today);
-                if !has_future_work {
-                    state.inprogress_ids.insert(id);
-                    // Deduct past segments from capacity (none — they're in the past).
-                    // Don't pre-insert; insert_task will schedule from today.
-                    continue;
-                }
+                state.inprogress_ids.insert(id);
+                // Don't pre-insert; insert_task will schedule from actual_start.
+                continue;
             }
 
             // Deduct future time allocation from capacity so subsequently scheduled
@@ -361,11 +358,15 @@ impl Plan {
         }
 
         // Tasks cannot start in the past; unstarted tasks start no sooner than tomorrow.
-        // InProgress tasks that are being rescheduled may start today (they already started).
+        // InProgress tasks that are being rescheduled start from their actual_start date.
         if !is_milestone {
             let floor = if let NodeId::Task(tid) = node_id {
                 if state.inprogress_ids.contains(&tid) {
-                    state.today
+                    // Use the task's actual_start if recorded, otherwise today.
+                    self.tasks
+                        .get(&tid)
+                        .and_then(|t| t.actual_start)
+                        .unwrap_or(state.today)
                 } else {
                     tomorrow
                 }

@@ -270,6 +270,13 @@ impl Plan {
     }
 
     pub fn task_actual_start(&self, id: &TaskId) -> Option<NaiveDate> {
+        // Prefer the field stored on the task itself (set when task is started).
+        if let Some(task) = self.tasks.get(id) {
+            if let Some(d) = task.actual_start {
+                return Some(d);
+            }
+        }
+        // Fall back to Fixed allocation start_date for legacy plans.
         match self.node_allocations.tasks.get(id)?.allocation {
             TaskAllocation::Fixed { start_date, .. } => Some(start_date),
             TaskAllocation::Dynamic { .. } => None,
@@ -297,6 +304,11 @@ impl Plan {
 
     pub fn set_task_actual_start(&mut self, id: TaskId, date: Option<NaiveDate>) {
         if let Some(date) = date {
+            // Store on the task itself so the scheduler can read it.
+            if let Some(task) = self.tasks.get_mut(&id) {
+                task.actual_start = Some(date);
+            }
+            // Also update legacy Fixed allocation if present.
             let ts = self
                 .node_allocations
                 .tasks
@@ -304,15 +316,7 @@ impl Plan {
                 .or_insert_with(TaskState::not_started);
             match &mut ts.allocation {
                 TaskAllocation::Fixed { start_date, .. } => *start_date = date,
-                TaskAllocation::Dynamic { .. } => {
-                    let end = ts.allocation.end_date();
-                    ts.allocation = TaskAllocation::Fixed {
-                        start_date: date,
-                        end_date: end,
-                        corrected_end_date: None,
-                        time_allocation: vec![],
-                    };
-                }
+                TaskAllocation::Dynamic { .. } => {}
             }
         }
     }
@@ -350,34 +354,29 @@ impl Plan {
             return;
         }
         let today = chrono::Local::now().date_naive();
-        let (existing_end, existing_time_alloc) = match self
-            .node_allocations
-            .tasks
-            .get(&id)
-            .map(|ts| &ts.allocation)
-        {
-            Some(TaskAllocation::Dynamic {
-                scheduled_end_date,
-                time_allocation,
-                ..
-            }) => (*scheduled_end_date, time_allocation.clone()),
-            Some(TaskAllocation::Fixed {
-                end_date,
-                time_allocation,
-                ..
-            }) => (*end_date, time_allocation.clone()),
-            None => (today, vec![]),
-        };
+        // Record actual_start on the task only if not already set.
+        if let Some(task) = self.tasks.get_mut(&id) {
+            if task.actual_start.is_none() {
+                task.actual_start = Some(today);
+            }
+        }
+        // Set status to InProgress. Clear the allocation back to Dynamic so
+        // the scheduler reschedules the remaining work from actual_start.
         let ts = self
             .node_allocations
             .tasks
             .entry(id)
             .or_insert_with(TaskState::not_started);
         ts.status = Status::InProgress;
-        ts.allocation = TaskAllocation::Fixed {
-            start_date: today,
-            end_date: existing_end.max(today),
-            corrected_end_date: None,
+        // Reset to Dynamic so the scheduler can schedule from actual_start.
+        // Preserve any existing time_allocation segments (past work records).
+        let existing_time_alloc = match &ts.allocation {
+            TaskAllocation::Fixed { time_allocation, .. } => time_allocation.clone(),
+            TaskAllocation::Dynamic { time_allocation, .. } => time_allocation.clone(),
+        };
+        ts.allocation = TaskAllocation::Dynamic {
+            scheduled_start_date: today,
+            scheduled_end_date: today,
             time_allocation: existing_time_alloc,
         };
     }

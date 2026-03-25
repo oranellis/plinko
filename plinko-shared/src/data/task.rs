@@ -4,6 +4,7 @@ use crate::data::ids::TagId;
 use crate::data::ids::TaskId;
 use crate::data::ids::UserId;
 use crate::data::user::User;
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -51,6 +52,10 @@ pub struct Task {
     /// days with enough capacity for the full daily block.
     #[serde(default)]
     pub relaxed_mode: bool,
+    /// The date the task was actually started. Used as the scheduling origin
+    /// for InProgress tasks so allocation is placed from this date forward.
+    #[serde(default)]
+    pub actual_start: Option<NaiveDate>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -65,6 +70,7 @@ impl Task {
             constraint: None,
             duration_days_target: 0.0,
             relaxed_mode: false,
+            actual_start: None,
         }
     }
 
@@ -94,6 +100,7 @@ impl Task {
             constraint: None,
             duration_days_target: 0.0,
             relaxed_mode: false,
+            actual_start: None,
         }
     }
 

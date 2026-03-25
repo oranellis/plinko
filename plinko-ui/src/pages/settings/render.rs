@@ -5,8 +5,8 @@ use skia_safe::{Canvas, Color, Paint, PaintStyle, RRect, Rect, TextBlob};
 use crate::ui::cache::RenderCache;
 use crate::ui::layout::{
     ADD_BTN_BG, ADD_BTN_FG, ADD_BTN_HOVER_BG, BACK_BTN_SIZE, BACK_BTN_X, BACK_BTN_Y,
-    BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, MUTED_FG, PANEL_BG,
-    SCROLLBAR_THUMB_COLOR,
+    BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, DIVIDER_COLOR, INPUT_FG, ITEM_FG,
+    MUTED_FG, PANEL_BG, SCROLLBAR_THUMB_COLOR,
 };
 use plinko_shared::data::Plan;
 
@@ -164,7 +164,7 @@ fn draw_plan_section(
     cache: &RenderCache,
 ) {
     // Section title
-    paint.set_color(Color::from(0xff_555555_u32));
+    paint.set_color(Color::from(ITEM_FG));
     let (_, font_metrics) = cache.font.metrics();
     if let Some(blob) = TextBlob::new("Plan Management", &cache.font) {
         canvas.draw_text_blob(&blob, (SIDE_PAD, CONTENT_TOP - font_metrics.ascent), paint);
@@ -293,7 +293,7 @@ fn draw_plan_row(
     paint.set_color(Color::from(if entry.is_current {
         BTN_PRIMARY_BG
     } else {
-        0xff_333333_u32
+        INPUT_FG
     }));
     paint.set_style(PaintStyle::Fill);
     let name_end_x;
@@ -344,7 +344,7 @@ fn draw_identity_section(
     let section_y = identity_section_y(state.scroll_y);
 
     // Divider
-    paint.set_color(Color::from(0xff_e0e0e0_u32));
+    paint.set_color(Color::from(DIVIDER_COLOR));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.0);
     canvas.draw_line(
@@ -355,7 +355,7 @@ fn draw_identity_section(
     paint.set_style(PaintStyle::Fill);
 
     // Title
-    paint.set_color(Color::from(0xff_555555_u32));
+    paint.set_color(Color::from(ITEM_FG));
     let (_, font_metrics) = cache.font.metrics();
     if let Some(blob) = TextBlob::new("Identity", &cache.font) {
         canvas.draw_text_blob(&blob, (SIDE_PAD, section_y - font_metrics.ascent), paint);
@@ -451,7 +451,7 @@ fn draw_user_row(
     paint.set_color(Color::from(if is_selected {
         BTN_PRIMARY_BG
     } else {
-        0xff_333333_u32
+        ITEM_FG
     }));
     if let Some(blob) = TextBlob::new(name, &cache.font) {
         let (_, metrics) = cache.font.metrics();

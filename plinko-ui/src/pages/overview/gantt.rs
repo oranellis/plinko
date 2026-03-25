@@ -75,7 +75,7 @@ pub struct GanttRow {
 ///
 /// Returns `None` if no allocation information is available at all.
 pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveDate)> {
-    let _task = plan.tasks.get(id)?;
+    let task = plan.tasks.get(id)?;
 
     let ts = plan.node_allocations.tasks.get(id)?;
 
@@ -91,7 +91,13 @@ pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveD
     let first_seg = segs.iter().map(|s| s.date).min();
     let last_seg = segs.iter().map(|s| s.date).max();
 
-    let start = first_seg.unwrap_or_else(|| ts.allocation.start_date());
+    // For InProgress tasks with an actual_start, the bar should begin from that
+    // date even if the earliest segment is in the future.
+    let start = if let Some(actual) = task.actual_start {
+        first_seg.map_or(actual, |f| f.min(actual))
+    } else {
+        first_seg.unwrap_or_else(|| ts.allocation.start_date())
+    };
     let end = match last_seg {
         Some(last) => last.max(ts.allocation.end_date()),
         None => ts.allocation.end_date(),

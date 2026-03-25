@@ -7,40 +7,40 @@
 pub const DIVIDER_WIDTH: f32 = 6.0;
 
 // Colors (used by page renders)
-pub const PANEL_BG: u32 = 0xff_ffffff;
+pub const PANEL_BG: u32 = 0xff_252526;
 pub const PANEL_TEXT: u32 = 0xff_888888;
-pub const DIVIDER_COLOR: u32 = 0xff_e0e0e0;
-pub const DIVIDER_ACTIVE_COLOR: u32 = 0xff_aaaaaa;
-pub const DIVIDER_GRIP_COLOR: u32 = 0xff_999999;
-pub const DIVIDER_GRIP_ACTIVE_COLOR: u32 = 0xff_666666;
+pub const DIVIDER_COLOR: u32 = 0xff_3d3d3d;
+pub const DIVIDER_ACTIVE_COLOR: u32 = 0xff_6a6a6a;
+pub const DIVIDER_GRIP_COLOR: u32 = 0xff_4a4a4a;
+pub const DIVIDER_GRIP_ACTIVE_COLOR: u32 = 0xff_888888;
 
 // Home page
 pub const HOME_CARD_SIZE: f32 = 160.0;
 pub const HOME_CARD_GAP: f32 = 32.0;
 pub const HOME_CARD_CORNER: f32 = 12.0;
 pub const HOME_CARD_ICON_SIZE: f32 = 48.0;
-pub const HOME_BG: u32 = 0xff_e8e8e8;
-pub const HOME_CARD_BG: u32 = 0xff_f8f8f8;
-pub const HOME_CARD_HOVER_BG: u32 = 0xff_d8d8d8;
-pub const HOME_CARD_BORDER: u32 = 0xff_cccccc;
-pub const HOME_CARD_LABEL_COLOR: u32 = 0xff_333333;
-pub const HOME_ICON_COLOR: u32 = 0xff_555555;
+pub const HOME_BG: u32 = 0xff_1e1e1e;
+pub const HOME_CARD_BG: u32 = 0xff_252526;
+pub const HOME_CARD_HOVER_BG: u32 = 0xff_2d2d30;
+pub const HOME_CARD_BORDER: u32 = 0xff_3d3d3d;
+pub const HOME_CARD_LABEL_COLOR: u32 = 0xff_d4d4d4;
+pub const HOME_ICON_COLOR: u32 = 0xff_a0a0a0;
 
 // Back button
 pub const BACK_BTN_X: f32 = 16.0;
 pub const BACK_BTN_Y: f32 = 16.0;
 pub const BACK_BTN_SIZE: f32 = 36.0;
 pub const BACK_BTN_CORNER: f32 = 4.0;
-pub const BACK_BTN_HOVER_BG: u32 = 0xff_e8e8e8;
-pub const BACK_BTN_ICON_COLOR: u32 = 0xff_555555;
+pub const BACK_BTN_HOVER_BG: u32 = 0xff_2d2d30;
+pub const BACK_BTN_ICON_COLOR: u32 = 0xff_a0a0a0;
 
 // Page-specific toolbar icon buttons (sit to the right of the back button)
 pub const TOOLBAR_BTN_GAP: f32 = 8.0;
 pub const TOOLBAR_BTN_Y: f32 = BACK_BTN_Y;
 pub const TOOLBAR_BTN_SIZE: f32 = BACK_BTN_SIZE;
 pub const TOOLBAR_BTN_CORNER: f32 = BACK_BTN_CORNER;
-pub const TOOLBAR_BTN_ICON_COLOR: u32 = 0xff_555555;
-pub const TOOLBAR_BTN_HOVER_BG: u32 = 0xff_e8e8e8;
+pub const TOOLBAR_BTN_ICON_COLOR: u32 = 0xff_a0a0a0;
+pub const TOOLBAR_BTN_HOVER_BG: u32 = 0xff_2d2d30;
 /// Stroke width for toolbar button icons, proportional to button size.
 /// At the default 36 px button this equals 2.0 px.
 pub const TOOLBAR_STROKE_WIDTH: f32 = BACK_BTN_SIZE / 18.0;
@@ -79,50 +79,50 @@ pub const PLAN_BTN_H: f32 = 30.0;
 pub const PLAN_BTN_CORNER: f32 = 4.0;
 
 // Colors
-pub const LIST_BG: u32 = 0xff_f7f7f7;
-pub const LIST_ITEM_HOVER_BG: u32 = 0xff_efefef;
-pub const LIST_ITEM_SEL_BG: u32 = 0xff_ddeeff;
-pub const LIST_SECTION_FG: u32 = 0xff_aaaaaa;
-pub const ADD_BTN_BG: u32 = 0xff_f0f0f0;
-pub const ADD_BTN_HOVER_BG: u32 = 0xff_e0e0e0;
-pub const ADD_BTN_FG: u32 = 0xff_555555;
-pub const INPUT_BG: u32 = 0xff_ffffff;
-pub const INPUT_BORDER: u32 = 0xff_cccccc;
+pub const LIST_BG: u32 = 0xff_252526;
+pub const LIST_ITEM_HOVER_BG: u32 = 0xff_2d2d30;
+pub const LIST_ITEM_SEL_BG: u32 = 0xff_1a3a5c;
+pub const LIST_SECTION_FG: u32 = 0xff_707070;
+pub const ADD_BTN_BG: u32 = 0xff_2d2d30;
+pub const ADD_BTN_HOVER_BG: u32 = 0xff_3d3d40;
+pub const ADD_BTN_FG: u32 = 0xff_a0a0a0;
+pub const INPUT_BG: u32 = 0xff_1e1e1e;
+pub const INPUT_BORDER: u32 = 0xff_4a4a4a;
 pub const INPUT_BORDER_ERROR: u32 = 0xff_e5_39_35;
 pub const INPUT_BORDER_FOCUS: u32 = 0xff_4a90d9;
-pub const INPUT_FG: u32 = 0xff_222222;
+pub const INPUT_FG: u32 = 0xff_d4d4d4;
 pub const INPUT_CURSOR_COLOR: u32 = 0xff_4a90d9;
-pub const LABEL_FG: u32 = 0xff_666666;
+pub const LABEL_FG: u32 = 0xff_8a8a8a;
 pub const BTN_PRIMARY_BG: u32 = 0xff_4a90d9;
 pub const BTN_PRIMARY_FG: u32 = 0xff_ffffff;
-pub const BTN_SECONDARY_BG: u32 = 0xff_f0f0f0;
-pub const BTN_SECONDARY_FG: u32 = 0xff_333333;
+pub const BTN_SECONDARY_BG: u32 = 0xff_2d2d30;
+pub const BTN_SECONDARY_FG: u32 = 0xff_d4d4d4;
 pub const BTN_DANGER_BG: u32 = 0xff_e53935;
 pub const BTN_DANGER_HOVER_BG: u32 = 0xff_c62828;
 pub const BTN_DANGER_FG: u32 = 0xff_ffffff;
-pub const ITEM_FG: u32 = 0xff_222222;
+pub const ITEM_FG: u32 = 0xff_d4d4d4;
 pub const ITEM_TASK_DOT: u32 = 0xff_4a90d9;
 pub const ITEM_MILESTONE_DOT: u32 = 0xff_f5a623;
 pub const DEP_PLAN_START_FG: u32 = 0xff_00897b; // Teal — Plan Start special node
 
 // Extended colour palette
-pub const MUTED_FG: u32 = 0xff_aaaaaa;
-pub const PLACEHOLDER_FG: u32 = 0xff_888888;
-pub const SUBTLE_FG: u32 = 0xff_999999;
-pub const GHOST_FG: u32 = 0xff_bbbbbb;
-pub const SUBTLE_BG: u32 = 0xff_f5f5f5;
+pub const MUTED_FG: u32 = 0xff_8a8a8a;
+pub const PLACEHOLDER_FG: u32 = 0xff_606060;
+pub const SUBTLE_FG: u32 = 0xff_707070;
+pub const GHOST_FG: u32 = 0xff_505050;
+pub const SUBTLE_BG: u32 = 0xff_252526;
 pub const BTN_PRIMARY_HOVER_BG: u32 = 0xff_3a7bc8;
-pub const CAL_SELECTED_BG: u32 = 0xff_e8eef8;
-pub const ERROR_BG: u32 = 0xff_ffeeee;
-pub const ICON_DELETE_COLOR: u32 = 0xff_cc2222;
-pub const LINK_COLOR: u32 = 0xff_2196f3;
-pub const SCROLLBAR_THUMB_COLOR: u32 = 0x50_000000;
+pub const CAL_SELECTED_BG: u32 = 0xff_1a3a5c;
+pub const ERROR_BG: u32 = 0xff_3d1a1a;
+pub const ICON_DELETE_COLOR: u32 = 0xff_e05555;
+pub const LINK_COLOR: u32 = 0xff_4da6ff;
+pub const SCROLLBAR_THUMB_COLOR: u32 = 0x50_ffffff;
 pub const OVERLAY_XLIGHT: u32 = 0x1e_000000;
 pub const OVERLAY_LIGHT: u32 = 0x23_000000;
 pub const OVERLAY_SOFT: u32 = 0x28_000000;
 pub const OVERLAY_MEDIUM: u32 = 0x64_000000;
 pub const OVERLAY_DARK: u32 = 0x78_000000;
-pub const TOOLTIP_BG: u32 = 0xdc_ffffff;
+pub const TOOLTIP_BG: u32 = 0xdc_1e1e1e;
 // ── Gantt chart ────────────────────────────────────────────────────────────────
 
 // Layout
@@ -139,18 +139,18 @@ pub const GANTT_ZOOM_MAX: f32 = 200.0;
 pub const GANTT_MS_HALF: f32 = 10.0; // milestone diamond half-size
 
 // Chrome
-pub const GANTT_BG: u32 = 0xff_e8e8e8;
-pub const GANTT_HEADER_BG: u32 = 0xff_dcdcdc;
-pub const GANTT_HEADER_BORDER: u32 = 0xff_b8b8b8;
-pub const GANTT_HEADER_FG: u32 = 0xff_555555;
-pub const GANTT_HEADER_MONTH_FG: u32 = 0xff_333333;
-pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_c8c8c8;
+pub const GANTT_BG: u32 = 0xff_1e1e1e;
+pub const GANTT_HEADER_BG: u32 = 0xff_252526;
+pub const GANTT_HEADER_BORDER: u32 = 0xff_3d3d3d;
+pub const GANTT_HEADER_FG: u32 = 0xff_a0a0a0;
+pub const GANTT_HEADER_MONTH_FG: u32 = 0xff_d4d4d4;
+pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_3d3d3d;
 pub const GANTT_TODAY_LINE_COLOR: u32 = 0x80_4a90d9;
-pub const GANTT_ROW_ALT_BG: u32 = 0xff_dddde0;
-pub const GANTT_WEEKEND_BG: u32 = 0xff_d4d4d8;
+pub const GANTT_ROW_ALT_BG: u32 = 0xff_232326;
+pub const GANTT_WEEKEND_BG: u32 = 0xff_1a1a20;
 
 // Task status colors
-pub const GANTT_TASK_NOT_STARTED: u32 = 0xff_d0d0d0;
+pub const GANTT_TASK_NOT_STARTED: u32 = 0xff_555555;
 pub const GANTT_TASK_IN_PROGRESS: u32 = 0xff_f5a623;
 pub const GANTT_TASK_ON_HOLD: u32 = 0xff_b39ddb;
 pub const GANTT_TASK_COMPLETE: u32 = 0xff_66bb6a;
@@ -161,7 +161,7 @@ pub const GANTT_TASK_LABEL_DARK: u32 = 0xff_333333; // on light bars
 pub const GANTT_TASK_LABEL_LIGHT: u32 = 0xff_ffffff; // on dark bars
 
 // Milestone status colors
-pub const GANTT_MS_NOT_STARTED: u32 = 0xff_bdbdbd;
+pub const GANTT_MS_NOT_STARTED: u32 = 0xff_555555;
 pub const GANTT_MS_IN_PROGRESS: u32 = 0xff_f5a623;
 pub const GANTT_MS_COMPLETE: u32 = 0xff_66bb6a;
 /// Teal colour used for the Plan Start fixed marker on the Gantt chart.
@@ -179,9 +179,9 @@ pub const ALLOC_TASK_LABEL_W: f32 = 140.0;
 pub const ALLOC_USER_PANEL_W: f32 = 180.0;
 pub const ALLOC_USER_ENTRY_H: f32 = 52.0;
 pub const ALLOC_UTIL_ROW_H: f32 = 28.0;
-pub const ALLOC_ROW_ALT_BG: u32 = 0xff_dddde0;
-pub const ALLOC_SELECTED_BG: u32 = 0xff_dde9fb;
-pub const ALLOC_HOVER_BG: u32 = 0xff_f0f4ff;
+pub const ALLOC_ROW_ALT_BG: u32 = 0xff_232326;
+pub const ALLOC_SELECTED_BG: u32 = 0xff_1a3a5c;
+pub const ALLOC_HOVER_BG: u32 = 0xff_1e2a40;
 pub const ALLOC_UTIL_GREEN: u32 = 0xff_4caf50;
 pub const ALLOC_UTIL_AMBER: u32 = 0xff_ff9800;
 pub const ALLOC_UTIL_RED: u32 = 0xff_f44336;
@@ -201,14 +201,14 @@ pub const TASK_COLORS: [u32; 10] = [
 ];
 
 // Calendar overrides page
-pub const CAL_HOLIDAY_BG: u32 = 0xff_ffcccc; // holiday (0h)
-pub const CAL_PARTIAL_BG: u32 = 0xff_fff3cd; // partial-day override
-pub const CAL_NONWORK_BG: u32 = 0xff_dcdcdc; // non-working day (no override)
-pub const CAL_WORK_BG: u32 = 0xff_f0f0f0; // normal working day
-pub const CAL_HOVER_BG: u32 = 0xff_d8eeff; // hovered day cell
-pub const CAL_OUTSIDE_BG: u32 = 0xff_d8d8d8; // outside current month
+pub const CAL_HOLIDAY_BG: u32 = 0xff_3d1a1a; // holiday (0h)
+pub const CAL_PARTIAL_BG: u32 = 0xff_3d3010; // partial-day override
+pub const CAL_NONWORK_BG: u32 = 0xff_1a1a1a; // non-working day (no override)
+pub const CAL_WORK_BG: u32 = 0xff_252526; // normal working day
+pub const CAL_HOVER_BG: u32 = 0xff_1a2d40; // hovered day cell
+pub const CAL_OUTSIDE_BG: u32 = 0xff_141414; // outside current month
 pub const CAL_TODAY_BORDER: u32 = 0xff_4a90d9; // today highlight border
-pub const CAL_CELL_BORDER: u32 = 0xff_c0c0c0; // cell border
-pub const CAL_HEADER_BG: u32 = 0xff_d8d8d8; // day-of-week header bg
-pub const CAL_FG: u32 = 0xff_333333; // cell text
-pub const CAL_DIM_FG: u32 = 0xff_aaaaaa; // outside month text
+pub const CAL_CELL_BORDER: u32 = 0xff_333333; // cell border
+pub const CAL_HEADER_BG: u32 = 0xff_252526; // day-of-week header bg
+pub const CAL_FG: u32 = 0xff_d4d4d4; // cell text
+pub const CAL_DIM_FG: u32 = 0xff_505050; // outside month text
