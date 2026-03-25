@@ -19,7 +19,7 @@ use crate::ui::layout::{
     LABEL_FG, LINK_COLOR, LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK, OVERLAY_LIGHT,
     OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H,
     PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR,
-    SUBTLE_BG, SUBTLE_FG,
+    SUBTLE_BG, SUBTLE_FG, TOOLBAR_BTN_HOVER_BG,
 };
 use crate::ui::multi_line_input::MultiLineInput;
 use crate::ui::text_input::TextInput;
@@ -1590,7 +1590,7 @@ fn draw_date_btn(
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(rrect, &paint);
     paint.set_color(if disabled {
-        Color::from(0xff_e0e0e0_u32)
+        Color::from(DIVIDER_COLOR)
     } else if error {
         Color::from(INPUT_BORDER_ERROR)
     } else if is_open {
@@ -1610,7 +1610,7 @@ fn draw_date_btn(
         let (_, m) = cache.font.metrics();
         let ty = rect.top + (rect.height() - (m.descent - m.ascent)) / 2.0 - m.ascent;
         paint.set_color(if disabled {
-            Color::from(0xff_cccccc_u32)
+            Color::from(MUTED_FG)
         } else if picker.value.is_some() {
             Color::from(INPUT_FG)
         } else {
@@ -1770,9 +1770,9 @@ fn draw_calendar_popup(
 
     for (btn, hov, dir) in nav_btns {
         let bg = if hov {
-            0xff_e0e0e0_u32
+            TOOLBAR_BTN_HOVER_BG
         } else {
-            0xff_f7f7f7_u32
+            INPUT_BG
         };
         paint.set_color(Color::from(bg));
         canvas.draw_rrect(
@@ -2771,7 +2771,7 @@ impl FloatingWindow for TaskFormWindow {
         if self.constraint_kind == ConstraintSel::None {
             let mut p2 = Paint::default();
             p2.set_anti_alias(true);
-            p2.set_color(Color::from(0xff_f0f0f0_u32));
+            p2.set_color(Color::from(SUBTLE_BG));
             p2.set_style(PaintStyle::Fill);
             canvas.draw_rrect(
                 RRect::new_rect_xy(constraint_trigger, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
@@ -4139,13 +4139,25 @@ impl FloatingWindow for TaskFormWindow {
         // Status segmented
         for (i, r) in Self::status_btn_rects(width, height).iter().enumerate() {
             if r.contains(pt_form) {
-                self.status = [
+                let new_status = [
                     Status::NotStarted,
                     Status::InProgress,
                     Status::OnHold,
                     Status::Complete,
                     Status::Dropped,
                 ][i];
+                let today = chrono::Local::now().date_naive();
+                // Auto-populate actual_start when switching to InProgress
+                if new_status == Status::InProgress && self.actual_start.value.is_none() {
+                    self.actual_start.value = Some(today);
+                }
+                // Auto-populate actual_end when switching to Complete or Dropped
+                if matches!(new_status, Status::Complete | Status::Dropped)
+                    && self.actual_end.value.is_none()
+                {
+                    self.actual_end.value = Some(today);
+                }
+                self.status = new_status;
                 return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
             }
         }

@@ -110,6 +110,31 @@ impl Plan {
             }
         }
 
+        // If a task has actual_end (corrected_end_date) set but its status is not Complete
+        // or Dropped, clear it — e.g. task was reverted to InProgress.
+        let non_terminal_ids: Vec<TaskId> = self
+            .tasks
+            .keys()
+            .filter(|id| {
+                self.node_allocations
+                    .tasks
+                    .get(id)
+                    .map(|ts| !matches!(ts.status, Status::Complete | Status::Dropped))
+                    .unwrap_or(true)
+            })
+            .copied()
+            .collect();
+        for id in non_terminal_ids {
+            if let Some(ts) = self.node_allocations.tasks.get_mut(&id) {
+                if let TaskAllocation::Fixed {
+                    corrected_end_date, ..
+                } = &mut ts.allocation
+                {
+                    *corrected_end_date = None;
+                }
+            }
+        }
+
         // Stretch any overrunning InProgress tasks
         let in_progress_ids: Vec<TaskId> = self
             .tasks

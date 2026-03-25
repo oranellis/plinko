@@ -589,8 +589,8 @@ fn draw_util_row(
                     );
                 }
 
-                // Hours label on util bar when zoom is large enough
-                if state.zoom >= 26.0 {
+                // Hours label on util bar when bar is tall enough
+                {
                     let label = if (used - used.round()).abs() < 0.05 {
                         format!("{}h", used.round() as i32)
                     } else {
@@ -713,8 +713,6 @@ fn draw_task_rows(
     }
 
     // ── Pass 3: task bar slivers (above column tints) ─────────────────────
-    // Only show hours labels when there is enough horizontal space.
-    let show_hours = state.zoom >= 26.0;
     let (_, sm) = cache.small_font.metrics();
     let sm_line_h = sm.descent - sm.ascent;
 
@@ -755,8 +753,8 @@ fn draw_task_rows(
                 paint.set_style(PaintStyle::Fill);
                 canvas.draw_rect(Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h), paint);
 
-                // Hours label on the bar when zoom is large enough
-                if show_hours && bar_h >= sm_line_h + 2.0 {
+                // Hours label on the bar when bar is tall enough
+                if bar_h >= sm_line_h + 2.0 {
                     let label = if (seg.hours_worked - seg.hours_worked.round()).abs() < 0.05 {
                         format!("{}h", seg.hours_worked.round() as i32)
                     } else {

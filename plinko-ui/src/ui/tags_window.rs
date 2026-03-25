@@ -461,7 +461,7 @@ impl FloatingWindow for TagsWindow {
                 } else {
                     // Tag name
                     if let Some(blob) = TextBlob::new(&tag.name, &cache.font) {
-                        paint.set_color(Color::from_argb(alpha, 0x33, 0x33, 0x33));
+                        paint.set_color(Color::from(ITEM_FG));
                         paint.set_style(PaintStyle::Fill);
                         let tx = panel.left + PADDING + HANDLE_W + 4.0;
                         canvas.draw_text_blob(&blob, (tx, ry + text_y_offset), &paint);

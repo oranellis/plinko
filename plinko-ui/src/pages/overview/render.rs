@@ -32,16 +32,16 @@ const WARN_TOOLTIP_FG: u32 = 0xff_ffffff;
 // Hover highlight colors — hovered node (blue)
 const HOVER_SELF_GLOW: u32 = 0xff_1e88e5;
 const HOVER_SELF_BORDER: u32 = 0xff_1e88e5;
-// Upstream dependencies (orange — nodes/arrows pointing into the hovered node)
-const HOVER_UPSTREAM_GLOW: u32 = 0x90_7b1fa2;
-const HOVER_UPSTREAM_BORDER: u32 = 0xff_7b1fa2;
-const HOVER_ARROW_UPSTREAM_GLOW: u32 = 0x25_7b1fa2;
-const HOVER_ARROW_UPSTREAM: u32 = 0xa8_7b1fa2;
-// Downstream dependents (teal — nodes/arrows pointing out of the hovered node)
-const HOVER_DOWNSTREAM_GLOW: u32 = 0x90_00897b;
-const HOVER_DOWNSTREAM_BORDER: u32 = 0xff_00897b;
-const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_00897b;
-const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_00897b;
+// Upstream dependencies: light purple
+const HOVER_UPSTREAM_GLOW: u32 = 0x90_ce93d8;
+const HOVER_UPSTREAM_BORDER: u32 = 0xff_ce93d8;
+const HOVER_ARROW_UPSTREAM_GLOW: u32 = 0x25_ce93d8;
+const HOVER_ARROW_UPSTREAM: u32 = 0xa8_ce93d8;
+// Downstream dependents: light teal/cyan
+const HOVER_DOWNSTREAM_GLOW: u32 = 0x90_4dd0e1;
+const HOVER_DOWNSTREAM_BORDER: u32 = 0xff_4dd0e1;
+const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_4dd0e1;
+const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_4dd0e1;
 const GANTT_DEP_LINE_DIMMED: u32 = 0x20_888888;
 
 /// A clicked item on the Gantt chart.
@@ -1678,7 +1678,7 @@ fn draw_node_info_panel(
     );
 
     // Background
-    paint.set_color(Color::from(0xf4_ffffff_u32));
+    paint.set_color(Color::from(TOOLTIP_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(
         RRect::new_rect_xy(Rect::from_xywh(px, py, panel_w, panel_h), 6.0, 6.0),
