@@ -1131,8 +1131,9 @@ fn build_item_pos_map(
                     pos_map.insert(
                         NodeId::Task(*id),
                         ItemPos {
-                            start_x: date_to_x(*start, view_start, zoom, scroll_x),
-                            end_x: date_to_x(*end, view_start, zoom, scroll_x) + zoom,
+                            // Connect arrows at the centre of the first/last day columns.
+                            start_x: date_to_x(*start, view_start, zoom, scroll_x) + zoom / 2.0,
+                            end_x: date_to_x(*end, view_start, zoom, scroll_x) + zoom / 2.0,
                             center_y: cy,
                         },
                     );
@@ -1224,6 +1225,7 @@ fn draw_gantt_dependencies(
                     to_pos.start_x,
                     to_pos.center_y,
                     radius,
+                    0.0,
                 );
             }
         }
@@ -1251,6 +1253,7 @@ fn draw_gantt_dependencies(
                     to_pos.start_x,
                     to_pos.center_y,
                     radius,
+                    0.0,
                 );
             }
         }
@@ -1347,26 +1350,30 @@ fn draw_highlighted_dep_arrows(
     paint.set_style(PaintStyle::Stroke);
 
     // Draw all glows first, then all cores, per direction.
-    for (arrows, glow_color, core_color) in [
-        (&upstream, HOVER_ARROW_UPSTREAM_GLOW, HOVER_ARROW_UPSTREAM),
+    // Upstream (dependency) arrows are offset slightly left; downstream slightly right
+    // so they remain visually distinct when they share the same column.
+    const HOVER_X_OFFSET: f32 = 4.0;
+    for (arrows, glow_color, core_color, x_off) in [
+        (&upstream, HOVER_ARROW_UPSTREAM_GLOW, HOVER_ARROW_UPSTREAM, -HOVER_X_OFFSET),
         (
             &downstream,
             HOVER_ARROW_DOWNSTREAM_GLOW,
             HOVER_ARROW_DOWNSTREAM,
+            HOVER_X_OFFSET,
         ),
     ] {
         paint.set_stroke_width(3.5);
         paint.set_color(Color::from(glow_color));
         for a in arrows.iter() {
             draw_dep_arrow(
-                canvas, &mut paint, a.from_x, a.from_y, a.to_x, a.to_y, radius,
+                canvas, &mut paint, a.from_x, a.from_y, a.to_x, a.to_y, radius, x_off,
             );
         }
         paint.set_stroke_width(1.8);
         paint.set_color(Color::from(core_color));
         for a in arrows.iter() {
             draw_dep_arrow(
-                canvas, &mut paint, a.from_x, a.from_y, a.to_x, a.to_y, radius,
+                canvas, &mut paint, a.from_x, a.from_y, a.to_x, a.to_y, radius, x_off,
             );
         }
     }
@@ -1382,6 +1389,10 @@ fn draw_dep_arrow(
     x2: f32,
     y2: f32,
     radius: f32,
+    // Horizontal offset applied to the midpoint vertical segment.
+    // Negative = shift left (upstream/dependency arrows in hover mode),
+    // Positive = shift right (downstream/dependent arrows in hover mode).
+    x_offset: f32,
 ) {
     if (y1 - y2).abs() < 1.0 {
         // Same row: simple horizontal line
@@ -1398,7 +1409,7 @@ fn draw_dep_arrow(
 
     if x2 >= x1 + 2.0 * r {
         // Destination is comfortably to the right: route via midpoint S-curve.
-        let mid_x = (x1 + x2) / 2.0;
+        let mid_x = ((x1 + x2) / 2.0 + x_offset).clamp(x1 + r, x2 - r);
         let mut pb = PathBuilder::new();
         pb.move_to((x1, y1));
         pb.line_to((mid_x - r, y1));
@@ -1685,9 +1696,11 @@ fn draw_node_info_panel(
     paint.set_style(PaintStyle::Fill);
 
     // Name (first line) in title_font
+    // `ascent` is negative (above baseline), so `-ascent` = |ascent|.
+    // This places the *top* of the text at `py + pad`.
     if let Some(blob) = TextBlob::new(lines[0].as_str(), &cache.title_font) {
         paint.set_color(Color::from(INPUT_FG));
-        let ty = py + pad + title_line_h - title_metrics.descent - title_metrics.ascent.abs();
+        let ty = py + pad - title_metrics.ascent;
         canvas.draw_text_blob(&blob, (px + pad, ty), &paint);
     }
 

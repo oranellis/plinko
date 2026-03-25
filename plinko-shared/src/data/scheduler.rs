@@ -456,6 +456,7 @@ impl Plan {
         let limit = start_date + chrono::Duration::days(MAX_FILL_DAYS);
 
         while remaining > EPSILON && current <= limit {
+            let avail_full = self.hours_available(&user_id, current);
             let avail = self.hours_remaining(state, user_id, current);
             let scheduled = if strict {
                 // In strict mode only schedule on days where the user has at
@@ -487,6 +488,20 @@ impl Plan {
                     hours_worked: scheduled,
                 });
                 remaining -= scheduled;
+            } else if strict && avail_full > EPSILON && scheduled < EPSILON {
+                // A working day that cannot be fully claimed (another task is
+                // using some of it).  In consecutive mode we must restart the
+                // run: undo any segments accumulated so far and try again from
+                // the next day.  Calendar gaps (avail_full == 0) do NOT break
+                // the run because they are expected interruptions.
+                for seg in segments.drain(..) {
+                    let entry = state
+                        .capacity
+                        .entry((seg.user, seg.date))
+                        .or_insert_with(|| self.hours_available(&seg.user, seg.date));
+                    *entry += seg.hours_worked;
+                }
+                remaining = total_hours;
             }
             current += chrono::Duration::days(1);
         }
@@ -504,6 +519,7 @@ impl Plan {
         state: &mut SchedulerState,
     ) -> Vec<WorkSegment> {
         let mut remaining: Vec<f32> = workers.iter().map(|&(_, _, _, total)| total).collect();
+        let total_hours: Vec<f32> = workers.iter().map(|&(_, _, _, total)| total).collect();
         let mut segments: Vec<WorkSegment> = Vec::new();
         let mut current = start_date;
         let limit = start_date + chrono::Duration::days(MAX_FILL_DAYS);
@@ -542,6 +558,33 @@ impl Plan {
                             hours_worked: scheduled,
                         });
                         remaining[i] -= scheduled;
+                    }
+                }
+            } else {
+                // Check if any worker is blocked by another task (not a calendar gap).
+                let any_blocked = workers.iter().enumerate().any(|(i, &(uid, _, daily_cap, _))| {
+                    if remaining[i] <= EPSILON {
+                        return false;
+                    }
+                    let avail_full = self.hours_available(&uid, current);
+                    if avail_full <= EPSILON {
+                        return false; // calendar gap — not a block
+                    }
+                    let cap = daily_cap.unwrap_or(remaining[i]);
+                    let avail = self.hours_remaining(state, uid, current);
+                    avail < cap - EPSILON
+                });
+                if any_blocked {
+                    // Restart the run: undo accumulated segments and reset remaining.
+                    for seg in segments.drain(..) {
+                        let entry = state
+                            .capacity
+                            .entry((seg.user, seg.date))
+                            .or_insert_with(|| self.hours_available(&seg.user, seg.date));
+                        *entry += seg.hours_worked;
+                    }
+                    for (i, &tot) in total_hours.iter().enumerate() {
+                        remaining[i] = tot;
                     }
                 }
             }

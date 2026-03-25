@@ -19,10 +19,10 @@ pub const HOME_CARD_SIZE: f32 = 160.0;
 pub const HOME_CARD_GAP: f32 = 32.0;
 pub const HOME_CARD_CORNER: f32 = 12.0;
 pub const HOME_CARD_ICON_SIZE: f32 = 48.0;
-pub const HOME_BG: u32 = 0xff_f5f5f5;
-pub const HOME_CARD_BG: u32 = 0xff_ffffff;
-pub const HOME_CARD_HOVER_BG: u32 = 0xff_e8e8e8;
-pub const HOME_CARD_BORDER: u32 = 0xff_e0e0e0;
+pub const HOME_BG: u32 = 0xff_e8e8e8;
+pub const HOME_CARD_BG: u32 = 0xff_f8f8f8;
+pub const HOME_CARD_HOVER_BG: u32 = 0xff_d8d8d8;
+pub const HOME_CARD_BORDER: u32 = 0xff_cccccc;
 pub const HOME_CARD_LABEL_COLOR: u32 = 0xff_333333;
 pub const HOME_ICON_COLOR: u32 = 0xff_555555;
 
@@ -139,15 +139,15 @@ pub const GANTT_ZOOM_MAX: f32 = 200.0;
 pub const GANTT_MS_HALF: f32 = 10.0; // milestone diamond half-size
 
 // Chrome
-pub const GANTT_BG: u32 = 0xff_f5f5f5;
-pub const GANTT_HEADER_BG: u32 = 0xff_ebebeb;
-pub const GANTT_HEADER_BORDER: u32 = 0xff_c8c8c8;
+pub const GANTT_BG: u32 = 0xff_e8e8e8;
+pub const GANTT_HEADER_BG: u32 = 0xff_dcdcdc;
+pub const GANTT_HEADER_BORDER: u32 = 0xff_b8b8b8;
 pub const GANTT_HEADER_FG: u32 = 0xff_555555;
 pub const GANTT_HEADER_MONTH_FG: u32 = 0xff_333333;
-pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_d8d8d8;
+pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_c8c8c8;
 pub const GANTT_TODAY_LINE_COLOR: u32 = 0x80_4a90d9;
-pub const GANTT_ROW_ALT_BG: u32 = 0xff_ededef;
-pub const GANTT_WEEKEND_BG: u32 = 0xff_e4e4e7;
+pub const GANTT_ROW_ALT_BG: u32 = 0xff_dddde0;
+pub const GANTT_WEEKEND_BG: u32 = 0xff_d4d4d8;
 
 // Task status colors
 pub const GANTT_TASK_NOT_STARTED: u32 = 0xff_d0d0d0;
@@ -179,7 +179,7 @@ pub const ALLOC_TASK_LABEL_W: f32 = 140.0;
 pub const ALLOC_USER_PANEL_W: f32 = 180.0;
 pub const ALLOC_USER_ENTRY_H: f32 = 52.0;
 pub const ALLOC_UTIL_ROW_H: f32 = 28.0;
-pub const ALLOC_ROW_ALT_BG: u32 = 0xff_ededef;
+pub const ALLOC_ROW_ALT_BG: u32 = 0xff_dddde0;
 pub const ALLOC_SELECTED_BG: u32 = 0xff_dde9fb;
 pub const ALLOC_HOVER_BG: u32 = 0xff_f0f4ff;
 pub const ALLOC_UTIL_GREEN: u32 = 0xff_4caf50;
@@ -203,12 +203,12 @@ pub const TASK_COLORS: [u32; 10] = [
 // Calendar overrides page
 pub const CAL_HOLIDAY_BG: u32 = 0xff_ffcccc; // holiday (0h)
 pub const CAL_PARTIAL_BG: u32 = 0xff_fff3cd; // partial-day override
-pub const CAL_NONWORK_BG: u32 = 0xff_f0f0f0; // non-working day (no override)
-pub const CAL_WORK_BG: u32 = 0xff_ffffff; // normal working day
-pub const CAL_HOVER_BG: u32 = 0xff_e8f4ff; // hovered day cell
-pub const CAL_OUTSIDE_BG: u32 = 0xff_fafafa; // outside current month
+pub const CAL_NONWORK_BG: u32 = 0xff_dcdcdc; // non-working day (no override)
+pub const CAL_WORK_BG: u32 = 0xff_f0f0f0; // normal working day
+pub const CAL_HOVER_BG: u32 = 0xff_d8eeff; // hovered day cell
+pub const CAL_OUTSIDE_BG: u32 = 0xff_d8d8d8; // outside current month
 pub const CAL_TODAY_BORDER: u32 = 0xff_4a90d9; // today highlight border
-pub const CAL_CELL_BORDER: u32 = 0xff_e0e0e0; // cell border
-pub const CAL_HEADER_BG: u32 = 0xff_f5f5f5; // day-of-week header bg
+pub const CAL_CELL_BORDER: u32 = 0xff_c0c0c0; // cell border
+pub const CAL_HEADER_BG: u32 = 0xff_d8d8d8; // day-of-week header bg
 pub const CAL_FG: u32 = 0xff_333333; // cell text
 pub const CAL_DIM_FG: u32 = 0xff_aaaaaa; // outside month text
