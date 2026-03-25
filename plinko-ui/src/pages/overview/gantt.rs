@@ -102,14 +102,6 @@ pub fn task_display_dates(plan: &Plan, id: &TaskId) -> Option<(NaiveDate, NaiveD
         Some(last) => last.max(ts.allocation.end_date()),
         None => ts.allocation.end_date(),
     };
-    // InProgress tasks should always extend to at least today on the Gantt
-    // chart, even if all their allocated work is in the past.
-    let end = if ts.status == Status::InProgress {
-        let today = chrono::Local::now().date_naive();
-        end.max(today)
-    } else {
-        end
-    };
 
     Some((start, end))
 }

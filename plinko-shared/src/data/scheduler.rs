@@ -831,12 +831,15 @@ impl Plan {
             start_date
         };
         let task_start = task_start.unwrap_or(start_date);
-        let task_end = task_end.map_or(min_end, |e| e.max(min_end));
+        let mut task_end = task_end.map_or(min_end, |e| e.max(min_end));
 
         // For InProgress tasks, fill_slot already schedules from actual_start
         // (which may be in the past), so time_allocation contains all segments
         // including any past ones. Just preserve InProgress status.
         let (final_status, final_time_alloc) = if state.inprogress_ids.contains(&id) {
+            // End date must be at least today so the Gantt bar runs to today and
+            // dependent tasks are not scheduled from a past date.
+            task_end = task_end.max(state.today);
             (Status::InProgress, time_allocation)
         } else {
             (Status::NotStarted, time_allocation)
