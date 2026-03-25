@@ -362,10 +362,20 @@ impl Plan {
         if !is_milestone {
             let floor = if let NodeId::Task(tid) = node_id {
                 if state.inprogress_ids.contains(&tid) {
-                    // Use the task's actual_start if recorded, otherwise today.
+                    // Use the task's actual_start if recorded.
+                    // Fall back to Fixed allocation start_date for legacy plans
+                    // that don't have actual_start on the task struct yet.
                     self.tasks
                         .get(&tid)
                         .and_then(|t| t.actual_start)
+                        .or_else(|| {
+                            self.node_allocations.tasks.get(&tid).and_then(|ts| {
+                                match &ts.allocation {
+                                    TaskAllocation::Fixed { start_date, .. } => Some(*start_date),
+                                    _ => None,
+                                }
+                            })
+                        })
                         .unwrap_or(state.today)
                 } else {
                     tomorrow
@@ -809,30 +819,11 @@ impl Plan {
         let task_start = task_start.unwrap_or(start_date);
         let task_end = task_end.map_or(min_end, |e| e.max(min_end));
 
-        // For InProgress tasks being rescheduled, preserve any past work segments
-        // and set the correct status.
+        // For InProgress tasks, fill_slot already schedules from actual_start
+        // (which may be in the past), so time_allocation contains all segments
+        // including any past ones. Just preserve InProgress status.
         let (final_status, final_time_alloc) = if state.inprogress_ids.contains(&id) {
-            let past_segs: Vec<WorkSegment> = match self
-                .node_allocations
-                .tasks
-                .get(&id)
-                .map(|ts| &ts.allocation)
-            {
-                Some(TaskAllocation::Fixed {
-                    time_allocation, ..
-                })
-                | Some(TaskAllocation::Dynamic {
-                    time_allocation, ..
-                }) => time_allocation
-                    .iter()
-                    .filter(|s| s.date < state.today)
-                    .cloned()
-                    .collect(),
-                None => vec![],
-            };
-            let mut all_segs = past_segs;
-            all_segs.extend(time_allocation);
-            (Status::InProgress, all_segs)
+            (Status::InProgress, time_allocation)
         } else {
             (Status::NotStarted, time_allocation)
         };

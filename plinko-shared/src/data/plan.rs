@@ -360,24 +360,22 @@ impl Plan {
                 task.actual_start = Some(today);
             }
         }
-        // Set status to InProgress. Clear the allocation back to Dynamic so
-        // the scheduler reschedules the remaining work from actual_start.
+        let actual_start = self.tasks[&id].actual_start.unwrap_or(today);
+        // Set status to InProgress. Use a Fixed allocation so the status
+        // survives invalidate() calls (which purge Dynamic scheduler output).
+        // The scheduler detects InProgress Fixed allocations and reschedules
+        // them dynamically from actual_start.
         let ts = self
             .node_allocations
             .tasks
             .entry(id)
             .or_insert_with(TaskState::not_started);
         ts.status = Status::InProgress;
-        // Reset to Dynamic so the scheduler can schedule from actual_start.
-        // Preserve any existing time_allocation segments (past work records).
-        let existing_time_alloc = match &ts.allocation {
-            TaskAllocation::Fixed { time_allocation, .. } => time_allocation.clone(),
-            TaskAllocation::Dynamic { time_allocation, .. } => time_allocation.clone(),
-        };
-        ts.allocation = TaskAllocation::Dynamic {
-            scheduled_start_date: today,
-            scheduled_end_date: today,
-            time_allocation: existing_time_alloc,
+        ts.allocation = TaskAllocation::Fixed {
+            start_date: actual_start,
+            end_date: actual_start,
+            corrected_end_date: None,
+            time_allocation: vec![],
         };
     }
 
