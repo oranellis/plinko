@@ -1505,6 +1505,9 @@ fn draw_node_info_panel(
     let line_gap = 3.0_f32;
     let margin = 8.0_f32;
 
+    // First line (name) uses the larger title font; the rest use the normal font.
+    let (_, title_metrics) = cache.title_font.metrics();
+    let title_line_h = (title_metrics.descent - title_metrics.ascent).ceil();
     let (_, metrics) = cache.font.metrics();
     let line_h = (metrics.descent - metrics.ascent).ceil();
 
@@ -1630,13 +1633,22 @@ fn draw_node_info_panel(
         return;
     }
 
-    let max_w = lines
+    // Measure: name (title_font) + rest (font)
+    let name_w = cache.title_font.measure_str(lines[0].as_str(), None).0;
+    let rest_w = lines[1..]
         .iter()
         .map(|l| cache.font.measure_str(l.as_str(), None).0)
         .fold(0.0_f32, f32::max);
+    let max_w = name_w.max(rest_w);
 
     let panel_w = max_w + pad * 2.0;
-    let panel_h = lines.len() as f32 * line_h + (lines.len() - 1) as f32 * line_gap + pad * 2.0;
+    let panel_h = title_line_h
+        + if lines.len() > 1 {
+            line_gap + (lines.len() - 1) as f32 * line_h + (lines.len() - 2) as f32 * line_gap
+        } else {
+            0.0
+        }
+        + pad * 2.0;
     let px = margin;
     let py = height - margin - panel_h;
 
@@ -1672,11 +1684,19 @@ fn draw_node_info_panel(
     );
     paint.set_style(PaintStyle::Fill);
 
-    for (i, line) in lines.iter().enumerate() {
+    // Name (first line) in title_font
+    if let Some(blob) = TextBlob::new(lines[0].as_str(), &cache.title_font) {
+        paint.set_color(Color::from(INPUT_FG));
+        let ty = py + pad + title_line_h - title_metrics.descent - title_metrics.ascent.abs();
+        canvas.draw_text_blob(&blob, (px + pad, ty), &paint);
+    }
+
+    // Remaining lines in normal font
+    for (i, line) in lines[1..].iter().enumerate() {
         if let Some(blob) = TextBlob::new(line.as_str(), &cache.font) {
-            let color = if i == 0 { INPUT_FG } else { MUTED_FG };
-            paint.set_color(Color::from(color));
-            let ty = py + pad + i as f32 * (line_h + line_gap) - metrics.ascent;
+            paint.set_color(Color::from(MUTED_FG));
+            let ty = py + pad + title_line_h + line_gap + i as f32 * (line_h + line_gap)
+                - metrics.ascent;
             canvas.draw_text_blob(&blob, (px + pad, ty), &paint);
         }
     }

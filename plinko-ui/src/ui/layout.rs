@@ -139,15 +139,15 @@ pub const GANTT_ZOOM_MAX: f32 = 200.0;
 pub const GANTT_MS_HALF: f32 = 10.0; // milestone diamond half-size
 
 // Chrome
-pub const GANTT_BG: u32 = 0xff_fafafa;
-pub const GANTT_HEADER_BG: u32 = 0xff_f0f0f0;
-pub const GANTT_HEADER_BORDER: u32 = 0xff_d8d8d8;
+pub const GANTT_BG: u32 = 0xff_f5f5f5;
+pub const GANTT_HEADER_BG: u32 = 0xff_ebebeb;
+pub const GANTT_HEADER_BORDER: u32 = 0xff_c8c8c8;
 pub const GANTT_HEADER_FG: u32 = 0xff_555555;
 pub const GANTT_HEADER_MONTH_FG: u32 = 0xff_333333;
-pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_e4e4e4;
+pub const GANTT_DAY_LINE_COLOR: u32 = 0xff_d8d8d8;
 pub const GANTT_TODAY_LINE_COLOR: u32 = 0x80_4a90d9;
-pub const GANTT_ROW_ALT_BG: u32 = 0xff_f4f4f4;
-pub const GANTT_WEEKEND_BG: u32 = 0xff_efefef;
+pub const GANTT_ROW_ALT_BG: u32 = 0xff_ededef;
+pub const GANTT_WEEKEND_BG: u32 = 0xff_e4e4e7;
 
 // Task status colors
 pub const GANTT_TASK_NOT_STARTED: u32 = 0xff_d0d0d0;
@@ -179,7 +179,7 @@ pub const ALLOC_TASK_LABEL_W: f32 = 140.0;
 pub const ALLOC_USER_PANEL_W: f32 = 180.0;
 pub const ALLOC_USER_ENTRY_H: f32 = 52.0;
 pub const ALLOC_UTIL_ROW_H: f32 = 28.0;
-pub const ALLOC_ROW_ALT_BG: u32 = 0xff_f7f7f7;
+pub const ALLOC_ROW_ALT_BG: u32 = 0xff_ededef;
 pub const ALLOC_SELECTED_BG: u32 = 0xff_dde9fb;
 pub const ALLOC_HOVER_BG: u32 = 0xff_f0f4ff;
 pub const ALLOC_UTIL_GREEN: u32 = 0xff_4caf50;

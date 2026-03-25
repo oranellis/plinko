@@ -49,6 +49,7 @@ impl PlanEngine {
             PlanRequest::StartTask(id) => {
                 if self.plan.tasks.contains_key(&id) {
                     self.plan.start_task(id);
+                    let _ = self.plan.compute_time_optimised_plan();
                     PlanResponse::PlanUpdated
                 } else {
                     PlanResponse::Error(PlanError::TaskNotFound(id))
@@ -57,6 +58,7 @@ impl PlanEngine {
             PlanRequest::PauseTask(id) => {
                 if self.plan.tasks.contains_key(&id) {
                     self.plan.pause_task(id);
+                    let _ = self.plan.compute_time_optimised_plan();
                     PlanResponse::PlanUpdated
                 } else {
                     PlanResponse::Error(PlanError::TaskNotFound(id))
@@ -65,6 +67,7 @@ impl PlanEngine {
             PlanRequest::ResumeTask(id) => {
                 if self.plan.tasks.contains_key(&id) {
                     self.plan.resume_task(id);
+                    let _ = self.plan.compute_time_optimised_plan();
                     PlanResponse::PlanUpdated
                 } else {
                     PlanResponse::Error(PlanError::TaskNotFound(id))
@@ -73,6 +76,7 @@ impl PlanEngine {
             PlanRequest::CompleteTask(id) => {
                 if self.plan.tasks.contains_key(&id) {
                     self.plan.complete_task(id);
+                    let _ = self.plan.compute_time_optimised_plan();
                     PlanResponse::PlanUpdated
                 } else {
                     PlanResponse::Error(PlanError::TaskNotFound(id))
@@ -81,6 +85,7 @@ impl PlanEngine {
             PlanRequest::DropTask(id) => {
                 if self.plan.tasks.contains_key(&id) {
                     self.plan.drop_task(id);
+                    let _ = self.plan.compute_time_optimised_plan();
                     PlanResponse::PlanUpdated
                 } else {
                     PlanResponse::Error(PlanError::TaskNotFound(id))

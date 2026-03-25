@@ -216,7 +216,7 @@ pub fn draw_allocation(
     if let Some(uid) = &state.selected_user {
         draw_date_header(canvas, state, width, view_start, cache);
         draw_util_row(
-            canvas, state, plan, width, view_start, view_end, uid, &mut paint,
+            canvas, state, plan, width, view_start, view_end, uid, cache, &mut paint,
         );
         draw_task_rows(
             canvas, state, plan, width, height, view_start, view_end, uid, cache, &mut paint,
@@ -507,6 +507,7 @@ fn draw_util_row(
     view_start: NaiveDate,
     view_end: NaiveDate,
     user_id: &UserId,
+    cache: &RenderCache,
     paint: &mut Paint,
 ) {
     let top = util_row_top();
@@ -587,6 +588,34 @@ fn draw_util_row(
                         paint,
                     );
                 }
+
+                // Hours label on util bar when zoom is large enough
+                if state.zoom >= 26.0 {
+                    let label = if (used - used.round()).abs() < 0.05 {
+                        format!("{}h", used.round() as i32)
+                    } else {
+                        format!("{:.1}h", used)
+                    };
+                    let (_, sm) = cache.small_font.metrics();
+                    let sm_h = sm.descent - sm.ascent;
+                    if bar_h >= sm_h + 2.0 {
+                        if let Some(blob) = TextBlob::new(&label, &cache.small_font) {
+                            let tw = cache.small_font.measure_str(&label, None).0;
+                            let tx = x + 1.0 + (bar_w - tw) / 2.0;
+                            let ty = bar_y + (bar_h - sm_h) / 2.0 - sm.ascent;
+                            paint.set_color(Color::from(0xff_ffffff_u32));
+                            paint.set_style(PaintStyle::Fill);
+                            canvas.save();
+                            canvas.clip_rect(
+                                Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h),
+                                ClipOp::Intersect,
+                                false,
+                            );
+                            canvas.draw_text_blob(&blob, (tx, ty), paint);
+                            canvas.restore();
+                        }
+                    }
+                }
             }
         }
         d += Duration::days(1);
@@ -640,9 +669,26 @@ fn draw_task_rows(
         false,
     );
 
-    // Column backgrounds (weekend tint + day lines)
     let num_rows = user_tasks.len();
     let rows_h = (num_rows as f32 * GANTT_ROW_H).max(content_h);
+
+    // ── Pass 1: alternating row backgrounds ───────────────────────────────
+    for (row_idx, _) in user_tasks.iter().enumerate() {
+        let row_y = top + row_idx as f32 * GANTT_ROW_H;
+        let bg = if row_idx % 2 == 1 {
+            ALLOC_ROW_ALT_BG
+        } else {
+            GANTT_BG
+        };
+        paint.set_color(Color::from(bg));
+        paint.set_style(PaintStyle::Fill);
+        canvas.draw_rect(
+            Rect::from_xywh(timeline_left(), row_y, width - timeline_left(), GANTT_ROW_H),
+            paint,
+        );
+    }
+
+    // ── Pass 2: column backgrounds (weekend tint + day lines) on top of rows ──
     let mut d = view_start;
     while d <= view_end {
         let x = date_to_x(d, view_start, state.zoom, state.scroll_x);
@@ -666,21 +712,14 @@ fn draw_task_rows(
         d += Duration::days(1);
     }
 
-    // Row backgrounds and task bars
+    // ── Pass 3: task bar slivers (above column tints) ─────────────────────
+    // Only show hours labels when there is enough horizontal space.
+    let show_hours = state.zoom >= 26.0;
+    let (_, sm) = cache.small_font.metrics();
+    let sm_line_h = sm.descent - sm.ascent;
+
     for (row_idx, (task_id, _task_name)) in user_tasks.iter().enumerate() {
         let row_y = top + row_idx as f32 * GANTT_ROW_H;
-        let bg = if row_idx % 2 == 1 {
-            ALLOC_ROW_ALT_BG
-        } else {
-            GANTT_BG
-        };
-        paint.set_color(Color::from(bg));
-        paint.set_style(PaintStyle::Fill);
-        canvas.draw_rect(
-            Rect::from_xywh(timeline_left(), row_y, width - timeline_left(), GANTT_ROW_H),
-            paint,
-        );
-
         let cidx = color_index(task_id);
         let base_color = task_color(cidx);
 
@@ -715,12 +754,38 @@ fn draw_task_rows(
                 paint.set_color(Color::from(base_color));
                 paint.set_style(PaintStyle::Fill);
                 canvas.draw_rect(Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h), paint);
+
+                // Hours label on the bar when zoom is large enough
+                if show_hours && bar_h >= sm_line_h + 2.0 {
+                    let label = if (seg.hours_worked - seg.hours_worked.round()).abs() < 0.05 {
+                        format!("{}h", seg.hours_worked.round() as i32)
+                    } else {
+                        format!("{:.1}h", seg.hours_worked)
+                    };
+                    if let Some(blob) = TextBlob::new(&label, &cache.small_font) {
+                        let tw = cache.small_font.measure_str(&label, None).0;
+                        let tx = x + 1.0 + (bar_w - tw) / 2.0;
+                        let ty = bar_y + (bar_h - sm_line_h) / 2.0 - sm.ascent;
+                        // Dark text on light bars
+                        paint.set_color(Color::from(0xff_333333_u32));
+                        paint.set_style(PaintStyle::Fill);
+                        canvas.save();
+                        canvas.clip_rect(
+                            Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h),
+                            ClipOp::Intersect,
+                            false,
+                        );
+                        canvas.draw_text_blob(&blob, (tx, ty), paint);
+                        canvas.restore();
+                    }
+                }
             }
-
-            // (Task names are drawn in the fixed label column below)
         }
+    }
 
-        // Row bottom separator
+    // ── Pass 4: row separator lines ───────────────────────────────────────
+    for (row_idx, _) in user_tasks.iter().enumerate() {
+        let row_y = top + row_idx as f32 * GANTT_ROW_H;
         paint.set_color(Color::from(GANTT_HEADER_BORDER));
         paint.set_style(PaintStyle::Stroke);
         paint.set_stroke_width(1.0);
@@ -922,7 +987,7 @@ fn draw_hover_info(
         return;
     }
 
-    let (_, metrics) = cache.small_font.metrics();
+    let (_, metrics) = cache.font.metrics();
     let line_h = (metrics.descent - metrics.ascent).ceil();
     let line_gap = 3.0_f32;
     let pad = 10.0_f32;
@@ -930,7 +995,7 @@ fn draw_hover_info(
 
     let max_w = lines
         .iter()
-        .map(|l| cache.small_font.measure_str(l.as_str(), None).0)
+        .map(|l| cache.font.measure_str(l.as_str(), None).0)
         .fold(0.0_f32, f32::max);
 
     let panel_w = max_w + pad * 2.0;
@@ -971,7 +1036,7 @@ fn draw_hover_info(
     paint.set_style(PaintStyle::Fill);
 
     for (i, line) in lines.iter().enumerate() {
-        if let Some(blob) = TextBlob::new(line.as_str(), &cache.small_font) {
+        if let Some(blob) = TextBlob::new(line.as_str(), &cache.font) {
             let color = if i == 0 { INPUT_FG } else { MUTED_FG };
             paint.set_color(Color::from(color));
             let ty = py + pad + i as f32 * (line_h + line_gap) - metrics.ascent;

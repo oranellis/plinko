@@ -119,9 +119,24 @@ impl Page for AllocationPage {
                 match render::hit_test_toolbar_buttons(x, y, width) {
                     Some(0) => {
                         use chrono::Local;
+                        // Use the same view_start as the renderer so the scroll offset is correct.
+                        let view_start = {
+                            let start = plan
+                                .node_allocations
+                                .tasks
+                                .values()
+                                .map(|ts| ts.allocation.start_date())
+                                .min()
+                                .unwrap_or(plan.start_date)
+                                .min(plan.start_date);
+                            start - chrono::Duration::days(2)
+                        };
                         let today = Local::now().date_naive();
-                        let days = (today - plan.start_date).num_days();
-                        self.state.scroll_x = days as f32 * self.state.zoom - (width * 0.5);
+                        let days = (today - view_start).num_days();
+                        // Centre today in the visible timeline area (which starts at timeline_left).
+                        let timeline_left = ALLOC_USER_PANEL_W + ALLOC_TASK_LABEL_W;
+                        self.state.scroll_x =
+                            days as f32 * self.state.zoom - (width - timeline_left) * 0.5;
                         self.state.vel_x = 0.0;
                     }
                     Some(1) => self.state.open_users_window = true,

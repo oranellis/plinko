@@ -15,6 +15,8 @@ pub struct RenderCache {
     pub font: Font,
     /// Smaller font (12 px) for labels and secondary text.
     pub small_font: Font,
+    /// Larger font (20 px) for panel headings and node names.
+    pub title_font: Font,
     pub home_icon_paths: [Path; 5],
     pub home_card_labels: [TextBlob; 5],
     /// Person silhouette icon used by the overview toolbar.
@@ -52,6 +54,10 @@ impl RenderCache {
             Some(tf) => Font::from_typeface(tf.clone(), 12.0),
             None => Font::default(),
         };
+        let title_font = match &typeface {
+            Some(tf) => Font::from_typeface(tf.clone(), 20.0),
+            None => Font::default(),
+        };
         let card_font = match typeface {
             Some(tf) => Font::from_typeface(tf, 14.0),
             None => Font::default(),
@@ -87,6 +93,7 @@ impl RenderCache {
         Self {
             font,
             small_font,
+            title_font,
             home_icon_paths,
             home_card_labels,
             icon_person,
