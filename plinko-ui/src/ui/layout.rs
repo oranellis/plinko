@@ -178,14 +178,14 @@ pub const GANTT_DEP_LINE_DIMMED: u32 = 0x20_888888;
 // Hover/dependency highlight colors (overview Gantt)
 pub const HOVER_SELF_GLOW: u32 = 0xff_1e88e5;
 pub const HOVER_SELF_BORDER: u32 = 0xff_1e88e5;
-pub const HOVER_UPSTREAM_GLOW: u32 = 0x90_ce93d8; // light purple
-pub const HOVER_UPSTREAM_BORDER: u32 = 0xff_ce93d8;
-pub const HOVER_ARROW_UPSTREAM_GLOW: u32 = 0x25_ce93d8;
-pub const HOVER_ARROW_UPSTREAM: u32 = 0xa8_ce93d8;
-pub const HOVER_DOWNSTREAM_GLOW: u32 = 0x90_4dd0e1; // light teal/cyan
-pub const HOVER_DOWNSTREAM_BORDER: u32 = 0xff_4dd0e1;
-pub const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_4dd0e1;
-pub const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_4dd0e1;
+pub const HOVER_UPSTREAM_GLOW: u32 = 0xff_fc1ef1; // light purple
+pub const HOVER_UPSTREAM_BORDER: u32 = 0xff_fc1ef1;
+pub const HOVER_ARROW_UPSTREAM_GLOW: u32 = 0x25_fc1ef1;
+pub const HOVER_ARROW_UPSTREAM: u32 = 0xa8_fc1ef1;
+pub const HOVER_DOWNSTREAM_GLOW: u32 = 0xff_07fcd7; // light teal/cyan
+pub const HOVER_DOWNSTREAM_BORDER: u32 = 0xff_07fcd7;
+pub const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_07fcd7;
+pub const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_07fcd7;
 
 // Warning / constraint violation icon (overview Gantt)
 pub const WARN_FILL: u32 = 0xff_ffc107; // amber triangle fill
