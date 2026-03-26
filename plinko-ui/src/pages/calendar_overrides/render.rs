@@ -244,11 +244,7 @@ fn draw_user_selector(
         } else {
             CAL_BTN_NORMAL_BG
         };
-        let fg = if is_selected {
-            BTN_PRIMARY_FG
-        } else {
-            ITEM_FG
-        };
+        let fg = if is_selected { BTN_PRIMARY_FG } else { ITEM_FG };
 
         let rrect = RRect::new_rect_xy(rect, USER_TAB_CORNER, USER_TAB_CORNER);
         let mut p = Paint::default();
@@ -426,11 +422,7 @@ fn draw_user_dropdown(
             let tx = item_rect.left() + 8.0;
             let ty =
                 item_rect.top() + (item_rect.height() - (m.descent - m.ascent)) / 2.0 - m.ascent;
-            let fg = if is_selected {
-                BTN_PRIMARY_FG
-            } else {
-                ITEM_FG
-            };
+            let fg = if is_selected { BTN_PRIMARY_FG } else { ITEM_FG };
             paint.set_color(Color::from(fg));
             paint.set_style(PaintStyle::Fill);
             canvas.draw_text_blob(&blob, (tx, ty), &paint);

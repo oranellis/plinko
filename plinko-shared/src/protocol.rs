@@ -266,7 +266,8 @@ pub fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result
     }
     if let Some(v) = patch.status {
         use crate::data::{TaskAllocation, TaskState};
-        let ts = plan.node_allocations
+        let ts = plan
+            .node_allocations
             .tasks
             .entry(id)
             .or_insert_with(TaskState::not_started);
@@ -276,7 +277,9 @@ pub fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result
         if v != crate::data::Status::NotStarted {
             if matches!(ts.allocation, TaskAllocation::Dynamic { .. }) {
                 let sentinel = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
-                let start = plan.tasks.get(&id)
+                let start = plan
+                    .tasks
+                    .get(&id)
                     .and_then(|t| t.actual_start)
                     .unwrap_or(sentinel);
                 ts.allocation = TaskAllocation::Fixed {

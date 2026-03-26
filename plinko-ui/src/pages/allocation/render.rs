@@ -771,7 +771,11 @@ fn draw_task_rows(
                             let b = (base_color & 0xff) as f32;
                             0.299 * r + 0.587 * g + 0.114 * b
                         };
-                        let label_fg = if lum > 160.0 { GANTT_TASK_LABEL_DARK } else { GANTT_TASK_LABEL_LIGHT };
+                        let label_fg = if lum > 160.0 {
+                            GANTT_TASK_LABEL_DARK
+                        } else {
+                            GANTT_TASK_LABEL_LIGHT
+                        };
                         paint.set_color(Color::from(label_fg));
                         paint.set_style(PaintStyle::Fill);
                         canvas.save();

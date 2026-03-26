@@ -178,7 +178,7 @@ pub const GANTT_DEP_LINE_DIMMED: u32 = 0x20_888888;
 // Hover/dependency highlight colors (overview Gantt)
 pub const HOVER_SELF_GLOW: u32 = 0xff_1e88e5;
 pub const HOVER_SELF_BORDER: u32 = 0xff_1e88e5;
-pub const HOVER_UPSTREAM_GLOW: u32 = 0x90_ce93d8;   // light purple
+pub const HOVER_UPSTREAM_GLOW: u32 = 0x90_ce93d8; // light purple
 pub const HOVER_UPSTREAM_BORDER: u32 = 0xff_ce93d8;
 pub const HOVER_ARROW_UPSTREAM_GLOW: u32 = 0x25_ce93d8;
 pub const HOVER_ARROW_UPSTREAM: u32 = 0xa8_ce93d8;
@@ -188,8 +188,8 @@ pub const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_4dd0e1;
 pub const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_4dd0e1;
 
 // Warning / constraint violation icon (overview Gantt)
-pub const WARN_FILL: u32 = 0xff_ffc107;     // amber triangle fill
-pub const WARN_STROKE: u32 = 0xff_e65100;   // amber triangle outline
+pub const WARN_FILL: u32 = 0xff_ffc107; // amber triangle fill
+pub const WARN_STROKE: u32 = 0xff_e65100; // amber triangle outline
 pub const WARN_TOOLTIP_BG: u32 = 0xf0_333333;
 pub const WARN_TOOLTIP_FG: u32 = 0xff_ffffff;
 pub const WARN_ICON_GLYPH: u32 = 0xcc_000000; // dark glyph drawn on amber triangle

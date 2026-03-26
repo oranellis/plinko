@@ -1329,7 +1329,12 @@ fn draw_highlighted_dep_arrows(
     // so they remain visually distinct when they share the same column.
     const HOVER_X_OFFSET: f32 = 4.0;
     for (arrows, glow_color, core_color, x_off) in [
-        (&upstream, HOVER_ARROW_UPSTREAM_GLOW, HOVER_ARROW_UPSTREAM, -HOVER_X_OFFSET),
+        (
+            &upstream,
+            HOVER_ARROW_UPSTREAM_GLOW,
+            HOVER_ARROW_UPSTREAM,
+            -HOVER_X_OFFSET,
+        ),
         (
             &downstream,
             HOVER_ARROW_DOWNSTREAM_GLOW,

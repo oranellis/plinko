@@ -356,10 +356,13 @@ impl Plan {
                     .get(&tid)
                     .and_then(|t| t.actual_start)
                     .or_else(|| {
-                        self.node_allocations.tasks.get(&tid).and_then(|ts| match &ts.allocation {
-                            TaskAllocation::Fixed { start_date, .. } => Some(*start_date),
-                            _ => None,
-                        })
+                        self.node_allocations
+                            .tasks
+                            .get(&tid)
+                            .and_then(|ts| match &ts.allocation {
+                                TaskAllocation::Fixed { start_date, .. } => Some(*start_date),
+                                _ => None,
+                            })
                     })
                     .unwrap_or(state.today);
             }
@@ -612,18 +615,21 @@ impl Plan {
                 }
             } else {
                 // Check if any worker is blocked by another task (not a calendar gap).
-                let any_blocked = workers.iter().enumerate().any(|(i, &(uid, _, daily_cap, _))| {
-                    if remaining[i] <= EPSILON {
-                        return false;
-                    }
-                    let avail_full = self.hours_available(&uid, current);
-                    if avail_full <= EPSILON {
-                        return false; // calendar gap — not a block
-                    }
-                    let cap = daily_cap.unwrap_or(remaining[i]);
-                    let avail = self.hours_remaining(state, uid, current);
-                    avail < cap - EPSILON
-                });
+                let any_blocked = workers
+                    .iter()
+                    .enumerate()
+                    .any(|(i, &(uid, _, daily_cap, _))| {
+                        if remaining[i] <= EPSILON {
+                            return false;
+                        }
+                        let avail_full = self.hours_available(&uid, current);
+                        if avail_full <= EPSILON {
+                            return false; // calendar gap — not a block
+                        }
+                        let cap = daily_cap.unwrap_or(remaining[i]);
+                        let avail = self.hours_remaining(state, uid, current);
+                        avail < cap - EPSILON
+                    });
                 if any_blocked {
                     // Restart the run: undo accumulated segments and reset remaining.
                     for seg in segments.drain(..) {

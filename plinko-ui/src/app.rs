@@ -31,6 +31,18 @@ use crate::ui::layout::{BACK_BTN_SIZE, BACK_BTN_X, BACK_BTN_Y, HOME_BG, PANEL_BG
 use plinko_shared::data::ids::UserId;
 use plinko_shared::protocol::{PlanRequest, PlanResponse};
 
+/// Returns the `std::time::Instant` that is 1 second after the next local midnight.
+/// Used to schedule a timer wake-up so the scheduler can be re-run once per calendar day.
+fn next_midnight_instant() -> std::time::Instant {
+    use chrono::Timelike;
+    let now = chrono::Local::now();
+    let secs_elapsed_today =
+        now.hour() as u64 * 3600 + now.minute() as u64 * 60 + now.second() as u64;
+    // +1 so we wake 1 s after midnight, not exactly at it
+    let secs_until_midnight = 86400u64 - secs_elapsed_today + 1;
+    std::time::Instant::now() + std::time::Duration::from_secs(secs_until_midnight)
+}
+
 /// Tracks whether the user is on the home screen or inside a specific page.
 #[derive(Clone, Copy, PartialEq)]
 enum AppState {
@@ -76,6 +88,8 @@ pub struct Application {
     floats: FloatingWindowManager,
     /// The "current user" ID shown on the settings identity section.
     current_user: Option<UserId>,
+    /// Date of the last daily scheduler recompute. `None` on first run.
+    last_daily_recompute: Option<chrono::NaiveDate>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -109,6 +123,7 @@ impl Application {
             back_picture: None,
             floats: FloatingWindowManager::new(),
             current_user: None,
+            last_daily_recompute: None,
         }
     }
 
@@ -227,6 +242,25 @@ fn create_retained_surface(
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl ApplicationHandler for Application {
     fn resumed(&mut self, _event_loop: &winit::event_loop::ActiveEventLoop) {}
+
+    /// Called when the event queue is drained and the loop is about to sleep.
+    /// - Triggers a scheduler recompute once per calendar day (on first open each day
+    ///   and again when midnight passes while the app is running).
+    /// - Schedules a `WaitUntil` wake-up at the next local midnight so we don't poll.
+    fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        let today = chrono::Local::now().date_naive();
+        if self.last_daily_recompute != Some(today) {
+            let _ = self.engine.sender().send(PlanRequest::RunScheduler);
+            self.last_daily_recompute = Some(today);
+            self.mark_dirty(DirtyRegion::All);
+        }
+        // Wake up at midnight so the date check fires even if the app is idle.
+        let has_anim = matches!(self.app_state, AppState::InPage(_))
+            && self.pages.active_page_mut().has_animation();
+        if !has_anim {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(next_midnight_instant()));
+        }
+    }
 
     fn window_event(
         &mut self,
@@ -670,6 +704,8 @@ impl ApplicationHandler for Application {
             self.env.window.request_redraw();
         }
 
+        // `about_to_wait` will upgrade this to `WaitUntil(midnight)` when not animating,
+        // ensuring we wake once per day even if the user leaves the app idle overnight.
         event_loop.set_control_flow(if has_anim {
             ControlFlow::Poll
         } else {

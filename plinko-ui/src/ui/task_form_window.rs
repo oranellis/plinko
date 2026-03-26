@@ -1769,11 +1769,7 @@ fn draw_calendar_popup(
     ];
 
     for (btn, hov, dir) in nav_btns {
-        let bg = if hov {
-            TOOLBAR_BTN_HOVER_BG
-        } else {
-            INPUT_BG
-        };
+        let bg = if hov { TOOLBAR_BTN_HOVER_BG } else { INPUT_BG };
         paint.set_color(Color::from(bg));
         canvas.draw_rrect(
             RRect::new_rect_xy(btn, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
