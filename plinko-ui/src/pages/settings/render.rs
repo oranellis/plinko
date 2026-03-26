@@ -5,8 +5,8 @@ use skia_safe::{Canvas, Color, Paint, PaintStyle, RRect, Rect, TextBlob};
 use crate::ui::cache::RenderCache;
 use crate::ui::layout::{
     ADD_BTN_BG, ADD_BTN_FG, ADD_BTN_HOVER_BG, BACK_BTN_SIZE, BACK_BTN_X, BACK_BTN_Y,
-    BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, DIVIDER_COLOR, INPUT_FG, ITEM_FG,
-    MUTED_FG, PANEL_BG, SCROLLBAR_THUMB_COLOR,
+    BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG, DIVIDER_COLOR, INPUT_BORDER, INPUT_FG,
+    ITEM_FG, LIST_BG, LIST_ITEM_SEL_BG, MUTED_FG, PANEL_BG, SCROLLBAR_THUMB_COLOR,
 };
 use plinko_shared::data::Plan;
 
@@ -27,7 +27,6 @@ const SCROLLBAR_W: f32 = 6.0;
 const SCROLLBAR_PAD: f32 = 4.0;
 /// Fixed visible height of the saved-plans scroll box.
 const PLAN_BOX_H: f32 = ROW_H * 5.0;
-const PLAN_BOX_BORDER: u32 = 0xff_d8d8d8;
 
 /// Total scrollable content height (page-level scroll only covers identity section).
 pub fn total_content_height(plan: &Plan, _plan_list: &[PlanEntry]) -> f32 {
@@ -204,7 +203,7 @@ fn draw_plan_section(
     let box_rect = plan_box_rect(width);
 
     // Box background
-    paint.set_color(Color::from(0xff_fafafa_u32));
+    paint.set_color(Color::from(LIST_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(RRect::new_rect_xy(box_rect, ROW_CORNER, ROW_CORNER), paint);
 
@@ -236,7 +235,7 @@ fn draw_plan_section(
     canvas.restore();
 
     // Box border (drawn after restore so it renders on top of clipped rows)
-    paint.set_color(Color::from(PLAN_BOX_BORDER));
+    paint.set_color(Color::from(INPUT_BORDER));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.0);
     canvas.draw_rrect(RRect::new_rect_xy(box_rect, ROW_CORNER, ROW_CORNER), paint);
@@ -278,7 +277,7 @@ fn draw_plan_row(
     let hovered = state.hovered_plan_row == Some(idx);
     if hovered || entry.is_current {
         paint.set_color(Color::from(if entry.is_current {
-            0xff_e8f0fe_u32
+            LIST_ITEM_SEL_BG
         } else {
             ADD_BTN_BG
         }));
@@ -424,7 +423,7 @@ fn draw_user_row(
 
     if is_selected || is_hovered {
         paint.set_color(Color::from(if is_selected {
-            0xff_e8f0fe_u32
+            LIST_ITEM_SEL_BG
         } else {
             ADD_BTN_BG
         }));
@@ -437,7 +436,7 @@ fn draw_user_row(
     paint.set_color(Color::from(if is_selected {
         BTN_PRIMARY_BG
     } else {
-        0xff_bbbbbb_u32
+        MUTED_FG
     }));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.5);

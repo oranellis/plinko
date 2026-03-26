@@ -13,8 +13,8 @@ use crate::ui::dirty::DirtyRegion;
 use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_CORNER, BACK_BTN_SIZE, DIVIDER_COLOR, ITEM_FG, LIST_BG, LIST_ITEM_HOVER_BG,
-    LIST_SECTION_FG, OVERLAY_SOFT, PANEL_BG, PANEL_TEXT, PLAN_LIST_ITEM_H, SCROLLBAR_THUMB_COLOR,
-    TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
+    LIST_SECTION_FG, MUTED_FG, OVERLAY_SOFT, PANEL_BG, PANEL_TEXT, PLAN_LIST_ITEM_H,
+    SCROLLBAR_THUMB_COLOR, TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR, TOOLBAR_STROKE_WIDTH,
 };
 use plinko_shared::data::Plan;
 
@@ -405,7 +405,7 @@ impl FloatingWindow for UsersWindow {
                     let icon_color = if hov {
                         TOOLBAR_BTN_ICON_COLOR
                     } else {
-                        0xff_bbbbbb_u32
+                        MUTED_FG
                     };
                     let x = cal_btn.left + 3.0;
                     let y = cal_btn.top + 4.0;

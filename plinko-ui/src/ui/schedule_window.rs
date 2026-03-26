@@ -17,6 +17,7 @@ use crate::ui::layout::{
     INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG,
     LABEL_FG, LIST_BG, MUTED_FG, OVERLAY_SOFT, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H,
     PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR,
+    TOOLBAR_BTN_HOVER_BG,
 };
 use crate::ui::text_input::TextInput;
 use plinko_shared::data::ids::UserId;
@@ -456,7 +457,7 @@ fn draw_btn(
             BTN_PRIMARY_BG
         }
     } else if hovered {
-        0xff_e0e0e0_u32
+        TOOLBAR_BTN_HOVER_BG
     } else {
         BTN_SECONDARY_BG
     };

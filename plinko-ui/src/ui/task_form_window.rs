@@ -19,7 +19,7 @@ use crate::ui::layout::{
     LABEL_FG, LINK_COLOR, LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK, OVERLAY_LIGHT,
     OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, PLAN_BTN_H,
     PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR,
-    SUBTLE_BG, SUBTLE_FG, TOOLBAR_BTN_HOVER_BG,
+    SUBTLE_BG, SUBTLE_FG, TOOLBAR_BTN_HOVER_BG, TOOLBAR_BTN_ICON_COLOR,
 };
 use crate::ui::multi_line_input::MultiLineInput;
 use crate::ui::text_input::TextInput;
@@ -1624,7 +1624,7 @@ fn draw_date_btn(
     let icon_cy = rect.top + rect.height() / 2.0;
     let hs = 5.0;
     paint.set_color(if disabled {
-        Color::from(0xff_cccccc_u32)
+        Color::from(MUTED_FG)
     } else {
         Color::from(SUBTLE_FG)
     });
@@ -1661,7 +1661,7 @@ fn draw_segmented(
         let bg = if is_sel {
             BTN_PRIMARY_BG
         } else if is_hov {
-            0xff_e0e0e0_u32
+            TOOLBAR_BTN_HOVER_BG
         } else {
             BTN_SECONDARY_BG
         };
@@ -1905,7 +1905,7 @@ fn draw_calendar_popup(
 
     let clear_btn = TaskFormWindow::cal_clear_btn(cal);
     paint.set_color(Color::from(if picker.hovered_clear {
-        0xff_e0e0e0_u32
+        TOOLBAR_BTN_HOVER_BG
     } else {
         BTN_SECONDARY_BG
     }));
@@ -1924,7 +1924,7 @@ fn draw_calendar_popup(
 
     let today_btn = TaskFormWindow::cal_today_btn(cal);
     paint.set_color(Color::from(if picker.hovered_today {
-        0xff_e0e0e0_u32
+        TOOLBAR_BTN_HOVER_BG
     } else {
         BTN_SECONDARY_BG
     }));
@@ -1990,7 +1990,7 @@ fn draw_worker_row(
             let bg = if selected {
                 BTN_PRIMARY_BG
             } else if hov {
-                0xff_e0e0e0_u32
+                TOOLBAR_BTN_HOVER_BG
             } else {
                 SUBTLE_BG
             };
@@ -2708,7 +2708,7 @@ impl FloatingWindow for TaskFormWindow {
             let (bg, label_text) = if self.relaxed_mode {
                 (
                     if self.hovered_relaxed {
-                        0xff_e0e0e0_u32
+                        TOOLBAR_BTN_HOVER_BG
                     } else {
                         SUBTLE_BG
                     },
@@ -2898,7 +2898,7 @@ impl FloatingWindow for TaskFormWindow {
         // Plus button
         let plus_rect = Self::worker_plus_rect(width, height);
         paint.set_color(Color::from(if self.hovered_plus {
-            0xff_e0e0e0_u32
+            TOOLBAR_BTN_HOVER_BG
         } else {
             SUBTLE_BG
         }));
@@ -2923,7 +2923,7 @@ impl FloatingWindow for TaskFormWindow {
             pb.line_to((cx + s, cy));
             pb.move_to((cx, cy - s));
             pb.line_to((cx, cy + s));
-            paint.set_color(Color::from(0xff_555555_u32));
+            paint.set_color(Color::from(TOOLBAR_BTN_ICON_COLOR));
             paint.set_style(PaintStyle::Stroke);
             paint.set_stroke_width(1.5);
             canvas.draw_path(&pb.detach(), &paint);
@@ -3150,7 +3150,7 @@ impl FloatingWindow for TaskFormWindow {
         // Dep plus button
         let dep_plus_rect = Self::dep_plus_rect(width, height);
         paint.set_color(Color::from(if self.hovered_dep_plus {
-            0xff_e0e0e0_u32
+            TOOLBAR_BTN_HOVER_BG
         } else {
             SUBTLE_BG
         }));
@@ -3175,7 +3175,7 @@ impl FloatingWindow for TaskFormWindow {
             pb.line_to((cx + s, cy));
             pb.move_to((cx, cy - s));
             pb.line_to((cx, cy + s));
-            paint.set_color(Color::from(0xff_555555_u32));
+            paint.set_color(Color::from(TOOLBAR_BTN_ICON_COLOR));
             paint.set_style(PaintStyle::Stroke);
             paint.set_stroke_width(1.5);
             canvas.draw_path(&pb.detach(), &paint);

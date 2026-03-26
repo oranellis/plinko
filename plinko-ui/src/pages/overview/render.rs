@@ -16,33 +16,8 @@ use super::gantt::{
 };
 use super::state::OverviewState;
 
-// ── Warning icon constants ─────────────────────────────────────────────────────
-
 /// Size of the warning triangle icon (both width and height).
 const WARN_SIZE: f32 = 14.0;
-/// Amber fill for the warning triangle.
-const WARN_FILL: u32 = 0xff_ffc107;
-/// Dark amber outline.
-const WARN_STROKE: u32 = 0xff_e65100;
-/// Tooltip background.
-const WARN_TOOLTIP_BG: u32 = 0xf0_333333;
-/// Tooltip text color.
-const WARN_TOOLTIP_FG: u32 = 0xff_ffffff;
-
-// Hover highlight colors — hovered node (blue)
-const HOVER_SELF_GLOW: u32 = 0xff_1e88e5;
-const HOVER_SELF_BORDER: u32 = 0xff_1e88e5;
-// Upstream dependencies: light purple
-const HOVER_UPSTREAM_GLOW: u32 = 0x90_ce93d8;
-const HOVER_UPSTREAM_BORDER: u32 = 0xff_ce93d8;
-const HOVER_ARROW_UPSTREAM_GLOW: u32 = 0x25_ce93d8;
-const HOVER_ARROW_UPSTREAM: u32 = 0xa8_ce93d8;
-// Downstream dependents: light teal/cyan
-const HOVER_DOWNSTREAM_GLOW: u32 = 0x90_4dd0e1;
-const HOVER_DOWNSTREAM_BORDER: u32 = 0xff_4dd0e1;
-const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_4dd0e1;
-const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_4dd0e1;
-const GANTT_DEP_LINE_DIMMED: u32 = 0x20_888888;
 
 /// A clicked item on the Gantt chart.
 pub enum GanttHit {
@@ -771,7 +746,7 @@ fn draw_warning_icon(canvas: &Canvas, rect: Rect, hovered: bool, paint: &mut Pai
     paint.set_style(PaintStyle::Fill);
 
     // Draw "!" as two small filled rects (line + dot).
-    paint.set_color(Color::from(0xcc_000000_u32)); // dark glyph on amber triangle
+    paint.set_color(Color::from(WARN_ICON_GLYPH)); // dark glyph on amber triangle
     let bang_h = (bot - top) * 0.45;
     let bang_w = 2.0_f32;
     let bang_top = top + (bot - top) * 0.22;
@@ -1667,7 +1642,7 @@ fn draw_node_info_panel(
     paint.set_anti_alias(true);
 
     // Shadow
-    paint.set_color(Color::from(0x30_000000_u32));
+    paint.set_color(Color::from(SHADOW_COLOR));
     canvas.draw_rrect(
         RRect::new_rect_xy(
             Rect::from_xywh(px + 2.0, py + 3.0, panel_w, panel_h),

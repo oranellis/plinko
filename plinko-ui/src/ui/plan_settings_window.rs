@@ -17,7 +17,7 @@ use crate::ui::layout::{
     INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, LABEL_FG,
     LIST_BG, LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_LIGHT, OVERLAY_SOFT, OVERLAY_XLIGHT, PANEL_BG,
     PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
-    SUBTLE_FG,
+    SUBTLE_FG, TOOLBAR_BTN_HOVER_BG,
 };
 use crate::ui::text_input::TextInput;
 use plinko_shared::data::Plan;
@@ -409,9 +409,9 @@ fn draw_calendar_popup(
 
     for (btn, hov, dir) in nav_btns {
         let bg = if hov {
-            0xff_e0e0e0_u32
+            TOOLBAR_BTN_HOVER_BG
         } else {
-            0xff_f7f7f7_u32
+            INPUT_BG
         };
         paint.set_color(Color::from(bg));
         canvas.draw_rrect(
@@ -542,7 +542,7 @@ fn draw_calendar_popup(
 
     let clear_btn = cal_clear_btn(cal);
     paint.set_color(Color::from(if picker.hovered_clear {
-        0xff_e0e0e0_u32
+        TOOLBAR_BTN_HOVER_BG
     } else {
         BTN_SECONDARY_BG
     }));
@@ -561,7 +561,7 @@ fn draw_calendar_popup(
 
     let today_btn = cal_today_btn(cal);
     paint.set_color(Color::from(if picker.hovered_today {
-        0xff_e0e0e0_u32
+        TOOLBAR_BTN_HOVER_BG
     } else {
         BTN_SECONDARY_BG
     }));
@@ -1098,7 +1098,7 @@ impl FloatingWindow for PlanSettingsWindow {
         }
 
         let cancel_bg = if self.hovered_cancel {
-            0xff_e0e0e0_u32
+            TOOLBAR_BTN_HOVER_BG
         } else {
             BTN_SECONDARY_BG
         };
@@ -1175,7 +1175,7 @@ impl FloatingWindow for PlanSettingsWindow {
         // Edit Schedule placeholder button
         let edit_rect = Self::edit_schedule_btn_rect(width, height);
         let edit_bg = if self.hovered_edit_schedule {
-            0xff_e0e0e0_u32
+            TOOLBAR_BTN_HOVER_BG
         } else {
             BTN_SECONDARY_BG
         };

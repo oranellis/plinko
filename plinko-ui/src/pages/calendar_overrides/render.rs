@@ -238,16 +238,16 @@ fn draw_user_selector(
      -> (Rect, f32) {
         let (rect, next_x) = tab_rect(label, cache, tab_x);
         let bg = if is_selected {
-            0xff_4a90d9
+            INPUT_BORDER_FOCUS
         } else if is_hovered {
-            0xff_3a3a3a
+            CAL_BTN_HOVER_BG
         } else {
-            0xff_2a2a2a
+            CAL_BTN_NORMAL_BG
         };
         let fg = if is_selected {
-            0xff_ffffff
+            BTN_PRIMARY_FG
         } else {
-            0xff_cccccc
+            ITEM_FG
         };
 
         let rrect = RRect::new_rect_xy(rect, USER_TAB_CORNER, USER_TAB_CORNER);
@@ -360,10 +360,10 @@ fn draw_user_dropdown(
     paint.set_anti_alias(true);
 
     // Background + border
-    paint.set_color(Color::from(0xff_1e1e1e));
+    paint.set_color(Color::from(INPUT_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(RRect::new_rect_xy(drop_rect, 6.0, 6.0), &paint);
-    paint.set_color(Color::from(0xff_444444));
+    paint.set_color(Color::from(INPUT_BORDER));
     paint.set_style(PaintStyle::Stroke);
     paint.set_stroke_width(1.0);
     canvas.draw_rrect(RRect::new_rect_xy(drop_rect, 6.0, 6.0), &paint);
@@ -375,7 +375,7 @@ fn draw_user_dropdown(
         drop_w - 8.0,
         DROPDOWN_FILTER_H - 8.0,
     );
-    paint.set_color(Color::from(0xff_2a2a2a));
+    paint.set_color(Color::from(CAL_BTN_NORMAL_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(RRect::new_rect_xy(filter_rect, 4.0, 4.0), &paint);
 
@@ -385,9 +385,9 @@ fn draw_user_dropdown(
         state.user_filter.clone()
     };
     let fg = if state.user_filter.is_empty() {
-        0xff_666666u32
+        PANEL_TEXT
     } else {
-        0xff_cccccc
+        ITEM_FG
     };
     if let Some(blob) = TextBlob::new(&display, &cache.small_font) {
         let (_, m) = cache.small_font.metrics();
@@ -412,9 +412,9 @@ fn draw_user_dropdown(
 
         if is_selected || is_hovered {
             let bg = if is_selected {
-                0xff_4a90d9
+                INPUT_BORDER_FOCUS
             } else {
-                0xff_2a2a2a
+                CAL_BTN_NORMAL_BG
             };
             paint.set_color(Color::from(bg));
             paint.set_style(PaintStyle::Fill);
@@ -427,9 +427,9 @@ fn draw_user_dropdown(
             let ty =
                 item_rect.top() + (item_rect.height() - (m.descent - m.ascent)) / 2.0 - m.ascent;
             let fg = if is_selected {
-                0xff_ffffff
+                BTN_PRIMARY_FG
             } else {
-                0xff_cccccc
+                ITEM_FG
             };
             paint.set_color(Color::from(fg));
             paint.set_style(PaintStyle::Fill);
@@ -448,7 +448,7 @@ fn draw_user_dropdown(
         let tx = drop_x + 12.0;
         let ty = drop_top + DROPDOWN_FILTER_H + (DROPDOWN_ITEM_H - (m.descent - m.ascent)) / 2.0
             - m.ascent;
-        paint.set_color(Color::from(0xff_666666));
+        paint.set_color(Color::from(PANEL_TEXT));
         paint.set_style(PaintStyle::Fill);
         canvas.draw_text_blob(&blob, (tx, ty), &paint);
     }
@@ -575,7 +575,7 @@ fn draw_month_grid(
                 let (_, m) = cache.small_font.metrics();
                 let tx = rect.left() + (rect.width() - bounds.width()) / 2.0 - bounds.left();
                 let ty = rect.bottom() - 6.0 - (m.descent - m.ascent) - m.ascent;
-                paint.set_color(Color::from(0xff_666666));
+                paint.set_color(Color::from(PANEL_TEXT));
                 paint.set_style(PaintStyle::Fill);
                 canvas.draw_text_blob(&blob, (tx, ty), &paint);
             }
@@ -607,11 +607,11 @@ fn draw_edit_popup(
 
     // Shadow / background
     let border_color = if state.edit_error {
-        0xff_cc3333
+        CAL_DELETE_COLOR
     } else {
         CAL_TODAY_BORDER
     };
-    paint.set_color(Color::from(0xff_ffffff));
+    paint.set_color(Color::from(TOOLTIP_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(popup_rrect, &paint);
     paint.set_color(Color::from(border_color));

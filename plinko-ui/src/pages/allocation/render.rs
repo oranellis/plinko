@@ -334,7 +334,7 @@ fn draw_user_panel(
         // Percent label
         let pct = format!("{:.0}%", util * 100.0);
         if let Some(blob) = TextBlob::new(&pct, &cache.small_font) {
-            paint.set_color(Color::from(0xff_666666));
+            paint.set_color(Color::from(PANEL_TEXT));
             let lx = bar_x + bar_w + 4.0; // put it just after bar
             let ly = bar_y - ascent;
             // Only draw if there's room
@@ -344,7 +344,7 @@ fn draw_user_panel(
         }
 
         // Bottom separator
-        paint.set_color(Color::from(0xff_e8e8e8));
+        paint.set_color(Color::from(DIVIDER_COLOR));
         paint.set_style(PaintStyle::Stroke);
         paint.set_stroke_width(1.0);
         canvas.draw_line(
@@ -471,7 +471,7 @@ fn draw_date_header(
                 let ly = day_top + (GANTT_DAY_ROW_H - (m.descent - m.ascent)) / 2.0 - m.ascent;
                 let is_we = matches!(d.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun);
                 paint.set_color(Color::from(if is_we {
-                    0xff_aaaaaa
+                    ALLOC_WEEKEND_HEADER_FG
                 } else {
                     GANTT_HEADER_FG
                 }));
@@ -514,7 +514,7 @@ fn draw_util_row(
     let bottom = top + ALLOC_UTIL_ROW_H;
 
     // Background
-    paint.set_color(Color::from(0xff_f8f8f8));
+    paint.set_color(Color::from(PANEL_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rect(
         Rect::from_xywh(
@@ -582,7 +582,7 @@ fn draw_util_row(
                 // Overflow cap indicator
                 if frac > 1.0 {
                     let overflow_h = ((frac - 1.0) * (ALLOC_UTIL_ROW_H - 4.0)).min(4.0);
-                    paint.set_color(Color::from(0xff_cc0000));
+                    paint.set_color(Color::from(ALLOC_OVERFLOW_COLOR));
                     canvas.draw_rect(
                         Rect::from_xywh(x + 1.0, bar_y - overflow_h, bar_w, overflow_h),
                         paint,
@@ -603,7 +603,7 @@ fn draw_util_row(
                             let tw = cache.small_font.measure_str(&label, None).0;
                             let tx = x + 1.0 + (bar_w - tw) / 2.0;
                             let ty = bar_y + (bar_h - sm_h) / 2.0 - sm.ascent;
-                            paint.set_color(Color::from(0xff_ffffff_u32));
+                            paint.set_color(Color::from(BTN_PRIMARY_FG));
                             paint.set_style(PaintStyle::Fill);
                             canvas.save();
                             canvas.clip_rect(
@@ -771,7 +771,7 @@ fn draw_task_rows(
                             let b = (base_color & 0xff) as f32;
                             0.299 * r + 0.587 * g + 0.114 * b
                         };
-                        let label_fg = if lum > 160.0 { 0xff_333333_u32 } else { 0xff_ffffff_u32 };
+                        let label_fg = if lum > 160.0 { GANTT_TASK_LABEL_DARK } else { GANTT_TASK_LABEL_LIGHT };
                         paint.set_color(Color::from(label_fg));
                         paint.set_style(PaintStyle::Fill);
                         canvas.save();
@@ -807,7 +807,7 @@ fn draw_task_rows(
         let today = Local::now().date_naive();
         let tx = date_to_x(today, view_start, state.zoom, state.scroll_x);
         if tx >= timeline_left() && tx <= width {
-            paint.set_color(Color::from(0xcc_4a90d9));
+            paint.set_color(Color::from(ALLOC_TODAY_LINE_COLOR));
             paint.set_style(PaintStyle::Stroke);
             paint.set_stroke_width(2.0);
             canvas.draw_line((tx, top), (tx, top + rows_h), paint);
@@ -1012,7 +1012,7 @@ fn draw_hover_info(
     paint.set_anti_alias(true);
 
     // Shadow
-    paint.set_color(Color::from(0x30_000000_u32));
+    paint.set_color(Color::from(SHADOW_COLOR));
     canvas.draw_rrect(
         RRect::new_rect_xy(
             Rect::from_xywh(px + 2.0, py + 3.0, panel_w, panel_h),
@@ -1023,7 +1023,7 @@ fn draw_hover_info(
     );
 
     // Background
-    paint.set_color(Color::from(0xf4_ffffff_u32));
+    paint.set_color(Color::from(TOOLTIP_BG));
     paint.set_style(PaintStyle::Fill);
     canvas.draw_rrect(
         RRect::new_rect_xy(Rect::from_xywh(px, py, panel_w, panel_h), 6.0, 6.0),

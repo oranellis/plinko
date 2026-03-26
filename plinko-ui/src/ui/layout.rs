@@ -172,6 +172,27 @@ pub const GANTT_END_NODE_COLOR: u32 = 0xff_5c6bc0;
 
 // Dependency line color
 pub const GANTT_DEP_LINE_COLOR: u32 = 0x80_888888;
+/// Dimmed dep line when another node is hovered.
+pub const GANTT_DEP_LINE_DIMMED: u32 = 0x20_888888;
+
+// Hover/dependency highlight colors (overview Gantt)
+pub const HOVER_SELF_GLOW: u32 = 0xff_1e88e5;
+pub const HOVER_SELF_BORDER: u32 = 0xff_1e88e5;
+pub const HOVER_UPSTREAM_GLOW: u32 = 0x90_ce93d8;   // light purple
+pub const HOVER_UPSTREAM_BORDER: u32 = 0xff_ce93d8;
+pub const HOVER_ARROW_UPSTREAM_GLOW: u32 = 0x25_ce93d8;
+pub const HOVER_ARROW_UPSTREAM: u32 = 0xa8_ce93d8;
+pub const HOVER_DOWNSTREAM_GLOW: u32 = 0x90_4dd0e1; // light teal/cyan
+pub const HOVER_DOWNSTREAM_BORDER: u32 = 0xff_4dd0e1;
+pub const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_4dd0e1;
+pub const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_4dd0e1;
+
+// Warning / constraint violation icon (overview Gantt)
+pub const WARN_FILL: u32 = 0xff_ffc107;     // amber triangle fill
+pub const WARN_STROKE: u32 = 0xff_e65100;   // amber triangle outline
+pub const WARN_TOOLTIP_BG: u32 = 0xf0_333333;
+pub const WARN_TOOLTIP_FG: u32 = 0xff_ffffff;
+pub const WARN_ICON_GLYPH: u32 = 0xcc_000000; // dark glyph drawn on amber triangle
 
 // Allocation page — user panel (left column)
 pub const ALLOC_USER_LABEL_W: f32 = 120.0; // kept for unused-const compat
@@ -185,6 +206,12 @@ pub const ALLOC_HOVER_BG: u32 = 0xff_1e2a40;
 pub const ALLOC_UTIL_GREEN: u32 = 0xff_4caf50;
 pub const ALLOC_UTIL_AMBER: u32 = 0xff_ff9800;
 pub const ALLOC_UTIL_RED: u32 = 0xff_f44336;
+/// Overflow cap indicator — stacked on top of a full bar.
+pub const ALLOC_OVERFLOW_COLOR: u32 = 0xff_cc0000;
+/// Today marker line on the allocation page (more opaque than Gantt today line).
+pub const ALLOC_TODAY_LINE_COLOR: u32 = 0xcc_4a90d9;
+/// Weekend column header text in the allocation timeline.
+pub const ALLOC_WEEKEND_HEADER_FG: u32 = 0xff_aaaaaa;
 
 // Task color palette for allocation bars
 pub const TASK_COLORS: [u32; 10] = [
@@ -212,3 +239,12 @@ pub const CAL_CELL_BORDER: u32 = 0xff_333333; // cell border
 pub const CAL_HEADER_BG: u32 = 0xff_252526; // day-of-week header bg
 pub const CAL_FG: u32 = 0xff_d4d4d4; // cell text
 pub const CAL_DIM_FG: u32 = 0xff_505050; // outside month text
+/// Hovered state for calendar-override day-type toggle buttons.
+pub const CAL_BTN_HOVER_BG: u32 = 0xff_3a3a3a;
+/// Normal (un-hovered, unselected) state for calendar-override toggle buttons.
+pub const CAL_BTN_NORMAL_BG: u32 = 0xff_2a2a2a;
+/// Delete / remove action color in the calendar overrides page.
+pub const CAL_DELETE_COLOR: u32 = 0xff_cc3333;
+
+/// Generic panel drop-shadow overlay.
+pub const SHADOW_COLOR: u32 = 0x30_000000;
