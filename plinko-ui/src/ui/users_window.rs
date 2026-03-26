@@ -371,24 +371,27 @@ impl FloatingWindow for UsersWindow {
                     let tags_right = panel.right - PADDING - SCROLLBAR_W - 4.0 - 24.0 - 8.0;
                     let max_tags_w = (tags_right - name_end).max(0.0);
 
-                    let mut display = tags_str.clone();
-                    let mut tw = cache.small_font.measure_str(&display, None).0;
-                    if tw > max_tags_w && max_tags_w > 0.0 {
-                        // Truncate with ellipsis
-                        while tw > max_tags_w && !display.is_empty() {
-                            display.pop();
-                            tw = cache
-                                .small_font
-                                .measure_str(format!("{}…", display), None)
-                                .0;
+                    if max_tags_w > 0.0 {
+                        let mut display = tags_str.clone();
+                        let mut tw = cache.small_font.measure_str(&display, None).0;
+                        if tw > max_tags_w {
+                            // Truncate with ellipsis
+                            while tw > max_tags_w && !display.is_empty() {
+                                display.pop();
+                                tw = cache
+                                    .small_font
+                                    .measure_str(format!("{}…", display), None)
+                                    .0;
+                            }
+                            display.push('…');
                         }
-                        display.push('…');
-                    }
 
-                    if let Some(blob) = TextBlob::new(&display, &cache.small_font) {
-                        let tx = tags_right - blob.bounds().width();
-                        paint.set_color(Color::from(LIST_SECTION_FG));
-                        canvas.draw_text_blob(&blob, (tx, ry + sm_row_text_offset), &paint);
+                        let adv = cache.small_font.measure_str(&display, None).0;
+                        if let Some(blob) = TextBlob::new(&display, &cache.small_font) {
+                            let tx = tags_right - adv;
+                            paint.set_color(Color::from(LIST_SECTION_FG));
+                            canvas.draw_text_blob(&blob, (tx, ry + sm_row_text_offset), &paint);
+                        }
                     }
                 }
 
