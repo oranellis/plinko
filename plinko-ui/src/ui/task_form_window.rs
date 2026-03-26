@@ -28,7 +28,7 @@ use plinko_shared::data::dependency::Dependency;
 use plinko_shared::data::ids::{MilestoneId, NodeId, TagId, UserId};
 use plinko_shared::data::task::{Task, WorkerSlot};
 use plinko_shared::data::{Plan, Status, TaskId};
-use plinko_shared::protocol::{PlanRequest, TaskPatch, apply_task_patch};
+use plinko_shared::protocol::{MilestonePatch, PlanRequest, TaskPatch, apply_task_patch};
 use std::cell::Cell;
 use std::collections::HashSet;
 
@@ -97,10 +97,10 @@ const MAX_DEP_DROPDOWN_ROWS: usize = 5;
 const DEP_DROPDOWN_H: f32 =
     DEP_DROPDOWN_FILTER_H + MAX_DEP_DROPDOWN_ROWS as f32 * DEP_DROPDOWN_ROW_H;
 
-// Forward dependents section (read-only, edit mode only)
-const FWD_ROW_H: f32 = 28.0;
+// Forward dependents section (editable, edit mode only)
+const FWD_ROW_H: f32 = DEP_ROW_H;
 const FWD_MAX_ROWS: usize = 3;
-const FWD_SECTION_H: f32 = LABEL_H + PLAN_LABEL_GAP + FWD_ROW_H * FWD_MAX_ROWS as f32;
+const FWD_SECTION_H: f32 = LABEL_H + PLAN_LABEL_GAP + FWD_ROW_H * FWD_MAX_ROWS as f32 + PLUS_BTN_H;
 
 // Calendar popup
 const CAL_PAD: f32 = 8.0;
@@ -538,6 +538,16 @@ pub struct TaskFormWindow {
     focused_dep_lag: Option<usize>,
     hovered_dep_plus: bool,
     dep_error: bool,
+    // Forward dependents (editable, edit mode only)
+    dependents: Vec<DependencyEdit>,
+    dep_fwd_scroll_y: f32,
+    cursor_in_fwd_list: bool,
+    dep_fwd_dropdown_open_for: Option<usize>,
+    dep_fwd_dropdown_hovered: Option<usize>,
+    dep_fwd_dropdown_scroll: usize,
+    focused_fwd_lag: Option<usize>,
+    hovered_fwd_plus: bool,
+    dependent_error: bool,
     name_error: bool,
     duration_error: bool,
     constraint_date_error: bool,
@@ -598,6 +608,15 @@ impl TaskFormWindow {
             focused_dep_lag: None,
             hovered_dep_plus: false,
             dep_error: false,
+            dependents: vec![],
+            dep_fwd_scroll_y: 0.0,
+            cursor_in_fwd_list: false,
+            dep_fwd_dropdown_open_for: None,
+            dep_fwd_dropdown_hovered: None,
+            dep_fwd_dropdown_scroll: 0,
+            focused_fwd_lag: None,
+            hovered_fwd_plus: false,
+            dependent_error: false,
             name_error: false,
             duration_error: false,
             constraint_date_error: false,
@@ -675,6 +694,93 @@ impl TaskFormWindow {
             focused_dep_lag: None,
             hovered_dep_plus: false,
             dep_error: false,
+            dependents: {
+                let node_id = NodeId::Task(task.id);
+                let dependents_map = plan.build_dependents_map();
+                let mut v: Vec<DependencyEdit> = dependents_map
+                    .get(&node_id)
+                    .map(|nodes| {
+                        nodes
+                            .iter()
+                            .filter_map(|dep_node| {
+                                let lag_days = match dep_node {
+                                    NodeId::Task(id) => plan
+                                        .tasks
+                                        .get(id)
+                                        .and_then(|t| {
+                                            t.dependencies.iter().find(|d| d.id == node_id)
+                                        })
+                                        .map(|d| d.lag_days)
+                                        .unwrap_or(0.0),
+                                    NodeId::Milestone(id) => plan
+                                        .milestones
+                                        .get(id)
+                                        .and_then(|m| {
+                                            m.dependencies.iter().find(|d| d.id == node_id)
+                                        })
+                                        .map(|d| d.lag_days)
+                                        .unwrap_or(0.0),
+                                    NodeId::PlanStart => return None,
+                                };
+                                let lag_str = if lag_days != 0.0 {
+                                    format!("{lag_days}")
+                                } else {
+                                    String::new()
+                                };
+                                Some(DependencyEdit {
+                                    target: Some(*dep_node),
+                                    dep_filter: TextInput::new(""),
+                                    lag_input: TextInput::new(lag_str),
+                                    hovered_target: false,
+                                    hovered_remove: false,
+                                })
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                v.sort_by(|a, b| {
+                    let name_a = match a.target {
+                        Some(NodeId::Task(id)) => plan
+                            .tasks
+                            .get(&id)
+                            .map(|t| t.name.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        Some(NodeId::Milestone(id)) => plan
+                            .milestones
+                            .get(&id)
+                            .map(|m| m.name.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        _ => String::new(),
+                    };
+                    let name_b = match b.target {
+                        Some(NodeId::Task(id)) => plan
+                            .tasks
+                            .get(&id)
+                            .map(|t| t.name.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        Some(NodeId::Milestone(id)) => plan
+                            .milestones
+                            .get(&id)
+                            .map(|m| m.name.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        _ => String::new(),
+                    };
+                    name_a.cmp(&name_b)
+                });
+                v
+            },
+            dep_fwd_scroll_y: 0.0,
+            cursor_in_fwd_list: false,
+            dep_fwd_dropdown_open_for: None,
+            dep_fwd_dropdown_hovered: None,
+            dep_fwd_dropdown_scroll: 0,
+            focused_fwd_lag: None,
+            hovered_fwd_plus: false,
+            dependent_error: false,
             name_error: false,
             duration_error: false,
             constraint_date_error: false,
@@ -959,6 +1065,56 @@ impl TaskFormWindow {
         Rect::from_xywh(x, y, w, FWD_ROW_H * FWD_MAX_ROWS as f32)
     }
 
+    fn fwd_plus_rect(width: f32, height: f32) -> Rect {
+        let list = Self::fwd_list_rect(width, height);
+        Rect::from_xywh(list.left, list.bottom, list.width(), PLUS_BTN_H)
+    }
+
+    fn fwd_target_rect(list: Rect, abs_idx: usize) -> Rect {
+        let row_y = list.top + abs_idx as f32 * FWD_ROW_H;
+        let vy = row_y + (FWD_ROW_H - DEP_INPUT_H) / 2.0;
+        let w = list.width()
+            - DEP_PAD_L
+            - DEP_COL_GAP
+            - DEP_LAG_W
+            - DEP_COL_GAP
+            - DEP_REMOVE_SIZE
+            - DEP_PAD_R;
+        Rect::from_xywh(list.left + DEP_PAD_L, vy, w, DEP_INPUT_H)
+    }
+
+    fn fwd_lag_rect(list: Rect, abs_idx: usize) -> Rect {
+        let target = Self::fwd_target_rect(list, abs_idx);
+        Rect::from_xywh(
+            target.right + DEP_COL_GAP,
+            target.top,
+            DEP_LAG_W,
+            DEP_INPUT_H,
+        )
+    }
+
+    fn fwd_remove_rect(list: Rect, abs_idx: usize) -> Rect {
+        let row_y = list.top + abs_idx as f32 * FWD_ROW_H;
+        Rect::from_xywh(
+            list.right - DEP_PAD_R - DEP_REMOVE_SIZE,
+            row_y + (FWD_ROW_H - DEP_REMOVE_SIZE) / 2.0,
+            DEP_REMOVE_SIZE,
+            DEP_REMOVE_SIZE,
+        )
+    }
+
+    fn fwd_dropdown_rect(list: Rect, abs_idx: usize, panel: Rect) -> Rect {
+        let target = Self::fwd_target_rect(list, abs_idx);
+        let below = target.bottom + 2.0;
+        let above = target.top - 2.0 - DEP_DROPDOWN_H;
+        let top = if below + DEP_DROPDOWN_H <= panel.bottom + 8.0 {
+            below
+        } else {
+            above
+        };
+        Rect::from_xywh(target.left, top, target.width(), DEP_DROPDOWN_H)
+    }
+
     // ── Segmented rects ───────────────────────────────────────────────────────
 
     fn status_btn_rects(width: f32, height: f32) -> [Rect; 5] {
@@ -1158,6 +1314,38 @@ impl TaskFormWindow {
         self.dep_scroll_y = self.dep_scroll_y.clamp(0.0, max);
     }
 
+    fn open_fwd_dropdown(&mut self, idx: usize) {
+        self.close_calendar();
+        self.close_slot_dropdown();
+        self.dep_fwd_dropdown_open_for = Some(idx);
+        self.dep_fwd_dropdown_hovered = None;
+        self.dep_fwd_dropdown_scroll = 0;
+        self.dependents[idx].dep_filter = TextInput::new("");
+        self.focused_fwd_lag = None;
+        self.dep_dropdown_open_for = None;
+        self.focused_dep_lag = None;
+        self.name.focused = false;
+        self.description.focused = false;
+        self.duration.focused = false;
+    }
+
+    fn close_fwd_dropdown(&mut self) {
+        if let Some(i) = self.dep_fwd_dropdown_open_for.take()
+            && i < self.dependents.len()
+        {
+            self.dependents[i].dep_filter = TextInput::new("");
+        }
+        self.dep_fwd_dropdown_hovered = None;
+    }
+
+    fn clamp_fwd_scroll_y(&mut self) {
+        let total_h = self.dependents.len() as f32 * FWD_ROW_H;
+        let visible_h = FWD_ROW_H * FWD_MAX_ROWS as f32;
+        self.dep_fwd_scroll_y = self
+            .dep_fwd_scroll_y
+            .clamp(0.0, (total_h - visible_h).max(0.0));
+    }
+
     fn mode_task_id(&self) -> Option<TaskId> {
         match self.mode {
             Mode::Edit(id) => Some(id),
@@ -1188,6 +1376,7 @@ impl TaskFormWindow {
             .collect();
         let dependencies = simplify_dependencies(dependencies, plan);
         self.dep_error = dependencies.is_empty();
+        self.dependent_error = false;
 
         let worker_slots: Vec<WorkerSlot> = self
             .workers
@@ -1214,6 +1403,19 @@ impl TaskFormWindow {
             self.scheduler_error = None;
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
+
+        let new_dependents: Vec<(NodeId, f32)> = if let Mode::Edit(_) = self.mode {
+            self.dependents
+                .iter()
+                .filter_map(|d| {
+                    d.target
+                        .filter(|&t| !matches!(t, NodeId::PlanStart))
+                        .map(|t| (t, d.lag_input.content.trim().parse::<f32>().unwrap_or(0.0)))
+                })
+                .collect()
+        } else {
+            vec![]
+        };
 
         let duration = duration_parsed.unwrap();
         let description = self.description.content.trim().to_string();
@@ -1254,6 +1456,51 @@ impl TaskFormWindow {
                 apply_task_patch(&mut dry_plan, id, patch)
                     .map_err(|e| e.to_string())
                     .and_then(|()| {
+                        // Apply dependent changes
+                        let current_node = NodeId::Task(id);
+                        let new_dep_node_set: std::collections::HashSet<NodeId> =
+                            new_dependents.iter().map(|(n, _)| *n).collect();
+                        let old_dependents_map = plan.build_dependents_map();
+                        if let Some(old_deps) = old_dependents_map.get(&current_node) {
+                            for &old_dep in old_deps {
+                                if !new_dep_node_set.contains(&old_dep) {
+                                    match old_dep {
+                                        NodeId::Task(t_id) => {
+                                            if let Some(t) = dry_plan.tasks.get_mut(&t_id) {
+                                                t.dependencies.retain(|d| d.id != current_node);
+                                            }
+                                        }
+                                        NodeId::Milestone(m_id) => {
+                                            if let Some(m) = dry_plan.milestones.get_mut(&m_id) {
+                                                m.dependencies.retain(|d| d.id != current_node);
+                                            }
+                                        }
+                                        NodeId::PlanStart => {}
+                                    }
+                                }
+                            }
+                        }
+                        for (dep_node, lag) in &new_dependents {
+                            let dep_entry = Dependency {
+                                id: current_node,
+                                lag_days: *lag,
+                            };
+                            match dep_node {
+                                NodeId::Task(t_id) => {
+                                    dry_plan.add_task_dependency(*t_id, dep_entry).map_err(
+                                        |_| "dependent change would create a cycle".to_string(),
+                                    )?;
+                                }
+                                NodeId::Milestone(m_id) => {
+                                    dry_plan
+                                        .add_milestone_dependency(*m_id, dep_entry)
+                                        .map_err(|_| {
+                                            "dependent change would create a cycle".to_string()
+                                        })?;
+                                }
+                                NodeId::PlanStart => {}
+                            }
+                        }
                         dry_plan
                             .compute_time_optimised_plan()
                             .map_err(|e| e.to_string())
@@ -1262,6 +1509,7 @@ impl TaskFormWindow {
         };
 
         if let Err(e) = sched_result {
+            self.dependent_error = e.contains("cycle");
             self.scheduler_error = Some(e);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
@@ -1303,6 +1551,116 @@ impl TaskFormWindow {
                     .dependencies(dependencies)
                     .relaxed_mode(self.relaxed_mode);
                 sender.send(PlanRequest::UpdateTask(id, patch));
+                // Send dependent updates
+                let current_node = NodeId::Task(id);
+                let new_dep_node_set: std::collections::HashSet<NodeId> =
+                    new_dependents.iter().map(|(n, _)| *n).collect();
+                let old_dependents_map = plan.build_dependents_map();
+                if let Some(old_deps) = old_dependents_map.get(&current_node) {
+                    for &old_dep in old_deps {
+                        if !new_dep_node_set.contains(&old_dep) {
+                            match old_dep {
+                                NodeId::Task(t_id) => {
+                                    let new_deps: Vec<Dependency> = plan
+                                        .tasks
+                                        .get(&t_id)
+                                        .map(|t| {
+                                            t.dependencies
+                                                .iter()
+                                                .filter(|d| d.id != current_node)
+                                                .cloned()
+                                                .collect()
+                                        })
+                                        .unwrap_or_default();
+                                    sender.send(PlanRequest::UpdateTask(
+                                        t_id,
+                                        TaskPatch::new().dependencies(new_deps),
+                                    ));
+                                }
+                                NodeId::Milestone(m_id) => {
+                                    let new_deps: Vec<Dependency> = plan
+                                        .milestones
+                                        .get(&m_id)
+                                        .map(|m| {
+                                            m.dependencies
+                                                .iter()
+                                                .filter(|d| d.id != current_node)
+                                                .cloned()
+                                                .collect()
+                                        })
+                                        .unwrap_or_default();
+                                    sender.send(PlanRequest::UpdateMilestone(
+                                        m_id,
+                                        MilestonePatch::new().dependencies(new_deps),
+                                    ));
+                                }
+                                NodeId::PlanStart => {}
+                            }
+                        }
+                    }
+                }
+                for (dep_node, lag) in &new_dependents {
+                    let current_lag = match dep_node {
+                        NodeId::Task(t_id) => plan
+                            .tasks
+                            .get(t_id)
+                            .and_then(|t| t.dependencies.iter().find(|d| d.id == current_node))
+                            .map(|d| d.lag_days),
+                        NodeId::Milestone(m_id) => plan
+                            .milestones
+                            .get(m_id)
+                            .and_then(|m| m.dependencies.iter().find(|d| d.id == current_node))
+                            .map(|d| d.lag_days),
+                        NodeId::PlanStart => None,
+                    };
+                    if current_lag != Some(*lag) {
+                        match dep_node {
+                            NodeId::Task(t_id) => {
+                                let mut new_deps: Vec<Dependency> = plan
+                                    .tasks
+                                    .get(t_id)
+                                    .map(|t| {
+                                        t.dependencies
+                                            .iter()
+                                            .filter(|d| d.id != current_node)
+                                            .cloned()
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                new_deps.push(Dependency {
+                                    id: current_node,
+                                    lag_days: *lag,
+                                });
+                                sender.send(PlanRequest::UpdateTask(
+                                    *t_id,
+                                    TaskPatch::new().dependencies(new_deps),
+                                ));
+                            }
+                            NodeId::Milestone(m_id) => {
+                                let mut new_deps: Vec<Dependency> = plan
+                                    .milestones
+                                    .get(m_id)
+                                    .map(|m| {
+                                        m.dependencies
+                                            .iter()
+                                            .filter(|d| d.id != current_node)
+                                            .cloned()
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                new_deps.push(Dependency {
+                                    id: current_node,
+                                    lag_days: *lag,
+                                });
+                                sender.send(PlanRequest::UpdateMilestone(
+                                    *m_id,
+                                    MilestonePatch::new().dependencies(new_deps),
+                                ));
+                            }
+                            NodeId::PlanStart => {}
+                        }
+                    }
+                }
             }
         }
         FloatingWindowOutcome::close()
@@ -2518,6 +2876,148 @@ fn draw_dep_dropdown(
     canvas.restore();
 }
 
+#[allow(clippy::too_many_arguments)]
+fn draw_fwd_dropdown(
+    canvas: &Canvas,
+    dd: Rect,
+    dep: &DependencyEdit,
+    hovered_row: Option<usize>,
+    scroll: usize,
+    this_node: NodeId,
+    plan: &Plan,
+    cache: &RenderCache,
+) {
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+
+    // Shadow
+    paint.set_color(Color::from(OVERLAY_XLIGHT));
+    canvas.draw_rrect(
+        RRect::new_rect_xy(
+            Rect::from_xywh(dd.left + 2.0, dd.top + 3.0, dd.width(), dd.height()),
+            PLAN_BTN_CORNER,
+            PLAN_BTN_CORNER,
+        ),
+        &paint,
+    );
+
+    // Background
+    paint.set_color(Color::from(INPUT_BG));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
+    paint.set_color(Color::from(INPUT_BORDER_FOCUS));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.0);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
+    paint.set_style(PaintStyle::Fill);
+
+    // Filter input
+    let filter_rect = Rect::from_xywh(dd.left, dd.top, dd.width(), DEP_DROPDOWN_FILTER_H);
+    draw_text_input(canvas, filter_rect, &dep.dep_filter, true, false, cache);
+
+    // Divider
+    paint.set_color(Color::from(DIVIDER_COLOR));
+    canvas.draw_rect(
+        Rect::from_xywh(dd.left, dd.top + DEP_DROPDOWN_FILTER_H, dd.width(), 1.0),
+        &paint,
+    );
+
+    let filter = dep.dep_filter.content.to_lowercase();
+    let mut items: Vec<(NodeId, String)> = Vec::new();
+
+    // Tasks (excluding self and those that would create a cycle)
+    let mut task_items: Vec<(NodeId, String)> = plan
+        .tasks
+        .iter()
+        .filter(|(id, t)| {
+            let node = NodeId::Task(**id);
+            node != this_node
+                && !plan.has_dependency_path(this_node, node)
+                && (filter.is_empty() || t.name.to_lowercase().contains(filter.as_str()))
+        })
+        .map(|(id, t)| (NodeId::Task(*id), t.name.clone()))
+        .collect();
+    task_items.sort_by(|a, b| a.1.cmp(&b.1));
+    items.extend(task_items);
+
+    // Milestones (excluding self and those that would create a cycle)
+    let mut ms_items: Vec<(NodeId, String)> = plan
+        .milestones
+        .iter()
+        .filter(|(id, m)| {
+            let node = NodeId::Milestone(**id);
+            node != this_node
+                && !plan.has_dependency_path(this_node, node)
+                && (filter.is_empty() || m.name.to_lowercase().contains(filter.as_str()))
+        })
+        .map(|(id, m)| (NodeId::Milestone(*id), m.name.clone()))
+        .collect();
+    ms_items.sort_by(|a, b| a.1.cmp(&b.1));
+    items.extend(ms_items);
+
+    let list_top = dd.top + DEP_DROPDOWN_FILTER_H + 1.0;
+    let list_rect = Rect::from_xywh(
+        dd.left,
+        list_top,
+        dd.width(),
+        dd.height() - DEP_DROPDOWN_FILTER_H - 1.0,
+    );
+
+    canvas.save();
+    canvas.clip_rect(list_rect, ClipOp::Intersect, false);
+
+    if items.is_empty() {
+        let msg = "No matches";
+        if let Some(blob) = TextBlob::new(msg, &cache.small_font) {
+            let (_, sm) = cache.small_font.metrics();
+            paint.set_color(Color::from(MUTED_FG));
+            canvas.draw_text_blob(&blob, (dd.left + 8.0, list_top + 8.0 - sm.ascent), &paint);
+        }
+    } else {
+        let end = (scroll + MAX_DEP_DROPDOWN_ROWS).min(items.len());
+        let (_, sm) = cache.small_font.metrics();
+        let sm_h = sm.descent - sm.ascent;
+        for (vis, (node_id, name)) in items[scroll..end].iter().enumerate() {
+            let abs = scroll + vis;
+            let ry = list_top + vis as f32 * DEP_DROPDOWN_ROW_H;
+            let row_rect = Rect::from_xywh(dd.left, ry, dd.width(), DEP_DROPDOWN_ROW_H);
+
+            if hovered_row == Some(abs) {
+                paint.set_color(Color::from(LIST_ITEM_HOVER_BG));
+                canvas.draw_rect(row_rect, &paint);
+            }
+
+            if dep.target == Some(*node_id) {
+                let tx = dd.left + 10.0;
+                let ty = ry + DEP_DROPDOWN_ROW_H / 2.0;
+                paint.set_color(Color::from(BTN_PRIMARY_BG));
+                paint.set_style(PaintStyle::Stroke);
+                paint.set_stroke_width(1.5);
+                let mut pb = PathBuilder::new();
+                pb.move_to((tx, ty));
+                pb.line_to((tx + 3.0, ty + 3.0));
+                pb.line_to((tx + 7.0, ty - 3.0));
+                canvas.draw_path(&pb.detach(), &paint);
+                paint.set_style(PaintStyle::Fill);
+            }
+
+            if let Some(blob) = TextBlob::new(name, &cache.small_font) {
+                let ty = ry + (DEP_DROPDOWN_ROW_H - sm_h) / 2.0 - sm.ascent;
+                paint.set_color(Color::from(ITEM_FG));
+                canvas.draw_text_blob(&blob, (dd.left + 24.0, ty), &paint);
+            }
+        }
+    }
+
+    canvas.restore();
+}
+
 // ── FloatingWindow impl ───────────────────────────────────────────────────────
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -3178,44 +3678,44 @@ impl FloatingWindow for TaskFormWindow {
             paint.set_style(PaintStyle::Fill);
         }
 
-        // Forward dependents (read-only, edit mode only)
-        if let Mode::Edit(task_id) = self.mode {
+        // Forward dependents section (editable, edit mode only)
+        if let Mode::Edit(_task_id) = self.mode {
             let fwd_lbl_y = Self::fwd_label_y(width, height);
-            if let Some(blob) = TextBlob::new("Required by", &cache.small_font) {
-                paint.set_color(Color::from(LABEL_FG));
+            let fwd_label_text = if self.dependent_error {
+                "Required by (cycle detected)"
+            } else {
+                "Required by"
+            };
+            if let Some(blob) = TextBlob::new(fwd_label_text, &cache.small_font) {
+                paint.set_color(Color::from(if self.dependent_error {
+                    BTN_DANGER_BG
+                } else {
+                    LABEL_FG
+                }));
                 canvas.draw_text_blob(&blob, (lx, fwd_lbl_y + lyo), &paint);
             }
 
             let fwd_list = Self::fwd_list_rect(width, height);
-            paint.set_color(Color::from(INPUT_BORDER));
+
+            paint.set_color(Color::from(if self.dependent_error {
+                BTN_DANGER_BG
+            } else {
+                INPUT_BORDER
+            }));
             paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.0);
+            paint.set_stroke_width(if self.dependent_error { 2.0 } else { 1.0 });
             canvas.draw_rrect(
                 RRect::new_rect_xy(fwd_list, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
                 &paint,
             );
             paint.set_style(PaintStyle::Fill);
 
-            let node = NodeId::Task(task_id);
-            let mut fwd_items: Vec<String> = Vec::new();
-            for task in plan.tasks.values() {
-                if task.dependencies.iter().any(|d| d.id == node) {
-                    fwd_items.push(task.name.clone());
-                }
-            }
-            for ms in plan.milestones.values() {
-                if ms.dependencies.iter().any(|d| d.id == node) {
-                    fwd_items.push(ms.name.clone());
-                }
-            }
-            fwd_items.sort();
-
             canvas.save();
             canvas.clip_rect(fwd_list, ClipOp::Intersect, false);
+            canvas.translate((0.0, -self.dep_fwd_scroll_y));
 
-            if fwd_items.is_empty() {
-                if let Some(blob) = TextBlob::new("Nothing depends on this task", &cache.small_font)
-                {
+            if self.dependents.is_empty() {
+                if let Some(blob) = TextBlob::new("No dependents added yet", &cache.small_font) {
                     let (_, sm2) = cache.small_font.metrics();
                     let ty =
                         fwd_list.top + (FWD_ROW_H - (sm2.descent - sm2.ascent)) / 2.0 - sm2.ascent;
@@ -3223,31 +3723,211 @@ impl FloatingWindow for TaskFormWindow {
                     canvas.draw_text_blob(&blob, (fwd_list.left + 12.0, ty), &paint);
                 }
             } else {
-                for (i, name) in fwd_items.iter().enumerate() {
-                    if i > 0 {
+                for (abs, dep) in self.dependents.iter().enumerate() {
+                    if abs > 0 {
                         paint.set_color(Color::from(DIVIDER_COLOR));
                         canvas.draw_rect(
                             Rect::from_xywh(
                                 fwd_list.left,
-                                fwd_list.top + i as f32 * FWD_ROW_H,
+                                fwd_list.top + abs as f32 * FWD_ROW_H,
                                 fwd_list.width(),
                                 1.0,
                             ),
                             &paint,
                         );
                     }
-                    if let Some(blob) = TextBlob::new(name.as_str(), &cache.small_font) {
-                        let (_, sm2) = cache.small_font.metrics();
-                        let ty = fwd_list.top
-                            + i as f32 * FWD_ROW_H
-                            + (FWD_ROW_H - (sm2.descent - sm2.ascent)) / 2.0
-                            - sm2.ascent;
-                        paint.set_color(Color::from(INPUT_FG));
-                        canvas.draw_text_blob(&blob, (fwd_list.left + 12.0, ty), &paint);
+
+                    let target_rect = Self::fwd_target_rect(fwd_list, abs);
+                    let lag_rect = Self::fwd_lag_rect(fwd_list, abs);
+                    let rm_rect = Self::fwd_remove_rect(fwd_list, abs);
+                    let dd_open = self.dep_fwd_dropdown_open_for == Some(abs);
+
+                    let rrect = RRect::new_rect_xy(target_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
+                    paint.set_color(Color::from(INPUT_BG));
+                    paint.set_style(PaintStyle::Fill);
+                    canvas.draw_rrect(rrect, &paint);
+                    paint.set_color(if dd_open {
+                        Color::from(INPUT_BORDER_FOCUS)
+                    } else if dep.hovered_target {
+                        Color::from(MUTED_FG)
+                    } else {
+                        Color::from(INPUT_BORDER)
+                    });
+                    paint.set_style(PaintStyle::Stroke);
+                    paint.set_stroke_width(1.0);
+                    canvas.draw_rrect(rrect, &paint);
+                    paint.set_style(PaintStyle::Fill);
+
+                    let target_name: String = match dep.target {
+                        Some(NodeId::Task(id)) => plan
+                            .tasks
+                            .get(&id)
+                            .map(|t| t.name.clone())
+                            .unwrap_or_default(),
+                        Some(NodeId::Milestone(id)) => plan
+                            .milestones
+                            .get(&id)
+                            .map(|m| m.name.clone())
+                            .unwrap_or_default(),
+                        _ => String::new(),
+                    };
+                    let (target_text, target_color) = if dep.target.is_none() {
+                        ("Select dependent…".to_string(), Color::from(MUTED_FG))
+                    } else {
+                        (target_name, Color::from(INPUT_FG))
+                    };
+
+                    canvas.save();
+                    canvas.clip_rect(
+                        Rect::from_xywh(
+                            target_rect.left + 6.0,
+                            target_rect.top,
+                            target_rect.width() - 22.0,
+                            target_rect.height(),
+                        ),
+                        ClipOp::Intersect,
+                        false,
+                    );
+                    if let Some(blob) = TextBlob::new(&target_text, &cache.small_font) {
+                        let (_, sm) = cache.small_font.metrics();
+                        let ty = target_rect.top
+                            + (target_rect.height() - (sm.descent - sm.ascent)) / 2.0
+                            - sm.ascent;
+                        paint.set_color(target_color);
+                        canvas.draw_text_blob(&blob, (target_rect.left + 6.0, ty), &paint);
+                    }
+                    canvas.restore();
+
+                    {
+                        let cx = target_rect.right - 12.0;
+                        let cy = target_rect.top + target_rect.height() / 2.0;
+                        let s = 3.5;
+                        let mut pb = PathBuilder::new();
+                        if dd_open {
+                            pb.move_to((cx - s, cy + s * 0.5));
+                            pb.line_to((cx, cy - s * 0.5));
+                            pb.line_to((cx + s, cy + s * 0.5));
+                        } else {
+                            pb.move_to((cx - s, cy - s * 0.5));
+                            pb.line_to((cx, cy + s * 0.5));
+                            pb.line_to((cx + s, cy - s * 0.5));
+                        }
+                        paint.set_color(Color::from(PLACEHOLDER_FG));
+                        paint.set_style(PaintStyle::Stroke);
+                        paint.set_stroke_width(1.5);
+                        canvas.draw_path(&pb.detach(), &paint);
+                        paint.set_style(PaintStyle::Fill);
+                    }
+
+                    let lag_focused = self.focused_fwd_lag == Some(abs);
+                    draw_text_input(canvas, lag_rect, &dep.lag_input, lag_focused, false, cache);
+                    if dep.lag_input.content.is_empty()
+                        && !lag_focused
+                        && let Some(blob) = TextBlob::new("0", &cache.small_font)
+                    {
+                        let (_, sm) = cache.small_font.metrics();
+                        let ty = lag_rect.top
+                            + (lag_rect.height() - (sm.descent - sm.ascent)) / 2.0
+                            - sm.ascent;
+                        paint.set_color(Color::from(GHOST_FG));
+                        canvas.draw_text_blob(&blob, (lag_rect.left + 8.0, ty), &paint);
+                    }
+
+                    if dep.hovered_remove {
+                        let r = rm_rect.width().min(rm_rect.height()) / 2.0 - 2.0;
+                        let cx = rm_rect.left + rm_rect.width() / 2.0;
+                        let cy = rm_rect.top + rm_rect.height() / 2.0;
+                        paint.set_color(Color::from(ERROR_BG));
+                        paint.set_style(PaintStyle::Fill);
+                        canvas.draw_circle((cx, cy), r, &paint);
+                        paint.set_style(PaintStyle::Fill);
+                    }
+                    {
+                        let cx = rm_rect.left + rm_rect.width() / 2.0;
+                        let cy = rm_rect.top + rm_rect.height() / 2.0;
+                        let s = 5.0;
+                        let mut pb = PathBuilder::new();
+                        pb.move_to((cx - s, cy - s));
+                        pb.line_to((cx + s, cy + s));
+                        pb.move_to((cx + s, cy - s));
+                        pb.line_to((cx - s, cy + s));
+                        paint.set_color(if dep.hovered_remove {
+                            Color::from(ICON_DELETE_COLOR)
+                        } else {
+                            Color::from(OVERLAY_DARK)
+                        });
+                        paint.set_style(PaintStyle::Stroke);
+                        paint.set_stroke_width(1.5);
+                        canvas.draw_path(&pb.detach(), &paint);
+                        paint.set_style(PaintStyle::Fill);
                     }
                 }
             }
+
             canvas.restore();
+
+            // Fwd list scrollbar
+            let total_fwd_h = self.dependents.len() as f32 * FWD_ROW_H;
+            let visible_fwd_h = fwd_list.height();
+            let max_fwd_scroll = (total_fwd_h - visible_fwd_h).max(0.0);
+            if max_fwd_scroll > 0.0 {
+                let thumb_h = (visible_fwd_h * visible_fwd_h / total_fwd_h).max(20.0);
+                let thumb_y = fwd_list.top
+                    + (self.dep_fwd_scroll_y / max_fwd_scroll) * (visible_fwd_h - thumb_h);
+                paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
+                canvas.draw_rrect(
+                    RRect::new_rect_xy(
+                        Rect::from_xywh(
+                            fwd_list.right - SCROLLBAR_W - 2.0,
+                            thumb_y,
+                            SCROLLBAR_W,
+                            thumb_h,
+                        ),
+                        2.0,
+                        2.0,
+                    ),
+                    &paint,
+                );
+            }
+
+            // Fwd plus button
+            let fwd_plus_rect = Self::fwd_plus_rect(width, height);
+            paint.set_color(Color::from(if self.hovered_fwd_plus {
+                TOOLBAR_BTN_HOVER_BG
+            } else {
+                SUBTLE_BG
+            }));
+            canvas.draw_rrect(
+                RRect::new_rect_xy(fwd_plus_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                &paint,
+            );
+            paint.set_color(Color::from(if self.dependent_error {
+                INPUT_BORDER_ERROR
+            } else {
+                INPUT_BORDER
+            }));
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(1.0);
+            canvas.draw_rrect(
+                RRect::new_rect_xy(fwd_plus_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+                &paint,
+            );
+            paint.set_style(PaintStyle::Fill);
+            {
+                let cx = fwd_plus_rect.left + fwd_plus_rect.width() / 2.0;
+                let cy = fwd_plus_rect.top + fwd_plus_rect.height() / 2.0;
+                let s = 6.0;
+                let mut pb = PathBuilder::new();
+                pb.move_to((cx - s, cy));
+                pb.line_to((cx + s, cy));
+                pb.move_to((cx, cy - s));
+                pb.line_to((cx, cy + s));
+                paint.set_color(Color::from(TOOLBAR_BTN_ICON_COLOR));
+                paint.set_style(PaintStyle::Stroke);
+                paint.set_stroke_width(1.5);
+                canvas.draw_path(&pb.detach(), &paint);
+                paint.set_style(PaintStyle::Fill);
+            }
         }
 
         // Save button
@@ -3420,6 +4100,31 @@ impl FloatingWindow for TaskFormWindow {
                 self.dep_dropdown_hovered,
                 self.dep_dropdown_scroll,
                 self.mode_task_id(),
+                plan,
+                cache,
+            );
+        }
+
+        // Fwd dropdown (drawn on top of everything, in screen space)
+        if let Some(dep_idx) = self.dep_fwd_dropdown_open_for
+            && dep_idx < self.dependents.len()
+            && let Mode::Edit(task_id) = self.mode
+        {
+            let fwd_list2 = Self::fwd_list_rect(width, height);
+            let adjusted_fwd_list = Rect::from_xywh(
+                fwd_list2.left,
+                fwd_list2.top - scroll_y - self.dep_fwd_scroll_y,
+                fwd_list2.width(),
+                fwd_list2.height(),
+            );
+            let dd_rect = TaskFormWindow::fwd_dropdown_rect(adjusted_fwd_list, dep_idx, panel);
+            draw_fwd_dropdown(
+                canvas,
+                dd_rect,
+                &self.dependents[dep_idx],
+                self.dep_fwd_dropdown_hovered,
+                self.dep_fwd_dropdown_scroll,
+                NodeId::Task(task_id),
                 plan,
                 cache,
             );
@@ -3687,6 +4392,110 @@ impl FloatingWindow for TaskFormWindow {
                 if remove_rect.contains(pt_dep) {
                     dep.hovered_remove = true;
                     changed = true;
+                }
+            }
+        }
+
+        // Fwd dropdown hover
+        if let Some(dep_idx) = self.dep_fwd_dropdown_open_for
+            && dep_idx < self.dependents.len()
+            && let Mode::Edit(task_id) = self.mode
+        {
+            let fwd_list2 = Self::fwd_list_rect(width, height);
+            let adjusted_fwd_list = Rect::from_xywh(
+                fwd_list2.left,
+                fwd_list2.top - scroll_y - self.dep_fwd_scroll_y,
+                fwd_list2.width(),
+                fwd_list2.height(),
+            );
+            let dd = TaskFormWindow::fwd_dropdown_rect(adjusted_fwd_list, dep_idx, panel);
+            let list_top = dd.top + DEP_DROPDOWN_FILTER_H + 1.0;
+
+            let this_node = NodeId::Task(task_id);
+            let filter = self.dependents[dep_idx].dep_filter.content.to_lowercase();
+            let mut count = 0usize;
+            for (id, t) in &plan.tasks {
+                let node = NodeId::Task(*id);
+                if node != this_node
+                    && !plan.has_dependency_path(this_node, node)
+                    && (filter.is_empty() || t.name.to_lowercase().contains(filter.as_str()))
+                {
+                    count += 1;
+                }
+            }
+            for (id, m) in &plan.milestones {
+                let node = NodeId::Milestone(*id);
+                if node != this_node
+                    && !plan.has_dependency_path(this_node, node)
+                    && (filter.is_empty() || m.name.to_lowercase().contains(filter.as_str()))
+                {
+                    count += 1;
+                }
+            }
+
+            let new_hov = if y >= list_top && x >= dd.left && x <= dd.right {
+                let abs =
+                    ((y - list_top) / DEP_DROPDOWN_ROW_H) as usize + self.dep_fwd_dropdown_scroll;
+                if abs < count { Some(abs) } else { None }
+            } else {
+                None
+            };
+            set!(self.dep_fwd_dropdown_hovered, new_hov);
+        } else {
+            // Fwd list hover
+            let fwd_list2 = Self::fwd_list_rect(width, height);
+            let in_fwd_list = {
+                let fwd_list_screen = Rect::from_xywh(
+                    fwd_list2.left,
+                    fwd_list2.top - scroll_y,
+                    fwd_list2.width(),
+                    fwd_list2.height(),
+                );
+                fwd_list_screen.contains(Point::new(x, y))
+            };
+            set!(
+                self.cursor_in_fwd_list,
+                matches!(self.mode, Mode::Edit(_)) && in_fwd_list
+            );
+            set!(self.hovered_fwd_plus, {
+                let fwd_plus = Self::fwd_plus_rect(width, height);
+                let fwd_plus_screen = Rect::from_xywh(
+                    fwd_plus.left,
+                    fwd_plus.top - scroll_y,
+                    fwd_plus.width(),
+                    fwd_plus.height(),
+                );
+                matches!(self.mode, Mode::Edit(_)) && fwd_plus_screen.contains(Point::new(x, y))
+            });
+
+            if matches!(self.mode, Mode::Edit(_)) {
+                let pt_fwd = Point::new(x, y + scroll_y + self.dep_fwd_scroll_y);
+                for dep in &mut self.dependents {
+                    if dep.hovered_target || dep.hovered_remove {
+                        changed = true;
+                    }
+                    dep.hovered_target = false;
+                    dep.hovered_remove = false;
+                }
+                for (i, dep) in self.dependents.iter_mut().enumerate() {
+                    let target_rect = Self::fwd_target_rect(fwd_list2, i);
+                    let remove_rect = Self::fwd_remove_rect(fwd_list2, i);
+                    if target_rect.contains(pt_fwd) {
+                        dep.hovered_target = true;
+                        changed = true;
+                    }
+                    if remove_rect.contains(pt_fwd) {
+                        dep.hovered_remove = true;
+                        changed = true;
+                    }
+                }
+            } else {
+                for dep in &mut self.dependents {
+                    if dep.hovered_target || dep.hovered_remove {
+                        changed = true;
+                    }
+                    dep.hovered_target = false;
+                    dep.hovered_remove = false;
                 }
             }
         }
@@ -4313,6 +5122,40 @@ impl FloatingWindow for TaskFormWindow {
             }
         }
 
+        // Fwd dropdown open: route keys to filter input
+        if let Some(dep_idx) = self.dep_fwd_dropdown_open_for {
+            match key {
+                Key::Named(NamedKey::Escape) | Key::Named(NamedKey::Enter) => {
+                    self.close_fwd_dropdown();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    if dep_idx < self.dependents.len() {
+                        self.dependents[dep_idx].dep_filter.backspace();
+                        self.dep_fwd_dropdown_scroll = 0;
+                        self.dep_fwd_dropdown_hovered = None;
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Space) => {
+                    if dep_idx < self.dependents.len() {
+                        self.dependents[dep_idx].dep_filter.insert_str(" ");
+                        self.dep_fwd_dropdown_scroll = 0;
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Character(c) => {
+                    if c.chars().all(|ch| !ch.is_control()) && dep_idx < self.dependents.len() {
+                        self.dependents[dep_idx].dep_filter.insert_str(c.as_str());
+                        self.dep_fwd_dropdown_scroll = 0;
+                        self.dep_fwd_dropdown_hovered = None;
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                _ => return FloatingWindowOutcome::default(),
+            }
+        }
+
         // Workload input focused
         if let Some(slot_idx) = self.focused_slot_workload
             && slot_idx < self.workers.len()
@@ -4406,6 +5249,57 @@ impl FloatingWindow for TaskFormWindow {
                         .all(|ch| ch.is_ascii_digit() || ch == '.' || ch == '-')
                     {
                         self.dependencies[lag_idx].lag_input.insert_str(c.as_str());
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                    return FloatingWindowOutcome::default();
+                }
+                _ => return FloatingWindowOutcome::default(),
+            }
+        }
+
+        // Fwd lag input focused
+        if let Some(lag_idx) = self.focused_fwd_lag
+            && lag_idx < self.dependents.len()
+        {
+            match key {
+                Key::Named(NamedKey::Escape) => {
+                    self.focused_fwd_lag = None;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Tab) => {
+                    self.focused_fwd_lag = None;
+                    self.set_focus(TextField::Name);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Enter) => return self.try_submit(plan, sender),
+                Key::Named(NamedKey::Backspace) => {
+                    self.dependents[lag_idx].lag_input.backspace();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.dependents[lag_idx].lag_input.move_left();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.dependents[lag_idx].lag_input.move_right();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Home) => {
+                    self.dependents[lag_idx].lag_input.move_home();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::End) => {
+                    self.dependents[lag_idx].lag_input.move_end();
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                Key::Named(NamedKey::Space) => {
+                    return FloatingWindowOutcome::default();
+                }
+                Key::Character(c) => {
+                    if c.chars()
+                        .all(|ch| ch.is_ascii_digit() || ch == '.' || ch == '-')
+                    {
+                        self.dependents[lag_idx].lag_input.insert_str(c.as_str());
                         return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                     }
                     return FloatingWindowOutcome::default();
@@ -4649,6 +5543,49 @@ impl FloatingWindow for TaskFormWindow {
             return FloatingWindowOutcome::default();
         }
 
+        // Scroll fwd dropdown if open
+        if let Some(dep_idx) = self.dep_fwd_dropdown_open_for {
+            if dep_idx < self.dependents.len()
+                && let Mode::Edit(task_id) = self.mode
+            {
+                let this_node = NodeId::Task(task_id);
+                let filter = self.dependents[dep_idx].dep_filter.content.to_lowercase();
+                let mut count = 0usize;
+                for (id, t) in &plan.tasks {
+                    let node = NodeId::Task(*id);
+                    if node != this_node
+                        && !plan.has_dependency_path(this_node, node)
+                        && (filter.is_empty() || t.name.to_lowercase().contains(filter.as_str()))
+                    {
+                        count += 1;
+                    }
+                }
+                for (id, m) in &plan.milestones {
+                    let node = NodeId::Milestone(*id);
+                    if node != this_node
+                        && !plan.has_dependency_path(this_node, node)
+                        && (filter.is_empty() || m.name.to_lowercase().contains(filter.as_str()))
+                    {
+                        count += 1;
+                    }
+                }
+                let max = count.saturating_sub(MAX_DEP_DROPDOWN_ROWS);
+                if max == 0 {
+                    return FloatingWindowOutcome::default();
+                }
+                let new_scroll = if delta_y > 0.0 {
+                    self.dep_fwd_dropdown_scroll.saturating_sub(1)
+                } else {
+                    (self.dep_fwd_dropdown_scroll + 1).min(max)
+                };
+                if new_scroll != self.dep_fwd_dropdown_scroll {
+                    self.dep_fwd_dropdown_scroll = new_scroll;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+            }
+            return FloatingWindowOutcome::default();
+        }
+
         // Scroll dep list independently when cursor is inside it
         if self.cursor_in_dep_list {
             let content_h = self.dependencies.len() as f32 * DEP_ROW_H;
@@ -4658,6 +5595,21 @@ impl FloatingWindow for TaskFormWindow {
                 let new_scroll = (self.dep_scroll_y - delta_y * 40.0).clamp(0.0, max_dscroll);
                 if (new_scroll - self.dep_scroll_y).abs() > f32::EPSILON {
                     self.dep_scroll_y = new_scroll;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                return FloatingWindowOutcome::default();
+            }
+        }
+
+        // Scroll fwd list independently when cursor is inside it
+        if self.cursor_in_fwd_list {
+            let content_h = self.dependents.len() as f32 * FWD_ROW_H;
+            let visible_h = FWD_ROW_H * FWD_MAX_ROWS as f32;
+            let max_scroll = (content_h - visible_h).max(0.0);
+            if max_scroll > 0.0 {
+                let new_scroll = (self.dep_fwd_scroll_y - delta_y * 40.0).clamp(0.0, max_scroll);
+                if (new_scroll - self.dep_fwd_scroll_y).abs() > f32::EPSILON {
+                    self.dep_fwd_scroll_y = new_scroll;
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 return FloatingWindowOutcome::default();
@@ -4729,8 +5681,15 @@ impl FloatingWindow for TaskFormWindow {
             dep.hovered_target = false;
             dep.hovered_remove = false;
         }
+        for dep in &mut self.dependents {
+            dep.hovered_target = false;
+            dep.hovered_remove = false;
+        }
         self.hovered_dep_plus = false;
         self.dep_dropdown_hovered = None;
+        self.hovered_fwd_plus = false;
+        self.dep_fwd_dropdown_hovered = None;
+        self.cursor_in_fwd_list = false;
     }
 }
 // }}}

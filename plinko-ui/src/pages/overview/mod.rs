@@ -229,7 +229,7 @@ impl Page for OverviewPage {
                         render::GanttHit::Milestone(id) => {
                             if let Some(ms) = plan.milestones.get(&id) {
                                 self.state.pending_window =
-                                    Some(Box::new(MilestoneFormWindow::from_milestone(ms)));
+                                    Some(Box::new(MilestoneFormWindow::from_milestone(ms, plan)));
                             }
                         }
                     }
