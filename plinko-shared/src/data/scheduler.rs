@@ -864,6 +864,28 @@ impl Plan {
         let task_start = task_start.unwrap_or(start_date);
         let mut task_end = task_end.map_or(min_end, |e| e.max(min_end));
 
+        // Post-scheduling constraint check: worker unavailability can push task_start
+        // past the constraint date even when the dependency-based earliest was within
+        // the constraint. Overwrite any earlier (dependency-based) violation entry with
+        // the accurate actual scheduled date.
+        if let Some(c) = task.constraint {
+            let violates = match c.kind {
+                ConstraintKind::Fixed | ConstraintKind::Latest => task_start > c.date,
+                ConstraintKind::Earliest => false,
+            };
+            if violates {
+                state.allocations.constraint_violations.insert(
+                    NodeId::Task(id),
+                    ConstraintViolation {
+                        node_name: task.name.clone(),
+                        kind: c.kind,
+                        required_date: c.date,
+                        scheduled_date: task_start,
+                    },
+                );
+            }
+        }
+
         // For InProgress tasks, fill_slot already schedules from actual_start
         // (which may be in the past), so time_allocation contains all segments
         // including any past ones. Just preserve InProgress status.
@@ -944,6 +966,26 @@ impl Plan {
 
         // Milestones must land on a day when the team is working.
         let date = self.next_working_day_on_or_after(date);
+
+        // Post-scheduling constraint check: next_working_day_on_or_after may push
+        // the milestone past the constraint date even when earliest was within it.
+        if let Some(c) = milestone.constraint {
+            let violates = match c.kind {
+                ConstraintKind::Fixed | ConstraintKind::Latest => date > c.date,
+                ConstraintKind::Earliest => false,
+            };
+            if violates {
+                state.allocations.constraint_violations.insert(
+                    NodeId::Milestone(id),
+                    ConstraintViolation {
+                        node_name: milestone.name.clone(),
+                        kind: c.kind,
+                        required_date: c.date,
+                        scheduled_date: date,
+                    },
+                );
+            }
+        }
 
         state
             .allocations
