@@ -4886,6 +4886,129 @@ impl FloatingWindow for TaskFormWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
+        // Fwd dropdown
+        if let Some(dep_idx) = self.dep_fwd_dropdown_open_for {
+            if dep_idx < self.dependents.len()
+                && let Mode::Edit(task_id) = self.mode
+            {
+                let fwd_list2 = Self::fwd_list_rect(width, height);
+                let adjusted_fwd_list = Rect::from_xywh(
+                    fwd_list2.left,
+                    fwd_list2.top - scroll_y - self.dep_fwd_scroll_y,
+                    fwd_list2.width(),
+                    fwd_list2.height(),
+                );
+                let dd = TaskFormWindow::fwd_dropdown_rect(adjusted_fwd_list, dep_idx, panel);
+                if dd.contains(pt) {
+                    let filter_rect =
+                        Rect::from_xywh(dd.left, dd.top, dd.width(), DEP_DROPDOWN_FILTER_H);
+                    if filter_rect.contains(pt) {
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                    let list_top = dd.top + DEP_DROPDOWN_FILTER_H + 1.0;
+                    if y >= list_top {
+                        let abs = ((y - list_top) / DEP_DROPDOWN_ROW_H) as usize
+                            + self.dep_fwd_dropdown_scroll;
+                        let this_node = NodeId::Task(task_id);
+                        let filter = self.dependents[dep_idx].dep_filter.content.to_lowercase();
+                        let mut items: Vec<(NodeId, String)> = Vec::new();
+                        let mut task_items: Vec<(NodeId, String)> = plan
+                            .tasks
+                            .iter()
+                            .filter(|(id, t)| {
+                                let node = NodeId::Task(**id);
+                                node != this_node
+                                    && !plan.has_dependency_path(this_node, node)
+                                    && (filter.is_empty()
+                                        || t.name.to_lowercase().contains(filter.as_str()))
+                            })
+                            .map(|(id, t)| (NodeId::Task(*id), t.name.clone()))
+                            .collect();
+                        task_items.sort_by(|a, b| a.1.cmp(&b.1));
+                        items.extend(task_items);
+                        let mut ms_items: Vec<(NodeId, String)> = plan
+                            .milestones
+                            .iter()
+                            .filter(|(_, m)| {
+                                let node = NodeId::Milestone(m.id);
+                                !plan.has_dependency_path(this_node, node)
+                                    && (filter.is_empty()
+                                        || m.name.to_lowercase().contains(filter.as_str()))
+                            })
+                            .map(|(id, m)| (NodeId::Milestone(*id), m.name.clone()))
+                            .collect();
+                        ms_items.sort_by(|a, b| a.1.cmp(&b.1));
+                        items.extend(ms_items);
+                        if let Some((node_id, _)) = items.get(abs) {
+                            self.dependents[dep_idx].target = Some(*node_id);
+                            self.dependent_error = false;
+                        }
+                        self.close_fwd_dropdown();
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+            }
+            self.close_fwd_dropdown();
+            if !panel.contains(pt) {
+                return FloatingWindowOutcome::close();
+            }
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+
+        // Fwd list interactions (edit mode only)
+        if matches!(self.mode, Mode::Edit(_)) {
+            let fwd_list2 = Self::fwd_list_rect(width, height);
+            let fwd_plus = Self::fwd_plus_rect(width, height);
+
+            if fwd_plus.contains(pt_form) {
+                self.dependents.push(DependencyEdit::new());
+                let new_idx = self.dependents.len() - 1;
+                self.open_fwd_dropdown(new_idx);
+                let total_h = self.dependents.len() as f32 * FWD_ROW_H;
+                let visible_h = FWD_ROW_H * FWD_MAX_ROWS as f32;
+                self.dep_fwd_scroll_y = (total_h - visible_h).max(0.0);
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+
+            if fwd_list2.contains(pt_form) {
+                let pt_fwd = Point::new(x, y + scroll_y + self.dep_fwd_scroll_y);
+                for abs in 0..self.dependents.len() {
+                    if TaskFormWindow::fwd_remove_rect(fwd_list2, abs).contains(pt_fwd) {
+                        self.dependents.remove(abs);
+                        self.clamp_fwd_scroll_y();
+                        if let Some(ref mut fl) = self.focused_fwd_lag {
+                            if *fl == abs {
+                                self.focused_fwd_lag = None;
+                            } else if *fl > abs {
+                                *fl -= 1;
+                            }
+                        }
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                    if TaskFormWindow::fwd_target_rect(fwd_list2, abs).contains(pt_fwd) {
+                        self.open_fwd_dropdown(abs);
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                    if TaskFormWindow::fwd_lag_rect(fwd_list2, abs).contains(pt_fwd) {
+                        self.focused_fwd_lag = Some(abs);
+                        self.focused_dep_lag = None;
+                        self.focused_slot_workload = None;
+                        self.name.focused = false;
+                        self.description.focused = false;
+                        self.duration.focused = false;
+                        let lag_rect = TaskFormWindow::fwd_lag_rect(fwd_list2, abs);
+                        let x_in_inner = x - (lag_rect.left + 8.0)
+                            + self.dependents[abs].lag_input.scroll_x.get();
+                        self.dependents[abs].lag_input.cursor = self.dependents[abs]
+                            .lag_input
+                            .cursor_for_x(x_in_inner, &cache.font);
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                }
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+        }
+
         // Text fields
         // Description (multi-line) handled separately
         let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
