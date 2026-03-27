@@ -13,8 +13,9 @@ use crate::ui::dirty::DirtyRegion;
 use plinko_shared::data::Plan;
 
 use render::{
-    CONTENT_TOP, ROW_H, identity_section_y, load_btn_rect, new_btn_rect, plan_box_rect,
-    plan_list_max_scroll, plan_row_rect, save_btn_rect, total_content_height, user_row_rect,
+    CONTENT_TOP, ROW_H, identity_section_y, load_btn_rect, monday_btn_rect, new_btn_rect,
+    plan_box_rect, plan_list_max_scroll, plan_row_rect, save_btn_rect, total_content_height,
+    user_row_rect,
 };
 use state::SettingsState;
 
@@ -64,6 +65,11 @@ impl Page for SettingsPage {
         let in_new = new_btn_rect(width).contains(Point::new(x, y));
         if in_new != self.state.hovered_new {
             self.state.hovered_new = in_new;
+            dirty = true;
+        }
+        let in_monday = monday_btn_rect(width).contains(Point::new(x, y));
+        if in_monday != self.state.hovered_monday {
+            self.state.hovered_monday = in_monday;
             dirty = true;
         }
 
@@ -140,6 +146,10 @@ impl Page for SettingsPage {
         }
         if new_btn_rect(width).contains(Point::new(x, y)) {
             self.state.pending_new = true;
+            return DirtyRegion::PageOnly;
+        }
+        if monday_btn_rect(width).contains(Point::new(x, y)) {
+            self.state.pending_open_monday = true;
             return DirtyRegion::PageOnly;
         }
 
@@ -219,6 +229,7 @@ impl Page for SettingsPage {
     fn reset_hover(&mut self) {
         self.state.hovered_save = false;
         self.state.hovered_new = false;
+        self.state.hovered_monday = false;
         self.state.hovered_plan_row = None;
         self.state.hovered_load_btn = None;
         self.state.hovered_user_idx = None;

@@ -28,6 +28,7 @@ use crate::ui::dirty::DirtyRegion;
 use crate::ui::error_window::ErrorWindow;
 use crate::ui::floating_window::FloatingWindowManager;
 use crate::ui::layout::{BACK_BTN_SIZE, BACK_BTN_X, BACK_BTN_Y, HOME_BG, PANEL_BG};
+use crate::ui::monday_window::MondayWindow;
 use plinko_shared::data::ids::UserId;
 use plinko_shared::protocol::{PlanRequest, PlanResponse};
 
@@ -214,6 +215,14 @@ impl Application {
             self.pages.settings_mut().state.current_user = uid;
             self.pages.calendar_overrides_mut().state.current_user = uid;
             self.mark_dirty(DirtyRegion::PageOnly);
+        }
+
+        let pending_monday = self.pages.settings_mut().state.pending_open_monday;
+        if pending_monday {
+            self.pages.settings_mut().state.pending_open_monday = false;
+            let plan_id = self.engine.plan().id;
+            self.floats.push(Box::new(MondayWindow::new(plan_id)));
+            self.mark_dirty(DirtyRegion::All);
         }
     }
 }

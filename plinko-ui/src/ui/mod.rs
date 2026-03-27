@@ -15,6 +15,7 @@ pub mod icon_button;
 pub mod icons;
 pub mod layout;
 pub mod milestone_form_window;
+pub mod monday_window;
 pub mod multi_line_input;
 pub mod plan_settings_window;
 pub mod schedule_window;

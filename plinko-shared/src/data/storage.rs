@@ -1,5 +1,6 @@
 use crate::data::ids::UserId;
 use crate::data::plan::Plan;
+use crate::monday::MondayConfig;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -65,6 +66,7 @@ impl From<serde_json::Error> for StorageError {
 #[derive(Serialize, Deserialize, Default)]
 struct AppConfig {
     current_user_id: Option<Uuid>,
+    monday_api_token: Option<String>,
 }
 
 #[derive(Clone)]
@@ -199,6 +201,36 @@ impl Storage {
         let latest = versions.last()?.clone();
         let plan = self.load_version(plan_id, &latest).ok()?;
         Some((plan.name, latest))
+    }
+
+    // ── Monday.com config ────────────────────────────────────────────────────
+
+    pub fn load_monday_config(&self, plan_id: Uuid) -> Option<MondayConfig> {
+        let path = self.plan_dir(plan_id).join("monday.json");
+        let data = fs::read_to_string(path).ok()?;
+        serde_json::from_str(&data).ok()
+    }
+
+    pub fn save_monday_config(&self, plan_id: Uuid, config: &MondayConfig) {
+        let dir = self.plan_dir(plan_id);
+        let _ = fs::create_dir_all(&dir);
+        if let Ok(json) = serde_json::to_string_pretty(config) {
+            let _ = fs::write(dir.join("monday.json"), json);
+        }
+    }
+
+    pub fn load_monday_api_token(&self) -> String {
+        self.load_config().monday_api_token.unwrap_or_default()
+    }
+
+    pub fn save_monday_api_token(&self, token: &str) {
+        let mut config = self.load_config();
+        config.monday_api_token = if token.is_empty() {
+            None
+        } else {
+            Some(token.to_string())
+        };
+        self.save_config(&config);
     }
 }
 // }}}

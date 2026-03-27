@@ -30,9 +30,16 @@ const PLAN_BOX_H: f32 = ROW_H * 5.0;
 
 /// Total scrollable content height (page-level scroll only covers identity section).
 pub fn total_content_height(plan: &Plan, _plan_list: &[PlanEntry]) -> f32 {
-    // Plan Management section: title + buttons + sub-label + fixed box
-    let plan_mgmt_h =
-        SECTION_TITLE_H + SECTION_GAP + BUTTON_H + SECTION_GAP + SECTION_GAP + PLAN_BOX_H;
+    // Plan Management section: title + buttons + sub-label + fixed box + monday btn
+    let plan_mgmt_h = SECTION_TITLE_H
+        + SECTION_GAP
+        + BUTTON_H
+        + SECTION_GAP
+        + SECTION_GAP
+        + PLAN_BOX_H
+        + DIVIDER_GAP / 2.0
+        + BUTTON_H
+        + DIVIDER_GAP / 2.0;
 
     // Identity section
     let users_count = plan.users_data.len();
@@ -104,7 +111,13 @@ pub fn load_btn_rect(idx: usize, plan_list_scroll_y: f32, width: f32) -> Rect {
 }
 
 fn identity_top_raw() -> f32 {
-    plan_box_top() + PLAN_BOX_H + DIVIDER_GAP
+    plan_box_top() + PLAN_BOX_H + DIVIDER_GAP + BUTTON_H + DIVIDER_GAP
+}
+
+/// Y position of the Monday.com Integration button.
+pub fn monday_btn_rect(width: f32) -> Rect {
+    let y = plan_box_top() + PLAN_BOX_H + DIVIDER_GAP / 2.0;
+    Rect::from_xywh(SIDE_PAD, y, (width - 2.0 * SIDE_PAD).min(220.0), BUTTON_H)
 }
 
 pub fn identity_section_y(scroll_y: f32) -> f32 {
@@ -260,6 +273,17 @@ fn draw_plan_section(
             paint,
         );
     }
+
+    // Monday.com Integration button
+    draw_button(
+        canvas,
+        monday_btn_rect(width),
+        "Monday.com Integration",
+        state.hovered_monday,
+        false,
+        paint,
+        cache,
+    );
 }
 
 fn draw_plan_row(

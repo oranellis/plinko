@@ -4,6 +4,7 @@
 mod app;
 mod engine;
 mod graphics;
+mod monday;
 mod pages;
 mod ui;
 

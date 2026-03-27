@@ -24,6 +24,8 @@ pub struct SettingsState {
     pub hovered_save: bool,
     /// Whether the "New Plan" button is hovered.
     pub hovered_new: bool,
+    /// Whether the "Monday.com Integration" button is hovered.
+    pub hovered_monday: bool,
     /// Which user row (if any) is currently hovered in the identity section.
     pub hovered_user_idx: Option<usize>,
     /// Scroll offset for the overall content area (identity section).
@@ -44,6 +46,8 @@ pub struct SettingsState {
     pub pending_load: Option<Uuid>,
     /// App should change the current user (`Some(None)` → clear, `Some(Some(id))` → set).
     pub pending_set_user: Option<Option<UserId>>,
+    /// App should open the Monday.com integration window for the current plan.
+    pub pending_open_monday: bool,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -55,6 +59,7 @@ impl Default for SettingsState {
             hovered_load_btn: None,
             hovered_save: false,
             hovered_new: false,
+            hovered_monday: false,
             hovered_user_idx: None,
             scroll_y: 0.0,
             plan_list_scroll_y: 0.0,
@@ -64,6 +69,7 @@ impl Default for SettingsState {
             pending_new: false,
             pending_load: None,
             pending_set_user: None,
+            pending_open_monday: false,
         }
     }
 }
