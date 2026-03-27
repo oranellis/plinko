@@ -414,7 +414,9 @@ pub struct MilestoneFormWindow {
     focused_dep_lag: Option<usize>,
     hovered_dep_plus: bool,
     dep_error: bool,
-    // Forward dependents (editable, edit mode only)
+    // Forward dependents (editable in both new and edit mode)
+    /// Pre-generated ID used for cycle checking and dependent updates in `Mode::New`.
+    pre_generated_id: MilestoneId,
     dependents: Vec<DependencyEdit>,
     dep_fwd_scroll_y: f32,
     cursor_in_fwd_list: bool,
@@ -462,6 +464,7 @@ impl MilestoneFormWindow {
             focused_dep_lag: None,
             hovered_dep_plus: false,
             dep_error: false,
+            pre_generated_id: MilestoneId::new(),
             dependents: vec![],
             dep_fwd_scroll_y: 0.0,
             cursor_in_fwd_list: false,
@@ -522,6 +525,7 @@ impl MilestoneFormWindow {
             focused_dep_lag: None,
             hovered_dep_plus: false,
             dep_error: false,
+            pre_generated_id: milestone.id,
             dependents: {
                 let node_id = NodeId::Milestone(milestone.id);
                 let dependents_map = plan.build_dependents_map();
@@ -875,6 +879,15 @@ impl MilestoneFormWindow {
         }
     }
 
+    /// Returns the milestone ID to use for this form: the actual ID in edit mode,
+    /// or the pre-generated ID in new mode (for fwd dependent cycle-checking and wiring).
+    fn effective_milestone_id(&self) -> MilestoneId {
+        match self.mode {
+            Mode::Edit(id) => id,
+            Mode::New => self.pre_generated_id,
+        }
+    }
+
     fn open_dep_dropdown(&mut self, dep_idx: usize) {
         self.close_calendar();
         self.dep_dropdown_open_for = Some(dep_idx);
@@ -960,18 +973,15 @@ impl MilestoneFormWindow {
             self.scheduler_error = None;
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
-        let new_dependents: Vec<(NodeId, f32)> = if let Mode::Edit(_) = self.mode {
-            self.dependents
-                .iter()
-                .filter_map(|d| {
-                    d.target
-                        .filter(|&t| !matches!(t, NodeId::PlanStart))
-                        .map(|t| (t, d.lag_input.content.trim().parse::<f32>().unwrap_or(0.0)))
-                })
-                .collect()
-        } else {
-            vec![]
-        };
+        let new_dependents: Vec<(NodeId, f32)> = self
+            .dependents
+            .iter()
+            .filter_map(|d| {
+                d.target
+                    .filter(|&t| !matches!(t, NodeId::PlanStart))
+                    .map(|t| (t, d.lag_input.content.trim().parse::<f32>().unwrap_or(0.0)))
+            })
+            .collect();
 
         let description = self.description.content.trim().to_string();
         let constraint = self
@@ -982,15 +992,38 @@ impl MilestoneFormWindow {
         // Only send the real request if the scheduler succeeds.
         let mut dry_plan = plan.clone();
         let sched_result: Result<(), String> = match self.mode {
-            Mode::New => {
+            Mode::New => (|| -> Result<(), String> {
                 let mut m = Milestone::new(name.clone(), description.clone());
+                m.id = self.pre_generated_id;
                 m.constraint = constraint;
                 m.dependencies = dependencies.clone();
+                let ms_id = m.id;
                 dry_plan.add_milestone(m);
+                // Apply dependent changes for new milestones too
+                let current_node = NodeId::Milestone(ms_id);
+                for (dep_node, lag) in &new_dependents {
+                    let dep_entry = Dependency {
+                        id: current_node,
+                        lag_days: *lag,
+                    };
+                    match dep_node {
+                        NodeId::Task(t_id) => {
+                            dry_plan
+                                .add_task_dependency(*t_id, dep_entry)
+                                .map_err(|_| "dependent change would create a cycle".to_string())?;
+                        }
+                        NodeId::Milestone(m_id) => {
+                            dry_plan
+                                .add_milestone_dependency(*m_id, dep_entry)
+                                .map_err(|_| "dependent change would create a cycle".to_string())?;
+                        }
+                        NodeId::PlanStart => {}
+                    }
+                }
                 dry_plan
                     .compute_time_optimised_plan()
                     .map_err(|e| e.to_string())
-            }
+            })(),
             Mode::Edit(id) => {
                 let patch = MilestonePatch::new()
                     .name(name.clone())
@@ -1063,9 +1096,48 @@ impl MilestoneFormWindow {
         match self.mode {
             Mode::New => {
                 let mut m = Milestone::new(name, description);
+                m.id = self.pre_generated_id;
                 m.constraint = constraint;
                 m.dependencies = dependencies;
+                let ms_id = m.id;
                 sender.send(PlanRequest::CreateMilestone(m));
+                // Wire up forward dependents: add the new milestone as a dependency
+                let current_node = NodeId::Milestone(ms_id);
+                for (dep_node, lag) in &new_dependents {
+                    match dep_node {
+                        NodeId::Task(t_id) => {
+                            let mut new_deps: Vec<Dependency> = plan
+                                .tasks
+                                .get(t_id)
+                                .map(|t| t.dependencies.clone())
+                                .unwrap_or_default();
+                            new_deps.push(Dependency {
+                                id: current_node,
+                                lag_days: *lag,
+                            });
+                            sender.send(PlanRequest::UpdateTask(
+                                *t_id,
+                                TaskPatch::new().dependencies(new_deps),
+                            ));
+                        }
+                        NodeId::Milestone(m_id) => {
+                            let mut new_deps: Vec<Dependency> = plan
+                                .milestones
+                                .get(m_id)
+                                .map(|m| m.dependencies.clone())
+                                .unwrap_or_default();
+                            new_deps.push(Dependency {
+                                id: current_node,
+                                lag_days: *lag,
+                            });
+                            sender.send(PlanRequest::UpdateMilestone(
+                                *m_id,
+                                MilestonePatch::new().dependencies(new_deps),
+                            ));
+                        }
+                        NodeId::PlanStart => {}
+                    }
+                }
             }
             Mode::Edit(milestone_id) => {
                 let patch = MilestonePatch::new()
@@ -2478,256 +2550,252 @@ impl FloatingWindow for MilestoneFormWindow {
             paint.set_style(PaintStyle::Fill);
         }
 
-        // Forward dependents section (editable, edit mode only)
-        if let Mode::Edit(_ms_id) = self.mode {
-            let fwd_lbl_y = Self::fwd_label_y(width, height);
-            let fwd_label_text = if self.dependent_error {
-                "Required by (cycle detected)"
-            } else {
-                "Required by"
-            };
-            if let Some(blob) = TextBlob::new(fwd_label_text, &cache.small_font) {
-                paint.set_color(Color::from(if self.dependent_error {
-                    BTN_DANGER_BG
-                } else {
-                    LABEL_FG
-                }));
-                canvas.draw_text_blob(&blob, (lx, fwd_lbl_y + label_y_offset), &paint);
-            }
-
-            let fwd_list = Self::fwd_list_rect(width, height);
-
+        // Forward dependents section (editable in both new and edit mode)
+        let fwd_lbl_y = Self::fwd_label_y(width, height);
+        let fwd_label_text = if self.dependent_error {
+            "Required by (cycle detected)"
+        } else {
+            "Required by"
+        };
+        if let Some(blob) = TextBlob::new(fwd_label_text, &cache.small_font) {
             paint.set_color(Color::from(if self.dependent_error {
                 BTN_DANGER_BG
             } else {
-                INPUT_BORDER
+                LABEL_FG
             }));
-            paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(if self.dependent_error { 2.0 } else { 1.0 });
-            canvas.draw_rrect(
-                RRect::new_rect_xy(fwd_list, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
-                &paint,
-            );
-            paint.set_style(PaintStyle::Fill);
+            canvas.draw_text_blob(&blob, (lx, fwd_lbl_y + label_y_offset), &paint);
+        }
 
-            canvas.save();
-            canvas.clip_rect(fwd_list, ClipOp::Intersect, false);
-            canvas.translate((0.0, -self.dep_fwd_scroll_y));
+        let fwd_list = Self::fwd_list_rect(width, height);
 
-            if self.dependents.is_empty() {
-                if let Some(blob) = TextBlob::new("No dependents added yet", &cache.small_font) {
-                    let (_, sm2) = cache.small_font.metrics();
-                    let ty =
-                        fwd_list.top + (FWD_ROW_H - (sm2.descent - sm2.ascent)) / 2.0 - sm2.ascent;
-                    paint.set_color(Color::from(MUTED_FG));
-                    canvas.draw_text_blob(&blob, (fwd_list.left + 12.0, ty), &paint);
+        paint.set_color(Color::from(if self.dependent_error {
+            BTN_DANGER_BG
+        } else {
+            INPUT_BORDER
+        }));
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_width(if self.dependent_error { 2.0 } else { 1.0 });
+        canvas.draw_rrect(
+            RRect::new_rect_xy(fwd_list, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+            &paint,
+        );
+        paint.set_style(PaintStyle::Fill);
+
+        canvas.save();
+        canvas.clip_rect(fwd_list, ClipOp::Intersect, false);
+        canvas.translate((0.0, -self.dep_fwd_scroll_y));
+
+        if self.dependents.is_empty() {
+            if let Some(blob) = TextBlob::new("No dependents added yet", &cache.small_font) {
+                let (_, sm2) = cache.small_font.metrics();
+                let ty = fwd_list.top + (FWD_ROW_H - (sm2.descent - sm2.ascent)) / 2.0 - sm2.ascent;
+                paint.set_color(Color::from(MUTED_FG));
+                canvas.draw_text_blob(&blob, (fwd_list.left + 12.0, ty), &paint);
+            }
+        } else {
+            for (abs, dep) in self.dependents.iter().enumerate() {
+                if abs > 0 {
+                    paint.set_color(Color::from(DIVIDER_COLOR));
+                    canvas.draw_rect(
+                        Rect::from_xywh(
+                            fwd_list.left,
+                            fwd_list.top + abs as f32 * FWD_ROW_H,
+                            fwd_list.width(),
+                            1.0,
+                        ),
+                        &paint,
+                    );
                 }
-            } else {
-                for (abs, dep) in self.dependents.iter().enumerate() {
-                    if abs > 0 {
-                        paint.set_color(Color::from(DIVIDER_COLOR));
-                        canvas.draw_rect(
-                            Rect::from_xywh(
-                                fwd_list.left,
-                                fwd_list.top + abs as f32 * FWD_ROW_H,
-                                fwd_list.width(),
-                                1.0,
-                            ),
-                            &paint,
-                        );
-                    }
 
-                    let target_rect = Self::fwd_target_rect(fwd_list, abs);
-                    let lag_rect = Self::fwd_lag_rect(fwd_list, abs);
-                    let rm_rect = Self::fwd_remove_rect(fwd_list, abs);
-                    let dd_open = self.dep_fwd_dropdown_open_for == Some(abs);
+                let target_rect = Self::fwd_target_rect(fwd_list, abs);
+                let lag_rect = Self::fwd_lag_rect(fwd_list, abs);
+                let rm_rect = Self::fwd_remove_rect(fwd_list, abs);
+                let dd_open = self.dep_fwd_dropdown_open_for == Some(abs);
 
-                    let rrect = RRect::new_rect_xy(target_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
-                    paint.set_color(Color::from(INPUT_BG));
-                    paint.set_style(PaintStyle::Fill);
-                    canvas.draw_rrect(rrect, &paint);
-                    paint.set_color(if dd_open {
-                        Color::from(INPUT_BORDER_FOCUS)
-                    } else if dep.hovered_target {
-                        Color::from(MUTED_FG)
+                let rrect = RRect::new_rect_xy(target_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER);
+                paint.set_color(Color::from(INPUT_BG));
+                paint.set_style(PaintStyle::Fill);
+                canvas.draw_rrect(rrect, &paint);
+                paint.set_color(if dd_open {
+                    Color::from(INPUT_BORDER_FOCUS)
+                } else if dep.hovered_target {
+                    Color::from(MUTED_FG)
+                } else {
+                    Color::from(INPUT_BORDER)
+                });
+                paint.set_style(PaintStyle::Stroke);
+                paint.set_stroke_width(1.0);
+                canvas.draw_rrect(rrect, &paint);
+                paint.set_style(PaintStyle::Fill);
+
+                let target_name: String = match dep.target {
+                    Some(NodeId::Task(id)) => plan
+                        .tasks
+                        .get(&id)
+                        .map(|t| t.name.clone())
+                        .unwrap_or_default(),
+                    Some(NodeId::Milestone(id)) => plan
+                        .milestones
+                        .get(&id)
+                        .map(|m| m.name.clone())
+                        .unwrap_or_default(),
+                    _ => String::new(),
+                };
+                let (target_text, target_color) = if dep.target.is_none() {
+                    ("Select dependent…".to_string(), Color::from(MUTED_FG))
+                } else {
+                    (target_name, Color::from(INPUT_FG))
+                };
+
+                canvas.save();
+                canvas.clip_rect(
+                    Rect::from_xywh(
+                        target_rect.left + 6.0,
+                        target_rect.top,
+                        target_rect.width() - 22.0,
+                        target_rect.height(),
+                    ),
+                    ClipOp::Intersect,
+                    false,
+                );
+                if let Some(blob) = TextBlob::new(&target_text, &cache.small_font) {
+                    let (_, sm) = cache.small_font.metrics();
+                    let ty = target_rect.top
+                        + (target_rect.height() - (sm.descent - sm.ascent)) / 2.0
+                        - sm.ascent;
+                    paint.set_color(target_color);
+                    canvas.draw_text_blob(&blob, (target_rect.left + 6.0, ty), &paint);
+                }
+                canvas.restore();
+
+                {
+                    let cx = target_rect.right - 12.0;
+                    let cy = target_rect.top + target_rect.height() / 2.0;
+                    let s = 3.5;
+                    let mut pb = PathBuilder::new();
+                    if dd_open {
+                        pb.move_to((cx - s, cy + s * 0.5));
+                        pb.line_to((cx, cy - s * 0.5));
+                        pb.line_to((cx + s, cy + s * 0.5));
                     } else {
-                        Color::from(INPUT_BORDER)
+                        pb.move_to((cx - s, cy - s * 0.5));
+                        pb.line_to((cx, cy + s * 0.5));
+                        pb.line_to((cx + s, cy - s * 0.5));
+                    }
+                    paint.set_color(Color::from(PLACEHOLDER_FG));
+                    paint.set_style(PaintStyle::Stroke);
+                    paint.set_stroke_width(1.5);
+                    canvas.draw_path(&pb.detach(), &paint);
+                    paint.set_style(PaintStyle::Fill);
+                }
+
+                let lag_focused = self.focused_fwd_lag == Some(abs);
+                draw_text_input(canvas, lag_rect, &dep.lag_input, lag_focused, false, cache);
+                if dep.lag_input.content.is_empty()
+                    && !lag_focused
+                    && let Some(blob) = TextBlob::new("0", &cache.small_font)
+                {
+                    let (_, sm) = cache.small_font.metrics();
+                    let ty = lag_rect.top + (lag_rect.height() - (sm.descent - sm.ascent)) / 2.0
+                        - sm.ascent;
+                    paint.set_color(Color::from(GHOST_FG));
+                    canvas.draw_text_blob(&blob, (lag_rect.left + 8.0, ty), &paint);
+                }
+
+                if dep.hovered_remove {
+                    let r = rm_rect.width().min(rm_rect.height()) / 2.0 - 2.0;
+                    let cx = rm_rect.left + rm_rect.width() / 2.0;
+                    let cy = rm_rect.top + rm_rect.height() / 2.0;
+                    paint.set_color(Color::from(ERROR_BG));
+                    paint.set_style(PaintStyle::Fill);
+                    canvas.draw_circle((cx, cy), r, &paint);
+                    paint.set_style(PaintStyle::Fill);
+                }
+                {
+                    let cx = rm_rect.left + rm_rect.width() / 2.0;
+                    let cy = rm_rect.top + rm_rect.height() / 2.0;
+                    let s = 5.0;
+                    let mut pb = PathBuilder::new();
+                    pb.move_to((cx - s, cy - s));
+                    pb.line_to((cx + s, cy + s));
+                    pb.move_to((cx + s, cy - s));
+                    pb.line_to((cx - s, cy + s));
+                    paint.set_color(if dep.hovered_remove {
+                        Color::from(ICON_DELETE_COLOR)
+                    } else {
+                        Color::from(OVERLAY_DARK)
                     });
                     paint.set_style(PaintStyle::Stroke);
-                    paint.set_stroke_width(1.0);
-                    canvas.draw_rrect(rrect, &paint);
+                    paint.set_stroke_width(1.5);
+                    canvas.draw_path(&pb.detach(), &paint);
                     paint.set_style(PaintStyle::Fill);
-
-                    let target_name: String = match dep.target {
-                        Some(NodeId::Task(id)) => plan
-                            .tasks
-                            .get(&id)
-                            .map(|t| t.name.clone())
-                            .unwrap_or_default(),
-                        Some(NodeId::Milestone(id)) => plan
-                            .milestones
-                            .get(&id)
-                            .map(|m| m.name.clone())
-                            .unwrap_or_default(),
-                        _ => String::new(),
-                    };
-                    let (target_text, target_color) = if dep.target.is_none() {
-                        ("Select dependent…".to_string(), Color::from(MUTED_FG))
-                    } else {
-                        (target_name, Color::from(INPUT_FG))
-                    };
-
-                    canvas.save();
-                    canvas.clip_rect(
-                        Rect::from_xywh(
-                            target_rect.left + 6.0,
-                            target_rect.top,
-                            target_rect.width() - 22.0,
-                            target_rect.height(),
-                        ),
-                        ClipOp::Intersect,
-                        false,
-                    );
-                    if let Some(blob) = TextBlob::new(&target_text, &cache.small_font) {
-                        let (_, sm) = cache.small_font.metrics();
-                        let ty = target_rect.top
-                            + (target_rect.height() - (sm.descent - sm.ascent)) / 2.0
-                            - sm.ascent;
-                        paint.set_color(target_color);
-                        canvas.draw_text_blob(&blob, (target_rect.left + 6.0, ty), &paint);
-                    }
-                    canvas.restore();
-
-                    {
-                        let cx = target_rect.right - 12.0;
-                        let cy = target_rect.top + target_rect.height() / 2.0;
-                        let s = 3.5;
-                        let mut pb = PathBuilder::new();
-                        if dd_open {
-                            pb.move_to((cx - s, cy + s * 0.5));
-                            pb.line_to((cx, cy - s * 0.5));
-                            pb.line_to((cx + s, cy + s * 0.5));
-                        } else {
-                            pb.move_to((cx - s, cy - s * 0.5));
-                            pb.line_to((cx, cy + s * 0.5));
-                            pb.line_to((cx + s, cy - s * 0.5));
-                        }
-                        paint.set_color(Color::from(PLACEHOLDER_FG));
-                        paint.set_style(PaintStyle::Stroke);
-                        paint.set_stroke_width(1.5);
-                        canvas.draw_path(&pb.detach(), &paint);
-                        paint.set_style(PaintStyle::Fill);
-                    }
-
-                    let lag_focused = self.focused_fwd_lag == Some(abs);
-                    draw_text_input(canvas, lag_rect, &dep.lag_input, lag_focused, false, cache);
-                    if dep.lag_input.content.is_empty()
-                        && !lag_focused
-                        && let Some(blob) = TextBlob::new("0", &cache.small_font)
-                    {
-                        let (_, sm) = cache.small_font.metrics();
-                        let ty = lag_rect.top
-                            + (lag_rect.height() - (sm.descent - sm.ascent)) / 2.0
-                            - sm.ascent;
-                        paint.set_color(Color::from(GHOST_FG));
-                        canvas.draw_text_blob(&blob, (lag_rect.left + 8.0, ty), &paint);
-                    }
-
-                    if dep.hovered_remove {
-                        let r = rm_rect.width().min(rm_rect.height()) / 2.0 - 2.0;
-                        let cx = rm_rect.left + rm_rect.width() / 2.0;
-                        let cy = rm_rect.top + rm_rect.height() / 2.0;
-                        paint.set_color(Color::from(ERROR_BG));
-                        paint.set_style(PaintStyle::Fill);
-                        canvas.draw_circle((cx, cy), r, &paint);
-                        paint.set_style(PaintStyle::Fill);
-                    }
-                    {
-                        let cx = rm_rect.left + rm_rect.width() / 2.0;
-                        let cy = rm_rect.top + rm_rect.height() / 2.0;
-                        let s = 5.0;
-                        let mut pb = PathBuilder::new();
-                        pb.move_to((cx - s, cy - s));
-                        pb.line_to((cx + s, cy + s));
-                        pb.move_to((cx + s, cy - s));
-                        pb.line_to((cx - s, cy + s));
-                        paint.set_color(if dep.hovered_remove {
-                            Color::from(ICON_DELETE_COLOR)
-                        } else {
-                            Color::from(OVERLAY_DARK)
-                        });
-                        paint.set_style(PaintStyle::Stroke);
-                        paint.set_stroke_width(1.5);
-                        canvas.draw_path(&pb.detach(), &paint);
-                        paint.set_style(PaintStyle::Fill);
-                    }
                 }
             }
+        }
 
-            canvas.restore();
+        canvas.restore();
 
-            // Fwd list scrollbar
-            let total_fwd_h = self.dependents.len() as f32 * FWD_ROW_H;
-            let visible_fwd_h = fwd_list.height();
-            let max_fwd_scroll = (total_fwd_h - visible_fwd_h).max(0.0);
-            if max_fwd_scroll > 0.0 {
-                let thumb_h = (visible_fwd_h * visible_fwd_h / total_fwd_h).max(20.0);
-                let thumb_y = fwd_list.top
-                    + (self.dep_fwd_scroll_y / max_fwd_scroll) * (visible_fwd_h - thumb_h);
-                paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
-                canvas.draw_rrect(
-                    RRect::new_rect_xy(
-                        Rect::from_xywh(
-                            fwd_list.right - SCROLLBAR_W - 2.0,
-                            thumb_y,
-                            SCROLLBAR_W,
-                            thumb_h,
-                        ),
-                        2.0,
-                        2.0,
+        // Fwd list scrollbar
+        let total_fwd_h = self.dependents.len() as f32 * FWD_ROW_H;
+        let visible_fwd_h = fwd_list.height();
+        let max_fwd_scroll = (total_fwd_h - visible_fwd_h).max(0.0);
+        if max_fwd_scroll > 0.0 {
+            let thumb_h = (visible_fwd_h * visible_fwd_h / total_fwd_h).max(20.0);
+            let thumb_y =
+                fwd_list.top + (self.dep_fwd_scroll_y / max_fwd_scroll) * (visible_fwd_h - thumb_h);
+            paint.set_color(Color::from(SCROLLBAR_THUMB_COLOR));
+            canvas.draw_rrect(
+                RRect::new_rect_xy(
+                    Rect::from_xywh(
+                        fwd_list.right - SCROLLBAR_W - 2.0,
+                        thumb_y,
+                        SCROLLBAR_W,
+                        thumb_h,
                     ),
-                    &paint,
-                );
-            }
+                    2.0,
+                    2.0,
+                ),
+                &paint,
+            );
+        }
 
-            // Fwd plus button
-            let fwd_plus_rect = Self::fwd_plus_rect(width, height);
-            paint.set_color(Color::from(if self.hovered_fwd_plus {
-                TOOLBAR_BTN_HOVER_BG
-            } else {
-                SUBTLE_BG
-            }));
-            canvas.draw_rrect(
-                RRect::new_rect_xy(fwd_plus_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
-                &paint,
-            );
-            paint.set_color(Color::from(if self.dependent_error {
-                INPUT_BORDER_ERROR
-            } else {
-                INPUT_BORDER
-            }));
+        // Fwd plus button
+        let fwd_plus_rect = Self::fwd_plus_rect(width, height);
+        paint.set_color(Color::from(if self.hovered_fwd_plus {
+            TOOLBAR_BTN_HOVER_BG
+        } else {
+            SUBTLE_BG
+        }));
+        canvas.draw_rrect(
+            RRect::new_rect_xy(fwd_plus_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+            &paint,
+        );
+        paint.set_color(Color::from(if self.dependent_error {
+            INPUT_BORDER_ERROR
+        } else {
+            INPUT_BORDER
+        }));
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_stroke_width(1.0);
+        canvas.draw_rrect(
+            RRect::new_rect_xy(fwd_plus_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+            &paint,
+        );
+        paint.set_style(PaintStyle::Fill);
+        {
+            let cx = fwd_plus_rect.left + fwd_plus_rect.width() / 2.0;
+            let cy = fwd_plus_rect.top + fwd_plus_rect.height() / 2.0;
+            let s = 6.0;
+            let mut pb = PathBuilder::new();
+            pb.move_to((cx - s, cy));
+            pb.line_to((cx + s, cy));
+            pb.move_to((cx, cy - s));
+            pb.line_to((cx, cy + s));
+            paint.set_color(Color::from(TOOLBAR_BTN_ICON_COLOR));
             paint.set_style(PaintStyle::Stroke);
-            paint.set_stroke_width(1.0);
-            canvas.draw_rrect(
-                RRect::new_rect_xy(fwd_plus_rect, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
-                &paint,
-            );
+            paint.set_stroke_width(1.5);
+            canvas.draw_path(&pb.detach(), &paint);
             paint.set_style(PaintStyle::Fill);
-            {
-                let cx = fwd_plus_rect.left + fwd_plus_rect.width() / 2.0;
-                let cy = fwd_plus_rect.top + fwd_plus_rect.height() / 2.0;
-                let s = 6.0;
-                let mut pb = PathBuilder::new();
-                pb.move_to((cx - s, cy));
-                pb.line_to((cx + s, cy));
-                pb.move_to((cx, cy - s));
-                pb.line_to((cx, cy + s));
-                paint.set_color(Color::from(TOOLBAR_BTN_ICON_COLOR));
-                paint.set_style(PaintStyle::Stroke);
-                paint.set_stroke_width(1.5);
-                canvas.draw_path(&pb.detach(), &paint);
-                paint.set_style(PaintStyle::Fill);
-            }
         }
 
         // Save button
@@ -2859,7 +2927,6 @@ impl FloatingWindow for MilestoneFormWindow {
         // Fwd dropdown (drawn on top of everything, in screen space)
         if let Some(dep_idx) = self.dep_fwd_dropdown_open_for
             && dep_idx < self.dependents.len()
-            && let Mode::Edit(ms_id) = self.mode
         {
             let fwd_list2 = Self::fwd_list_rect(width, height);
             let adjusted_fwd_list = Rect::from_xywh(
@@ -2869,13 +2936,14 @@ impl FloatingWindow for MilestoneFormWindow {
                 fwd_list2.height(),
             );
             let dd_rect = Self::fwd_dropdown_rect(adjusted_fwd_list, dep_idx, panel);
+            let this_node = NodeId::Milestone(self.effective_milestone_id());
             draw_fwd_dropdown(
                 canvas,
                 dd_rect,
                 &self.dependents[dep_idx],
                 self.dep_fwd_dropdown_hovered,
                 self.dep_fwd_dropdown_scroll,
-                NodeId::Milestone(ms_id),
+                this_node,
                 plan,
                 cache,
             );
@@ -3006,7 +3074,6 @@ impl FloatingWindow for MilestoneFormWindow {
             set!(self.dep_dropdown_hovered, new_hov);
         } else if let Some(dep_idx) = self.dep_fwd_dropdown_open_for
             && dep_idx < self.dependents.len()
-            && let Mode::Edit(ms_id) = self.mode
         {
             let fwd_list2 = Self::fwd_list_rect(width, height);
             let adjusted_fwd_list = Rect::from_xywh(
@@ -3018,7 +3085,7 @@ impl FloatingWindow for MilestoneFormWindow {
             let dd = Self::fwd_dropdown_rect(adjusted_fwd_list, dep_idx, panel);
             let list_top = dd.top + DEP_DROPDOWN_FILTER_H + 1.0;
 
-            let this_node = NodeId::Milestone(ms_id);
+            let this_node = NodeId::Milestone(self.effective_milestone_id());
             let filter = self.dependents[dep_idx].dep_filter.content.to_lowercase();
             let mut count = 0usize;
             for (id, t) in &plan.tasks {
@@ -3111,7 +3178,7 @@ impl FloatingWindow for MilestoneFormWindow {
                 }
             }
 
-            // Fwd list hover (edit mode only)
+            // Fwd list hover
             let fwd_list2 = Self::fwd_list_rect(width, height);
             let in_fwd_list = {
                 let fwd_list_screen = Rect::from_xywh(
@@ -3122,10 +3189,7 @@ impl FloatingWindow for MilestoneFormWindow {
                 );
                 fwd_list_screen.contains(Point::new(x, y))
             };
-            set!(
-                self.cursor_in_fwd_list,
-                matches!(self.mode, Mode::Edit(_)) && in_fwd_list
-            );
+            set!(self.cursor_in_fwd_list, in_fwd_list);
             set!(self.hovered_fwd_plus, {
                 let fwd_plus = Self::fwd_plus_rect(width, height);
                 let fwd_plus_screen = Rect::from_xywh(
@@ -3134,25 +3198,23 @@ impl FloatingWindow for MilestoneFormWindow {
                     fwd_plus.width(),
                     fwd_plus.height(),
                 );
-                matches!(self.mode, Mode::Edit(_)) && fwd_plus_screen.contains(Point::new(x, y))
+                fwd_plus_screen.contains(Point::new(x, y))
             });
             let pt_fwd = Point::new(x, y + scroll_y + self.dep_fwd_scroll_y);
             for dep in &mut self.dependents {
                 dep.hovered_target = false;
                 dep.hovered_remove = false;
             }
-            if matches!(self.mode, Mode::Edit(_)) {
-                for (i, dep) in self.dependents.iter_mut().enumerate() {
-                    let target_rect = Self::fwd_target_rect(fwd_list2, i);
-                    let remove_rect = Self::fwd_remove_rect(fwd_list2, i);
-                    if target_rect.contains(pt_fwd) {
-                        dep.hovered_target = true;
-                        changed = true;
-                    }
-                    if remove_rect.contains(pt_fwd) {
-                        dep.hovered_remove = true;
-                        changed = true;
-                    }
+            for (i, dep) in self.dependents.iter_mut().enumerate() {
+                let target_rect = Self::fwd_target_rect(fwd_list2, i);
+                let remove_rect = Self::fwd_remove_rect(fwd_list2, i);
+                if target_rect.contains(pt_fwd) {
+                    dep.hovered_target = true;
+                    changed = true;
+                }
+                if remove_rect.contains(pt_fwd) {
+                    dep.hovered_remove = true;
+                    changed = true;
                 }
             }
         }
@@ -3321,9 +3383,7 @@ impl FloatingWindow for MilestoneFormWindow {
 
         // Fwd dropdown
         if let Some(dep_idx) = self.dep_fwd_dropdown_open_for {
-            if dep_idx < self.dependents.len()
-                && let Mode::Edit(ms_id) = self.mode
-            {
+            if dep_idx < self.dependents.len() {
                 let fwd_list2 = Self::fwd_list_rect(width, height);
                 let adjusted_fwd_list = Rect::from_xywh(
                     fwd_list2.left,
@@ -3343,7 +3403,7 @@ impl FloatingWindow for MilestoneFormWindow {
                     if y >= list_top {
                         let abs = ((y - list_top) / DEP_DROPDOWN_ROW_H) as usize
                             + self.dep_fwd_dropdown_scroll;
-                        let this_node = NodeId::Milestone(ms_id);
+                        let this_node = NodeId::Milestone(self.effective_milestone_id());
                         let filter = self.dependents[dep_idx].dep_filter.content.to_lowercase();
                         let mut items: Vec<(NodeId, String)> = Vec::new();
 
@@ -3522,56 +3582,54 @@ impl FloatingWindow for MilestoneFormWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
-        // Fwd list interactions (edit mode only)
-        if matches!(self.mode, Mode::Edit(_)) {
-            let fwd_list2 = Self::fwd_list_rect(width, height);
-            let fwd_plus = Self::fwd_plus_rect(width, height);
+        // Fwd list interactions
+        let fwd_list2 = Self::fwd_list_rect(width, height);
+        let fwd_plus = Self::fwd_plus_rect(width, height);
 
-            if fwd_plus.contains(pt_form) {
-                self.dependents.push(DependencyEdit::new());
-                let new_idx = self.dependents.len() - 1;
-                self.open_fwd_dropdown(new_idx);
-                let total_h = self.dependents.len() as f32 * FWD_ROW_H;
-                let visible_h = FWD_ROW_H * FWD_MAX_ROWS as f32;
-                self.dep_fwd_scroll_y = (total_h - visible_h).max(0.0);
-                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-            }
+        if fwd_plus.contains(pt_form) {
+            self.dependents.push(DependencyEdit::new());
+            let new_idx = self.dependents.len() - 1;
+            self.open_fwd_dropdown(new_idx);
+            let total_h = self.dependents.len() as f32 * FWD_ROW_H;
+            let visible_h = FWD_ROW_H * FWD_MAX_ROWS as f32;
+            self.dep_fwd_scroll_y = (total_h - visible_h).max(0.0);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
 
-            if fwd_list2.contains(pt_form) {
-                let pt_fwd = Point::new(x, y + scroll_y + self.dep_fwd_scroll_y);
-                for abs in 0..self.dependents.len() {
-                    if Self::fwd_remove_rect(fwd_list2, abs).contains(pt_fwd) {
-                        self.dependents.remove(abs);
-                        self.clamp_fwd_scroll_y();
-                        if let Some(ref mut fl) = self.focused_fwd_lag {
-                            if *fl == abs {
-                                self.focused_fwd_lag = None;
-                            } else if *fl > abs {
-                                *fl -= 1;
-                            }
+        if fwd_list2.contains(pt_form) {
+            let pt_fwd = Point::new(x, y + scroll_y + self.dep_fwd_scroll_y);
+            for abs in 0..self.dependents.len() {
+                if Self::fwd_remove_rect(fwd_list2, abs).contains(pt_fwd) {
+                    self.dependents.remove(abs);
+                    self.clamp_fwd_scroll_y();
+                    if let Some(ref mut fl) = self.focused_fwd_lag {
+                        if *fl == abs {
+                            self.focused_fwd_lag = None;
+                        } else if *fl > abs {
+                            *fl -= 1;
                         }
-                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                     }
-                    if Self::fwd_target_rect(fwd_list2, abs).contains(pt_fwd) {
-                        self.open_fwd_dropdown(abs);
-                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                    }
-                    if Self::fwd_lag_rect(fwd_list2, abs).contains(pt_fwd) {
-                        self.focused_fwd_lag = Some(abs);
-                        self.focused_dep_lag = None;
-                        self.name.focused = false;
-                        self.description.focused = false;
-                        let lag_rect = Self::fwd_lag_rect(fwd_list2, abs);
-                        let x_in_inner = x - (lag_rect.left + 8.0)
-                            + self.dependents[abs].lag_input.scroll_x.get();
-                        self.dependents[abs].lag_input.cursor = self.dependents[abs]
-                            .lag_input
-                            .cursor_for_x(x_in_inner, &cache.font);
-                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                if Self::fwd_target_rect(fwd_list2, abs).contains(pt_fwd) {
+                    self.open_fwd_dropdown(abs);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
+                if Self::fwd_lag_rect(fwd_list2, abs).contains(pt_fwd) {
+                    self.focused_fwd_lag = Some(abs);
+                    self.focused_dep_lag = None;
+                    self.name.focused = false;
+                    self.description.focused = false;
+                    let lag_rect = Self::fwd_lag_rect(fwd_list2, abs);
+                    let x_in_inner =
+                        x - (lag_rect.left + 8.0) + self.dependents[abs].lag_input.scroll_x.get();
+                    self.dependents[abs].lag_input.cursor = self.dependents[abs]
+                        .lag_input
+                        .cursor_for_x(x_in_inner, &cache.font);
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                }
             }
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
 
         if !Self::panel_rect(width, height).contains(pt) {
@@ -3991,10 +4049,8 @@ impl FloatingWindow for MilestoneFormWindow {
 
         // Scroll fwd dropdown if open
         if let Some(dep_idx) = self.dep_fwd_dropdown_open_for {
-            if dep_idx < self.dependents.len()
-                && let Mode::Edit(ms_id) = self.mode
-            {
-                let this_node = NodeId::Milestone(ms_id);
+            if dep_idx < self.dependents.len() {
+                let this_node = NodeId::Milestone(self.effective_milestone_id());
                 let filter = self.dependents[dep_idx].dep_filter.content.to_lowercase();
                 let mut count = 0usize;
                 for (id, t) in &plan.tasks {
