@@ -43,6 +43,7 @@ const BTN_INSET: f32 = (TITLE_H - BACK_BTN_SIZE) / 2.0;
 const SCROLLBAR_W: f32 = 4.0;
 const SECTION_TITLE_H: f32 = 20.0;
 const SECTION_GAP: f32 = 12.0;
+const LABEL_H: f32 = 18.0;
 const LABEL_W: f32 = 160.0;
 const MAP_ROW_H: f32 = 32.0;
 const MAP_ROW_GAP: f32 = 4.0;
@@ -223,16 +224,16 @@ impl MondayWindow {
         let mut h = PLAN_FORM_PADDING;
         // Connection section
         h += SECTION_TITLE_H + SECTION_GAP;
-        h += PLAN_LABEL_GAP + PLAN_INPUT_H; // token
-        h += PLAN_FIELD_GAP + PLAN_LABEL_GAP + PLAN_INPUT_H; // board id
+        h += LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // token
+        h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // board id
         h += PLAN_FIELD_GAP + PLAN_BTN_H; // test btn
         // Column mapping
         h += PLAN_FIELD_GAP + SECTION_TITLE_H + SECTION_GAP;
-        h += PLAN_LABEL_GAP + PLAN_INPUT_H; // person
-        h += PLAN_FIELD_GAP + PLAN_LABEL_GAP + PLAN_INPUT_H; // status
-        h += PLAN_FIELD_GAP + PLAN_LABEL_GAP + PLAN_INPUT_H; // dep
-        h += PLAN_FIELD_GAP + PLAN_LABEL_GAP + PLAN_INPUT_H; // workload
-        h += PLAN_FIELD_GAP + PLAN_LABEL_GAP + PLAN_INPUT_H; // timeline
+        h += LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // person
+        h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // status
+        h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // dep
+        h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // workload
+        h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // timeline
         h += PLAN_FIELD_GAP + PLAN_BTN_H; // fetch btn
         // Item type + workload unit
         h += PLAN_FIELD_GAP + SECTION_TITLE_H + SECTION_GAP;
@@ -580,7 +581,7 @@ impl FloatingWindow for MondayWindow {
         y += SECTION_TITLE_H + SECTION_GAP;
 
         Self::draw_label(canvas, "API Token", px, y, cache);
-        y += PLAN_LABEL_GAP;
+        y += LABEL_H + PLAN_LABEL_GAP;
         let token_rect = Rect::from_xywh(px, y, field_w, PLAN_INPUT_H);
         Self::draw_text_field(
             canvas,
@@ -594,7 +595,7 @@ impl FloatingWindow for MondayWindow {
         y += PLAN_INPUT_H + PLAN_FIELD_GAP;
 
         Self::draw_label(canvas, "Board ID", px, y, cache);
-        y += PLAN_LABEL_GAP;
+        y += LABEL_H + PLAN_LABEL_GAP;
         let board_rect = Rect::from_xywh(px, y, field_w, PLAN_INPUT_H);
         Self::draw_text_field(
             canvas,
@@ -664,7 +665,7 @@ impl FloatingWindow for MondayWindow {
 
         for (label, input, rect_slot, focus_val) in col_fields {
             Self::draw_label(canvas, label, px, y, cache);
-            y += PLAN_LABEL_GAP;
+            y += LABEL_H + PLAN_LABEL_GAP;
             let r = Rect::from_xywh(px, y, field_w, PLAN_INPUT_H);
             Self::draw_text_field(canvas, r, input, self.focused == focus_val, false, cache);
             *rect_slot = r;
