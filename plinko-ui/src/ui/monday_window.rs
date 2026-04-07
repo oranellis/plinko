@@ -103,6 +103,7 @@ pub struct MondayWindow {
     hov_save: bool,
     hov_pull: bool,
     hov_push: bool,
+    hov_clear: bool,
     // ── Async sync status ──
     sync_state: Arc<Mutex<SyncState>>,
     /// Pending result from a "Fetch board info" background thread.
@@ -119,6 +120,7 @@ struct HitRects {
     save_btn: Rect,
     pull_btn: Rect,
     push_btn: Rect,
+    clear_btn: Rect,
     token_field: Rect,
     board_id_field: Rect,
     person_col_field: Rect,
@@ -188,6 +190,7 @@ impl MondayWindow {
             hov_save: false,
             hov_pull: false,
             hov_push: false,
+            hov_clear: false,
             sync_state: Arc::new(Mutex::new(SyncState::Idle)),
             pending_board_result: Arc::new(Mutex::new(None)),
             rects: std::cell::RefCell::new(HitRects::default()),
@@ -444,6 +447,10 @@ impl MondayWindow {
         let ty =
             rect.top + (rect.height() - (metrics.descent - metrics.ascent)) / 2.0 - metrics.ascent;
         canvas.draw_str(label, (tx, ty), font, &paint);
+    }
+
+    fn draw_danger_button(canvas: &Canvas, rect: Rect, label: &str, hovered: bool, cache: &RenderCache) {
+        Self::draw_button(canvas, rect, label, hovered, false, true, cache);
     }
 
     fn draw_radio(
@@ -911,6 +918,7 @@ impl FloatingWindow for MondayWindow {
             + (FOOTER_H - PLAN_BTN_H * 2.0 - 8.0) / 2.0;
         let pull_rect = Rect::from_xywh(fp, footer_top + 16.0, 160.0, PLAN_BTN_H);
         let push_rect = Rect::from_xywh(fp + 168.0, footer_top + 16.0, 160.0, PLAN_BTN_H);
+        let clear_rect = Rect::from_xywh(fp, footer_top + 16.0 + PLAN_BTN_H + 8.0, 160.0, PLAN_BTN_H);
         Self::draw_button(
             canvas,
             pull_rect,
@@ -929,8 +937,10 @@ impl FloatingWindow for MondayWindow {
             false,
             cache,
         );
+        Self::draw_danger_button(canvas, clear_rect, "Clear & Re-import", self.hov_clear, cache);
         hit.pull_btn = pull_rect;
         hit.push_btn = push_rect;
+        hit.clear_btn = clear_rect;
 
         // Status message
         let status_msg = self
@@ -948,7 +958,7 @@ impl FloatingWindow for MondayWindow {
         if !status_msg.is_empty() {
             paint.set_color(Color::from(MUTED_FG));
             let (_, metrics) = font.metrics();
-            let sy = footer_top + 16.0 + PLAN_BTN_H + 8.0 - metrics.ascent;
+            let sy = footer_top + 16.0 + PLAN_BTN_H * 2.0 + 16.0 - metrics.ascent;
             canvas.draw_str(&status_msg, (fp, sy), font, &paint);
         }
 
@@ -982,6 +992,7 @@ impl FloatingWindow for MondayWindow {
         chk!(hov_save, hit.save_btn);
         chk!(hov_pull, hit.pull_btn);
         chk!(hov_push, hit.push_btn);
+        chk!(hov_clear, hit.clear_btn);
 
         // Hover within the open user mapping dropdown
         if self.open_user_dropdown.is_some() && hit.user_dropdown.contains(Point::new(x, y)) {
@@ -1173,6 +1184,41 @@ impl FloatingWindow for MondayWindow {
                 match import::import_from_monday(&client, &config, plan_clone, &sender_clone) {
                     Ok((new_map, msg)) => {
                         // Save updated config with new item_node_map
+                        let mut updated = config;
+                        updated.item_node_map = new_map;
+                        if let Ok(storage) = Storage::from_user_data_dir() {
+                            storage.save_monday_config(plan_id, &updated);
+                        }
+                        *status.lock().unwrap() = SyncState::Done(msg);
+                    }
+                    Err(e) => {
+                        *status.lock().unwrap() = SyncState::Err(e.0);
+                    }
+                }
+            });
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
+
+        // ── Clear Plan & Re-import ────────────────────────────────────────
+        if hit.clear_btn.contains(pt) {
+            self.save_config();
+            let mut config = self.current_config();
+            config.item_node_map.clear();
+            // Clear all tasks and milestones from a fresh copy of the plan.
+            let mut cleared_plan = plan.clone();
+            cleared_plan.tasks.clear();
+            cleared_plan.milestones.clear();
+            cleared_plan.node_allocations.invalidate();
+            let token = self.api_token.content.trim().to_string();
+            let plan_id = self.plan_id;
+            let sender_clone = sender.clone();
+            let status = Arc::clone(&self.sync_state);
+            *status.lock().unwrap() =
+                SyncState::InProgress("Clearing plan and re-importing...".to_string());
+            thread::spawn(move || {
+                let client = MondayClient::new(&token);
+                match import::import_from_monday(&client, &config, cleared_plan, &sender_clone) {
+                    Ok((new_map, msg)) => {
                         let mut updated = config;
                         updated.item_node_map = new_map;
                         if let Ok(storage) = Storage::from_user_data_dir() {
