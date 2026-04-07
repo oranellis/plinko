@@ -410,10 +410,21 @@ impl Plan {
             let pred_end = self.node_end_date_in_state(dep.id, state);
             let lag = dep.lag_days.round() as i64;
             // For task predecessors: tasks need the *next* day to start work, so add 1.
-            // Milestones are date-point markers, so they sit on (or after) the last day
-            // the predecessor is "done" — no +1 offset needed.
+            // Milestones are date-point markers: a milestone successor can land on the
+            // same day as its predecessor (milestone or task). But a task that follows a
+            // milestone must start the day *after* the milestone — the milestone date is
+            // considered the "completion event", not a working day.
             let start_after = match dep.id {
-                NodeId::PlanStart | NodeId::Milestone(_) => pred_end + chrono::Duration::days(lag),
+                NodeId::PlanStart => pred_end + chrono::Duration::days(lag),
+                NodeId::Milestone(_) => {
+                    if is_milestone {
+                        // milestone → milestone: overlap allowed, no +1
+                        pred_end + chrono::Duration::days(lag)
+                    } else {
+                        // milestone → task: task starts the day after the milestone
+                        pred_end + chrono::Duration::days(lag + 1)
+                    }
+                }
                 NodeId::Task(_) => {
                     if is_milestone {
                         pred_end + chrono::Duration::days(lag)
