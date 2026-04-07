@@ -34,7 +34,7 @@ pub fn import_from_monday(
         &cm.status_column_id,
         &cm.dependency_column_id,
         &cm.workload_column_id,
-        config.use_subitems,
+        &cm.date_column_id,
     )?;
 
     // Build a lookup from Monday item ID → existing plinko node ID.
@@ -52,7 +52,7 @@ pub fn import_from_monday(
 
     // --- Pass 1: create/update all nodes ---
     for item in &items {
-        let is_milestone = config.use_subitems && item.parent_id.is_none();
+        let is_milestone = item.is_milestone;
 
         if let Some(node_id) = existing.get(&item.id) {
             // Update existing node.

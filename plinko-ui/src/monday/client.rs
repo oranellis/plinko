@@ -147,7 +147,10 @@ impl MondayClient {
         Ok(labels)
     }
 
-    /// Fetch all items (and optionally subitems) from a board.
+    /// Fetch all items and subitems from a board.
+    ///
+    /// Items whose `date_col` value has `is_milestone: true` are flagged as
+    /// milestones; all others are treated as tasks.
     pub fn fetch_items(
         &self,
         board_id: &str,
@@ -155,21 +158,18 @@ impl MondayClient {
         status_col: &str,
         dep_col: &str,
         workload_col: &str,
-        fetch_subitems: bool,
+        date_col: &str,
     ) -> Result<Vec<MondayItem>, MondayApiError> {
-        let col_ids = build_col_ids_list(&[person_col, status_col, dep_col, workload_col]);
-        let subitems_block = if fetch_subitems {
-            format!(
-                r#"subitems {{
+        let col_ids =
+            build_col_ids_list(&[person_col, status_col, dep_col, workload_col, date_col]);
+        let subitems_block = format!(
+            r#"subitems {{
                     id name
                     column_values(ids: [{col_ids}]) {{
                         id value text
                     }}
                 }}"#
-            )
-        } else {
-            String::new()
-        };
+        );
 
         let query = format!(
             r#"query {{
@@ -206,27 +206,27 @@ impl MondayClient {
                 status_col,
                 dep_col,
                 workload_col,
+                date_col,
             );
             result.push(item);
 
-            if fetch_subitems {
-                if let Some(subs) = raw["subitems"].as_array() {
-                    for sub in subs {
-                        let sub_id = sub["id"].as_str().unwrap_or("").to_string();
-                        let sub_name = sub["name"].as_str().unwrap_or("").to_string();
-                        let sub_cv = sub["column_values"].as_array().cloned().unwrap_or_default();
-                        let sub_item = parse_item(
-                            sub_id,
-                            sub_name,
-                            Some(item_id.clone()),
-                            &sub_cv,
-                            person_col,
-                            status_col,
-                            dep_col,
-                            workload_col,
-                        );
-                        result.push(sub_item);
-                    }
+            if let Some(subs) = raw["subitems"].as_array() {
+                for sub in subs {
+                    let sub_id = sub["id"].as_str().unwrap_or("").to_string();
+                    let sub_name = sub["name"].as_str().unwrap_or("").to_string();
+                    let sub_cv = sub["column_values"].as_array().cloned().unwrap_or_default();
+                    let sub_item = parse_item(
+                        sub_id,
+                        sub_name,
+                        Some(item_id.clone()),
+                        &sub_cv,
+                        person_col,
+                        status_col,
+                        dep_col,
+                        workload_col,
+                        date_col,
+                    );
+                    result.push(sub_item);
                 }
             }
         }
@@ -277,11 +277,13 @@ fn parse_item(
     status_col: &str,
     dep_col: &str,
     workload_col: &str,
+    date_col: &str,
 ) -> MondayItem {
     let mut assigned_user_ids = Vec::new();
     let mut status_label = None;
     let mut dependency_item_ids = Vec::new();
     let mut workload = None;
+    let mut is_milestone = false;
 
     for cv in col_values {
         let col_id = cv["id"].as_str().unwrap_or("");
@@ -314,6 +316,14 @@ fn parse_item(
             if let Some(text) = cv["text"].as_str() {
                 workload = text.parse::<f32>().ok();
             }
+        } else if col_id == date_col && !date_col.is_empty() {
+            // Monday date columns carry `{"date":"...","is_milestone":true}` in their JSON
+            // value when the item is marked as a milestone.
+            if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null")) {
+                if v["is_milestone"].as_bool().unwrap_or(false) {
+                    is_milestone = true;
+                }
+            }
         }
     }
 
@@ -325,5 +335,6 @@ fn parse_item(
         status_label,
         dependency_item_ids,
         workload,
+        is_milestone,
     }
 }
