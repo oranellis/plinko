@@ -95,6 +95,8 @@ pub struct MondayWindow {
     hov_push: bool,
     // ── Async sync status ──
     sync_state: Arc<Mutex<SyncState>>,
+    /// Pending result from a "Fetch board info" background thread.
+    pending_board_result: Arc<Mutex<Option<(Vec<MondayUser>, Vec<String>)>>>,
     // ── Hit rects (populated in render) ──
     rects: std::cell::RefCell<HitRects>,
 }
@@ -173,6 +175,7 @@ impl MondayWindow {
             hov_pull: false,
             hov_push: false,
             sync_state: Arc::new(Mutex::new(SyncState::Idle)),
+            pending_board_result: Arc::new(Mutex::new(None)),
             rects: std::cell::RefCell::new(HitRects::default()),
         }
     }
@@ -1020,9 +1023,10 @@ impl FloatingWindow for MondayWindow {
             let status_col = self.status_col.content.trim().to_string();
             let use_subitems = self.use_subitems;
             let status = Arc::clone(&self.sync_state);
+            let result_slot = Arc::clone(&self.pending_board_result);
+            *result_slot.lock().unwrap() = None;
             *status.lock().unwrap() = SyncState::InProgress("Fetching board info...".to_string());
 
-            let (user_tx, user_rx) = std::sync::mpsc::channel();
             thread::spawn(move || {
                 let client = MondayClient::new(&token);
                 let users = client.fetch_users().unwrap_or_default();
@@ -1041,13 +1045,10 @@ impl FloatingWindow for MondayWindow {
                 } else {
                     Vec::new()
                 };
-                let _ = user_tx.send((users, statuses));
+                *result_slot.lock().unwrap() = Some((users, statuses));
                 *status.lock().unwrap() = SyncState::Done("Board info fetched.".to_string());
             });
 
-            // Try to get result immediately (won't work across threads, but attempt)
-            // In a real async UI, we'd poll. Here we just update on next event.
-            drop(user_rx); // Can't use across threads easily; see tick_animation
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
 
@@ -1219,6 +1220,44 @@ impl FloatingWindow for MondayWindow {
     }
 
     fn tick(&mut self) -> DirtyRegion {
+        // Consume any result from a completed "Fetch board info" background thread.
+        let board_result = self.pending_board_result.lock().unwrap().take();
+        if let Some((fetched_users, fetched_statuses)) = board_result {
+            self.fetched_monday_users = fetched_users.clone();
+            self.fetched_status_labels = fetched_statuses.clone();
+
+            // Merge users: preserve existing plinko_user_id mappings, add new entries.
+            for u in &fetched_users {
+                if !self.user_mappings.iter().any(|m| m.monday_user_id == u.id) {
+                    self.user_mappings.push(UserMapping {
+                        monday_user_id: u.id.clone(),
+                        monday_name: u.name.clone(),
+                        plinko_user_id: None,
+                    });
+                }
+            }
+            // Remove mappings for users no longer returned (optional — keep for now to preserve data)
+
+            // Merge statuses: preserve existing mappings, add new labels.
+            for label in &fetched_statuses {
+                if !self
+                    .status_mappings
+                    .iter()
+                    .any(|m| &m.monday_label == label)
+                {
+                    self.status_mappings.push(StatusMapping {
+                        monday_label: label.clone(),
+                        plinko_status: Status::NotStarted,
+                    });
+                }
+            }
+
+            // Persist the updated mappings immediately.
+            self.save_config();
+
+            return DirtyRegion::All;
+        }
+
         // Keep repainting while a background thread is running so status text
         // updates immediately without requiring user interaction.
         if matches!(*self.sync_state.lock().unwrap(), SyncState::InProgress(_)) {
