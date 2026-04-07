@@ -515,6 +515,32 @@ fn draw_gantt_rows(
                         &paint,
                     );
 
+                    // Plan-target border — drawn on top of the fill.
+                    if plan.scheduler_target == node_id {
+                        paint.set_style(PaintStyle::Stroke);
+                        paint.set_stroke_width(6.0);
+                        paint.set_color(Color::from(TARGET_GLOW));
+                        canvas.draw_rrect(
+                            RRect::new_rect_xy(
+                                Rect::from_xywh(bar_x, bar_y, bar_w, bar_h),
+                                GANTT_BAR_CORNER,
+                                GANTT_BAR_CORNER,
+                            ),
+                            &paint,
+                        );
+                        paint.set_stroke_width(1.5);
+                        paint.set_color(Color::from(TARGET_BORDER));
+                        canvas.draw_rrect(
+                            RRect::new_rect_xy(
+                                Rect::from_xywh(bar_x, bar_y, bar_w, bar_h),
+                                GANTT_BAR_CORNER,
+                                GANTT_BAR_CORNER,
+                            ),
+                            &paint,
+                        );
+                        paint.set_style(PaintStyle::Fill);
+                    }
+
                     if bar_w > 12.0 {
                         canvas.save();
                         canvas.clip_rect(
@@ -608,6 +634,18 @@ fn draw_gantt_rows(
                     paint.set_stroke_width(1.5);
                     canvas.draw_path(&ms_path, &paint);
                     paint.set_style(PaintStyle::Fill);
+
+                    // Plan-target border — drawn on top of the fill.
+                    if plan.scheduler_target == node_id {
+                        paint.set_style(PaintStyle::Stroke);
+                        paint.set_stroke_width(6.0);
+                        paint.set_color(Color::from(TARGET_GLOW));
+                        canvas.draw_path(&ms_path, &paint);
+                        paint.set_stroke_width(1.5);
+                        paint.set_color(Color::from(TARGET_BORDER));
+                        canvas.draw_path(&ms_path, &paint);
+                        paint.set_style(PaintStyle::Fill);
+                    }
 
                     if let Some(ms) = plan.milestones.get(id) {
                         draw_milestone_label(

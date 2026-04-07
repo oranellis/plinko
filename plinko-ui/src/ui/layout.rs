@@ -187,6 +187,10 @@ pub const HOVER_DOWNSTREAM_BORDER: u32 = 0xff_07fcd7;
 pub const HOVER_ARROW_DOWNSTREAM_GLOW: u32 = 0x25_07fcd7;
 pub const HOVER_ARROW_DOWNSTREAM: u32 = 0xa8_07fcd7;
 
+// Plan-target highlight (overview Gantt)
+pub const TARGET_GLOW: u32 = 0x80_ffd600; // semi-transparent gold glow
+pub const TARGET_BORDER: u32 = 0xff_ffd600; // solid gold border
+
 // Warning / constraint violation icon (overview Gantt)
 pub const WARN_FILL: u32 = 0xff_ffc107; // amber triangle fill
 pub const WARN_STROKE: u32 = 0xff_e65100; // amber triangle outline
