@@ -191,14 +191,21 @@ impl MondayClient {
         let col_ids =
             build_col_ids_list(&[person_col, status_col, dep_col, workload_col, timeline_col]);
 
+        // Dependency columns require the DependencyValue inline fragment to get linked item IDs.
+        // The `value` field is always null for dependency-type columns in Monday API v2.
+        let dep_fragment = "... on DependencyValue { linked_items { id } }";
+
         // Subitems: no `ids` filter so we get every column value regardless of
         // whether the subitem board uses the same column IDs as the parent board.
-        let subitems_block = r#"subitems {
+        let subitems_block = format!(
+            r#"subitems {{
                     id name
-                    column_values {
+                    column_values {{
                         id type value text
-                    }
-                }"#;
+                        {dep_fragment}
+                    }}
+                }}"#
+        );
 
         let query = format!(
             r#"query {{
@@ -208,6 +215,7 @@ impl MondayClient {
                             id name
                             column_values(ids: [{col_ids}]) {{
                                 id type value text
+                                {dep_fragment}
                             }}
                             {subitems_block}
                         }}
@@ -338,12 +346,12 @@ fn parse_item(
                 status_label = Some(label);
             }
         } else if col_id == dep_col {
-            if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null")) {
-                if let Some(items) = v["linkedPulseIds"].as_array() {
-                    for item in items {
-                        if let Some(item_id) = item["linkedPulseId"].as_u64() {
-                            dependency_item_ids.push(item_id.to_string());
-                        }
+            // Monday API v2: dependency columns return null for `value`.
+            // Use the DependencyValue inline fragment `linked_items` field instead.
+            if let Some(linked) = cv["linked_items"].as_array() {
+                for link in linked {
+                    if let Some(item_id) = link["id"].as_str() {
+                        dependency_item_ids.push(item_id.to_string());
                     }
                 }
             }
