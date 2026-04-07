@@ -32,6 +32,35 @@ use crate::ui::monday_window::MondayWindow;
 use plinko_shared::data::ids::UserId;
 use plinko_shared::protocol::{PlanRequest, PlanResponse};
 
+/// Read text from the system clipboard.
+///
+/// On Linux/Wayland, `arboard` is compiled with the X11 backend and can only
+/// reach the XWayland clipboard — not the Wayland compositor clipboard.  We
+/// therefore try `wl-paste` first when a Wayland session is detected, and fall
+/// back to arboard (which covers macOS, Windows, and X11 sessions).
+fn read_clipboard() -> String {
+    // Wayland: use wl-paste if available.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        if let Ok(out) = std::process::Command::new("wl-paste")
+            .arg("--no-newline")
+            .arg("--type")
+            .arg("text/plain")
+            .output()
+        {
+            if out.status.success() {
+                if let Ok(s) = String::from_utf8(out.stdout) {
+                    return s;
+                }
+            }
+        }
+    }
+    // General fallback via arboard (macOS, Windows, X11).
+    arboard::Clipboard::new()
+        .ok()
+        .and_then(|mut cb| cb.get_text().ok())
+        .unwrap_or_default()
+}
 /// Returns the `std::time::Instant` that is 1 second after the next local midnight.
 /// Used to schedule a timer wake-up so the scheduler can be re-run once per calendar day.
 fn next_midnight_instant() -> std::time::Instant {
@@ -321,15 +350,12 @@ impl ApplicationHandler for Application {
                     let plan = self.engine.plan();
                     let ctrl =
                         self.modifiers.state().control_key() || self.modifiers.state().super_key();
-                    let is_paste =
-                        ctrl && logical_key == winit::keyboard::Key::Character("v".into());
+                    // Match both "v" and "V" so Ctrl+Shift+V also triggers paste.
+                    let is_paste = ctrl
+                        && matches!(&logical_key,
+                            winit::keyboard::Key::Character(c) if c == "v" || c == "V");
                     let dirty = if is_paste {
-                        // Create a fresh Clipboard each time — reusing a stored instance
-                        // goes stale on Linux/Wayland and returns empty text.
-                        let text = arboard::Clipboard::new()
-                            .ok()
-                            .and_then(|mut cb| cb.get_text().ok())
-                            .unwrap_or_default();
+                        let text = read_clipboard();
                         if self.floats.is_open() {
                             self.floats
                                 .on_paste(&text, &sender, width, height, plan, &self.cache)
