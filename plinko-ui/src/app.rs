@@ -91,8 +91,6 @@ pub struct Application {
     current_user: Option<UserId>,
     /// Date of the last daily scheduler recompute. `None` on first run.
     last_daily_recompute: Option<chrono::NaiveDate>,
-    /// Clipboard access for paste support.
-    clipboard: Option<arboard::Clipboard>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -127,7 +125,6 @@ impl Application {
             floats: FloatingWindowManager::new(),
             current_user: None,
             last_daily_recompute: None,
-            clipboard: arboard::Clipboard::new().ok(),
         }
     }
 
@@ -327,10 +324,11 @@ impl ApplicationHandler for Application {
                     let is_paste =
                         ctrl && logical_key == winit::keyboard::Key::Character("v".into());
                     let dirty = if is_paste {
-                        let text = self
-                            .clipboard
-                            .as_mut()
-                            .and_then(|cb| cb.get_text().ok())
+                        // Create a fresh Clipboard each time — reusing a stored instance
+                        // goes stale on Linux/Wayland and returns empty text.
+                        let text = arboard::Clipboard::new()
+                            .ok()
+                            .and_then(|mut cb| cb.get_text().ok())
                             .unwrap_or_default();
                         if self.floats.is_open() {
                             self.floats
