@@ -202,6 +202,28 @@ impl Plan {
         let mut state = SchedulerState::new(today);
         self.pre_insert_anchored_tasks(&mut state);
 
+        // Stage 1.5 – InProgress tasks first.
+        // InProgress tasks have already started and must claim their remaining
+        // future capacity before any NotStarted task is scheduled.  Without
+        // this pass a long-chain NotStarted task sorted first by critical-path
+        // length could consume the shared capacity an InProgress task needs,
+        // pushing it further into the future.
+        //
+        // Use the same topological/critical-path order as later stages so that
+        // if one InProgress task depends on another they are inserted correctly.
+        // Because earliest_start_from_dependencies returns actual_start for
+        // InProgress tasks regardless of deps, ordering does not affect start
+        // dates — only the capacity reservation matters.
+        let full_topo = self.get_priority_sorted_task_list_to_ends(&dependents_map)?;
+        for id in &full_topo {
+            if let NodeId::Task(tid) = id
+                && state.inprogress_ids.contains(tid)
+                && !state.inserted.contains(id)
+            {
+                self.insert_node(*id, &mut state, &dependents_map, None)?;
+            }
+        }
+
         // Stage 2 – Time-constrained nodes
         let time_constrained = self.get_time_constrained_nodes();
         for node in time_constrained {
@@ -1225,7 +1247,7 @@ mod tests {
     use crate::data::{
         NodeId, Plan, Task, User, WorkSchedule, allocation::TaskAllocation, dependency::Dependency,
     };
-    use chrono::NaiveDate;
+    use chrono::{Datelike, NaiveDate};
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, d).unwrap()
@@ -1417,6 +1439,94 @@ mod tests {
             end_date > today,
             "InProgress task should end after today (got {}), not be zero-duration",
             end_date
+        );
+    }
+
+    /// InProgress tasks must claim their future capacity BEFORE any NotStarted
+    /// task is scheduled, even when the NotStarted task has a longer critical
+    /// path and would otherwise be sorted first.
+    ///
+    /// Scenario: one user, 8h/day.
+    /// - ONGOING: InProgress, 4 workload-days remaining.  Needs all of the
+    ///   user's capacity for the next 4 days.
+    /// - CHAIN_A → CHAIN_B → CHAIN_C: a three-task chain (NotStarted), total
+    ///   6 workload-days.  Its critical path is longer, so without Stage 1.5 it
+    ///   would be sorted first and steal the days ONGOING needs.
+    ///
+    /// After scheduling ONGOING must end no later than `today + 4 working days`,
+    /// confirming that its capacity was reserved before CHAIN_* ran.
+    #[test]
+    fn inprogress_scheduled_before_notstarted() {
+        let today = chrono::Local::now().date_naive();
+        let plan_start = today - chrono::Duration::days(5);
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays();
+
+        let uid = plan.add_user(User::new("Alex"));
+        let dep_ps = Dependency::new(NodeId::PlanStart);
+
+        // ONGOING: 4 workload-days, started today (InProgress)
+        let mut ongoing = Task::new("ONGOING", "");
+        ongoing.add_specific_worker(uid, 4.0);
+        ongoing.duration_days_target = 4.0;
+        ongoing.relaxed_mode = false;
+        ongoing.dependencies.push(dep_ps.clone());
+        let ongoing_id = plan.add_task(ongoing);
+        plan.start_task(ongoing_id);
+
+        // CHAIN_A, CHAIN_B, CHAIN_C: three chained tasks totalling 6 days
+        let mut chain_a = Task::new("CHAIN_A", "");
+        chain_a.add_specific_worker(uid, 2.0);
+        chain_a.duration_days_target = 2.0;
+        chain_a.relaxed_mode = false;
+        chain_a.dependencies.push(dep_ps.clone());
+        let chain_a_id = plan.add_task(chain_a);
+
+        let mut chain_b = Task::new("CHAIN_B", "");
+        chain_b.add_specific_worker(uid, 2.0);
+        chain_b.duration_days_target = 2.0;
+        chain_b.relaxed_mode = false;
+        chain_b
+            .dependencies
+            .push(Dependency::new(NodeId::Task(chain_a_id)));
+        let chain_b_id = plan.add_task(chain_b);
+
+        let mut chain_c = Task::new("CHAIN_C", "");
+        chain_c.add_specific_worker(uid, 2.0);
+        chain_c.duration_days_target = 2.0;
+        chain_c.relaxed_mode = false;
+        chain_c
+            .dependencies
+            .push(Dependency::new(NodeId::Task(chain_b_id)));
+        plan.add_task(chain_c);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        let ts_ongoing = &plan.node_allocations.tasks[&ongoing_id];
+        assert_eq!(
+            ts_ongoing.status,
+            crate::data::allocation::Status::InProgress,
+            "ONGOING should remain InProgress"
+        );
+
+        // ONGOING has 4 workload-days.  With 8h/day it needs 4 working days.
+        // Advance 4 working days from today to find the latest acceptable end.
+        let mut deadline = today;
+        let mut wd = 0;
+        while wd < 4 {
+            deadline += chrono::Duration::days(1);
+            if deadline.weekday().number_from_monday() <= 5 {
+                wd += 1;
+            }
+        }
+
+        let ongoing_end = ts_ongoing.allocation.end_date();
+        assert!(
+            ongoing_end <= deadline,
+            "ONGOING should finish within 4 working days of today (deadline {}); got {}",
+            deadline,
+            ongoing_end
         );
     }
 }
