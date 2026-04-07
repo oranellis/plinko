@@ -27,9 +27,10 @@ use crate::ui::floating_window::{FloatingWindow, FloatingWindowOutcome};
 use crate::ui::layout::{
     BACK_BTN_SIZE, BTN_DANGER_BG, BTN_DANGER_FG, BTN_PRIMARY_BG, BTN_PRIMARY_FG,
     BTN_PRIMARY_HOVER_BG, BTN_SECONDARY_BG, BTN_SECONDARY_FG, DIVIDER_COLOR, INPUT_BG,
-    INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_FG, ITEM_FG, LABEL_FG, MUTED_FG,
-    OVERLAY_DARK, PANEL_BG, PLAN_BTN_CORNER, PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING,
-    PLAN_INPUT_H, PLAN_LABEL_GAP, SCROLLBAR_THUMB_COLOR,
+    INPUT_BORDER, INPUT_BORDER_ERROR, INPUT_BORDER_FOCUS, INPUT_FG, ITEM_FG, LABEL_FG,
+    LIST_ITEM_HOVER_BG, MUTED_FG, OVERLAY_DARK, OVERLAY_XLIGHT, PANEL_BG, PLAN_BTN_CORNER,
+    PLAN_BTN_H, PLAN_FIELD_GAP, PLAN_FORM_PADDING, PLAN_INPUT_H, PLAN_LABEL_GAP,
+    SCROLLBAR_THUMB_COLOR,
 };
 use crate::ui::text_input::TextInput;
 
@@ -48,6 +49,11 @@ const LABEL_W: f32 = 160.0;
 const MAP_ROW_H: f32 = 32.0;
 const MAP_ROW_GAP: f32 = 4.0;
 const RADIO_SIZE: f32 = 16.0;
+
+// ── User mapping dropdown ─────────────────────────────────────────────────────
+const USER_DD_ROW_H: f32 = 28.0;
+const USER_DD_MAX_ROWS: usize = 5;
+const USER_DD_H: f32 = USER_DD_MAX_ROWS as f32 * USER_DD_ROW_H + 2.0; // +2 for borders
 
 // ── Sync status ───────────────────────────────────────────────────────────────
 
@@ -86,6 +92,10 @@ pub struct MondayWindow {
     // ── UI state ──
     scroll_y: f32,
     focused: FocusedInput,
+    // User mapping dropdown
+    open_user_dropdown: Option<usize>,
+    user_dropdown_hovered: Option<usize>,
+    user_dropdown_scroll: usize,
     // hover flags (for buttons)
     hov_close: bool,
     hov_test: bool,
@@ -120,6 +130,7 @@ struct HitRects {
     workload_hours_radio: [Rect; 2],
     user_plinko_selectors: Vec<Rect>,
     status_plinko_selectors: Vec<Rect>,
+    user_dropdown: Rect,
     content_area: Rect,
 }
 
@@ -168,6 +179,9 @@ impl MondayWindow {
             item_node_map: config.item_node_map,
             scroll_y: 0.0,
             focused: FocusedInput::None,
+            open_user_dropdown: None,
+            user_dropdown_hovered: None,
+            user_dropdown_scroll: 0,
             hov_close: false,
             hov_test: false,
             hov_fetch: false,
@@ -758,19 +772,21 @@ impl FloatingWindow for MondayWindow {
             );
             y += PLAN_INPUT_H;
         } else {
-            for mapping in &self.user_mappings {
+            for (i, mapping) in self.user_mappings.iter().enumerate() {
                 let row_rect = Rect::from_xywh(px, y, field_w, MAP_ROW_H);
                 let plinko_name = mapping
                     .plinko_user_id
-                    .map(|_| "Mapped")
+                    .and_then(|uid| _plan.users_data.get(&uid).map(|ud| &ud.user))
+                    .map(|u| u.name.as_str())
                     .unwrap_or("(unmapped)");
+                let is_open = self.open_user_dropdown == Some(i);
                 let right = format!("→ {plinko_name}  ▾");
                 Self::draw_mapping_row(
                     canvas,
                     row_rect,
                     &mapping.monday_name,
                     &right,
-                    false,
+                    is_open,
                     cache,
                 );
                 hit.user_plinko_selectors.push(row_rect);
@@ -830,6 +846,36 @@ impl FloatingWindow for MondayWindow {
         hit.save_btn = save_rect;
 
         canvas.restore();
+
+        // ── User mapping dropdown (drawn on top, in screen space) ─────────────
+        hit.user_dropdown = Rect::default();
+        if let Some(idx) = self.open_user_dropdown
+            && idx < hit.user_plinko_selectors.len()
+        {
+            let row_rect = hit.user_plinko_selectors[idx];
+            let dd_w = row_rect.width() / 2.0;
+            let dd_x = row_rect.right - dd_w;
+            // Prefer below, flip above if it would overflow the panel bottom
+            let below = row_rect.bottom + 2.0;
+            let panel_bottom = panel.bottom - FOOTER_H;
+            let dd_top = if below + USER_DD_H <= panel_bottom {
+                below
+            } else {
+                row_rect.top - USER_DD_H - 2.0
+            };
+            let dd = Rect::from_xywh(dd_x, dd_top, dd_w, USER_DD_H);
+            hit.user_dropdown = dd;
+            draw_user_mapping_dropdown(
+                canvas,
+                dd,
+                _plan,
+                self.open_user_dropdown,
+                self.user_dropdown_hovered,
+                self.user_dropdown_scroll,
+                &self.user_mappings,
+                cache,
+            );
+        }
 
         // ── Scrollbar ──────────────────────────────────────────────────────
         let max_scroll = self.max_scroll(height);
@@ -937,6 +983,24 @@ impl FloatingWindow for MondayWindow {
         chk!(hov_pull, hit.pull_btn);
         chk!(hov_push, hit.push_btn);
 
+        // Hover within the open user mapping dropdown
+        if self.open_user_dropdown.is_some() && hit.user_dropdown.contains(Point::new(x, y)) {
+            let list_top = hit.user_dropdown.top + 1.0;
+            let rel_y = y - list_top;
+            let new_hov = if rel_y >= 0.0 {
+                Some((rel_y / USER_DD_ROW_H) as usize + self.user_dropdown_scroll)
+            } else {
+                None
+            };
+            if new_hov != self.user_dropdown_hovered {
+                self.user_dropdown_hovered = new_hov;
+                dirty = true;
+            }
+        } else if self.user_dropdown_hovered.is_some() {
+            self.user_dropdown_hovered = None;
+            dirty = true;
+        }
+
         if dirty {
             FloatingWindowOutcome::dirty(DirtyRegion::All)
         } else {
@@ -962,6 +1026,40 @@ impl FloatingWindow for MondayWindow {
 
         let hit = self.rects.borrow().clone();
         let pt = Point::new(x, y);
+
+        // ── User mapping dropdown ─────────────────────────────────────────
+        if self.open_user_dropdown.is_some() {
+            if hit.user_dropdown.contains(pt) {
+                let list_top = hit.user_dropdown.top + 1.0;
+                let rel_y = y - list_top;
+                if rel_y >= 0.0 {
+                    let abs = (rel_y / USER_DD_ROW_H) as usize + self.user_dropdown_scroll;
+                    let mut users: Vec<UserId> = plan.users_data.keys().copied().collect();
+                    users.sort_by_key(|id| plan.users_data[id].user.name.to_lowercase());
+                    if let Some(idx) = self.open_user_dropdown {
+                        if abs < users.len() {
+                            if let Some(mapping) = self.user_mappings.get_mut(idx) {
+                                let uid = users[abs];
+                                // Toggle: clicking the already-selected user clears the mapping.
+                                if mapping.plinko_user_id == Some(uid) {
+                                    mapping.plinko_user_id = None;
+                                } else {
+                                    mapping.plinko_user_id = Some(uid);
+                                }
+                                self.save_config();
+                            }
+                        }
+                        self.open_user_dropdown = None;
+                        self.user_dropdown_hovered = None;
+                    }
+                }
+                return FloatingWindowOutcome::dirty(DirtyRegion::All);
+            }
+            // Click outside dropdown → close it
+            self.open_user_dropdown = None;
+            self.user_dropdown_hovered = None;
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
 
         // ── Close button ──────────────────────────────────────────────────
         if hit.close_btn.contains(pt) {
@@ -1131,6 +1229,20 @@ impl FloatingWindow for MondayWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
 
+        // ── User mapping dropdown toggle ───────────────────────────────────
+        for (i, rect) in hit.user_plinko_selectors.iter().enumerate() {
+            if rect.contains(pt) {
+                if self.open_user_dropdown == Some(i) {
+                    self.open_user_dropdown = None;
+                } else {
+                    self.open_user_dropdown = Some(i);
+                    self.user_dropdown_hovered = None;
+                    self.user_dropdown_scroll = 0;
+                }
+                return FloatingWindowOutcome::dirty(DirtyRegion::All);
+            }
+        }
+
         // ── Status mapping cycle ───────────────────────────────────────────
         for (i, rect) in hit.status_plinko_selectors.iter().enumerate() {
             if rect.contains(pt) {
@@ -1270,10 +1382,29 @@ impl FloatingWindow for MondayWindow {
     fn on_scroll(
         &mut self,
         delta_y: f32,
-        _plan: &Plan,
+        plan: &Plan,
         _width: f32,
         height: f32,
     ) -> FloatingWindowOutcome {
+        // If the user dropdown is open and mouse is over it, scroll the dropdown list.
+        let hit = self.rects.borrow().clone();
+        if self.open_user_dropdown.is_some() && delta_y != 0.0 {
+            let total_users = plan.users_data.len();
+            let max_dd_scroll = total_users.saturating_sub(USER_DD_MAX_ROWS);
+            if max_dd_scroll > 0 {
+                let new_scroll = if delta_y > 0.0 {
+                    self.user_dropdown_scroll.saturating_sub(1)
+                } else {
+                    (self.user_dropdown_scroll + 1).min(max_dd_scroll)
+                };
+                if new_scroll != self.user_dropdown_scroll {
+                    self.user_dropdown_scroll = new_scroll;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
+                }
+            }
+            return FloatingWindowOutcome::default();
+        }
+        let _ = hit;
         let max_scroll = self.max_scroll(height);
         let new_scroll = (self.scroll_y - delta_y * 40.0).clamp(0.0, max_scroll);
         if (new_scroll - self.scroll_y).abs() > 0.1 {
@@ -1335,4 +1466,117 @@ fn cycle_status(s: Status) -> Status {
         Status::Complete => Status::Dropped,
         Status::Dropped => Status::NotStarted,
     }
+}
+
+// ── User mapping dropdown renderer ────────────────────────────────────────────
+
+#[allow(clippy::too_many_arguments)]
+fn draw_user_mapping_dropdown(
+    canvas: &Canvas,
+    dd: Rect,
+    plan: &Plan,
+    open_for: Option<usize>,
+    hovered_row: Option<usize>,
+    scroll: usize,
+    user_mappings: &[UserMapping],
+    cache: &RenderCache,
+) {
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+
+    // Shadow
+    paint.set_color(Color::from(OVERLAY_XLIGHT));
+    canvas.draw_rrect(
+        RRect::new_rect_xy(
+            Rect::from_xywh(dd.left + 2.0, dd.top + 3.0, dd.width(), dd.height()),
+            PLAN_BTN_CORNER,
+            PLAN_BTN_CORNER,
+        ),
+        &paint,
+    );
+
+    // Background
+    paint.set_color(Color::from(INPUT_BG));
+    paint.set_style(PaintStyle::Fill);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
+    paint.set_color(Color::from(INPUT_BORDER_FOCUS));
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_stroke_width(1.0);
+    canvas.draw_rrect(
+        RRect::new_rect_xy(dd, PLAN_BTN_CORNER, PLAN_BTN_CORNER),
+        &paint,
+    );
+    paint.set_style(PaintStyle::Fill);
+
+    // Sorted user list
+    let mut users: Vec<(UserId, &str)> = plan
+        .users_data
+        .iter()
+        .map(|(id, ud)| (*id, ud.user.name.as_str()))
+        .collect();
+    users.sort_by_key(|(_, name)| name.to_lowercase());
+
+    canvas.save();
+    canvas.clip_rect(
+        Rect::from_xywh(
+            dd.left + 1.0,
+            dd.top + 1.0,
+            dd.width() - 2.0,
+            dd.height() - 2.0,
+        ),
+        ClipOp::Intersect,
+        false,
+    );
+
+    let list_top = dd.top + 1.0;
+    let current_uid = open_for.and_then(|i| user_mappings.get(i)?.plinko_user_id);
+
+    if users.is_empty() {
+        let msg = "No users in plan";
+        if let Some(blob) = skia_safe::TextBlob::new(msg, &cache.small_font) {
+            let (_, sm) = cache.small_font.metrics();
+            paint.set_color(Color::from(MUTED_FG));
+            canvas.draw_text_blob(&blob, (dd.left + 8.0, list_top + 8.0 - sm.ascent), &paint);
+        }
+    } else {
+        let end = (scroll + USER_DD_MAX_ROWS).min(users.len());
+        let (_, sm) = cache.small_font.metrics();
+        let sm_h = sm.descent - sm.ascent;
+        for (vis, (uid, name)) in users[scroll..end].iter().enumerate() {
+            let abs = scroll + vis;
+            let ry = list_top + vis as f32 * USER_DD_ROW_H;
+            let row_rect = Rect::from_xywh(dd.left, ry, dd.width(), USER_DD_ROW_H);
+
+            if hovered_row == Some(abs) {
+                paint.set_color(Color::from(LIST_ITEM_HOVER_BG));
+                canvas.draw_rect(row_rect, &paint);
+            }
+
+            // Tick if already selected
+            if current_uid == Some(*uid) {
+                let tx = dd.left + 10.0;
+                let ty = ry + USER_DD_ROW_H / 2.0;
+                paint.set_color(Color::from(BTN_PRIMARY_BG));
+                paint.set_style(PaintStyle::Stroke);
+                paint.set_stroke_width(1.5);
+                let mut pb = PathBuilder::new();
+                pb.move_to((tx, ty));
+                pb.line_to((tx + 3.0, ty + 3.0));
+                pb.line_to((tx + 7.0, ty - 3.0));
+                canvas.draw_path(&pb.detach(), &paint);
+                paint.set_style(PaintStyle::Fill);
+            }
+
+            if let Some(blob) = skia_safe::TextBlob::new(name, &cache.small_font) {
+                let ty = ry + (USER_DD_ROW_H - sm_h) / 2.0 - sm.ascent;
+                paint.set_color(Color::from(ITEM_FG));
+                canvas.draw_text_blob(&blob, (dd.left + 22.0, ty), &paint);
+            }
+        }
+    }
+
+    canvas.restore();
 }
