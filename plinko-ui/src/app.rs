@@ -736,6 +736,12 @@ impl ApplicationHandler for Application {
             self.env.window.request_redraw();
         }
 
+        // Tick floating windows (e.g. MondayWindow polls background thread state)
+        if self.floats.is_open() {
+            let dirty = self.floats.tick();
+            self.mark_dirty(dirty);
+        }
+
         // Tick animations
         let has_anim = matches!(self.app_state, AppState::InPage(_))
             && self.pages.active_page_mut().has_animation();

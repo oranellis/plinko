@@ -129,6 +129,13 @@ pub trait FloatingWindow {
         None
     }
 
+    /// Called once per event-loop cycle when this window is open.
+    /// Return `DirtyRegion::All` to trigger a continuous repaint (e.g. while a
+    /// background thread is running).  Default: no repaint.
+    fn tick(&mut self) -> DirtyRegion {
+        DirtyRegion::None
+    }
+
     fn reset_hover(&mut self) {}
 }
 
@@ -256,6 +263,13 @@ impl FloatingWindowManager {
             return DirtyRegion::All;
         }
         outcome.dirty
+    }
+
+    pub fn tick(&mut self) -> DirtyRegion {
+        match self.stack.last_mut() {
+            Some(w) => w.tick(),
+            None => DirtyRegion::None,
+        }
     }
 
     pub fn on_scroll(&mut self, delta_y: f32, plan: &Plan, width: f32, height: f32) -> DirtyRegion {

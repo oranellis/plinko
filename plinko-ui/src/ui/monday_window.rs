@@ -1218,6 +1218,16 @@ impl FloatingWindow for MondayWindow {
         }
     }
 
+    fn tick(&mut self) -> DirtyRegion {
+        // Keep repainting while a background thread is running so status text
+        // updates immediately without requiring user interaction.
+        if matches!(*self.sync_state.lock().unwrap(), SyncState::InProgress(_)) {
+            DirtyRegion::All
+        } else {
+            DirtyRegion::None
+        }
+    }
+
     fn on_scroll(
         &mut self,
         delta_y: f32,
