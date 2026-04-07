@@ -145,7 +145,7 @@ impl Page for SettingsPage {
             return DirtyRegion::PageOnly;
         }
         if new_btn_rect(width).contains(Point::new(x, y)) {
-            self.state.pending_new = true;
+            self.state.pending_open_new_plan = true;
             return DirtyRegion::PageOnly;
         }
         if monday_btn_rect(width).contains(Point::new(x, y)) {

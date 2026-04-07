@@ -29,6 +29,7 @@ use crate::ui::error_window::ErrorWindow;
 use crate::ui::floating_window::FloatingWindowManager;
 use crate::ui::layout::{BACK_BTN_SIZE, BACK_BTN_X, BACK_BTN_Y, HOME_BG, PANEL_BG};
 use crate::ui::monday_window::MondayWindow;
+use crate::ui::new_plan_window::NewPlanWindow;
 use plinko_shared::data::ids::UserId;
 use plinko_shared::protocol::{PlanRequest, PlanResponse};
 
@@ -219,7 +220,6 @@ impl Application {
     /// Process any pending actions from the settings page.
     fn process_settings_actions(&mut self) {
         let pending_save = self.pages.settings_mut().state.pending_save;
-        let pending_new = self.pages.settings_mut().state.pending_new;
         let pending_load = self.pages.settings_mut().state.pending_load.take();
         let pending_set_user = self.pages.settings_mut().state.pending_set_user.take();
 
@@ -227,11 +227,6 @@ impl Application {
             self.pages.settings_mut().state.pending_save = false;
             self.engine.sender().send(PlanRequest::SavePlan);
             self.mark_dirty(DirtyRegion::PageOnly);
-        }
-
-        if pending_new {
-            self.pages.settings_mut().state.pending_new = false;
-            self.engine.sender().send(PlanRequest::NewPlan);
         }
 
         if let Some(plan_id) = pending_load {
@@ -251,6 +246,13 @@ impl Application {
             self.pages.settings_mut().state.pending_open_monday = false;
             let plan_id = self.engine.plan().id;
             self.floats.push(Box::new(MondayWindow::new(plan_id)));
+            self.mark_dirty(DirtyRegion::All);
+        }
+
+        let pending_open_new_plan = self.pages.settings_mut().state.pending_open_new_plan;
+        if pending_open_new_plan {
+            self.pages.settings_mut().state.pending_open_new_plan = false;
+            self.floats.push(Box::new(NewPlanWindow::new()));
             self.mark_dirty(DirtyRegion::All);
         }
     }

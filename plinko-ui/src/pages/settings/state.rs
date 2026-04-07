@@ -48,6 +48,8 @@ pub struct SettingsState {
     pub pending_set_user: Option<Option<UserId>>,
     /// App should open the Monday.com integration window for the current plan.
     pub pending_open_monday: bool,
+    /// App should open the New Plan dialog.
+    pub pending_open_new_plan: bool,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -70,6 +72,7 @@ impl Default for SettingsState {
             pending_load: None,
             pending_set_user: None,
             pending_open_monday: false,
+            pending_open_new_plan: false,
         }
     }
 }
