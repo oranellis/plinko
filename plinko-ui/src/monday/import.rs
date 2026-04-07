@@ -221,6 +221,7 @@ pub fn import_from_monday(
 
 fn build_task(item: &MondayItem, config: &MondayConfig) -> Task {
     let (workers, _) = build_workers_and_days(item, config);
+    let duration_days_target = timeline_working_days(item.timeline_start, item.timeline_end);
     Task {
         id: TaskId::new(),
         name: item.name.clone(),
@@ -228,11 +229,33 @@ fn build_task(item: &MondayItem, config: &MondayConfig) -> Task {
         dependencies: Vec::new(),
         workers,
         constraint: None,
-        duration_days_target: 0.0,
+        duration_days_target,
         relaxed_mode: false,
-        // actual_start is set in pass 3 after deps are wired; store None here.
         actual_start: None,
     }
+}
+
+/// Count working days (Mon–Fri) between two dates inclusive.
+/// Returns 0.0 if dates are missing or end < start.
+fn timeline_working_days(start: Option<NaiveDate>, end: Option<NaiveDate>) -> f32 {
+    use chrono::Datelike;
+    use chrono::Weekday;
+    let (Some(s), Some(e)) = (start, end) else {
+        return 0.0;
+    };
+    if e < s {
+        return 0.0;
+    }
+    let mut days = 0.0_f32;
+    let mut cur = s;
+    while cur <= e {
+        match cur.weekday() {
+            Weekday::Sat | Weekday::Sun => {}
+            _ => days += 1.0,
+        }
+        cur = cur.succ_opt().unwrap_or(e);
+    }
+    days.max(1.0)
 }
 
 /// Returns the worker slots and per-worker workload days.
