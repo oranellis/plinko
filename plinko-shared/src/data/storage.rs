@@ -139,6 +139,14 @@ impl Storage {
         Ok(ids)
     }
 
+    pub fn delete_plan(&self, plan_id: Uuid) -> Result<(), StorageError> {
+        let dir = self.plan_dir(plan_id);
+        if dir.exists() {
+            fs::remove_dir_all(dir)?;
+        }
+        Ok(())
+    }
+
     pub fn list_versions(&self, plan_id: Uuid) -> Result<Vec<String>, StorageError> {
         let dir = self.plan_dir(plan_id);
         if !dir.exists() {

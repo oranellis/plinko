@@ -20,6 +20,8 @@ pub struct SettingsState {
     pub hovered_plan_row: Option<usize>,
     /// Which plan row's load button (if any) is currently hovered.
     pub hovered_load_btn: Option<usize>,
+    /// Which plan row's delete button (if any) is currently hovered.
+    pub hovered_delete_btn: Option<usize>,
     /// Whether the "Save" button is hovered.
     pub hovered_save: bool,
     /// Whether the "New Plan" button is hovered.
@@ -44,6 +46,8 @@ pub struct SettingsState {
     pub pending_new: bool,
     /// App should load this plan by UUID.
     pub pending_load: Option<Uuid>,
+    /// App should delete this plan by UUID.
+    pub pending_delete: Option<Uuid>,
     /// App should change the current user (`Some(None)` → clear, `Some(Some(id))` → set).
     pub pending_set_user: Option<Option<UserId>>,
     /// App should open the Monday.com integration window for the current plan.
@@ -59,6 +63,7 @@ impl Default for SettingsState {
             plan_list: Vec::new(),
             hovered_plan_row: None,
             hovered_load_btn: None,
+            hovered_delete_btn: None,
             hovered_save: false,
             hovered_new: false,
             hovered_monday: false,
@@ -70,6 +75,7 @@ impl Default for SettingsState {
             pending_save: false,
             pending_new: false,
             pending_load: None,
+            pending_delete: None,
             pending_set_user: None,
             pending_open_monday: false,
             pending_open_new_plan: false,

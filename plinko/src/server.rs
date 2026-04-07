@@ -203,6 +203,27 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
             continue;
         }
 
+        if let PlanRequest::DeletePlan { plan_id } = &request {
+            let plan_id = *plan_id;
+            let _ = storage.delete_plan(plan_id);
+            // Return a refreshed plan list so the UI updates immediately.
+            let plan_ids = storage.list_plans().unwrap_or_default();
+            let mut list = Vec::new();
+            for pid in plan_ids {
+                if let Some((name, last_saved)) = storage.plan_summary(pid) {
+                    list.push((pid, name, last_saved));
+                }
+            }
+            let resp = ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanList(list),
+            };
+            if send_msg(&mut writer, &resp).is_err() {
+                break;
+            }
+            continue;
+        }
+
         if let PlanRequest::SetCurrentUser(uid) = &request {
             let uid = *uid;
             storage.save_current_user_id(uid);

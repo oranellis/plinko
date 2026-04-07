@@ -225,6 +225,7 @@ impl PlanEngine {
             PlanRequest::SavePlan
             | PlanRequest::NewPlan
             | PlanRequest::LoadPlan { .. }
+            | PlanRequest::DeletePlan { .. }
             | PlanRequest::ListPlans
             | PlanRequest::SetCurrentUser(_) => PlanResponse::PlanUpdated,
         }

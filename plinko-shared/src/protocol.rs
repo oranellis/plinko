@@ -174,6 +174,9 @@ pub enum PlanRequest {
     LoadPlan {
         plan_id: uuid::Uuid,
     },
+    DeletePlan {
+        plan_id: uuid::Uuid,
+    },
     ListPlans,
     SetCurrentUser(Option<UserId>),
 }

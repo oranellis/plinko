@@ -221,6 +221,7 @@ impl Application {
     fn process_settings_actions(&mut self) {
         let pending_save = self.pages.settings_mut().state.pending_save;
         let pending_load = self.pages.settings_mut().state.pending_load.take();
+        let pending_delete = self.pages.settings_mut().state.pending_delete.take();
         let pending_set_user = self.pages.settings_mut().state.pending_set_user.take();
 
         if pending_save {
@@ -231,6 +232,10 @@ impl Application {
 
         if let Some(plan_id) = pending_load {
             self.engine.sender().send(PlanRequest::LoadPlan { plan_id });
+        }
+
+        if let Some(plan_id) = pending_delete {
+            self.engine.sender().send(PlanRequest::DeletePlan { plan_id });
         }
 
         if let Some(uid) = pending_set_user {
@@ -726,6 +731,25 @@ impl ApplicationHandler for Application {
                         self.mark_dirty(DirtyRegion::PageOnly);
                     }
                 }
+            }
+        }
+
+        // After processing engine messages the plan may have changed (e.g. LoadPlan).
+        // Sync is_current markers in the plan list so the UI reflects the new active plan.
+        if matches!(self.app_state, AppState::InPage(PageId::Settings)) {
+            let current_plan_id = self.engine.plan().id;
+            let plan_list = &mut self.pages.settings_mut().state.plan_list;
+            if plan_list.iter().any(|e| e.is_current != (e.id == current_plan_id)) {
+                for entry in plan_list.iter_mut() {
+                    entry.is_current = entry.id == current_plan_id;
+                }
+                // Re-sort so current plan stays at top.
+                plan_list.sort_by(|a, b| {
+                    b.is_current
+                        .cmp(&a.is_current)
+                        .then_with(|| a.name.cmp(&b.name))
+                });
+                self.mark_dirty(DirtyRegion::PageOnly);
             }
         }
 

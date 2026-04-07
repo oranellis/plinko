@@ -13,9 +13,9 @@ use crate::ui::dirty::DirtyRegion;
 use plinko_shared::data::Plan;
 
 use render::{
-    CONTENT_TOP, ROW_H, identity_section_y, load_btn_rect, monday_btn_rect, new_btn_rect,
-    plan_box_rect, plan_list_max_scroll, plan_row_rect, save_btn_rect, total_content_height,
-    user_row_rect,
+    CONTENT_TOP, ROW_H, delete_btn_rect, identity_section_y, load_btn_rect, monday_btn_rect,
+    new_btn_rect, plan_box_rect, plan_list_max_scroll, plan_row_rect, save_btn_rect,
+    total_content_height, user_row_rect,
 };
 use state::SettingsState;
 
@@ -77,12 +77,18 @@ impl Page for SettingsPage {
         let box_rect = plan_box_rect(width);
         let mut new_hov_row = None;
         let mut new_hov_load = None;
+        let mut new_hov_delete = None;
         if box_rect.contains(Point::new(x, y)) {
             for idx in 0..self.state.plan_list.len() {
                 if load_btn_rect(idx, self.state.plan_list_scroll_y, width)
                     .contains(Point::new(x, y))
                 {
                     new_hov_load = Some(idx);
+                    new_hov_row = Some(idx);
+                } else if delete_btn_rect(idx, self.state.plan_list_scroll_y, width)
+                    .contains(Point::new(x, y))
+                {
+                    new_hov_delete = Some(idx);
                     new_hov_row = Some(idx);
                 } else if plan_row_rect(idx, self.state.plan_list_scroll_y, width)
                     .contains(Point::new(x, y))
@@ -97,6 +103,10 @@ impl Page for SettingsPage {
         }
         if new_hov_load != self.state.hovered_load_btn {
             self.state.hovered_load_btn = new_hov_load;
+            dirty = true;
+        }
+        if new_hov_delete != self.state.hovered_delete_btn {
+            self.state.hovered_delete_btn = new_hov_delete;
             dirty = true;
         }
 
@@ -158,12 +168,20 @@ impl Page for SettingsPage {
         if box_rect.contains(Point::new(x, y)) {
             for idx in 0..self.state.plan_list.len() {
                 let entry = &self.state.plan_list[idx];
-                if !entry.is_current
-                    && plan_row_rect(idx, self.state.plan_list_scroll_y, width)
-                        .contains(Point::new(x, y))
+                if entry.is_current {
+                    continue;
+                }
+                let id: Uuid = entry.id;
+                if load_btn_rect(idx, self.state.plan_list_scroll_y, width)
+                    .contains(Point::new(x, y))
                 {
-                    let id: Uuid = entry.id;
                     self.state.pending_load = Some(id);
+                    return DirtyRegion::PageOnly;
+                }
+                if delete_btn_rect(idx, self.state.plan_list_scroll_y, width)
+                    .contains(Point::new(x, y))
+                {
+                    self.state.pending_delete = Some(id);
                     return DirtyRegion::PageOnly;
                 }
             }
@@ -232,6 +250,7 @@ impl Page for SettingsPage {
         self.state.hovered_monday = false;
         self.state.hovered_plan_row = None;
         self.state.hovered_load_btn = None;
+        self.state.hovered_delete_btn = None;
         self.state.hovered_user_idx = None;
     }
 }
