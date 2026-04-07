@@ -323,9 +323,21 @@ impl MondayWindow {
             input.content.clone()
         };
 
-        // Scroll to keep cursor visible
-        let cursor_pos = input.cursor.min(display_text.len());
-        let cursor_x_px = font.measure_str(&display_text[..cursor_pos], None).0;
+        // Scroll to keep cursor visible.
+        // For masked fields, `input.cursor` is a byte offset into the original
+        // content, but `display_text` uses multi-byte '•' characters.  Convert
+        // to a char-safe byte position in `display_text`.
+        let cursor_display_pos = if masked {
+            let char_count = input.content[..input.cursor.min(input.content.len())]
+                .chars()
+                .count();
+            char_count * "•".len()
+        } else {
+            input.cursor.min(display_text.len())
+        };
+        let cursor_x_px = font
+            .measure_str(&display_text[..cursor_display_pos], None)
+            .0;
         let scroll_x = {
             let prev = input.scroll_x.get();
             let new_scroll = if cursor_x_px - prev > inner_w {
