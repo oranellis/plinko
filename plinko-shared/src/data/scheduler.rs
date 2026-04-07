@@ -1123,6 +1123,17 @@ impl Plan {
                     }
                 }
                 NodeId::Milestone(mid) => {
+                    // Don't compact milestones that have a Fixed constraint —
+                    // they must stay on exactly the required date.
+                    let has_fixed = self
+                        .milestones
+                        .get(&mid)
+                        .and_then(|m| m.constraint)
+                        .map(|c| c.kind == ConstraintKind::Fixed)
+                        .unwrap_or(false);
+                    if has_fixed {
+                        continue;
+                    }
                     let new_date = self.next_working_day_on_or_after(earliest);
                     if new_date < old_end {
                         state
@@ -1244,6 +1255,10 @@ impl Plan {
 
 #[cfg(test)]
 mod tests {
+    use crate::data::{
+        Milestone,
+        constraint::{ConstraintKind, DateConstraint},
+    };
     use crate::data::{
         NodeId, Plan, Task, User, WorkSchedule, allocation::TaskAllocation, dependency::Dependency,
     };
@@ -1527,6 +1542,49 @@ mod tests {
             "ONGOING should finish within 4 working days of today (deadline {}); got {}",
             deadline,
             ongoing_end
+        );
+    }
+
+    /// A milestone with a Fixed constraint must stay on its required date even
+    /// after the compact pass, which would otherwise move it earlier.
+    #[test]
+    fn fixed_milestone_not_moved_by_compact() {
+        // Plan starts Mon 2026-05-04. Milestone fixed to Wed 2026-05-13.
+        // A predecessor task completes by Tue 2026-05-05 (1 day), so the
+        // earliest dependency-derived date is Wed 2026-05-06 — earlier than
+        // the constraint.  Without the fix, compact would move the milestone
+        // to 2026-05-06; with the fix it must stay on 2026-05-13.
+        let plan_start = date(2026, 5, 4); // Monday
+        let fixed_date = date(2026, 5, 13); // Wednesday the following week
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays();
+
+        let uid = plan.add_user(User::new("Alice"));
+
+        // Short predecessor task: 1 workload-day, finishes Tue 2026-05-05.
+        let mut pred = Task::new("PRED", "");
+        pred.add_specific_worker(uid, 1.0);
+        pred.duration_days_target = 1.0;
+        pred.relaxed_mode = false;
+        pred.dependencies.push(Dependency::new(NodeId::PlanStart));
+        let pred_id = plan.add_task(pred);
+
+        // Milestone fixed to 2026-05-13.
+        let mut ms = Milestone::new("MS", "");
+        ms.constraint = Some(DateConstraint {
+            kind: ConstraintKind::Fixed,
+            date: fixed_date,
+        });
+        ms.dependencies.push(Dependency::new(NodeId::Task(pred_id)));
+        let ms_id = plan.add_milestone(ms);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        let scheduled = plan.node_allocations.milestones[&ms_id].date();
+        assert_eq!(
+            scheduled, fixed_date,
+            "Fixed milestone should stay on {fixed_date}, but was moved to {scheduled}"
         );
     }
 }
