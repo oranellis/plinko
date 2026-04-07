@@ -10,7 +10,7 @@ use crate::data::allocation::Status;
 use crate::data::ids::{NodeId, UserId};
 
 /// Per-plan Monday.com configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MondayConfig {
     /// Monday board ID to sync with.
     pub board_id: String,
@@ -27,6 +27,20 @@ pub struct MondayConfig {
     pub use_subitems: bool,
     /// When true, workload column values are in hours. When false, in days.
     pub workload_in_hours: bool,
+}
+
+impl Default for MondayConfig {
+    fn default() -> Self {
+        Self {
+            board_id: String::new(),
+            column_map: ColumnMap::default(),
+            user_mappings: Vec::new(),
+            status_mappings: Vec::new(),
+            item_node_map: Vec::new(),
+            use_subitems: true,
+            workload_in_hours: false,
+        }
+    }
 }
 
 /// Maps Monday column IDs to their semantic roles in plinko.
