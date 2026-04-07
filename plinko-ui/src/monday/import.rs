@@ -193,6 +193,12 @@ pub fn import_from_monday(
                 }
             }
             Status::Dropped => {
+                // Set actual_start so start_task creates a Fixed allocation before we drop.
+                // Without this, drop_task leaves the Dynamic allocation with the 1970 sentinel.
+                if let Some(task) = plan.tasks.get_mut(task_id) {
+                    task.actual_start = Some(start_date);
+                }
+                plan.start_task(*task_id);
                 plan.drop_task(*task_id);
             }
         }
