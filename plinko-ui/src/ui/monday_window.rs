@@ -74,8 +74,8 @@ pub struct MondayWindow {
     dep_col: TextInput,
     workload_col: TextInput,
     timeline_col: TextInput,
-    date_col: TextInput,
     workload_in_hours: bool,
+    use_subitems: bool,
     // ── Fetched / mapped data ──
     fetched_columns: Vec<BoardColumn>,
     fetched_monday_users: Vec<MondayUser>,
@@ -114,7 +114,6 @@ struct HitRects {
     dep_col_field: Rect,
     workload_col_field: Rect,
     timeline_col_field: Rect,
-    date_col_field: Rect,
     use_subitems_radio: [Rect; 2],
     workload_hours_radio: [Rect; 2],
     user_plinko_selectors: Vec<Rect>,
@@ -133,7 +132,6 @@ enum FocusedInput {
     DepCol,
     WorkloadCol,
     TimelineCol,
-    DateCol,
 }
 
 // ── Constructor ───────────────────────────────────────────────────────────────
@@ -158,8 +156,8 @@ impl MondayWindow {
             dep_col: TextInput::new(&config.column_map.dependency_column_id),
             workload_col: TextInput::new(&config.column_map.workload_column_id),
             timeline_col: TextInput::new(&config.column_map.timeline_column_id),
-            date_col: TextInput::new(&config.column_map.date_column_id),
             workload_in_hours: config.workload_in_hours,
+            use_subitems: config.use_subitems,
             fetched_columns: Vec::new(),
             fetched_monday_users: Vec::new(),
             fetched_status_labels: Vec::new(),
@@ -189,11 +187,11 @@ impl MondayWindow {
                 dependency_column_id: self.dep_col.content.trim().to_string(),
                 workload_column_id: self.workload_col.content.trim().to_string(),
                 timeline_column_id: self.timeline_col.content.trim().to_string(),
-                date_column_id: self.date_col.content.trim().to_string(),
             },
             user_mappings: self.user_mappings.clone(),
             status_mappings: self.status_mappings.clone(),
             item_node_map: self.item_node_map.clone(),
+            use_subitems: self.use_subitems,
             workload_in_hours: self.workload_in_hours,
         }
     }
@@ -236,9 +234,10 @@ impl MondayWindow {
         h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // dep
         h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // workload
         h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // timeline
-        h += PLAN_FIELD_GAP + LABEL_H + PLAN_LABEL_GAP + PLAN_INPUT_H; // date (milestone)
         h += PLAN_FIELD_GAP + PLAN_BTN_H; // fetch btn
-        // Workload unit
+        // Item type + workload unit
+        h += PLAN_FIELD_GAP + SECTION_TITLE_H + SECTION_GAP;
+        h += RADIO_SIZE + MAP_ROW_GAP + RADIO_SIZE; // item type radios
         h += PLAN_FIELD_GAP + SECTION_TITLE_H + SECTION_GAP;
         h += RADIO_SIZE + MAP_ROW_GAP + RADIO_SIZE; // workload unit radios
         // User mappings
@@ -643,7 +642,7 @@ impl FloatingWindow for MondayWindow {
         Self::draw_section_title(canvas, "Column Mapping", px, y, cache);
         y += SECTION_TITLE_H + SECTION_GAP;
 
-        let col_fields: [(&str, &TextInput, &mut Rect, FocusedInput); 6] = [
+        let col_fields: [(&str, &TextInput, &mut Rect, FocusedInput); 5] = [
             (
                 "Person Column ID",
                 &self.person_col,
@@ -669,16 +668,10 @@ impl FloatingWindow for MondayWindow {
                 FocusedInput::WorkloadCol,
             ),
             (
-                "Timeline Column ID",
+                "Timeline Column ID (milestones auto-detected)",
                 &self.timeline_col,
                 &mut hit.timeline_col_field,
                 FocusedInput::TimelineCol,
-            ),
-            (
-                "Date Column ID (for milestone detection)",
-                &self.date_col,
-                &mut hit.date_col_field,
-                FocusedInput::DateCol,
             ),
         ];
 
@@ -704,7 +697,26 @@ impl FloatingWindow for MondayWindow {
         hit.fetch_btn = fetch_rect;
         y += PLAN_BTN_H;
 
-        // ── Section: Options ─────────────────────────────────────────────────
+        // ── Section: Item Type ────────────────────────────────────────────────
+        y += PLAN_FIELD_GAP;
+        paint.set_color(Color::from(DIVIDER_COLOR));
+        canvas.draw_rect(Rect::from_xywh(px, y, field_w, 1.0), &paint);
+        y += PLAN_FIELD_GAP;
+
+        Self::draw_section_title(canvas, "Item Type", px, y, cache);
+        y += SECTION_TITLE_H + SECTION_GAP;
+
+        let r0 = Rect::from_xywh(px, y, field_w / 2.0, RADIO_SIZE);
+        Self::draw_radio(canvas, px, y, "Top-level items", !self.use_subitems, cache);
+        hit.use_subitems_radio[0] = r0;
+        y += RADIO_SIZE + MAP_ROW_GAP;
+
+        let r1 = Rect::from_xywh(px, y, field_w / 2.0, RADIO_SIZE);
+        Self::draw_radio(canvas, px, y, "Subitems", self.use_subitems, cache);
+        hit.use_subitems_radio[1] = r1;
+        y += RADIO_SIZE;
+
+        // ── Section: Workload Unit ────────────────────────────────────────────
         y += PLAN_FIELD_GAP;
         paint.set_color(Color::from(DIVIDER_COLOR));
         canvas.draw_rect(Rect::from_xywh(px, y, field_w, 1.0), &paint);
@@ -845,7 +857,7 @@ impl FloatingWindow for MondayWindow {
         );
 
         let fp = panel.left + PLAN_FORM_PADDING;
-        let fy = footer_top
+        let _fy = footer_top
             + (FOOTER_H / 2.0 - PLAN_BTN_H) / 2.0
             + (FOOTER_H - PLAN_BTN_H * 2.0 - 8.0) / 2.0;
         let pull_rect = Rect::from_xywh(fp, footer_top + 16.0, 160.0, PLAN_BTN_H);
@@ -954,7 +966,7 @@ impl FloatingWindow for MondayWindow {
         }
 
         // ── Text input focus ──────────────────────────────────────────────
-        let field_map: [(Rect, FocusedInput); 8] = [
+        let field_map: [(Rect, FocusedInput); 7] = [
             (hit.token_field, FocusedInput::Token),
             (hit.board_id_field, FocusedInput::BoardId),
             (hit.person_col_field, FocusedInput::PersonCol),
@@ -962,7 +974,6 @@ impl FloatingWindow for MondayWindow {
             (hit.dep_col_field, FocusedInput::DepCol),
             (hit.workload_col_field, FocusedInput::WorkloadCol),
             (hit.timeline_col_field, FocusedInput::TimelineCol),
-            (hit.date_col_field, FocusedInput::DateCol),
         ];
         for (rect, focus_val) in &field_map {
             if rect.contains(pt) {
@@ -983,6 +994,7 @@ impl FloatingWindow for MondayWindow {
 
         // ── Test Connection ───────────────────────────────────────────────
         if hit.test_btn.contains(pt) {
+            self.save_config();
             let token = self.api_token.content.trim().to_string();
             let status = Arc::clone(&self.sync_state);
             *status.lock().unwrap() = SyncState::InProgress("Testing connection...".to_string());
@@ -1002,9 +1014,11 @@ impl FloatingWindow for MondayWindow {
 
         // ── Fetch Board Info ───────────────────────────────────────────────
         if hit.fetch_btn.contains(pt) {
+            self.save_config();
             let token = self.api_token.content.trim().to_string();
             let board_id = self.board_id.content.trim().to_string();
             let status_col = self.status_col.content.trim().to_string();
+            let use_subitems = self.use_subitems;
             let status = Arc::clone(&self.sync_state);
             *status.lock().unwrap() = SyncState::InProgress("Fetching board info...".to_string());
 
@@ -1012,9 +1026,17 @@ impl FloatingWindow for MondayWindow {
             thread::spawn(move || {
                 let client = MondayClient::new(&token);
                 let users = client.fetch_users().unwrap_or_default();
-                let statuses = if !status_col.is_empty() && !board_id.is_empty() {
+                // When importing subitems, status labels live on the subitem board.
+                let effective_board_id = if use_subitems && !board_id.is_empty() {
                     client
-                        .fetch_status_labels(&board_id, &status_col)
+                        .fetch_subitem_board_id(&board_id)
+                        .unwrap_or_else(|_| board_id.clone())
+                } else {
+                    board_id.clone()
+                };
+                let statuses = if !status_col.is_empty() && !effective_board_id.is_empty() {
+                    client
+                        .fetch_status_labels(&effective_board_id, &status_col)
                         .unwrap_or_default()
                 } else {
                     Vec::new()
@@ -1038,6 +1060,7 @@ impl FloatingWindow for MondayWindow {
 
         // ── Pull from Monday ──────────────────────────────────────────────
         if hit.pull_btn.contains(pt) {
+            self.save_config();
             let config = self.current_config();
             let token = self.api_token.content.trim().to_string();
             let plan_id = self.plan_id;
@@ -1067,6 +1090,7 @@ impl FloatingWindow for MondayWindow {
 
         // ── Push to Monday ────────────────────────────────────────────────
         if hit.push_btn.contains(pt) {
+            self.save_config();
             let config = self.current_config();
             let token = self.api_token.content.trim().to_string();
             let item_node_map = self.item_node_map.clone();
@@ -1089,6 +1113,14 @@ impl FloatingWindow for MondayWindow {
         }
 
         // ── Radio buttons ─────────────────────────────────────────────────
+        if hit.use_subitems_radio[0].contains(pt) {
+            self.use_subitems = false;
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
+        if hit.use_subitems_radio[1].contains(pt) {
+            self.use_subitems = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
         if hit.workload_hours_radio[0].contains(pt) {
             self.workload_in_hours = false;
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
@@ -1217,7 +1249,6 @@ impl MondayWindow {
             FocusedInput::DepCol => Some(&mut self.dep_col),
             FocusedInput::WorkloadCol => Some(&mut self.workload_col),
             FocusedInput::TimelineCol => Some(&mut self.timeline_col),
-            FocusedInput::DateCol => Some(&mut self.date_col),
         }
     }
 
@@ -1230,7 +1261,6 @@ impl MondayWindow {
             FocusedInput::DepCol => &mut self.dep_col,
             FocusedInput::WorkloadCol => &mut self.workload_col,
             FocusedInput::TimelineCol => &mut self.timeline_col,
-            FocusedInput::DateCol => &mut self.date_col,
             FocusedInput::None => panic!("input_for_focus called with None"),
         }
     }

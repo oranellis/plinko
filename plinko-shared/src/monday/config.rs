@@ -21,6 +21,9 @@ pub struct MondayConfig {
     pub status_mappings: Vec<StatusMapping>,
     /// Persistent mapping from Monday item IDs to plinko node IDs (for idempotent re-import).
     pub item_node_map: Vec<ItemNodeMapping>,
+    /// When true, only subitems are imported as tasks/milestones; top-level items are ignored.
+    /// When false, only top-level items are imported.
+    pub use_subitems: bool,
     /// When true, workload column values are in hours. When false, in days.
     pub workload_in_hours: bool,
 }
@@ -36,10 +39,8 @@ pub struct ColumnMap {
     pub dependency_column_id: String,
     /// "numbers" type column — workload estimate (hours or days).
     pub workload_column_id: String,
-    /// "timeline" type column — written on export with computed start/end dates.
+    /// "timeline" type column — written on export; milestone flag is read from this column too.
     pub timeline_column_id: String,
-    /// "date" type column — used to detect Monday milestone items (`is_milestone` flag).
-    pub date_column_id: String,
 }
 
 /// Links a Monday.com workspace user to a plinko [`UserId`].

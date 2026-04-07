@@ -28,14 +28,26 @@ pub fn import_from_monday(
 ) -> Result<(Vec<ItemNodeMapping>, String), MondayApiError> {
     let cm = &config.column_map;
 
-    let items = client.fetch_items(
+    let all_items = client.fetch_items(
         &config.board_id,
         &cm.person_column_id,
         &cm.status_column_id,
         &cm.dependency_column_id,
         &cm.workload_column_id,
-        &cm.date_column_id,
+        &cm.timeline_column_id,
     )?;
+
+    // Filter to only the level the user wants (subitems or top-level items).
+    let items: Vec<&MondayItem> = all_items
+        .iter()
+        .filter(|item| {
+            if config.use_subitems {
+                item.parent_id.is_some()
+            } else {
+                item.parent_id.is_none()
+            }
+        })
+        .collect();
 
     // Build a lookup from Monday item ID → existing plinko node ID.
     let existing: HashMap<String, NodeId> = config
@@ -90,22 +102,24 @@ pub fn import_from_monday(
     }
 
     // --- Pass 2: wire dependencies ---
+    // Tasks/milestones with no Monday dependencies get PlanStart as a dependency
+    // so they are anchored to the plan start date rather than floating freely.
     for item in &items {
-        if item.dependency_item_ids.is_empty() {
-            continue;
-        }
         let Some(this_node) = id_map.get(&item.id) else {
             continue;
         };
 
-        let deps: Vec<Dependency> = item
-            .dependency_item_ids
-            .iter()
-            .filter_map(|dep_monday_id| {
-                let dep_node = id_map.get(dep_monday_id)?;
-                Some(Dependency::new(dep_node.clone()))
-            })
-            .collect();
+        let deps: Vec<Dependency> = if item.dependency_item_ids.is_empty() {
+            vec![Dependency::new(NodeId::PlanStart)]
+        } else {
+            item.dependency_item_ids
+                .iter()
+                .filter_map(|dep_monday_id| {
+                    let dep_node = id_map.get(dep_monday_id)?;
+                    Some(Dependency::new(dep_node.clone()))
+                })
+                .collect()
+        };
 
         if deps.is_empty() {
             continue;

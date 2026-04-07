@@ -147,10 +147,37 @@ impl MondayClient {
         Ok(labels)
     }
 
+    /// Fetch the board ID of the subitems board for a given parent board.
+    ///
+    /// Returns an empty string if the board has no items or no subitems.
+    pub fn fetch_subitem_board_id(&self, board_id: &str) -> Result<String, MondayApiError> {
+        let query = format!(
+            r#"query {{
+                boards(ids: [{board_id}]) {{
+                    items_page(limit: 1) {{
+                        items {{
+                            subitems {{ board {{ id }} }}
+                        }}
+                    }}
+                }}
+            }}"#
+        );
+        let resp = self.graphql(&query)?;
+        let id = resp["data"]["boards"][0]["items_page"]["items"][0]["subitems"][0]["board"]["id"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        Ok(id)
+    }
+
     /// Fetch all items and subitems from a board.
     ///
-    /// Items whose `date_col` value has `is_milestone: true` are flagged as
-    /// milestones; all others are treated as tasks.
+    /// Items whose `timeline_col` value has `visualization_type: "milestone"` are
+    /// flagged as milestones; all others are treated as tasks.
+    ///
+    /// Subitems are fetched with **all** column values (no ID filter) because
+    /// subitems live on their own sub-board which may have different column IDs
+    /// to the parent board.  `parse_item` matches by ID regardless.
     pub fn fetch_items(
         &self,
         board_id: &str,
@@ -158,18 +185,19 @@ impl MondayClient {
         status_col: &str,
         dep_col: &str,
         workload_col: &str,
-        date_col: &str,
+        timeline_col: &str,
     ) -> Result<Vec<MondayItem>, MondayApiError> {
         let col_ids =
-            build_col_ids_list(&[person_col, status_col, dep_col, workload_col, date_col]);
-        let subitems_block = format!(
-            r#"subitems {{
+            build_col_ids_list(&[person_col, status_col, dep_col, workload_col, timeline_col]);
+
+        // Subitems: no `ids` filter so we get every column value regardless of
+        // whether the subitem board uses the same column IDs as the parent board.
+        let subitems_block = r#"subitems {
                     id name
-                    column_values(ids: [{col_ids}]) {{
-                        id value text
-                    }}
-                }}"#
-        );
+                    column_values {
+                        id type value text
+                    }
+                }"#;
 
         let query = format!(
             r#"query {{
@@ -178,7 +206,7 @@ impl MondayClient {
                         items {{
                             id name
                             column_values(ids: [{col_ids}]) {{
-                                id value text
+                                id type value text
                             }}
                             {subitems_block}
                         }}
@@ -206,7 +234,7 @@ impl MondayClient {
                 status_col,
                 dep_col,
                 workload_col,
-                date_col,
+                timeline_col,
             );
             result.push(item);
 
@@ -224,7 +252,7 @@ impl MondayClient {
                         status_col,
                         dep_col,
                         workload_col,
-                        date_col,
+                        timeline_col,
                     );
                     result.push(sub_item);
                 }
@@ -277,7 +305,7 @@ fn parse_item(
     status_col: &str,
     dep_col: &str,
     workload_col: &str,
-    date_col: &str,
+    timeline_col: &str,
 ) -> MondayItem {
     let mut assigned_user_ids = Vec::new();
     let mut status_label = None;
@@ -291,6 +319,10 @@ fn parse_item(
             if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null")) {
                 if let Some(persons) = v["personsAndTeams"].as_array() {
                     for p in persons {
+                        // Only map actual persons, not teams.
+                        if p["kind"].as_str() != Some("person") {
+                            continue;
+                        }
                         if let Some(uid) = p["id"].as_u64() {
                             assigned_user_ids.push(uid.to_string());
                         }
@@ -316,11 +348,11 @@ fn parse_item(
             if let Some(text) = cv["text"].as_str() {
                 workload = text.parse::<f32>().ok();
             }
-        } else if col_id == date_col && !date_col.is_empty() {
-            // Monday date columns carry `{"date":"...","is_milestone":true}` in their JSON
-            // value when the item is marked as a milestone.
+        } else if col_id == timeline_col && !timeline_col.is_empty() {
+            // Monday sets visualization_type = "milestone" on timeline columns that
+            // are pinned as milestones via the date picker.
             if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null")) {
-                if v["is_milestone"].as_bool().unwrap_or(false) {
+                if v["visualization_type"].as_str() == Some("milestone") {
                     is_milestone = true;
                 }
             }

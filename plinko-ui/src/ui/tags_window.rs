@@ -373,7 +373,7 @@ impl FloatingWindow for TagsWindow {
                 }
 
                 // Alpha for dragged row
-                let alpha = if is_dragged { 60u8 } else { 255u8 };
+                let _alpha = if is_dragged { 60u8 } else { 255u8 };
 
                 // Grip handle zone
                 let handle_zone = Rect::from_xywh(panel.left, ry, PADDING + HANDLE_W, ROW_H);
