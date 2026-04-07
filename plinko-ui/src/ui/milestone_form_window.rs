@@ -4002,6 +4002,58 @@ impl FloatingWindow for MilestoneFormWindow {
         self.cursor_in_fwd_list = false;
     }
 
+    fn on_paste(
+        &mut self,
+        text: &str,
+        _sender: &PlanRequestSender,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
+        if let Some(lag_idx) = self.focused_dep_lag {
+            if lag_idx < self.dependencies.len() {
+                let filtered: String = text
+                    .chars()
+                    .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+                    .collect();
+                if filtered.is_empty() {
+                    return FloatingWindowOutcome::default();
+                }
+                self.dependencies[lag_idx].lag_input.insert_str(&filtered);
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
+        }
+        if let Some(lag_idx) = self.focused_fwd_lag {
+            if lag_idx < self.dependents.len() {
+                let filtered: String = text
+                    .chars()
+                    .filter(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+                    .collect();
+                if filtered.is_empty() {
+                    return FloatingWindowOutcome::default();
+                }
+                self.dependents[lag_idx].lag_input.insert_str(&filtered);
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
+        }
+        match self.focused {
+            TextField::Name => {
+                self.name.insert_str(text);
+                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
+            }
+            TextField::Description => {
+                for ch in text.chars() {
+                    self.description.insert_char(ch);
+                }
+                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
+            }
+            TextField::None => FloatingWindowOutcome::default(),
+        }
+    }
+
     fn on_scroll(
         &mut self,
         delta_y: f32,

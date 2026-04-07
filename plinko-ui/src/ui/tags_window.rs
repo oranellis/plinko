@@ -945,6 +945,26 @@ impl FloatingWindow for TagsWindow {
         }
     }
 
+    fn on_paste(
+        &mut self,
+        text: &str,
+        _sender: &PlanRequestSender,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
+        if let Some((_, ref mut input)) = self.rename_state {
+            input.insert_str(text);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        if let Some(ref mut input) = self.add_input {
+            input.insert_str(text);
+            return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+        }
+        FloatingWindowOutcome::default()
+    }
+
     fn on_scroll(
         &mut self,
         delta_y: f32,

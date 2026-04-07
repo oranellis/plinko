@@ -1663,6 +1663,26 @@ impl FloatingWindow for PlanSettingsWindow {
         }
     }
 
+    fn on_paste(
+        &mut self,
+        text: &str,
+        _sender: &PlanRequestSender,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
+        if self.name.focused {
+            self.name.insert_str(text);
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
+        if self.target_dropdown_open {
+            self.target_filter.insert_str(text);
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
+        FloatingWindowOutcome::default()
+    }
+
     fn on_scroll(
         &mut self,
         delta_y: f32,

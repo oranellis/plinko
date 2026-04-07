@@ -929,6 +929,32 @@ impl FloatingWindow for ScheduleWindow {
         FloatingWindowOutcome::default()
     }
 
+    fn on_paste(
+        &mut self,
+        text: &str,
+        _sender: &PlanRequestSender,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
+        if let Some(idx) = self.focused_day
+            && idx < self.days.len()
+        {
+            let filtered: String = text
+                .chars()
+                .filter(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if filtered.is_empty() {
+                return FloatingWindowOutcome::default();
+            }
+            self.days[idx].input.insert_str(&filtered);
+            self.scheduler_error = None;
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
+        FloatingWindowOutcome::default()
+    }
+
     fn on_scroll(
         &mut self,
         delta_y: f32,

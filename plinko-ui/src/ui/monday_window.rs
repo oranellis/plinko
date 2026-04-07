@@ -1189,6 +1189,23 @@ impl FloatingWindow for MondayWindow {
         FloatingWindowOutcome::default()
     }
 
+    fn on_paste(
+        &mut self,
+        text: &str,
+        _sender: &PlanRequestSender,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
+        if let Some(input) = self.focused_input_mut() {
+            input.insert_str(text);
+            FloatingWindowOutcome::dirty(DirtyRegion::All)
+        } else {
+            FloatingWindowOutcome::default()
+        }
+    }
+
     fn on_scroll(
         &mut self,
         delta_y: f32,
