@@ -1,6 +1,6 @@
 //! The [`Plan`] aggregate root and its [`DependencyError`] type.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -648,9 +648,18 @@ impl Plan {
     }
 
     /// Topological sort (Kahn's algorithm) of the nodes in `subset`, with a
-    /// forward DP to compute critical-path lengths. Returns nodes sorted by
-    /// descending critical-path length (most constrained first), excluding
-    /// PlanStart.
+    /// priority queue that processes ready nodes in descending critical-path
+    /// order.  This guarantees two properties simultaneously:
+    ///   1. Topological validity — a node is only processed once every one of
+    ///      its predecessors has been processed (in-degree reaches zero).
+    ///   2. Critical-path priority — among nodes whose predecessors are all
+    ///      done, the node with the longest critical path is processed first so
+    ///      that the scheduler allocates capacity to the most constrained chains
+    ///      first.
+    ///
+    /// The previous approach (plain Kahn + post-sort by crit-path) violated (1)
+    /// because a node N could share crit_to with its predecessor and end up
+    /// sorted before shorter-path predecessors that N depends on.
     fn topological_critical_path_sort(
         &self,
         subset: &HashSet<NodeId>,
@@ -666,61 +675,75 @@ impl Plan {
             }
         }
 
-        // Kahn's BFS from zero-in-degree nodes.
-        let mut queue: std::collections::VecDeque<NodeId> = in_degree
-            .iter()
-            .filter(|(_, d)| **d == 0)
-            .map(|(&n, _)| n)
-            .collect();
-
         // Forward DP: crit_to[v] = longest (weighted) path from PlanStart to
         // the end of v, counting task durations and dependency lags.
+        // We compute crit_to[v] the moment v's in-degree reaches zero (i.e.,
+        // all predecessors are already in crit_to).
         let mut crit_to: HashMap<NodeId, f32> = HashMap::new();
         crit_to.insert(NodeId::PlanStart, 0.0);
 
+        // Compute crit_to for all zero-in-degree nodes and seed the heap.
+        // BinaryHeap is a max-heap.  We want descending crit_to and, for
+        // equal crit_to, ascending NodeId (Task < Milestone) so tasks are
+        // scheduled before milestones at the same depth.
+        // Key: (scaled_crit as i64, Reverse<NodeId>)
+        let mut heap: BinaryHeap<(i64, std::cmp::Reverse<NodeId>)> = BinaryHeap::new();
+
+        for (&node, &deg) in &in_degree {
+            if deg == 0 {
+                let node_dur = match node {
+                    NodeId::Task(id) => self
+                        .tasks
+                        .get(&id)
+                        .map(|t| t.effective_duration_days())
+                        .unwrap_or(0.0),
+                    _ => 0.0,
+                };
+                // Zero-in-degree nodes have no predecessors in the subset.
+                crit_to.insert(node, node_dur);
+                let c = (node_dur * 1_000.0) as i64;
+                heap.push((c, std::cmp::Reverse(node)));
+            }
+        }
+
         let mut topo_order = Vec::with_capacity(subset.len());
 
-        while let Some(node) = queue.pop_front() {
+        while let Some((_, std::cmp::Reverse(node))) = heap.pop() {
             topo_order.push(node);
-
-            let node_dur = match node {
-                NodeId::Task(id) => self
-                    .tasks
-                    .get(&id)
-                    .map(|t| t.effective_duration_days())
-                    .unwrap_or(0.0),
-                _ => 0.0,
-            };
-            let mut best: f32 = 0.0;
-            for dep in self.get_dependencies(&node) {
-                if subset.contains(&dep.id) {
-                    let pred = crit_to.get(&dep.id).copied().unwrap_or(0.0);
-                    best = best.max(pred + dep.lag_days.max(0.0));
-                }
-            }
-            crit_to.insert(node, best + node_dur);
 
             if let Some(dependents) = dependents_map.get(&node) {
                 for &dep in dependents {
                     if let Some(deg) = in_degree.get_mut(&dep) {
                         *deg -= 1;
                         if *deg == 0 {
-                            queue.push_back(dep);
+                            // All predecessors of `dep` are now in crit_to.
+                            let dep_dur = match dep {
+                                NodeId::Task(id) => self
+                                    .tasks
+                                    .get(&id)
+                                    .map(|t| t.effective_duration_days())
+                                    .unwrap_or(0.0),
+                                _ => 0.0,
+                            };
+                            let mut best = 0.0f32;
+                            for pred_dep in self.get_dependencies(&dep) {
+                                if subset.contains(&pred_dep.id) {
+                                    let pred = crit_to.get(&pred_dep.id).copied().unwrap_or(0.0);
+                                    best = best.max(pred + pred_dep.lag_days.max(0.0));
+                                }
+                            }
+                            let dep_crit = best + dep_dur;
+                            crit_to.insert(dep, dep_crit);
+                            let c = (dep_crit * 1_000.0) as i64;
+                            heap.push((c, std::cmp::Reverse(dep)));
                         }
                     }
                 }
             }
         }
 
-        // Exclude PlanStart from result, sort longest critical path first.
+        // Exclude PlanStart from the result.
         topo_order.retain(|n| !matches!(n, NodeId::PlanStart));
-        topo_order.sort_by(|a, b| {
-            let ca = crit_to.get(a).copied().unwrap_or(0.0);
-            let cb = crit_to.get(b).copied().unwrap_or(0.0);
-            cb.partial_cmp(&ca)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.cmp(b))
-        });
         topo_order
     }
 }

@@ -1556,8 +1556,66 @@ mod tests {
         );
     }
 
-    /// A milestone with a Fixed constraint must stay on its required date even
-    /// after the compact pass, which would otherwise move it earlier.
+    /// A milestone that is the plan target and has multiple predecessor tasks
+    /// with varying critical-path lengths must be scheduled AFTER ALL of its
+    /// predecessors complete — not just after the longest one.
+    ///
+    /// Bug: the old topological-sort-then-re-sort-by-crit-path approach put the
+    /// milestone before short-path predecessors (same crit_to value as the
+    /// longest predecessor), so those were not yet in the scheduler state when
+    /// the milestone was inserted, causing it to land too early.
+    #[test]
+    fn target_milestone_after_all_predecessors() {
+        // Plan starts Mon 2026-05-04.
+        // Two tasks depend on PlanStart:
+        //   LONG: 10 workload-days (critical path ≈ 10 days)
+        //   SHORT: 2 workload-days (critical path ≈ 2 days)
+        // Target milestone depends on BOTH.  It must land on or after LONG's end.
+        let plan_start = date(2026, 5, 4); // Monday
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays();
+
+        let uid = plan.add_user(User::new("Alice"));
+        let dep_ps = Dependency::new(NodeId::PlanStart);
+
+        let mut long_task = Task::new("LONG", "");
+        long_task.add_specific_worker(uid, 10.0);
+        long_task.duration_days_target = 10.0;
+        long_task.relaxed_mode = false;
+        long_task.dependencies.push(dep_ps.clone());
+        let long_id = plan.add_task(long_task);
+
+        let mut short_task = Task::new("SHORT", "");
+        short_task.add_specific_worker(uid, 2.0);
+        short_task.duration_days_target = 2.0;
+        short_task.relaxed_mode = false;
+        short_task.dependencies.push(dep_ps);
+        let short_id = plan.add_task(short_task);
+
+        let mut ms = Milestone::new("TARGET", "");
+        ms.dependencies.push(Dependency::new(NodeId::Task(long_id)));
+        ms.dependencies
+            .push(Dependency::new(NodeId::Task(short_id)));
+        let ms_id = plan.add_milestone(ms);
+        plan.scheduler_target = NodeId::Milestone(ms_id);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        let long_end = plan.node_allocations.tasks[&long_id].allocation.end_date();
+        let short_end = plan.node_allocations.tasks[&short_id].allocation.end_date();
+        let ms_date = plan.node_allocations.milestones[&ms_id].date();
+
+        assert!(
+            ms_date >= long_end,
+            "Milestone ({ms_date}) must be on or after LONG end ({long_end})"
+        );
+        assert!(
+            ms_date >= short_end,
+            "Milestone ({ms_date}) must be on or after SHORT end ({short_end})"
+        );
+    }
+
     #[test]
     fn fixed_milestone_not_moved_by_compact() {
         // Plan starts Mon 2026-05-04. Milestone fixed to Wed 2026-05-13.
