@@ -600,7 +600,7 @@ impl FloatingWindow for MondayWindow {
             token_rect,
             &self.api_token,
             self.focused == FocusedInput::Token,
-            true,
+            false,
             cache,
         );
         hit.token_field = token_rect;
