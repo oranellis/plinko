@@ -2,6 +2,7 @@
 
 use serde_json::{Value, json};
 
+use chrono::NaiveDate;
 use plinko_shared::monday::{BoardColumn, MondayItem, MondayUser};
 
 const API_URL: &str = "https://api.monday.com/v2";
@@ -312,6 +313,8 @@ fn parse_item(
     let mut dependency_item_ids = Vec::new();
     let mut workload = None;
     let mut is_milestone = false;
+    let mut timeline_start: Option<NaiveDate> = None;
+    let mut timeline_end: Option<NaiveDate> = None;
 
     for cv in col_values {
         let col_id = cv["id"].as_str().unwrap_or("");
@@ -349,11 +352,16 @@ fn parse_item(
                 workload = text.parse::<f32>().ok();
             }
         } else if col_id == timeline_col && !timeline_col.is_empty() {
-            // Monday sets visualization_type = "milestone" on timeline columns that
-            // are pinned as milestones via the date picker.
+            // Parse from/to dates and milestone flag from the timeline column value.
             if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null")) {
                 if v["visualization_type"].as_str() == Some("milestone") {
                     is_milestone = true;
+                }
+                if let Some(from_str) = v["from"].as_str() {
+                    timeline_start = NaiveDate::parse_from_str(from_str, "%Y-%m-%d").ok();
+                }
+                if let Some(to_str) = v["to"].as_str() {
+                    timeline_end = NaiveDate::parse_from_str(to_str, "%Y-%m-%d").ok();
                 }
             }
         }
@@ -368,5 +376,7 @@ fn parse_item(
         dependency_item_ids,
         workload,
         is_milestone,
+        timeline_start,
+        timeline_end,
     }
 }

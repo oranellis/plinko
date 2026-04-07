@@ -3,6 +3,7 @@
 //! [`MondayConfig`] is stored per-plan as `plans/<plan-uuid>/monday.json`.
 //! The API token is stored in the global `AppConfig` (`config.json`).
 
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
 use crate::data::allocation::Status;
@@ -99,4 +100,8 @@ pub struct MondayItem {
     pub workload: Option<f32>,
     /// True when the Monday date column has `is_milestone: true` — import as a plinko milestone.
     pub is_milestone: bool,
+    /// Timeline start date (from the `from` field of the timeline column value).
+    pub timeline_start: Option<NaiveDate>,
+    /// Timeline end date (from the `to` field of the timeline column value).
+    pub timeline_end: Option<NaiveDate>,
 }

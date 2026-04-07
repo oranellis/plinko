@@ -1,29 +1,36 @@
 //! Monday.com → plinko import logic.
 //!
-//! Converts Monday board items into plinko [`PlanRequest`]s sent via the
-//! [`PlanRequestSender`]. Uses the [`MondayConfig`] mappings to resolve
-//! users, statuses, and dependencies.
+//! Builds the full plan state in memory from Monday data and sends a single
+//! `PlanRequest::ReplacePlan` at the end. This avoids intermediate scheduler
+//! runs with an invalid (partial) dependency graph.
 
 use std::collections::HashMap;
 
+use chrono::NaiveDate;
+
 use plinko_shared::data::Dependency;
+use plinko_shared::data::Plan;
 use plinko_shared::data::allocation::Status;
 use plinko_shared::data::ids::{MilestoneId, NodeId, TaskId};
 use plinko_shared::data::milestone::Milestone;
 use plinko_shared::data::task::{Task, WorkerSlot};
 use plinko_shared::monday::{ItemNodeMapping, MondayConfig, MondayItem};
-use plinko_shared::protocol::{PlanRequest, TaskPatch};
+use plinko_shared::protocol::PlanRequest;
 
 use crate::engine::PlanRequestSender;
 use crate::monday::client::{MondayApiError, MondayClient};
 
 /// Import Monday board items into the plan.
 ///
-/// Returns an updated `MondayConfig` (with new `item_node_map` entries) and a
-/// status message. Sends `PlanRequest`s directly via `sender`.
+/// `plan` is a **clone** of the current plan. All new tasks/milestones are
+/// built into it directly (no per-request scheduler runs), then a single
+/// `ReplacePlan` is sent at the end.
+///
+/// Returns updated `item_node_map` entries and a status message.
 pub fn import_from_monday(
     client: &MondayClient,
     config: &MondayConfig,
+    mut plan: Plan,
     sender: &PlanRequestSender,
 ) -> Result<(Vec<ItemNodeMapping>, String), MondayApiError> {
     let cm = &config.column_map;
@@ -56,44 +63,47 @@ pub fn import_from_monday(
         .map(|m| (m.monday_item_id.clone(), m.plinko_node_id.clone()))
         .collect();
 
-    // Build a lookup from Monday item ID → plinko node ID (mutable — we add new entries).
+    // Mutable map of Monday item ID → plinko node ID (accumulates new entries).
     let mut id_map: HashMap<String, NodeId> = existing.clone();
+
+    // Track status and timeline dates for each task ID so we can apply them in pass 3.
+    let mut task_statuses: HashMap<TaskId, (Status, Option<NaiveDate>, Option<NaiveDate>)> =
+        HashMap::new();
 
     let mut created = 0usize;
     let mut updated = 0usize;
 
-    // --- Pass 1: create/update all nodes ---
+    // ── Pass 1: create or update all nodes in the plan ────────────────────────
     for item in &items {
-        let is_milestone = item.is_milestone;
-
         if let Some(node_id) = existing.get(&item.id) {
-            // Update existing node.
+            // Update existing task workers/workload.
             match node_id {
                 NodeId::Task(task_id) => {
-                    let patch = build_task_patch(item, config);
-                    sender.send(PlanRequest::UpdateTask(*task_id, patch));
+                    let (workers, _) = build_workers_and_days(item, config);
+                    if let Some(task) = plan.tasks.get_mut(task_id) {
+                        task.workers = workers;
+                        task.name = item.name.clone();
+                    }
                     let status = resolve_status(item, config);
-                    apply_status_to_existing_task(*task_id, status, sender);
+                    task_statuses
+                        .insert(*task_id, (status, item.timeline_start, item.timeline_end));
                 }
-                NodeId::Milestone(_ms_id) => {
-                    // Nothing to update for milestones beyond what's in MilestonePatch.
-                }
+                NodeId::Milestone(_ms_id) => {}
                 NodeId::PlanStart => {}
             }
             updated += 1;
         } else {
-            // Create a new node.
-            let node_id = if is_milestone {
+            let node_id = if item.is_milestone {
                 let ms = Milestone::new(&item.name, "");
                 let ms_id = ms.id;
-                sender.send(PlanRequest::CreateMilestone(ms));
+                plan.add_milestone(ms);
                 NodeId::Milestone(ms_id)
             } else {
                 let task = build_task(item, config);
                 let task_id = task.id;
                 let status = resolve_status(item, config);
-                sender.send(PlanRequest::CreateTask(task));
-                apply_status_to_existing_task(task_id, status, sender);
+                task_statuses.insert(task_id, (status, item.timeline_start, item.timeline_end));
+                plan.add_task(task);
                 NodeId::Task(task_id)
             };
             id_map.insert(item.id.clone(), node_id);
@@ -101,49 +111,98 @@ pub fn import_from_monday(
         }
     }
 
-    // --- Pass 2: wire dependencies ---
-    // Tasks/milestones with no Monday dependencies get PlanStart as a dependency
-    // so they are anchored to the plan start date rather than floating freely.
+    // ── Adjust plan start date ────────────────────────────────────────────────
+    // If any item has a timeline_start before the plan's start_date, move it back
+    // so that historical tasks don't end up before plan start.
+    let earliest_timeline: Option<NaiveDate> =
+        items.iter().filter_map(|item| item.timeline_start).min();
+    if let Some(earliest) = earliest_timeline {
+        if earliest < plan.start_date {
+            plan.start_date = earliest;
+        }
+    }
+
+    // ── Pass 2: wire dependencies ─────────────────────────────────────────────
+    // Tasks/milestones whose Monday deps don't resolve to any known node (or have
+    // no deps at all) get PlanStart as a fallback so they always have a path to
+    // the plan root and the scheduler can compute a date for them.
     for item in &items {
-        let Some(this_node) = id_map.get(&item.id) else {
+        let Some(this_node) = id_map.get(&item.id).cloned() else {
             continue;
         };
 
-        let deps: Vec<Dependency> = if item.dependency_item_ids.is_empty() {
-            vec![Dependency::new(NodeId::PlanStart)]
-        } else {
-            item.dependency_item_ids
-                .iter()
-                .filter_map(|dep_monday_id| {
-                    let dep_node = id_map.get(dep_monday_id)?;
-                    Some(Dependency::new(dep_node.clone()))
-                })
-                .collect()
-        };
+        let mut resolved: Vec<Dependency> = item
+            .dependency_item_ids
+            .iter()
+            .filter_map(|dep_monday_id| {
+                let dep_node = id_map.get(dep_monday_id)?;
+                Some(Dependency::new(dep_node.clone()))
+            })
+            .collect();
 
-        if deps.is_empty() {
-            continue;
+        // Fallback: no deps or none resolved → anchor to PlanStart.
+        if resolved.is_empty() {
+            resolved.push(Dependency::new(NodeId::PlanStart));
         }
 
-        match this_node.clone() {
+        match this_node {
             NodeId::Task(task_id) => {
-                sender.send(PlanRequest::UpdateTask(
-                    task_id,
-                    TaskPatch::new().dependencies(deps),
-                ));
+                for dep in resolved {
+                    let _ = plan.add_task_dependency(task_id, dep);
+                }
             }
             NodeId::Milestone(ms_id) => {
-                sender.send(PlanRequest::UpdateMilestone(
-                    ms_id,
-                    plinko_shared::protocol::MilestonePatch::new().dependencies(deps),
-                ));
+                for dep in resolved {
+                    let _ = plan.add_milestone_dependency(ms_id, dep);
+                }
             }
             NodeId::PlanStart => {}
         }
     }
 
-    // --- Pass 3: run scheduler ---
-    sender.send(PlanRequest::RunScheduler);
+    // ── Pass 3: apply task statuses with timeline dates ───────────────────────
+    // Done after dep wiring so InProgress/Complete tasks have valid allocations.
+    let today = chrono::Local::now().date_naive();
+    for (task_id, (status, tl_start, tl_end)) in &task_statuses {
+        let start_date = tl_start.unwrap_or(today);
+        match status {
+            Status::NotStarted => {}
+            Status::InProgress => {
+                // Set actual_start from timeline then start the task.
+                if let Some(task) = plan.tasks.get_mut(task_id) {
+                    task.actual_start = Some(start_date);
+                }
+                plan.start_task(*task_id);
+            }
+            Status::OnHold => {
+                if let Some(task) = plan.tasks.get_mut(task_id) {
+                    task.actual_start = Some(start_date);
+                }
+                plan.start_task(*task_id);
+                plan.pause_task(*task_id);
+            }
+            Status::Complete => {
+                if let Some(task) = plan.tasks.get_mut(task_id) {
+                    task.actual_start = Some(start_date);
+                }
+                plan.start_task(*task_id);
+                plan.complete_task(*task_id);
+                // Override end date with the actual timeline end if available.
+                if let Some(end) = tl_end {
+                    plan.set_task_actual_end(*task_id, Some(*end));
+                }
+            }
+            Status::Dropped => {
+                plan.drop_task(*task_id);
+            }
+        }
+    }
+
+    // ── Pass 4: run the scheduler once on the complete plan ───────────────────
+    let _ = plan.compute_time_optimised_plan();
+
+    // Send the fully-built plan to the engine in one atomic operation.
+    sender.send(PlanRequest::ReplacePlan(Box::new(plan)));
 
     // Build updated item_node_map.
     let new_map: Vec<ItemNodeMapping> = id_map
@@ -158,37 +217,10 @@ pub fn import_from_monday(
     Ok((new_map, message))
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────── {{{
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn build_task(item: &MondayItem, config: &MondayConfig) -> Task {
-    let workers = build_workers(item, config);
-    let workload = item.workload.unwrap_or(1.0);
-    let total_days = if config.workload_in_hours {
-        workload / 8.0
-    } else {
-        workload
-    };
-    let per_worker_days = if workers.is_empty() {
-        total_days
-    } else {
-        total_days / workers.len() as f32
-    };
-
-    let workers = if workers.is_empty() {
-        vec![WorkerSlot::Placeholder {
-            required_tags: Default::default(),
-            workload_days: total_days.max(0.1),
-        }]
-    } else {
-        workers
-            .into_iter()
-            .map(|uid| WorkerSlot::Specific {
-                user_id: uid,
-                workload_days: per_worker_days.max(0.1),
-            })
-            .collect()
-    };
-
+    let (workers, _) = build_workers_and_days(item, config);
     Task {
         id: TaskId::new(),
         name: item.name.clone(),
@@ -198,31 +230,33 @@ fn build_task(item: &MondayItem, config: &MondayConfig) -> Task {
         constraint: None,
         duration_days_target: 0.0,
         relaxed_mode: false,
+        // actual_start is set in pass 3 after deps are wired; store None here.
         actual_start: None,
     }
 }
 
-fn build_task_patch(item: &MondayItem, config: &MondayConfig) -> TaskPatch {
-    let workers = build_workers(item, config);
+/// Returns the worker slots and per-worker workload days.
+fn build_workers_and_days(item: &MondayItem, config: &MondayConfig) -> (Vec<WorkerSlot>, f32) {
+    let plinko_users = build_worker_ids(item, config);
     let workload = item.workload.unwrap_or(1.0);
     let total_days = if config.workload_in_hours {
         workload / 8.0
     } else {
         workload
     };
-    let per_worker_days = if workers.is_empty() {
+    let per_worker_days = if plinko_users.is_empty() {
         total_days
     } else {
-        total_days / workers.len() as f32
+        total_days / plinko_users.len() as f32
     };
 
-    let worker_slots: Vec<WorkerSlot> = if workers.is_empty() {
+    let workers = if plinko_users.is_empty() {
         vec![WorkerSlot::Placeholder {
             required_tags: Default::default(),
             workload_days: total_days.max(0.1),
         }]
     } else {
-        workers
+        plinko_users
             .into_iter()
             .map(|uid| WorkerSlot::Specific {
                 user_id: uid,
@@ -231,10 +265,10 @@ fn build_task_patch(item: &MondayItem, config: &MondayConfig) -> TaskPatch {
             .collect()
     };
 
-    TaskPatch::new().workers(worker_slots)
+    (workers, per_worker_days)
 }
 
-fn build_workers(
+fn build_worker_ids(
     item: &MondayItem,
     config: &MondayConfig,
 ) -> Vec<plinko_shared::data::ids::UserId> {
@@ -261,23 +295,3 @@ fn resolve_status(item: &MondayItem, config: &MondayConfig) -> Status {
         .map(|m| m.plinko_status)
         .unwrap_or(Status::NotStarted)
 }
-
-fn apply_status_to_existing_task(task_id: TaskId, status: Status, sender: &PlanRequestSender) {
-    match status {
-        Status::NotStarted => {}
-        Status::InProgress => {
-            sender.send(PlanRequest::StartTask(task_id));
-        }
-        Status::OnHold => {
-            sender.send(PlanRequest::StartTask(task_id));
-            sender.send(PlanRequest::PauseTask(task_id));
-        }
-        Status::Complete => {
-            sender.send(PlanRequest::CompleteTask(task_id));
-        }
-        Status::Dropped => {
-            sender.send(PlanRequest::DropTask(task_id));
-        }
-    }
-}
-// }}}

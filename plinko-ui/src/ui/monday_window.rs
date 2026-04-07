@@ -1163,13 +1163,14 @@ impl FloatingWindow for MondayWindow {
             let config = self.current_config();
             let token = self.api_token.content.trim().to_string();
             let plan_id = self.plan_id;
+            let plan_clone = plan.clone();
             let sender_clone = sender.clone();
             let status = Arc::clone(&self.sync_state);
             *status.lock().unwrap() =
                 SyncState::InProgress("Pulling from Monday.com...".to_string());
             thread::spawn(move || {
                 let client = MondayClient::new(&token);
-                match import::import_from_monday(&client, &config, &sender_clone) {
+                match import::import_from_monday(&client, &config, plan_clone, &sender_clone) {
                     Ok((new_map, msg)) => {
                         // Save updated config with new item_node_map
                         let mut updated = config;
