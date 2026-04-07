@@ -163,23 +163,28 @@ pub fn import_from_monday(
 fn build_task(item: &MondayItem, config: &MondayConfig) -> Task {
     let workers = build_workers(item, config);
     let workload = item.workload.unwrap_or(1.0);
-    let workload_days = if config.workload_in_hours {
+    let total_days = if config.workload_in_hours {
         workload / 8.0
     } else {
         workload
+    };
+    let per_worker_days = if workers.is_empty() {
+        total_days
+    } else {
+        total_days / workers.len() as f32
     };
 
     let workers = if workers.is_empty() {
         vec![WorkerSlot::Placeholder {
             required_tags: Default::default(),
-            workload_days: workload_days.max(0.1),
+            workload_days: total_days.max(0.1),
         }]
     } else {
         workers
             .into_iter()
             .map(|uid| WorkerSlot::Specific {
                 user_id: uid,
-                workload_days: workload_days.max(0.1),
+                workload_days: per_worker_days.max(0.1),
             })
             .collect()
     };
@@ -200,23 +205,28 @@ fn build_task(item: &MondayItem, config: &MondayConfig) -> Task {
 fn build_task_patch(item: &MondayItem, config: &MondayConfig) -> TaskPatch {
     let workers = build_workers(item, config);
     let workload = item.workload.unwrap_or(1.0);
-    let workload_days = if config.workload_in_hours {
+    let total_days = if config.workload_in_hours {
         workload / 8.0
     } else {
         workload
+    };
+    let per_worker_days = if workers.is_empty() {
+        total_days
+    } else {
+        total_days / workers.len() as f32
     };
 
     let worker_slots: Vec<WorkerSlot> = if workers.is_empty() {
         vec![WorkerSlot::Placeholder {
             required_tags: Default::default(),
-            workload_days: workload_days.max(0.1),
+            workload_days: total_days.max(0.1),
         }]
     } else {
         workers
             .into_iter()
             .map(|uid| WorkerSlot::Specific {
                 user_id: uid,
-                workload_days: workload_days.max(0.1),
+                workload_days: per_worker_days.max(0.1),
             })
             .collect()
     };
