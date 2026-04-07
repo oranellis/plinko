@@ -96,6 +96,20 @@ pub trait FloatingWindow {
         }
     }
 
+    /// Called when the user pastes from the clipboard (Ctrl+V / Cmd+V).
+    /// Implementations should insert `text` into the currently focused text field.
+    fn on_paste(
+        &mut self,
+        _text: &str,
+        _sender: &PlanRequestSender,
+        _width: f32,
+        _height: f32,
+        _plan: &Plan,
+        _cache: &RenderCache,
+    ) -> FloatingWindowOutcome {
+        FloatingWindowOutcome::default()
+    }
+
     /// Called on mouse-wheel / trackpad scroll while this window is topmost.
     /// `delta_y` is positive when scrolling up (content moves down).
     fn on_scroll(
@@ -221,6 +235,27 @@ impl FloatingWindowManager {
         } else {
             outcome.dirty
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn on_paste(
+        &mut self,
+        text: &str,
+        sender: &PlanRequestSender,
+        width: f32,
+        height: f32,
+        plan: &Plan,
+        cache: &RenderCache,
+    ) -> DirtyRegion {
+        let outcome = match self.stack.last_mut() {
+            Some(w) => w.on_paste(text, sender, width, height, plan, cache),
+            None => return DirtyRegion::None,
+        };
+        if outcome.close {
+            self.stack.pop();
+            return DirtyRegion::All;
+        }
+        outcome.dirty
     }
 
     pub fn on_scroll(&mut self, delta_y: f32, plan: &Plan, width: f32, height: f32) -> DirtyRegion {

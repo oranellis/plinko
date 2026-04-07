@@ -100,8 +100,7 @@ impl PlanEngine {
                 self.apply_validated(|plan| apply_task_patch(plan, id, patch))
             }
             PlanRequest::DeleteTask(id) => self.apply_validated(|plan| {
-                if plan.tasks.remove(&id).is_some() {
-                    plan.node_allocations.invalidate();
+                if plan.delete_task(id) {
                     Ok(())
                 } else {
                     Err(PlanError::TaskNotFound(id))
@@ -116,8 +115,7 @@ impl PlanEngine {
                 self.apply_validated(|plan| apply_milestone_patch(plan, id, patch))
             }
             PlanRequest::DeleteMilestone(id) => self.apply_validated(|plan| {
-                if plan.milestones.remove(&id).is_some() {
-                    plan.node_allocations.invalidate();
+                if plan.delete_milestone(id) {
                     Ok(())
                 } else {
                     Err(PlanError::MilestoneNotFound(id))

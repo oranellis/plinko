@@ -444,6 +444,48 @@ impl Plan {
         ts.status = Status::Dropped;
     }
 
+    /// Remove a task and all dependency references to it from every other task
+    /// and milestone.  Also resets `scheduler_target` to `PlanStart` if it
+    /// was pointing at the deleted task.
+    pub fn delete_task(&mut self, id: TaskId) -> bool {
+        if self.tasks.remove(&id).is_none() {
+            return false;
+        }
+        self.node_allocations.tasks.remove(&id);
+        let node = NodeId::Task(id);
+        for task in self.tasks.values_mut() {
+            task.dependencies.retain(|d| d.id != node);
+        }
+        for milestone in self.milestones.values_mut() {
+            milestone.dependencies.retain(|d| d.id != node);
+        }
+        if self.scheduler_target == node {
+            self.scheduler_target = NodeId::PlanStart;
+        }
+        true
+    }
+
+    /// Remove a milestone and all dependency references to it from every other
+    /// task and milestone.  Also resets `scheduler_target` to `PlanStart` if
+    /// it was pointing at the deleted milestone.
+    pub fn delete_milestone(&mut self, id: MilestoneId) -> bool {
+        if self.milestones.remove(&id).is_none() {
+            return false;
+        }
+        self.node_allocations.milestones.remove(&id);
+        let node = NodeId::Milestone(id);
+        for task in self.tasks.values_mut() {
+            task.dependencies.retain(|d| d.id != node);
+        }
+        for milestone in self.milestones.values_mut() {
+            milestone.dependencies.retain(|d| d.id != node);
+        }
+        if self.scheduler_target == node {
+            self.scheduler_target = NodeId::PlanStart;
+        }
+        true
+    }
+
     // ── Scheduler helpers ─────────────────────────────────────────────────────
 
     /// Resolve the start date of any dependency.

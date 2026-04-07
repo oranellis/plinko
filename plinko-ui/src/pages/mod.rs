@@ -69,6 +69,11 @@ pub trait Page {
         DirtyRegion::None
     }
 
+    /// Called when the user pastes from the clipboard (Ctrl+V / Cmd+V).
+    fn on_paste(&mut self, _text: &str, _sender: &PlanRequestSender) -> DirtyRegion {
+        DirtyRegion::None
+    }
+
     /// Called on mouse-wheel scroll events while this page is active.
     ///
     /// `delta_y` is positive = scroll up / zoom in, negative = scroll down / zoom out.

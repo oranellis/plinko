@@ -91,6 +91,8 @@ pub struct Application {
     current_user: Option<UserId>,
     /// Date of the last daily scheduler recompute. `None` on first run.
     last_daily_recompute: Option<chrono::NaiveDate>,
+    /// Clipboard access for paste support.
+    clipboard: Option<arboard::Clipboard>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -125,6 +127,7 @@ impl Application {
             floats: FloatingWindowManager::new(),
             current_user: None,
             last_daily_recompute: None,
+            clipboard: arboard::Clipboard::new().ok(),
         }
     }
 
@@ -319,7 +322,23 @@ impl ApplicationHandler for Application {
                 {
                     let sender = self.engine.sender();
                     let plan = self.engine.plan();
-                    let dirty = if self.floats.is_open() {
+                    let ctrl =
+                        self.modifiers.state().control_key() || self.modifiers.state().super_key();
+                    let is_paste =
+                        ctrl && logical_key == winit::keyboard::Key::Character("v".into());
+                    let dirty = if is_paste {
+                        let text = self
+                            .clipboard
+                            .as_mut()
+                            .and_then(|cb| cb.get_text().ok())
+                            .unwrap_or_default();
+                        if self.floats.is_open() {
+                            self.floats
+                                .on_paste(&text, &sender, width, height, plan, &self.cache)
+                        } else {
+                            self.pages.active_page_mut().on_paste(&text, &sender)
+                        }
+                    } else if self.floats.is_open() {
                         self.floats.on_key_input(
                             &logical_key,
                             &sender,
