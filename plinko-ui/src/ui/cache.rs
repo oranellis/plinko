@@ -39,13 +39,21 @@ pub struct RenderCache {
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
 impl RenderCache {
-    /// Builds all cached resources.  Resolves a sans-serif typeface via
-    /// [`FontMgr`] and falls back to [`Font::default()`] if none is found.
+    /// Builds all cached resources.  Resolves a typeface via [`FontMgr`] with a
+    /// preference order chosen for Unicode symbol coverage: DejaVu Sans covers
+    /// geometric shapes and supplemental arrows that Noto Sans (the typical
+    /// `sans-serif` fallback on many Linux systems) does not include.
     pub fn new() -> Self {
         let font_mgr = FontMgr::new();
-        let typeface = font_mgr
-            .match_family_style("sans-serif", FontStyle::normal())
+        let typeface = ["DejaVu Sans", "sans-serif"]
+            .iter()
+            .find_map(|name| font_mgr.match_family_style(name, FontStyle::normal()))
             .or_else(|| font_mgr.legacy_make_typeface(None, FontStyle::normal()));
+        if let Some(tf) = &typeface {
+            println!("Font resolved: {}", tf.family_name());
+        } else {
+            println!("Font resolved: Skia default");
+        }
         let font = match &typeface {
             Some(tf) => Font::from_typeface(tf.clone(), 16.0),
             None => Font::default(),

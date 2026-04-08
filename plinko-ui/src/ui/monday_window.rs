@@ -970,7 +970,10 @@ impl FloatingWindow for MondayWindow {
         if !status_msg.is_empty() {
             paint.set_color(Color::from(MUTED_FG));
             let (_, metrics) = font.metrics();
-            let sy = footer_top + 16.0 + PLAN_BTN_H + 10.0 - metrics.ascent;
+            let remaining_top = footer_top + 16.0 + PLAN_BTN_H;
+            let remaining_h = FOOTER_H - 16.0 - PLAN_BTN_H;
+            let text_h = metrics.descent - metrics.ascent;
+            let sy = remaining_top + (remaining_h - text_h) / 2.0 - metrics.ascent;
             canvas.draw_str(&status_msg, (fp, sy), font, &paint);
         }
 
