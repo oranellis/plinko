@@ -106,6 +106,8 @@ pub struct MondayWindow {
     hov_clear: bool,
     // ── Async sync status ──
     sync_state: Arc<Mutex<SyncState>>,
+    /// Progress for the current diff-based push: `(done, total)` operations.
+    push_progress: Arc<Mutex<Option<(usize, usize)>>>,
     /// Pending result from a "Fetch board info" background thread.
     pending_board_result: Arc<Mutex<Option<(Vec<MondayUser>, Vec<String>)>>>,
     // ── Hit rects (populated in render) ──
@@ -192,6 +194,7 @@ impl MondayWindow {
             hov_push: false,
             hov_clear: false,
             sync_state: Arc::new(Mutex::new(SyncState::Idle)),
+            push_progress: Arc::new(Mutex::new(None)),
             pending_board_result: Arc::new(Mutex::new(None)),
             rects: std::cell::RefCell::new(HitRects::default()),
         }
@@ -961,7 +964,15 @@ impl FloatingWindow for MondayWindow {
             .ok()
             .map(|s| match &*s {
                 SyncState::Idle => String::new(),
-                SyncState::InProgress(m) => m.clone(),
+                SyncState::InProgress(m) => {
+                    // Show live progress when a diff-push is running.
+                    if let Ok(prog) = self.push_progress.try_lock() {
+                        if let Some((done, total)) = *prog {
+                            return format!("{m} ({done}/{total})");
+                        }
+                    }
+                    m.clone()
+                }
                 SyncState::Done(m) => m.clone(),
                 SyncState::Err(m) => format!("Error: {m}"),
             })
@@ -1255,7 +1266,7 @@ impl FloatingWindow for MondayWindow {
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
 
-        // ── Push to Monday ────────────────────────────────────────────────
+        // ── Push to Monday (diff-based) ───────────────────────────────────
         if hit.push_btn.contains(pt) {
             self.save_config();
             let config = self.current_config();
@@ -1263,11 +1274,23 @@ impl FloatingWindow for MondayWindow {
             let item_node_map = self.item_node_map.clone();
             let plan_snapshot = plan.clone();
             let status = Arc::clone(&self.sync_state);
+            let progress = Arc::clone(&self.push_progress);
+            // Reset progress from any previous push.
+            *progress.lock().unwrap() = None;
             *status.lock().unwrap() =
-                SyncState::InProgress("Pushing dates to Monday.com...".to_string());
+                SyncState::InProgress("Fetching current Monday state...".to_string());
             thread::spawn(move || {
                 let client = MondayClient::new(&token);
-                match export::export_to_monday(&client, &config, &plan_snapshot, &item_node_map) {
+                // After the fetch completes and we start applying ops, update the message.
+                *status.lock().unwrap() =
+                    SyncState::InProgress("Pushing changes to Monday.com...".to_string());
+                match export::export_to_monday_diff(
+                    &client,
+                    &config,
+                    &plan_snapshot,
+                    &item_node_map,
+                    &progress,
+                ) {
                     Ok(msg) => {
                         *status.lock().unwrap() = SyncState::Done(msg);
                     }
