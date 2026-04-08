@@ -366,7 +366,7 @@ impl MondayClient {
     ) -> Result<(), MondayApiError> {
         let persons_json = monday_user_ids
             .iter()
-            .map(|id| format!(r#"{{\\\"id\\\":{id},\\\"kind\\\":\\\"person\\\"}}"#))
+            .map(|id| format!(r#"{{\"id\":{id},\"kind\":\"person\"}}"#))
             .collect::<Vec<_>>()
             .join(",");
         let value = format!(r#"{{\"personsAndTeams\":[{persons_json}]}}"#);
