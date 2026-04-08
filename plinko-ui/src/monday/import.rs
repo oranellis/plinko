@@ -210,10 +210,9 @@ pub fn import_from_monday(
                 }
                 plan.start_task(*task_id);
                 plan.complete_task(*task_id);
-                // Override end date with the actual timeline end if available.
-                if let Some(end) = tl_end {
-                    plan.set_task_actual_end(*task_id, Some(*end));
-                }
+                // Use timeline end if available; otherwise end = start (1-day span).
+                let end_date = tl_end.unwrap_or(start_date);
+                plan.set_task_actual_end(*task_id, Some(end_date));
             }
             Status::Dropped => {
                 // Set actual_start so start_task creates a Fixed allocation before we drop.
