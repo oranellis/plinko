@@ -301,6 +301,7 @@ pub fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result
         plan.set_task_actual_end(id, v);
     }
     plan.node_allocations.invalidate();
+    plan.simplify_all_dependencies();
     Ok(())
 }
 
@@ -334,6 +335,7 @@ pub fn apply_milestone_patch(
         ms.constraint = v;
     }
     plan.node_allocations.invalidate();
+    plan.simplify_all_dependencies();
     Ok(())
 }
 

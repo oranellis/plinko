@@ -259,6 +259,45 @@ impl Plan {
         false
     }
 
+    /// Remove transitively redundant dependencies across the entire plan.
+    ///
+    /// A dependency edge A→B on node N is redundant if another dep A→C on N
+    /// already has a transitive path C→…→B, making A→B implied.
+    pub fn simplify_all_dependencies(&mut self) {
+        let task_ids: Vec<TaskId> = self.tasks.keys().copied().collect();
+        let milestone_ids: Vec<MilestoneId> = self.milestones.keys().copied().collect();
+
+        for id in task_ids {
+            let deps = self.tasks[&id].dependencies.clone();
+            let simplified: Vec<_> = deps
+                .iter()
+                .filter(|d| {
+                    !deps
+                        .iter()
+                        .any(|j| j.id != d.id && self.has_dependency_path(j.id, d.id))
+                })
+                .cloned()
+                .collect();
+            self.tasks.get_mut(&id).unwrap().dependencies = simplified;
+        }
+
+        for id in milestone_ids {
+            let deps = self.milestones[&id].dependencies.clone();
+            let simplified: Vec<_> = deps
+                .iter()
+                .filter(|d| {
+                    !deps
+                        .iter()
+                        .any(|j| j.id != d.id && self.has_dependency_path(j.id, d.id))
+                })
+                .cloned()
+                .collect();
+            self.milestones.get_mut(&id).unwrap().dependencies = simplified;
+        }
+
+        self.node_allocations.invalidate();
+    }
+
     // ── Task status helpers ───────────────────────────────────────────────────
 
     pub fn task_status(&self, id: &TaskId) -> Status {

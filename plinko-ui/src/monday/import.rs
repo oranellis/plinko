@@ -267,6 +267,7 @@ pub fn import_from_monday(
     }
 
     // ── Pass 4: run the scheduler once on the complete plan ───────────────────
+    plan.simplify_all_dependencies();
     let _ = plan.compute_time_optimised_plan();
 
     // Send the fully-built plan to the engine in one atomic operation.
