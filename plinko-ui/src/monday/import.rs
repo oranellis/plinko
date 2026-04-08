@@ -35,6 +35,16 @@ pub fn import_from_monday(
 ) -> Result<(Vec<ItemNodeMapping>, String), MondayApiError> {
     let cm = &config.column_map;
 
+    // Determine the effective board ID for items at the level we're importing.
+    // Subitems live on their own board; fetch its ID when use_subitems is true.
+    let item_board_id: String = if config.use_subitems {
+        client
+            .fetch_subitem_board_id(&config.board_id)
+            .unwrap_or_else(|_| config.board_id.clone())
+    } else {
+        config.board_id.clone()
+    };
+
     let all_items = client.fetch_items(
         &config.board_id,
         &cm.person_column_id,
@@ -244,6 +254,7 @@ pub fn import_from_monday(
         .map(|(monday_item_id, plinko_node_id)| ItemNodeMapping {
             monday_item_id,
             plinko_node_id,
+            board_id: item_board_id.clone(),
         })
         .collect();
 

@@ -59,6 +59,14 @@ pub fn export_to_monday(
 
     for mapping in item_node_map {
         let monday_item_id = &mapping.monday_item_id;
+        // Use the item's own board_id (set during import for subitems); fall
+        // back to the plan-level board_id for entries saved before this field
+        // was added.
+        let board_id = if mapping.board_id.is_empty() {
+            &config.board_id
+        } else {
+            &mapping.board_id
+        };
 
         // ── Timeline ─────────────────────────────────────────────────────────
         let timeline_result = match &mapping.plinko_node_id {
@@ -95,8 +103,7 @@ pub fn export_to_monday(
         };
 
         if let Some((from, to)) = timeline_result {
-            match client.update_timeline(&config.board_id, monday_item_id, timeline_col, &from, &to)
-            {
+            match client.update_timeline(board_id, monday_item_id, timeline_col, &from, &to) {
                 Ok(()) => updated += 1,
                 Err(e) => {
                     eprintln!("Warning: failed to update timeline for {monday_item_id}: {e}");
@@ -117,8 +124,7 @@ pub fn export_to_monday(
                 NodeId::PlanStart => None,
             };
             if let Some(label) = plinko_status.and_then(find_label)
-                && let Err(e) =
-                    client.update_status(&config.board_id, monday_item_id, status_col, label)
+                && let Err(e) = client.update_status(board_id, monday_item_id, status_col, label)
             {
                 eprintln!("Warning: failed to update status for {monday_item_id}: {e}");
             }
@@ -129,12 +135,9 @@ pub fn export_to_monday(
             let deps = plan.get_dependencies(&mapping.plinko_node_id);
             let monday_dep_ids: Vec<&str> =
                 deps.iter().filter_map(|d| find_monday_id(&d.id)).collect();
-            if let Err(e) = client.update_dependencies(
-                &config.board_id,
-                monday_item_id,
-                dep_col,
-                &monday_dep_ids,
-            ) {
+            if let Err(e) =
+                client.update_dependencies(board_id, monday_item_id, dep_col, &monday_dep_ids)
+            {
                 eprintln!("Warning: failed to update dependencies for {monday_item_id}: {e}");
             }
         }

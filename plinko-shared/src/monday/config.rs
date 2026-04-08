@@ -79,6 +79,13 @@ pub struct StatusMapping {
 pub struct ItemNodeMapping {
     pub monday_item_id: String,
     pub plinko_node_id: NodeId,
+    /// The Monday board ID that owns this item. Subitems live on a different
+    /// board to the parent; this field captures that so export can use the
+    /// correct board ID for `change_column_value` mutations.
+    /// Defaults to empty string for configs saved before this field existed;
+    /// callers should fall back to `MondayConfig::board_id` when empty.
+    #[serde(default)]
+    pub board_id: String,
 }
 
 /// Describes a column on a Monday board (fetched from API, not persisted).
