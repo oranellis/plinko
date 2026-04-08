@@ -330,14 +330,14 @@ fn build_workers_and_days(item: &MondayItem, config: &MondayConfig) -> (Vec<Work
     let workers = if plinko_users.is_empty() {
         vec![WorkerSlot::Placeholder {
             required_tags: Default::default(),
-            workload_days: total_days.max(0.1),
+            workload_days: total_days,
         }]
     } else {
         plinko_users
             .into_iter()
             .map(|uid| WorkerSlot::Specific {
                 user_id: uid,
-                workload_days: per_worker_days.max(0.1),
+                workload_days: per_worker_days,
             })
             .collect()
     };
