@@ -150,7 +150,7 @@ pub const GANTT_TODAY_LINE_COLOR: u32 = 0x80_4a90d9;
 /// Semi-transparent dark blue fill for the current-day column (replaces the old line).
 pub const GANTT_TODAY_BG: u32 = 0x40_5bc8f5;
 /// Flash highlight color drawn around a Gantt node after a search-navigate action.
-pub const GANTT_FLASH_COLOR: u32 = 0xff_e00000;
+pub const GANTT_FLASH_COLOR: u32 = 0xff_ff2828;
 pub const GANTT_ROW_ALT_BG: u32 = 0xff_232326;
 pub const GANTT_WEEKEND_BG: u32 = 0xff_1a1a20;
 

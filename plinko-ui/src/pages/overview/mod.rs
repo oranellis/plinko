@@ -389,14 +389,14 @@ impl Page for OverviewPage {
         if let Some(node_id) = pending_node {
             self.scroll_to_node(node_id, width, height, plan);
             self.state.flash_node = Some(node_id);
-            // 1.44 hold (≈2 s at 60 fps × 0.012 decay) + 1.0 fade = 2.44 total
-            self.state.flash_timer = 2.44;
+            // 1.0 → 0.0 over ~3 s; alpha = |sin(t × 3π)| gives 3 pulses
+            self.state.flash_timer = 1.0;
             dirty = true;
         }
 
-        // Hold at full brightness until flash_timer drops to 1.0, then fade to 0.
+        // Cycle flash 3 times then fade out completely.
         if self.state.flash_timer > 0.0 {
-            self.state.flash_timer = (self.state.flash_timer - 0.012).max(0.0);
+            self.state.flash_timer = (self.state.flash_timer - 0.006).max(0.0);
             dirty = true;
         }
 

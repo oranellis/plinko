@@ -829,7 +829,7 @@ fn draw_flash_highlight(
     use plinko_shared::data::ids::NodeId;
     use skia_safe::{PaintStyle, Rect};
 
-    let alpha = (state.flash_timer.min(1.0) * 255.0) as u8;
+    let alpha = ((state.flash_timer * 3.0 * std::f32::consts::PI).sin().abs() * 255.0) as u8;
     let flash_color = Color::from(GANTT_FLASH_COLOR).with_a(alpha);
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
