@@ -338,13 +338,21 @@ impl Plan {
                 continue;
             }
 
-            // Deduct future time allocation from capacity so subsequently scheduled
-            // tasks cannot double-book hours already consumed by this anchored task.
-            for seg in &time_alloc {
-                if seg.date >= state.today {
-                    let avail = self.hours_available(&seg.user, seg.date);
-                    let entry = state.capacity.entry((seg.user, seg.date)).or_insert(avail);
-                    *entry = (*entry - seg.hours_worked).max(0.0);
+            // Dropped tasks are transparent: they contribute no duration and hold
+            // no capacity, so dependents can start as soon as the dropped task's
+            // own predecessors would have allowed.  We still record them in the
+            // allocation map (at their historical start date) so dependency lookups
+            // have a date to anchor to, but we skip the capacity deduction.
+            let is_dropped = status == Status::Dropped;
+            if !is_dropped {
+                // Deduct future time allocation from capacity so subsequently scheduled
+                // tasks cannot double-book hours already consumed by this anchored task.
+                for seg in &time_alloc {
+                    if seg.date >= state.today {
+                        let avail = self.hours_available(&seg.user, seg.date);
+                        let entry = state.capacity.entry((seg.user, seg.date)).or_insert(avail);
+                        *entry = (*entry - seg.hours_worked).max(0.0);
+                    }
                 }
             }
 
@@ -441,8 +449,18 @@ impl Plan {
                         pred_end + chrono::Duration::days(lag + 1)
                     }
                 }
-                NodeId::Task(_) => {
-                    if is_milestone {
+                NodeId::Task(tid) => {
+                    // A dropped task is transparent — it has no duration and holds no
+                    // capacity.  `pred_end` is already its start_date (the earliest it
+                    // could have begun), so the dependent can begin on that same date
+                    // without adding the usual +1 task-to-task offset.
+                    let pred_dropped = state
+                        .allocations
+                        .tasks
+                        .get(&tid)
+                        .map(|ts| ts.status == Status::Dropped)
+                        .unwrap_or(false);
+                    if is_milestone || pred_dropped {
                         pred_end + chrono::Duration::days(lag)
                     } else {
                         pred_end + chrono::Duration::days(lag + 1)
@@ -493,7 +511,16 @@ impl Plan {
                 .allocations
                 .tasks
                 .get(&tid)
-                .map(|ts| ts.allocation.end_date())
+                .map(|ts| {
+                    // Dropped tasks are transparent: they contribute no duration to
+                    // their dependents.  Use start_date so the dependent can begin as
+                    // soon as the dropped task's own predecessors would have allowed it.
+                    if ts.status == Status::Dropped {
+                        ts.allocation.start_date()
+                    } else {
+                        ts.allocation.end_date()
+                    }
+                })
                 .unwrap_or(self.start_date),
         }
     }
@@ -1333,7 +1360,9 @@ mod tests {
         constraint::{ConstraintKind, DateConstraint},
     };
     use crate::data::{
-        NodeId, Plan, Task, User, WorkSchedule, allocation::TaskAllocation, dependency::Dependency,
+        NodeId, Plan, Task, User, WorkSchedule,
+        allocation::{Status, TaskAllocation},
+        dependency::Dependency,
     };
     use chrono::{Datelike, NaiveDate};
 
@@ -1716,6 +1745,70 @@ mod tests {
         assert_eq!(
             scheduled, fixed_date,
             "Fixed milestone should stay on {fixed_date}, but was moved to {scheduled}"
+        );
+    }
+
+    /// A Dropped middle task in a chain A → B(dropped) → C should be transparent:
+    /// C must start the day after A ends, as if B had zero duration.
+    #[test]
+    fn dropped_task_is_transparent_to_dependents() {
+        // Plan starts Mon 2026-05-04.
+        //   A: 1 workload-day → finishes Mon 2026-05-04
+        //   B: 3 workload-days → would normally occupy Tue–Thu 2026-05-05–07
+        //   C: depends on B → would normally start Fri 2026-05-08
+        //
+        // After B is Dropped, C should start Tue 2026-05-05 (day after A ends).
+        let plan_start = date(2026, 5, 4); // Monday
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays();
+
+        let uid = plan.add_user(User::new("Alice"));
+
+        let mut a = Task::new("A", "");
+        a.add_specific_worker(uid, 1.0);
+        a.dependencies.push(Dependency::new(NodeId::PlanStart));
+        let a_id = plan.add_task(a);
+
+        let mut b = Task::new("B", "");
+        b.add_specific_worker(uid, 3.0);
+        b.duration_days_target = 3.0; // daily_cap = 24h/3 = 8h/day → 3 full days
+        b.dependencies.push(Dependency::new(NodeId::Task(a_id)));
+        let b_id = plan.add_task(b);
+
+        let mut c = Task::new("C", "");
+        c.add_specific_worker(uid, 1.0);
+        c.duration_days_target = 1.0;
+        c.dependencies.push(Dependency::new(NodeId::Task(b_id)));
+        let c_id = plan.add_task(c);
+
+        // First pass: schedule normally so B gets a Dynamic allocation with real dates.
+        plan.compute_time_optimised_plan().unwrap();
+
+        // B should span Tue–Thu (3 days); C should start Fri.
+        let b_end_normal = plan.node_allocations.tasks[&b_id].allocation.end_date();
+        assert_eq!(
+            b_end_normal,
+            date(2026, 5, 7),
+            "B should end Thu before drop"
+        );
+
+        // Drop B.
+        plan.set_task_status(b_id, Status::Dropped);
+
+        // Re-schedule.
+        plan.compute_time_optimised_plan().unwrap();
+
+        // A still ends Mon 2026-05-04.
+        let a_end = plan.node_allocations.tasks[&a_id].allocation.end_date();
+        assert_eq!(a_end, date(2026, 5, 4), "A should end Mon");
+
+        // C must start the day after A ends (Tue 2026-05-05), not after B's old end.
+        let c_start = plan.node_allocations.tasks[&c_id].allocation.start_date();
+        assert_eq!(
+            c_start,
+            date(2026, 5, 5),
+            "C should start Tue (day after A) when B is dropped, got {c_start}"
         );
     }
 }
