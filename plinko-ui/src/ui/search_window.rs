@@ -351,6 +351,11 @@ impl FloatingWindow for SearchWindow {
                 self.scroll_y = 0.0;
                 FloatingWindowOutcome::dirty(DirtyRegion::All)
             }
+            Key::Named(NamedKey::Space) => {
+                self.filter.insert_str(" ");
+                self.scroll_y = 0.0;
+                FloatingWindowOutcome::dirty(DirtyRegion::All)
+            }
             Key::Named(NamedKey::ArrowLeft) => {
                 self.filter.move_left();
                 FloatingWindowOutcome::dirty(DirtyRegion::All)
