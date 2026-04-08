@@ -159,7 +159,7 @@ pub const GANTT_TASK_NOT_STARTED: u32 = 0xff_555555;
 pub const GANTT_TASK_IN_PROGRESS: u32 = 0xff_f5a623;
 pub const GANTT_TASK_ON_HOLD: u32 = 0xff_b39ddb;
 pub const GANTT_TASK_COMPLETE: u32 = 0xff_66bb6a;
-pub const GANTT_TASK_DROPPED: u32 = 0xff_757575;
+pub const GANTT_TASK_DROPPED: u32 = 0xff_8b7355;
 
 // Task label colors (on bars)
 pub const GANTT_TASK_LABEL_DARK: u32 = 0xff_333333; // on light bars
