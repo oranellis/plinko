@@ -162,9 +162,32 @@ pub fn import_from_monday(
 
     // ── Pass 3: apply task statuses with timeline dates ───────────────────────
     // Done after dep wiring so InProgress/Complete tasks have valid allocations.
-    let today = chrono::Local::now().date_naive();
+    let plan_start = plan.start_date;
     for (task_id, (status, tl_start, tl_end)) in &task_statuses {
-        let start_date = tl_start.unwrap_or(today);
+        let has_timeline = tl_start.is_some();
+
+        // For finished tasks (Complete/Dropped) without a timeline: anchor at plan
+        // start with a 1-day duration so they don't show the 1970 sentinel.
+        // For incomplete tasks (NotStarted/InProgress/OnHold) without a timeline:
+        // derive a sensible duration estimate: ceil(2 * total_workload / #workers).
+        if !has_timeline {
+            if let Some(task) = plan.tasks.get_mut(task_id) {
+                match status {
+                    Status::Complete | Status::Dropped => {
+                        task.duration_days_target = 1.0;
+                    }
+                    Status::NotStarted | Status::InProgress | Status::OnHold => {
+                        let total_workload: f32 =
+                            task.workers.iter().map(|w| w.workload_days()).sum();
+                        let num_workers = task.workers.len().max(1) as f32;
+                        task.duration_days_target =
+                            (2.0 * total_workload / num_workers).ceil().max(1.0);
+                    }
+                }
+            }
+        }
+
+        let start_date = tl_start.unwrap_or(plan_start);
         match status {
             Status::NotStarted => {}
             Status::InProgress => {
