@@ -190,6 +190,8 @@ pub fn import_from_monday(
             if let Some(task) = plan.tasks.get_mut(task_id) {
                 match status {
                     Status::Complete | Status::Dropped => {
+                        // No timeline available — use a 1-day placeholder so we
+                        // don't show the 1970 sentinel.
                         task.duration_days_target = 1.0;
                     }
                     Status::NotStarted | Status::InProgress | Status::OnHold => {
@@ -235,9 +237,16 @@ pub fn import_from_monday(
                 // Without this, drop_task leaves the Dynamic allocation with the 1970 sentinel.
                 if let Some(task) = plan.tasks.get_mut(task_id) {
                     task.actual_start = Some(start_date);
+                    // Apply timeline span so the dropped bar shows its real calendar width.
+                    if let Some(end) = tl_end {
+                        let span = (*end - start_date).num_days().max(0) as f32 + 1.0;
+                        task.duration_days_target = span;
+                    }
                 }
                 plan.start_task(*task_id);
                 plan.drop_task(*task_id);
+                let end_date = tl_end.unwrap_or(start_date);
+                plan.set_task_actual_end(*task_id, Some(end_date));
             }
         }
     }
