@@ -793,7 +793,7 @@ impl FloatingWindow for MondayWindow {
                     .map(|u| u.name.as_str())
                     .unwrap_or("(unmapped)");
                 let is_open = self.open_user_dropdown == Some(i);
-                let right = format!("→ {plinko_name}  ▾");
+                let right = format!("› {plinko_name}  v");
                 Self::draw_mapping_row(
                     canvas,
                     row_rect,
@@ -830,7 +830,7 @@ impl FloatingWindow for MondayWindow {
             for mapping in &self.status_mappings {
                 let row_rect = Rect::from_xywh(px, y, field_w, MAP_ROW_H);
                 let plinko_status_name = status_display_name(mapping.plinko_status);
-                let right = format!("→ {plinko_status_name}  ▾");
+                let right = format!("› {plinko_status_name}  v");
                 Self::draw_mapping_row(
                     canvas,
                     row_rect,
@@ -961,7 +961,7 @@ impl FloatingWindow for MondayWindow {
             .ok()
             .map(|s| match &*s {
                 SyncState::Idle => String::new(),
-                SyncState::InProgress(m) => format!("⟳ {m}"),
+                SyncState::InProgress(m) => m.clone(),
                 SyncState::Done(m) => m.clone(),
                 SyncState::Err(m) => format!("Error: {m}"),
             })

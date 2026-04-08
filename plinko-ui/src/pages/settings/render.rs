@@ -4,10 +4,10 @@ use skia_safe::{Canvas, Color, Paint, PaintStyle, RRect, Rect, TextBlob};
 
 use crate::ui::cache::RenderCache;
 use crate::ui::layout::{
-    ADD_BTN_BG, ADD_BTN_FG, ADD_BTN_HOVER_BG, BACK_BTN_SIZE, BACK_BTN_X, BACK_BTN_Y,
-    BTN_DANGER_BG, BTN_DANGER_FG, BTN_DANGER_HOVER_BG, BTN_PRIMARY_BG, BTN_PRIMARY_FG,
-    BTN_PRIMARY_HOVER_BG, DIVIDER_COLOR, INPUT_BORDER, INPUT_FG, ITEM_FG, LIST_BG,
-    LIST_ITEM_SEL_BG, MUTED_FG, PANEL_BG, SCROLLBAR_THUMB_COLOR,
+    ADD_BTN_BG, ADD_BTN_FG, ADD_BTN_HOVER_BG, BACK_BTN_SIZE, BACK_BTN_X, BACK_BTN_Y, BTN_DANGER_BG,
+    BTN_DANGER_FG, BTN_DANGER_HOVER_BG, BTN_PRIMARY_BG, BTN_PRIMARY_FG, BTN_PRIMARY_HOVER_BG,
+    DIVIDER_COLOR, INPUT_BORDER, INPUT_FG, ITEM_FG, LIST_BG, LIST_ITEM_SEL_BG, MUTED_FG, PANEL_BG,
+    SCROLLBAR_THUMB_COLOR,
 };
 use plinko_shared::data::Plan;
 
@@ -114,12 +114,7 @@ pub fn load_btn_rect(idx: usize, plan_list_scroll_y: f32, width: f32) -> Rect {
 pub fn delete_btn_rect(idx: usize, plan_list_scroll_y: f32, width: f32) -> Rect {
     let load = load_btn_rect(idx, plan_list_scroll_y, width);
     let btn_w = 70.0_f32;
-    Rect::from_xywh(
-        load.left() - btn_w - 6.0,
-        load.top(),
-        btn_w,
-        BUTTON_H,
-    )
+    Rect::from_xywh(load.left() - btn_w - 6.0, load.top(), btn_w, BUTTON_H)
 }
 
 fn identity_top_raw() -> f32 {

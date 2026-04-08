@@ -235,7 +235,9 @@ impl Application {
         }
 
         if let Some(plan_id) = pending_delete {
-            self.engine.sender().send(PlanRequest::DeletePlan { plan_id });
+            self.engine
+                .sender()
+                .send(PlanRequest::DeletePlan { plan_id });
         }
 
         if let Some(uid) = pending_set_user {
@@ -739,7 +741,10 @@ impl ApplicationHandler for Application {
         if matches!(self.app_state, AppState::InPage(PageId::Settings)) {
             let current_plan_id = self.engine.plan().id;
             let plan_list = &mut self.pages.settings_mut().state.plan_list;
-            if plan_list.iter().any(|e| e.is_current != (e.id == current_plan_id)) {
+            if plan_list
+                .iter()
+                .any(|e| e.is_current != (e.id == current_plan_id))
+            {
                 for entry in plan_list.iter_mut() {
                     entry.is_current = entry.id == current_plan_id;
                 }
