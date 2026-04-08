@@ -449,7 +449,13 @@ impl MondayWindow {
         canvas.draw_str(label, (tx, ty), font, &paint);
     }
 
-    fn draw_danger_button(canvas: &Canvas, rect: Rect, label: &str, hovered: bool, cache: &RenderCache) {
+    fn draw_danger_button(
+        canvas: &Canvas,
+        rect: Rect,
+        label: &str,
+        hovered: bool,
+        cache: &RenderCache,
+    ) {
         Self::draw_button(canvas, rect, label, hovered, false, true, cache);
     }
 
@@ -918,7 +924,8 @@ impl FloatingWindow for MondayWindow {
             + (FOOTER_H - PLAN_BTN_H * 2.0 - 8.0) / 2.0;
         let pull_rect = Rect::from_xywh(fp, footer_top + 16.0, 160.0, PLAN_BTN_H);
         let push_rect = Rect::from_xywh(fp + 168.0, footer_top + 16.0, 160.0, PLAN_BTN_H);
-        let clear_rect = Rect::from_xywh(fp, footer_top + 16.0 + PLAN_BTN_H + 8.0, 160.0, PLAN_BTN_H);
+        let clear_rect =
+            Rect::from_xywh(fp, footer_top + 16.0 + PLAN_BTN_H + 8.0, 160.0, PLAN_BTN_H);
         Self::draw_button(
             canvas,
             pull_rect,
@@ -937,7 +944,13 @@ impl FloatingWindow for MondayWindow {
             false,
             cache,
         );
-        Self::draw_danger_button(canvas, clear_rect, "Clear & Re-import", self.hov_clear, cache);
+        Self::draw_danger_button(
+            canvas,
+            clear_rect,
+            "Clear & Re-import",
+            self.hov_clear,
+            cache,
+        );
         hit.pull_btn = pull_rect;
         hit.push_btn = push_rect;
         hit.clear_btn = clear_rect;
@@ -1024,8 +1037,8 @@ impl FloatingWindow for MondayWindow {
         x: f32,
         y: f32,
         pressed: bool,
-        _width: f32,
-        _height: f32,
+        width: f32,
+        height: f32,
         _modifiers: &Modifiers,
         plan: &Plan,
         sender: &PlanRequestSender,
@@ -1033,6 +1046,12 @@ impl FloatingWindow for MondayWindow {
     ) -> FloatingWindowOutcome {
         if !pressed {
             return FloatingWindowOutcome::default();
+        }
+
+        // Click outside the panel → close.
+        let panel = Self::panel_rect(width, height);
+        if !panel.contains(Point::new(x, y)) {
+            return FloatingWindowOutcome::close();
         }
 
         let hit = self.rects.borrow().clone();
