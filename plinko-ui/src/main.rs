@@ -10,14 +10,30 @@ mod ui;
 
 use winit::event_loop::EventLoop;
 
+fn parse_port_arg() -> Option<u16> {
+    let args: Vec<String> = std::env::args().collect();
+    let mut iter = args.iter().skip(1);
+    while let Some(arg) = iter.next() {
+        if arg == "-p" {
+            return iter.next()?.parse().ok();
+        }
+        if let Some(val) = arg.strip_prefix("-p") {
+            return val.parse().ok();
+        }
+    }
+    None
+}
+
 fn main() {
     let el = EventLoop::new().expect("Failed to create event loop");
     let init = graphics::setup::initialize(&el);
 
-    let port: u16 = std::env::var("PLINKO_PORT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(7891);
+    let port: u16 = parse_port_arg().unwrap_or_else(|| {
+        std::env::var("PLINKO_PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7891)
+    });
 
     let engine = match engine::NetworkEngine::connect(port) {
         Ok(e) => e,

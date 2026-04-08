@@ -3,6 +3,20 @@ mod server;
 
 use plinko_shared::data::{Plan, Storage};
 
+fn parse_port_arg() -> Option<u16> {
+    let args: Vec<String> = std::env::args().collect();
+    let mut iter = args.iter().skip(1);
+    while let Some(arg) = iter.next() {
+        if arg == "-p" {
+            return iter.next()?.parse().ok();
+        }
+        if let Some(val) = arg.strip_prefix("-p") {
+            return val.parse().ok();
+        }
+    }
+    None
+}
+
 fn main() {
     let storage = match Storage::from_user_data_dir() {
         Ok(s) => s,
@@ -41,10 +55,12 @@ fn main() {
         plan
     };
 
-    let port: u16 = std::env::var("PLINKO_PORT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(7891);
+    let port: u16 = parse_port_arg().unwrap_or_else(|| {
+        std::env::var("PLINKO_PORT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(7891)
+    });
 
     let engine = engine::PlanEngine::new(plan);
     server::run_server(engine, storage, port);
