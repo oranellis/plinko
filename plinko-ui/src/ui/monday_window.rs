@@ -38,7 +38,7 @@ use crate::ui::text_input::TextInput;
 
 const PANEL_W: f32 = 680.0;
 const TITLE_H: f32 = 48.0;
-const FOOTER_H: f32 = 96.0;
+const FOOTER_H: f32 = 72.0;
 const CORNER: f32 = 8.0;
 const BTN_INSET: f32 = (TITLE_H - BACK_BTN_SIZE) / 2.0;
 const SCROLLBAR_W: f32 = 4.0;
@@ -919,13 +919,12 @@ impl FloatingWindow for MondayWindow {
         );
 
         let fp = panel.left + PLAN_FORM_PADDING;
-        let _fy = footer_top
-            + (FOOTER_H / 2.0 - PLAN_BTN_H) / 2.0
-            + (FOOTER_H - PLAN_BTN_H * 2.0 - 8.0) / 2.0;
-        let pull_rect = Rect::from_xywh(fp, footer_top + 16.0, 160.0, PLAN_BTN_H);
-        let push_rect = Rect::from_xywh(fp + 168.0, footer_top + 16.0, 160.0, PLAN_BTN_H);
-        let clear_rect =
-            Rect::from_xywh(fp, footer_top + 16.0 + PLAN_BTN_H + 8.0, 160.0, PLAN_BTN_H);
+        let available_w = PANEL_W - 2.0 * PLAN_FORM_PADDING;
+        let btn_w = (available_w - 16.0) / 3.0; // 3 buttons, 2 gaps of 8px
+        let btn_y = footer_top + 16.0;
+        let pull_rect = Rect::from_xywh(fp, btn_y, btn_w, PLAN_BTN_H);
+        let push_rect = Rect::from_xywh(fp + btn_w + 8.0, btn_y, btn_w, PLAN_BTN_H);
+        let clear_rect = Rect::from_xywh(fp + (btn_w + 8.0) * 2.0, btn_y, btn_w, PLAN_BTN_H);
         Self::draw_button(
             canvas,
             pull_rect,
@@ -971,7 +970,7 @@ impl FloatingWindow for MondayWindow {
         if !status_msg.is_empty() {
             paint.set_color(Color::from(MUTED_FG));
             let (_, metrics) = font.metrics();
-            let sy = footer_top + 16.0 + PLAN_BTN_H * 2.0 + 16.0 - metrics.ascent;
+            let sy = footer_top + 16.0 + PLAN_BTN_H + 10.0 - metrics.ascent;
             canvas.draw_str(&status_msg, (fp, sy), font, &paint);
         }
 
