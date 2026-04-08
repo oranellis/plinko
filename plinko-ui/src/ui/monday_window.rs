@@ -108,6 +108,8 @@ pub struct MondayWindow {
     sync_state: Arc<Mutex<SyncState>>,
     /// Progress for the current diff-based push: `(done, total)` operations.
     push_progress: Arc<Mutex<Option<(usize, usize)>>>,
+    /// New item→node mappings returned by a completed push (new items created on Monday).
+    pending_new_mappings: Arc<Mutex<Option<Vec<ItemNodeMapping>>>>,
     /// Pending result from a "Fetch board info" background thread.
     pending_board_result: Arc<Mutex<Option<(Vec<MondayUser>, Vec<String>)>>>,
     // ── Hit rects (populated in render) ──
@@ -195,6 +197,7 @@ impl MondayWindow {
             hov_clear: false,
             sync_state: Arc::new(Mutex::new(SyncState::Idle)),
             push_progress: Arc::new(Mutex::new(None)),
+            pending_new_mappings: Arc::new(Mutex::new(None)),
             pending_board_result: Arc::new(Mutex::new(None)),
             rects: std::cell::RefCell::new(HitRects::default()),
         }
@@ -1271,17 +1274,18 @@ impl FloatingWindow for MondayWindow {
             self.save_config();
             let config = self.current_config();
             let token = self.api_token.content.trim().to_string();
+            let plan_id = self.plan_id;
             let item_node_map = self.item_node_map.clone();
             let plan_snapshot = plan.clone();
             let status = Arc::clone(&self.sync_state);
             let progress = Arc::clone(&self.push_progress);
+            let new_mappings_slot = Arc::clone(&self.pending_new_mappings);
             // Reset progress from any previous push.
             *progress.lock().unwrap() = None;
             *status.lock().unwrap() =
                 SyncState::InProgress("Fetching current Monday state...".to_string());
             thread::spawn(move || {
                 let client = MondayClient::new(&token);
-                // After the fetch completes and we start applying ops, update the message.
                 *status.lock().unwrap() =
                     SyncState::InProgress("Pushing changes to Monday.com...".to_string());
                 match export::export_to_monday_diff(
@@ -1291,7 +1295,16 @@ impl FloatingWindow for MondayWindow {
                     &item_node_map,
                     &progress,
                 ) {
-                    Ok(msg) => {
+                    Ok((msg, updated_map)) => {
+                        // Persist updated item_node_map (includes any newly created items).
+                        let mut updated_config = config;
+                        updated_config.item_node_map = updated_map.clone();
+                        if let Ok(storage) = Storage::from_user_data_dir() {
+                            storage.save_monday_config(plan_id, &updated_config);
+                        }
+                        // Pass new mappings back to the window via arc so tick() can
+                        // update self.item_node_map for subsequent pushes.
+                        *new_mappings_slot.lock().unwrap() = Some(updated_map);
                         *status.lock().unwrap() = SyncState::Done(msg);
                     }
                     Err(e) => {
@@ -1423,6 +1436,13 @@ impl FloatingWindow for MondayWindow {
     }
 
     fn tick(&mut self) -> DirtyRegion {
+        // Consume any new item→node mappings returned by a completed push.
+        let new_map = self.pending_new_mappings.lock().unwrap().take();
+        if let Some(map) = new_map {
+            self.item_node_map = map;
+            return DirtyRegion::All;
+        }
+
         // Consume any result from a completed "Fetch board info" background thread.
         let board_result = self.pending_board_result.lock().unwrap().take();
         if let Some((fetched_users, fetched_statuses)) = board_result {

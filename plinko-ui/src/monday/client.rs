@@ -353,6 +353,161 @@ impl MondayClient {
         self.graphql(&query)?;
         Ok(())
     }
+    /// Update a person column on an item.
+    ///
+    /// `monday_user_ids` should be the raw Monday numeric user IDs (stored as
+    /// strings in our model). Pass an empty slice to clear the column.
+    pub fn update_person(
+        &self,
+        board_id: &str,
+        item_id: &str,
+        person_col: &str,
+        monday_user_ids: &[&str],
+    ) -> Result<(), MondayApiError> {
+        let persons_json = monday_user_ids
+            .iter()
+            .map(|id| format!(r#"{{\\\"id\\\":{id},\\\"kind\\\":\\\"person\\\"}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let value = format!(r#"{{\"personsAndTeams\":[{persons_json}]}}"#);
+        let query = format!(
+            r#"mutation {{
+                change_column_value(
+                    board_id: {board_id},
+                    item_id: {item_id},
+                    column_id: "{person_col}",
+                    value: "{value}"
+                ) {{ id }}
+            }}"#
+        );
+        self.graphql(&query)?;
+        Ok(())
+    }
+
+    /// Update a numbers column on an item (used for workload).
+    pub fn update_workload(
+        &self,
+        board_id: &str,
+        item_id: &str,
+        workload_col: &str,
+        value: f32,
+    ) -> Result<(), MondayApiError> {
+        let query = format!(
+            r#"mutation {{
+                change_column_value(
+                    board_id: {board_id},
+                    item_id: {item_id},
+                    column_id: "{workload_col}",
+                    value: "\"{value}\""
+                ) {{ id }}
+            }}"#
+        );
+        self.graphql(&query)?;
+        Ok(())
+    }
+
+    /// Fetch all groups on a board. Returns `(group_id, group_title)` pairs.
+    pub fn fetch_groups(&self, board_id: &str) -> Result<Vec<(String, String)>, MondayApiError> {
+        let query = format!(
+            r#"query {{
+                boards(ids: [{board_id}]) {{
+                    groups {{ id title }}
+                }}
+            }}"#
+        );
+        let resp = self.graphql(&query)?;
+        let groups = resp["data"]["boards"][0]["groups"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        Ok(groups
+            .iter()
+            .map(|g| {
+                (
+                    g["id"].as_str().unwrap_or("").to_string(),
+                    g["title"].as_str().unwrap_or("").to_string(),
+                )
+            })
+            .collect())
+    }
+
+    /// Create a new group on a board. Returns the new group ID.
+    pub fn create_group(&self, board_id: &str, group_name: &str) -> Result<String, MondayApiError> {
+        let query = format!(
+            r#"mutation {{
+                create_group(board_id: {board_id}, group_name: "{group_name}") {{
+                    id
+                }}
+            }}"#
+        );
+        let resp = self.graphql(&query)?;
+        let id = resp["data"]["create_group"]["id"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() {
+            return Err(MondayApiError("create_group returned no id".to_string()));
+        }
+        Ok(id)
+    }
+
+    /// Create a top-level item in a group. Returns the new item ID.
+    pub fn create_item(
+        &self,
+        board_id: &str,
+        group_id: &str,
+        item_name: &str,
+    ) -> Result<String, MondayApiError> {
+        let escaped = item_name.replace('"', "\\\"");
+        let query = format!(
+            r#"mutation {{
+                create_item(
+                    board_id: {board_id},
+                    group_id: "{group_id}",
+                    item_name: "{escaped}"
+                ) {{
+                    id
+                }}
+            }}"#
+        );
+        let resp = self.graphql(&query)?;
+        let id = resp["data"]["create_item"]["id"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        if id.is_empty() {
+            return Err(MondayApiError("create_item returned no id".to_string()));
+        }
+        Ok(id)
+    }
+
+    /// Create a subitem under an existing item. Returns `(subitem_id, subitem_board_id)`.
+    pub fn create_subitem(
+        &self,
+        parent_item_id: &str,
+        item_name: &str,
+    ) -> Result<(String, String), MondayApiError> {
+        let escaped = item_name.replace('"', "\\\"");
+        let query = format!(
+            r#"mutation {{
+                create_subitem(
+                    parent_item_id: {parent_item_id},
+                    item_name: "{escaped}"
+                ) {{
+                    id
+                    board {{ id }}
+                }}
+            }}"#
+        );
+        let resp = self.graphql(&query)?;
+        let sub = &resp["data"]["create_subitem"];
+        let id = sub["id"].as_str().unwrap_or("").to_string();
+        let board_id = sub["board"]["id"].as_str().unwrap_or("").to_string();
+        if id.is_empty() {
+            return Err(MondayApiError("create_subitem returned no id".to_string()));
+        }
+        Ok((id, board_id))
+    }
 }
 // }}}
 
