@@ -236,7 +236,14 @@ impl Plan {
         }
 
         // Stage 3 – scheduler_target dependents
-        let target = self.scheduler_target;
+        // Guard: if the target node was deleted from the plan (e.g. a milestone that was
+        // removed after being set as the target), fall back to PlanStart so the scheduler
+        // doesn't error trying to path-find to a non-existent node.
+        let target = match self.scheduler_target {
+            NodeId::Task(tid) if !self.tasks.contains_key(&tid) => NodeId::PlanStart,
+            NodeId::Milestone(mid) if !self.milestones.contains_key(&mid) => NodeId::PlanStart,
+            other => other,
+        };
         if !matches!(target, NodeId::PlanStart) {
             let list = self.get_priority_sorted_task_list_to_node(target, &dependents_map)?;
             for id in list {
