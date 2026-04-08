@@ -211,7 +211,18 @@ pub fn import_from_monday(
 
         let start_date = tl_start.unwrap_or(plan_start);
         match status {
-            Status::NotStarted => {}
+            Status::NotStarted => {
+                // Overwrite duration from Monday's timeline so a timeline change
+                // (e.g. 8 days → 4 days) is reflected on re-import.
+                if has_timeline {
+                    let wd = timeline_working_days(*tl_start, *tl_end);
+                    if wd > 0.0 {
+                        if let Some(task) = plan.tasks.get_mut(task_id) {
+                            task.duration_days_target = wd;
+                        }
+                    }
+                }
+            }
             Status::InProgress => {
                 // Set actual_start from timeline then start the task.
                 if let Some(task) = plan.tasks.get_mut(task_id) {
