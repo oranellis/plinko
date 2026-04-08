@@ -98,7 +98,9 @@ pub fn draw_overview(
     }
     draw_gantt_rows(canvas, state, plan, &rows, w, h, view_start, cache);
     // Flash highlight on top of rows but below header/toolbar.
-    if state.flash_timer > 0.0 && let Some(node_id) = state.flash_node {
+    if state.flash_timer > 0.0
+        && let Some(node_id) = state.flash_node
+    {
         draw_flash_highlight(canvas, state, &rows, w, h, view_start, node_id);
     }
     draw_gantt_header(canvas, state, w, view_start, cache);
@@ -843,20 +845,20 @@ fn draw_flash_highlight(
         for item in &row.items {
             match item {
                 GanttItem::Task { id, start, end } if NodeId::Task(*id) == node_id => {
-                    let x1 = date_to_x(*start, view_start, state.zoom, state.scroll_x);
-                    let x2 = date_to_x(*end, view_start, state.zoom, state.scroll_x);
+                    let bar_x = date_to_x(*start, view_start, state.zoom, state.scroll_x);
+                    let bar_w = (((*end - *start).num_days() + 1) as f32 * state.zoom).max(2.0);
                     let bar_h = GANTT_ROW_H - 2.0 * GANTT_ROW_PADDING;
                     let bar_y = row_y + GANTT_ROW_PADDING;
-                    // Skip if fully off-screen
-                    if x2 < 0.0 || x1 > width {
+                    if bar_x + bar_w < 0.0 || bar_x > width {
                         return;
                     }
-                    let rect = Rect::from_xywh(x1, bar_y, (x2 - x1).max(2.0), bar_h);
+                    let rect = Rect::from_xywh(bar_x, bar_y, bar_w, bar_h);
                     canvas.draw_rect(rect, &paint);
                     return;
                 }
                 GanttItem::Milestone { id, date } if NodeId::Milestone(*id) == node_id => {
-                    let cx = date_to_x(*date, view_start, state.zoom, state.scroll_x);
+                    let cx =
+                        date_to_x(*date, view_start, state.zoom, state.scroll_x) + state.zoom / 2.0;
                     let cy = row_y + GANTT_ROW_H / 2.0;
                     let r = GANTT_ROW_H * 0.28 + 3.0;
                     if cx < -r || cx > width + r {
