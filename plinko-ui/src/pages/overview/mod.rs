@@ -4,6 +4,8 @@ pub mod gantt;
 pub mod render;
 pub mod state;
 
+use std::sync::Arc;
+
 use skia_safe::Canvas;
 
 use crate::engine::PlanRequestSender;
@@ -16,6 +18,7 @@ use crate::ui::layout::{
     TOOLBAR_BTN_SIZE, TOOLBAR_BTN_Y,
 };
 use crate::ui::milestone_form_window::MilestoneFormWindow;
+use crate::ui::search_window::SearchWindow;
 use crate::ui::task_form_window::TaskFormWindow;
 use crate::ui::users_window::UsersWindow;
 use plinko_shared::data::Plan;
@@ -47,6 +50,50 @@ impl OverviewPage {
         let content_h = rows as f32 * GANTT_ROW_H;
         let visible_h = height - Self::gantt_rows_top();
         (content_h - visible_h).max(0.0)
+    }
+
+    /// Scroll the Gantt view so that `node_id` is centred, then start the flash.
+    fn scroll_to_node(&mut self, node_id: NodeId, width: f32, height: f32, plan: &Plan) {
+        use chrono::Duration;
+        use gantt::{GanttItem, pack_rows};
+
+        let rows = gantt::pack_rows(plan);
+        let view_start = render::view_start_date(plan);
+
+        for (row_idx, row) in rows.iter().enumerate() {
+            for item in &row.items {
+                let (target_date, matches) = match item {
+                    GanttItem::Task { id, start, end } if NodeId::Task(*id) == node_id => {
+                        let mid_days = ((*end - *start).num_days()) / 2;
+                        (*start + Duration::days(mid_days), true)
+                    }
+                    GanttItem::Milestone { id, date } if NodeId::Milestone(*id) == node_id => {
+                        (*date, true)
+                    }
+                    _ => (plan.start_date, false),
+                };
+                if !matches {
+                    continue;
+                }
+
+                // Centre horizontally on the node date.
+                let day_offset = (target_date - view_start).num_days();
+                self.state.scroll_x = day_offset as f32 * self.state.zoom - width / 2.0;
+
+                // Centre vertically on the row.
+                let rows_top = Self::gantt_rows_top();
+                let visible_h = height - rows_top;
+                let row_center = row_idx as f32 * GANTT_ROW_H + GANTT_ROW_H / 2.0;
+                let target_y = row_center - visible_h / 2.0;
+                let max_y = Self::max_scroll_y(rows.len(), height);
+                self.state.scroll_y = target_y.clamp(0.0, max_y);
+
+                // Stop any ongoing momentum.
+                self.state.vel_x = 0.0;
+                self.state.vel_y = 0.0;
+                return;
+            }
+        }
     }
 }
 // }}}
@@ -192,8 +239,9 @@ impl Page for OverviewPage {
                     }
                     Some(1) => self.state.open_task_form = true,
                     Some(2) => self.state.open_milestone_form = true,
-                    Some(3) => self.state.open_users_window = true,
-                    Some(4) => {
+                    Some(3) => self.state.open_search = true,
+                    Some(4) => self.state.open_users_window = true,
+                    Some(5) => {
                         self.state.settings_init_name = plan.name.clone();
                         self.state.settings_init_date = plan.start_date.to_string();
                         self.state.settings_init_scheduler_target = plan.scheduler_target;
@@ -275,6 +323,12 @@ impl Page for OverviewPage {
         if let Some(w) = self.state.pending_window.take() {
             return Some(w);
         }
+        if self.state.open_search {
+            self.state.open_search = false;
+            return Some(Box::new(SearchWindow::new(Arc::clone(
+                &self.state.search_result,
+            ))));
+        }
         if self.state.open_users_window {
             self.state.open_users_window = false;
             return Some(Box::new(UsersWindow::new()));
@@ -311,11 +365,39 @@ impl Page for OverviewPage {
         self.state.vel_x.abs() > 0.1
             || self.state.vel_y.abs() > 0.1
             || (self.state.zoom_target - self.state.zoom).abs() > 0.05
+            || self.state.flash_timer > 0.0
+            || self
+                .state
+                .search_result
+                .try_lock()
+                .ok()
+                .is_some_and(|g| g.is_some())
     }
 
     fn tick_animation(&mut self, width: f32, height: f32, plan: &Plan) -> DirtyRegion {
         let friction = 0.88_f32;
         let mut dirty = false;
+
+        // Drain any pending search result and scroll to that node.
+        // Drop the guard before calling scroll_to_node (which needs &mut self).
+        let pending_node = self
+            .state
+            .search_result
+            .try_lock()
+            .ok()
+            .and_then(|mut g| g.take());
+        if let Some(node_id) = pending_node {
+            self.scroll_to_node(node_id, width, height, plan);
+            self.state.flash_node = Some(node_id);
+            self.state.flash_timer = 1.0;
+            dirty = true;
+        }
+
+        // Decay flash animation.
+        if self.state.flash_timer > 0.0 {
+            self.state.flash_timer = (self.state.flash_timer - 0.012).max(0.0);
+            dirty = true;
+        }
 
         // Smooth zoom: lerp toward zoom_target, pivoting around the cursor.
         let zoom_diff = self.state.zoom_target - self.state.zoom;

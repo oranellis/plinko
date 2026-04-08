@@ -97,6 +97,10 @@ pub fn draw_overview(
         draw_highlighted_dep_arrows(canvas, state, plan, &rows, w, h, view_start);
     }
     draw_gantt_rows(canvas, state, plan, &rows, w, h, view_start, cache);
+    // Flash highlight on top of rows but below header/toolbar.
+    if state.flash_timer > 0.0 && let Some(node_id) = state.flash_node {
+        draw_flash_highlight(canvas, state, &rows, w, h, view_start, node_id);
+    }
     draw_gantt_header(canvas, state, w, view_start, cache);
     draw_toolbar_buttons(canvas, state, cache, w);
 
@@ -124,7 +128,7 @@ pub fn draw_overview(
 // ── Toolbar buttons ────────────────────────────────────────────────────────────
 
 fn draw_toolbar_buttons(canvas: &Canvas, state: &OverviewState, cache: &RenderCache, width: f32) {
-    // Left-side buttons: today (0), add-task (1), add-milestone (2)
+    // Left-side buttons: today (0), add-task (1), add-milestone (2), search (3)
     icon_button::draw_icon_button(
         canvas,
         toolbar_btn_x(0),
@@ -146,34 +150,41 @@ fn draw_toolbar_buttons(canvas: &Canvas, state: &OverviewState, cache: &RenderCa
         state.toolbar_btn_hovered == Some(2),
         &cache.icon_diamond,
     );
-    // Right-side buttons: person (3), settings (4)
+    icon_button::draw_icon_button(
+        canvas,
+        toolbar_btn_x(3),
+        TOOLBAR_BTN_Y,
+        state.toolbar_btn_hovered == Some(3),
+        &cache.icon_search,
+    );
+    // Right-side buttons: person (4), settings (5)
     icon_button::draw_icon_button(
         canvas,
         person_right_btn_x(width),
         TOOLBAR_BTN_Y,
-        state.toolbar_btn_hovered == Some(3),
+        state.toolbar_btn_hovered == Some(4),
         &cache.icon_person,
     );
     icon_button::draw_icon_button(
         canvas,
         settings_btn_x(width),
         TOOLBAR_BTN_Y,
-        state.toolbar_btn_hovered == Some(4),
+        state.toolbar_btn_hovered == Some(5),
         &cache.icon_settings,
     );
 }
 
 pub fn hit_test_toolbar_buttons(px: f32, py: f32, width: f32) -> Option<usize> {
-    for i in 0..3_u32 {
+    for i in 0..4_u32 {
         if icon_button::hit_test_icon_button(px, py, toolbar_btn_x(i), TOOLBAR_BTN_Y) {
             return Some(i as usize);
         }
     }
     if icon_button::hit_test_icon_button(px, py, person_right_btn_x(width), TOOLBAR_BTN_Y) {
-        return Some(3);
+        return Some(4);
     }
     if icon_button::hit_test_icon_button(px, py, settings_btn_x(width), TOOLBAR_BTN_Y) {
-        return Some(4);
+        return Some(5);
     }
     None
 }
@@ -389,15 +400,20 @@ fn draw_gantt_grid(
             );
         }
 
-        // Vertical day separator line
-        paint.set_style(PaintStyle::Stroke);
+        // Today column: filled dark-blue background instead of a line.
         if date == today {
-            paint.set_color(Color::from(GANTT_TODAY_LINE_COLOR));
-            paint.set_stroke_width(2.0);
-        } else {
-            paint.set_color(Color::from(GANTT_DAY_LINE_COLOR));
-            paint.set_stroke_width(GANTT_DAY_LINE_W);
+            paint.set_color(Color::from(GANTT_TODAY_BG));
+            paint.set_style(PaintStyle::Fill);
+            canvas.draw_rect(
+                Rect::from_xywh(x, rows_top, zoom, height - rows_top),
+                &paint,
+            );
         }
+
+        // Vertical day separator line (uniform for all days)
+        paint.set_style(PaintStyle::Stroke);
+        paint.set_color(Color::from(GANTT_DAY_LINE_COLOR));
+        paint.set_stroke_width(GANTT_DAY_LINE_W);
         canvas.draw_line((x, rows_top), (x, height), &paint);
     }
 }
@@ -793,6 +809,74 @@ fn draw_warning_icon(canvas: &Canvas, rect: Rect, hovered: bool, paint: &mut Pai
         paint,
     );
     canvas.draw_circle((cx, bot - (bot - top) * 0.15), bang_w / 2.0 + 0.5, paint);
+}
+
+/// Draw a pulsing gold border around the task bar or milestone diamond for the
+/// currently-flashing node (after a search-navigate).
+#[allow(clippy::too_many_arguments)]
+fn draw_flash_highlight(
+    canvas: &Canvas,
+    state: &OverviewState,
+    rows: &[crate::pages::overview::gantt::GanttRow],
+    width: f32,
+    height: f32,
+    view_start: NaiveDate,
+    node_id: plinko_shared::data::ids::NodeId,
+) {
+    use crate::pages::overview::gantt::GanttItem;
+    use plinko_shared::data::ids::NodeId;
+    use skia_safe::{PaintStyle, Rect};
+
+    let alpha = (state.flash_timer * 255.0) as u8;
+    let flash_color = Color::from(GANTT_FLASH_COLOR).with_a(alpha);
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    paint.set_style(PaintStyle::Stroke);
+    paint.set_color(flash_color);
+    paint.set_stroke_width(3.0);
+
+    let num_rows = rows.len();
+
+    for (row_idx, row) in rows.iter().enumerate() {
+        let row_y = row_top_y(row_idx, num_rows, height, state.scroll_y);
+
+        for item in &row.items {
+            match item {
+                GanttItem::Task { id, start, end } if NodeId::Task(*id) == node_id => {
+                    let x1 = date_to_x(*start, view_start, state.zoom, state.scroll_x);
+                    let x2 = date_to_x(*end, view_start, state.zoom, state.scroll_x);
+                    let bar_h = GANTT_ROW_H - 2.0 * GANTT_ROW_PADDING;
+                    let bar_y = row_y + GANTT_ROW_PADDING;
+                    // Skip if fully off-screen
+                    if x2 < 0.0 || x1 > width {
+                        return;
+                    }
+                    let rect = Rect::from_xywh(x1, bar_y, (x2 - x1).max(2.0), bar_h);
+                    canvas.draw_rect(rect, &paint);
+                    return;
+                }
+                GanttItem::Milestone { id, date } if NodeId::Milestone(*id) == node_id => {
+                    let cx = date_to_x(*date, view_start, state.zoom, state.scroll_x);
+                    let cy = row_y + GANTT_ROW_H / 2.0;
+                    let r = GANTT_ROW_H * 0.28 + 3.0;
+                    if cx < -r || cx > width + r {
+                        return;
+                    }
+                    // Draw a diamond outline around the milestone.
+                    use skia_safe::PathBuilder;
+                    let mut pb = PathBuilder::new();
+                    pb.move_to((cx, cy - r));
+                    pb.line_to((cx + r, cy));
+                    pb.line_to((cx, cy + r));
+                    pb.line_to((cx - r, cy));
+                    pb.close();
+                    canvas.draw_path(&pb.detach(), &paint);
+                    return;
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// Draw a tooltip near `(cursor_x, cursor_y)` showing the constraint violation details.

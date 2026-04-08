@@ -232,8 +232,22 @@ pub fn build_icon_calendar_edit(w: f32, h: f32) -> Path {
     pb.detach()
 }
 
-/// Builds a three-line slider icon (horizontal rules with circular knobs)
-/// representing settings / configuration.
+/// Builds a magnifying glass search icon.
+pub fn build_icon_search(w: f32, h: f32) -> Path {
+    let mut pb = PathBuilder::new();
+    // Lens circle (offset toward top-left)
+    let cx = w * 0.40;
+    let cy = h * 0.40;
+    let r = w * 0.28;
+    let oval = Rect::from_xywh(cx - r, cy - r, 2.0 * r, 2.0 * r);
+    pb.add_arc(oval, 0.0, 360.0);
+    // Handle line (diagonal toward bottom-right)
+    let hx0 = cx + r * std::f32::consts::FRAC_1_SQRT_2;
+    let hy0 = cy + r * std::f32::consts::FRAC_1_SQRT_2;
+    pb.move_to((hx0, hy0));
+    pb.line_to((w * 0.90, h * 0.90));
+    pb.detach()
+}
 pub fn build_icon_settings(w: f32, h: f32) -> Path {
     let mut pb = PathBuilder::new();
     // Three horizontal lines with knobs (slider-settings style)

@@ -1,5 +1,7 @@
 //! Mutable state for the overview page.
 
+use std::sync::{Arc, Mutex};
+
 use crate::ui::floating_window::FloatingWindow;
 use crate::ui::layout::GANTT_ZOOM_DEFAULT;
 use plinko_shared::data::ids::NodeId;
@@ -15,6 +17,8 @@ pub struct OverviewState {
     pub open_task_form: bool,
     /// Set when the milestone (diamond) toolbar button is clicked; consumed by `take_open_request`.
     pub open_milestone_form: bool,
+    /// Set when the search button is clicked; consumed by `take_open_request`.
+    pub open_search: bool,
     /// A fully-constructed floating window to open on the next `take_open_request` call.
     /// Used for edit forms created from Gantt-item clicks (where `plan` is available).
     pub pending_window: Option<Box<dyn FloatingWindow>>,
@@ -58,6 +62,15 @@ pub struct OverviewState {
     pub hovered_deps: HashSet<NodeId>,
     /// Nodes that directly depend on `hovered_node` (downstream).
     pub hovered_dependents: HashSet<NodeId>,
+
+    // ── Search-navigate flash ──────────────────────────────────────────────
+    /// Shared result channel with the open `SearchWindow`. When a node is selected
+    /// the window writes its `NodeId` here; `tick_animation` drains it.
+    pub search_result: Arc<Mutex<Option<NodeId>>>,
+    /// The node currently being flashed after a search-navigate action.
+    pub flash_node: Option<NodeId>,
+    /// Flash animation progress, 1.0 → 0.0. Decays each animation tick.
+    pub flash_timer: f32,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -68,6 +81,7 @@ impl OverviewState {
             open_users_window: false,
             open_task_form: false,
             open_milestone_form: false,
+            open_search: false,
             pending_window: None,
             scroll_y: 0.0,
             zoom: GANTT_ZOOM_DEFAULT,
@@ -93,6 +107,9 @@ impl OverviewState {
             hovered_node: None,
             hovered_deps: HashSet::new(),
             hovered_dependents: HashSet::new(),
+            search_result: Arc::new(Mutex::new(None)),
+            flash_node: None,
+            flash_timer: 0.0,
         }
     }
 }
