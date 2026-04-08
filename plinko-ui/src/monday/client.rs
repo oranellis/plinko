@@ -271,6 +271,54 @@ impl MondayClient {
         Ok(result)
     }
 
+    /// Update a status column on an item using a label name.
+    pub fn update_status(
+        &self,
+        board_id: &str,
+        item_id: &str,
+        status_col: &str,
+        label: &str,
+    ) -> Result<(), MondayApiError> {
+        let value = format!(r#"{{\"label\":\"{label}\"}}"#);
+        let query = format!(
+            r#"mutation {{
+                change_column_value(
+                    board_id: {board_id},
+                    item_id: {item_id},
+                    column_id: "{status_col}",
+                    value: "{value}"
+                ) {{ id }}
+            }}"#
+        );
+        self.graphql(&query)?;
+        Ok(())
+    }
+
+    /// Update the dependency column on an item to point to the given list of item IDs.
+    /// Pass an empty slice to clear all dependencies.
+    pub fn update_dependencies(
+        &self,
+        board_id: &str,
+        item_id: &str,
+        dep_col: &str,
+        dep_item_ids: &[&str],
+    ) -> Result<(), MondayApiError> {
+        let ids_json = dep_item_ids.join(",");
+        let value = format!(r#"{{\"item_ids\":[{ids_json}]}}"#);
+        let query = format!(
+            r#"mutation {{
+                change_column_value(
+                    board_id: {board_id},
+                    item_id: {item_id},
+                    column_id: "{dep_col}",
+                    value: "{value}"
+                ) {{ id }}
+            }}"#
+        );
+        self.graphql(&query)?;
+        Ok(())
+    }
+
     /// Update a timeline column on an item.
     pub fn update_timeline(
         &self,

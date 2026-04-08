@@ -461,7 +461,7 @@ impl Plan {
                 other_task.dependencies.retain(|d| d.id != node);
                 for dep in &inherited {
                     if !other_task.dependencies.iter().any(|d| d.id == dep.id) {
-                        other_task.dependencies.push(dep.clone());
+                        other_task.dependencies.push(*dep);
                     }
                 }
             }
@@ -471,7 +471,7 @@ impl Plan {
                 milestone.dependencies.retain(|d| d.id != node);
                 for dep in &inherited {
                     if !milestone.dependencies.iter().any(|d| d.id == dep.id) {
-                        milestone.dependencies.push(dep.clone());
+                        milestone.dependencies.push(*dep);
                     }
                 }
             }
@@ -498,7 +498,7 @@ impl Plan {
                 task.dependencies.retain(|d| d.id != node);
                 for dep in &inherited {
                     if !task.dependencies.iter().any(|d| d.id == dep.id) {
-                        task.dependencies.push(dep.clone());
+                        task.dependencies.push(*dep);
                     }
                 }
             }
@@ -508,7 +508,7 @@ impl Plan {
                 other_ms.dependencies.retain(|d| d.id != node);
                 for dep in &inherited {
                     if !other_ms.dependencies.iter().any(|d| d.id == dep.id) {
-                        other_ms.dependencies.push(dep.clone());
+                        other_ms.dependencies.push(*dep);
                     }
                 }
             }
