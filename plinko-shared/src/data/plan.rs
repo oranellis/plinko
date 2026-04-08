@@ -444,20 +444,37 @@ impl Plan {
         ts.status = Status::Dropped;
     }
 
-    /// Remove a task and all dependency references to it from every other task
-    /// and milestone.  Also resets `scheduler_target` to `PlanStart` if it
-    /// was pointing at the deleted task.
+    /// Remove a task, preserving the dependency chain: every task/milestone that
+    /// depended on this task inherits its dependencies (deduplicated), so no gaps
+    /// appear in existing chains. The entire operation is atomic — no intermediate
+    /// scheduler runs occur.
     pub fn delete_task(&mut self, id: TaskId) -> bool {
-        if self.tasks.remove(&id).is_none() {
+        let Some(task) = self.tasks.remove(&id) else {
             return false;
-        }
+        };
         self.node_allocations.tasks.remove(&id);
         let node = NodeId::Task(id);
-        for task in self.tasks.values_mut() {
-            task.dependencies.retain(|d| d.id != node);
+        let inherited: Vec<Dependency> = task.dependencies.clone();
+
+        for other_task in self.tasks.values_mut() {
+            if other_task.dependencies.iter().any(|d| d.id == node) {
+                other_task.dependencies.retain(|d| d.id != node);
+                for dep in &inherited {
+                    if !other_task.dependencies.iter().any(|d| d.id == dep.id) {
+                        other_task.dependencies.push(dep.clone());
+                    }
+                }
+            }
         }
         for milestone in self.milestones.values_mut() {
-            milestone.dependencies.retain(|d| d.id != node);
+            if milestone.dependencies.iter().any(|d| d.id == node) {
+                milestone.dependencies.retain(|d| d.id != node);
+                for dep in &inherited {
+                    if !milestone.dependencies.iter().any(|d| d.id == dep.id) {
+                        milestone.dependencies.push(dep.clone());
+                    }
+                }
+            }
         }
         if self.scheduler_target == node {
             self.scheduler_target = NodeId::PlanStart;
@@ -465,20 +482,36 @@ impl Plan {
         true
     }
 
-    /// Remove a milestone and all dependency references to it from every other
-    /// task and milestone.  Also resets `scheduler_target` to `PlanStart` if
-    /// it was pointing at the deleted milestone.
+    /// Remove a milestone, preserving the dependency chain: every task/milestone
+    /// that depended on this milestone inherits its dependencies (deduplicated).
+    /// The entire operation is atomic — no intermediate scheduler runs occur.
     pub fn delete_milestone(&mut self, id: MilestoneId) -> bool {
-        if self.milestones.remove(&id).is_none() {
+        let Some(milestone) = self.milestones.remove(&id) else {
             return false;
-        }
+        };
         self.node_allocations.milestones.remove(&id);
         let node = NodeId::Milestone(id);
+        let inherited: Vec<Dependency> = milestone.dependencies.clone();
+
         for task in self.tasks.values_mut() {
-            task.dependencies.retain(|d| d.id != node);
+            if task.dependencies.iter().any(|d| d.id == node) {
+                task.dependencies.retain(|d| d.id != node);
+                for dep in &inherited {
+                    if !task.dependencies.iter().any(|d| d.id == dep.id) {
+                        task.dependencies.push(dep.clone());
+                    }
+                }
+            }
         }
-        for milestone in self.milestones.values_mut() {
-            milestone.dependencies.retain(|d| d.id != node);
+        for other_ms in self.milestones.values_mut() {
+            if other_ms.dependencies.iter().any(|d| d.id == node) {
+                other_ms.dependencies.retain(|d| d.id != node);
+                for dep in &inherited {
+                    if !other_ms.dependencies.iter().any(|d| d.id == dep.id) {
+                        other_ms.dependencies.push(dep.clone());
+                    }
+                }
+            }
         }
         if self.scheduler_target == node {
             self.scheduler_target = NodeId::PlanStart;
