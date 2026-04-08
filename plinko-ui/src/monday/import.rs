@@ -99,6 +99,12 @@ pub fn import_from_monday(
                 plan.add_milestone(ms);
                 NodeId::Milestone(ms_id)
             } else {
+                // Skip tasks with no person assigned and no workload — they're empty placeholders.
+                let has_person = !item.assigned_user_ids.is_empty();
+                let has_workload = item.workload.map_or(false, |w| w > 0.0);
+                if !has_person && !has_workload {
+                    continue;
+                }
                 let task = build_task(item, config);
                 let task_id = task.id;
                 let status = resolve_status(item, config);
