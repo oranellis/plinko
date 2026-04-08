@@ -1030,33 +1030,34 @@ impl MilestoneFormWindow {
                     .description(description.clone())
                     .constraint(constraint)
                     .dependencies(dependencies.clone());
+                // Remove dropped forward dependents BEFORE applying the patch so the
+                // cycle-check inside apply_milestone_patch sees the updated graph.
+                let current_node = NodeId::Milestone(id);
+                let new_dep_node_set: std::collections::HashSet<NodeId> =
+                    new_dependents.iter().map(|(n, _)| *n).collect();
+                let old_dependents_map = plan.build_dependents_map();
+                if let Some(old_deps) = old_dependents_map.get(&current_node) {
+                    for &old_dep in old_deps {
+                        if !new_dep_node_set.contains(&old_dep) {
+                            match old_dep {
+                                NodeId::Task(t_id) => {
+                                    if let Some(t) = dry_plan.tasks.get_mut(&t_id) {
+                                        t.dependencies.retain(|d| d.id != current_node);
+                                    }
+                                }
+                                NodeId::Milestone(m_id) => {
+                                    if let Some(m) = dry_plan.milestones.get_mut(&m_id) {
+                                        m.dependencies.retain(|d| d.id != current_node);
+                                    }
+                                }
+                                NodeId::PlanStart => {}
+                            }
+                        }
+                    }
+                }
                 apply_milestone_patch(&mut dry_plan, id, patch)
                     .map_err(|e| e.to_string())
                     .and_then(|()| {
-                        // Apply dependent changes
-                        let current_node = NodeId::Milestone(id);
-                        let new_dep_node_set: std::collections::HashSet<NodeId> =
-                            new_dependents.iter().map(|(n, _)| *n).collect();
-                        let old_dependents_map = plan.build_dependents_map();
-                        if let Some(old_deps) = old_dependents_map.get(&current_node) {
-                            for &old_dep in old_deps {
-                                if !new_dep_node_set.contains(&old_dep) {
-                                    match old_dep {
-                                        NodeId::Task(t_id) => {
-                                            if let Some(t) = dry_plan.tasks.get_mut(&t_id) {
-                                                t.dependencies.retain(|d| d.id != current_node);
-                                            }
-                                        }
-                                        NodeId::Milestone(m_id) => {
-                                            if let Some(m) = dry_plan.milestones.get_mut(&m_id) {
-                                                m.dependencies.retain(|d| d.id != current_node);
-                                            }
-                                        }
-                                        NodeId::PlanStart => {}
-                                    }
-                                }
-                            }
-                        }
                         for (dep_node, lag) in &new_dependents {
                             let dep_entry = Dependency {
                                 id: current_node,
@@ -1145,9 +1146,9 @@ impl MilestoneFormWindow {
                     .description(description)
                     .constraint(constraint)
                     .dependencies(dependencies);
-                sender.send(PlanRequest::UpdateMilestone(milestone_id, patch));
 
-                // Send dependent updates
+                // Send forward-dependent REMOVALS first so the server's cycle check
+                // sees the updated graph before the edited milestone's new backward deps arrive.
                 let current_node = NodeId::Milestone(milestone_id);
                 let new_dep_node_set: std::collections::HashSet<NodeId> =
                     new_dependents.iter().map(|(n, _)| *n).collect();
@@ -1195,6 +1196,7 @@ impl MilestoneFormWindow {
                         }
                     }
                 }
+                sender.send(PlanRequest::UpdateMilestone(milestone_id, patch));
                 for (dep_node, lag) in &new_dependents {
                     let current_lag = match dep_node {
                         NodeId::Task(t_id) => plan
