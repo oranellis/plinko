@@ -393,6 +393,15 @@ impl Plan {
         let deps = self.get_dependencies(&node_id);
         let is_milestone = matches!(node_id, NodeId::Milestone(_));
 
+        // A derived-complete milestone (all predecessors are done) is allowed to
+        // land in the past — it already happened. Non-complete milestones and all
+        // tasks are constrained to today or later.
+        let is_derived_complete = if let NodeId::Milestone(mid) = node_id {
+            self.milestone_derived_complete(mid, state)
+        } else {
+            false
+        };
+
         // Milestones are pure date markers — they sit where their dependencies land.
         // Tasks cannot start in the past; unstarted tasks start no sooner than tomorrow.
         let tomorrow = state.today + chrono::Duration::days(1);
@@ -407,7 +416,14 @@ impl Plan {
         };
 
         for dep in deps {
-            let pred_end = self.node_end_date_in_state(dep.id, state);
+            // For derived-complete milestones, PlanStart is treated as self.start_date
+            // (the milestone already happened). For everything else, PlanStart is
+            // today.max(start_date) so nothing unfinished is scheduled in the past.
+            let pred_end = if is_derived_complete && dep.id == NodeId::PlanStart {
+                self.start_date
+            } else {
+                self.node_end_date_in_state(dep.id, state)
+            };
             let lag = dep.lag_days.round() as i64;
             // For task predecessors: tasks need the *next* day to start work, so add 1.
             // Milestones are date-point markers: a milestone successor can land on the
@@ -949,6 +965,49 @@ impl Plan {
         Ok(())
     }
 
+    /// Returns true if all of a milestone's predecessors are complete, meaning
+    /// the milestone itself should be considered derived-complete and allowed to
+    /// be scheduled at its dependency-computed date (even if that is in the past).
+    ///
+    /// - PlanStart is always considered complete.
+    /// - A task predecessor is complete if its status is Complete or Dropped.
+    /// - A milestone predecessor is complete if its own derived_status is Complete
+    ///   (set earlier in this scheduling pass, since we run in topological order).
+    fn milestone_derived_complete(&self, id: MilestoneId, state: &SchedulerState) -> bool {
+        let Some(milestone) = self.milestones.get(&id) else {
+            return false;
+        };
+        for dep in &milestone.dependencies {
+            match dep.id {
+                NodeId::PlanStart => {} // always complete
+                NodeId::Task(tid) => {
+                    let status = self
+                        .node_allocations
+                        .tasks
+                        .get(&tid)
+                        .map(|ts| ts.status)
+                        .unwrap_or(Status::NotStarted);
+                    match status {
+                        Status::Complete | Status::Dropped => {}
+                        _ => return false,
+                    }
+                }
+                NodeId::Milestone(mid) => {
+                    let pred_complete = state
+                        .allocations
+                        .milestones
+                        .get(&mid)
+                        .map(|a| a.derived_status() == Status::Complete)
+                        .unwrap_or(false);
+                    if !pred_complete {
+                        return false;
+                    }
+                }
+            }
+        }
+        true
+    }
+
     fn insert_milestone(
         &self,
         id: MilestoneId,
@@ -1020,10 +1079,13 @@ impl Plan {
             }
         }
 
-        state
-            .allocations
-            .milestones
-            .insert(id, MilestoneAllocation::new(date));
+        state.allocations.milestones.insert(id, {
+            let mut alloc = MilestoneAllocation::new(date);
+            if self.milestone_derived_complete(id, state) {
+                alloc.set_derived_status(Status::Complete);
+            }
+            alloc
+        });
         state.inserted.insert(NodeId::Milestone(id));
 
         self.propagate_to_dependents(NodeId::Milestone(id), state, dependents_map, protect_node)?;

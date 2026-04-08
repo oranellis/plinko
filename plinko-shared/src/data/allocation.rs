@@ -106,6 +106,14 @@ impl MilestoneAllocation {
     pub fn date(&self) -> NaiveDate {
         self.date
     }
+
+    pub fn derived_status(&self) -> Status {
+        self.derived_status
+    }
+
+    pub fn set_derived_status(&mut self, status: Status) {
+        self.derived_status = status;
+    }
 }
 // }}}
 
