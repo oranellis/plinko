@@ -406,6 +406,28 @@ impl MondayClient {
         Ok(())
     }
 
+    /// Rename an item (update its name column).
+    pub fn rename_item(
+        &self,
+        board_id: &str,
+        item_id: &str,
+        name: &str,
+    ) -> Result<(), MondayApiError> {
+        let escaped = name.replace('"', "\\\"");
+        let query = format!(
+            r#"mutation {{
+                change_simple_column_value(
+                    board_id: {board_id},
+                    item_id: {item_id},
+                    column_id: "name",
+                    value: "{escaped}"
+                ) {{ id }}
+            }}"#
+        );
+        self.graphql(&query)?;
+        Ok(())
+    }
+
     /// Fetch all groups on a board. Returns `(group_id, group_title)` pairs.
     pub fn fetch_groups(&self, board_id: &str) -> Result<Vec<(String, String)>, MondayApiError> {
         let query = format!(

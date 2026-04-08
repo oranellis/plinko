@@ -43,6 +43,9 @@ enum PushKind {
     Workload {
         value: f32,
     },
+    Name {
+        name: String,
+    },
 }
 
 /// Diff-based export: fetch current Monday state, compute what actually changed,
@@ -395,6 +398,25 @@ pub fn export_to_monday_diff(
             }
         }
 
+        // Name diff
+        let plinko_name = match &mapping.plinko_node_id {
+            NodeId::Task(task_id) => plan.tasks.get(task_id).map(|t| t.name.as_str()),
+            NodeId::Milestone(ms_id) => plan.milestones.get(ms_id).map(|m| m.name.as_str()),
+            NodeId::PlanStart => None,
+        };
+        if let Some(name) = plinko_name {
+            let needs_update = current.map_or(true, |item| item.name.trim() != name.trim());
+            if needs_update {
+                ops.push(PushOp {
+                    board_id: board_id.clone(),
+                    item_id: monday_item_id.clone(),
+                    kind: PushKind::Name {
+                        name: name.to_string(),
+                    },
+                });
+            }
+        }
+
         // Workload column (tasks only)
         if !workload_col.is_empty() {
             if let NodeId::Task(task_id) = &mapping.plinko_node_id {
@@ -461,6 +483,7 @@ pub fn export_to_monday_diff(
             PushKind::Workload { value } => {
                 client.update_workload(&op.board_id, &op.item_id, workload_col, value)
             }
+            PushKind::Name { name } => client.rename_item(&op.board_id, &op.item_id, &name),
         };
         match result {
             Ok(()) => updated += 1,

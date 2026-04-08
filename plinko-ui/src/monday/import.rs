@@ -98,7 +98,11 @@ pub fn import_from_monday(
                     task_statuses
                         .insert(*task_id, (status, item.timeline_start, item.timeline_end));
                 }
-                NodeId::Milestone(_ms_id) => {}
+                NodeId::Milestone(ms_id) => {
+                    if let Some(ms) = plan.milestones.get_mut(ms_id) {
+                        ms.name = item.name.clone();
+                    }
+                }
                 NodeId::PlanStart => {}
             }
             updated += 1;
