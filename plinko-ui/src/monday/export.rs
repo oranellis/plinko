@@ -22,9 +22,17 @@ struct PushOp {
 }
 
 enum PushKind {
-    Timeline { from: String, to: String },
-    Status { label: String },
-    Deps { dep_ids: Vec<String> },
+    Timeline {
+        from: String,
+        to: String,
+        is_milestone: bool,
+    },
+    Status {
+        label: String,
+    },
+    Deps {
+        dep_ids: Vec<String>,
+    },
 }
 
 /// Diff-based export: fetch current Monday state, compute what actually changed,
@@ -111,6 +119,7 @@ pub fn export_to_monday_diff(
                 Some((
                     start.format("%Y-%m-%d").to_string(),
                     end.format("%Y-%m-%d").to_string(),
+                    false,
                 ))
             }
             NodeId::Milestone(ms_id) => {
@@ -119,7 +128,7 @@ pub fn export_to_monday_diff(
                     continue;
                 };
                 let d = ms_alloc.date().format("%Y-%m-%d").to_string();
-                Some((d.clone(), d))
+                Some((d.clone(), d, true))
             }
             NodeId::PlanStart => {
                 skipped += 1;
@@ -127,19 +136,26 @@ pub fn export_to_monday_diff(
             }
         };
 
-        if let Some((from, to)) = timeline {
+        if let Some((from, to, is_milestone)) = timeline {
             let needs_update = current.map_or(true, |item| {
                 let cur_from = item
                     .timeline_start
                     .map(|d| d.format("%Y-%m-%d").to_string());
                 let cur_to = item.timeline_end.map(|d| d.format("%Y-%m-%d").to_string());
-                cur_from.as_deref() != Some(&from) || cur_to.as_deref() != Some(&to)
+                let cur_is_milestone = item.is_milestone;
+                cur_from.as_deref() != Some(&from)
+                    || cur_to.as_deref() != Some(&to)
+                    || cur_is_milestone != is_milestone
             });
             if needs_update {
                 ops.push(PushOp {
                     board_id: board_id.clone(),
                     item_id: monday_item_id.clone(),
-                    kind: PushKind::Timeline { from, to },
+                    kind: PushKind::Timeline {
+                        from,
+                        to,
+                        is_milestone,
+                    },
                 });
             }
         }
@@ -211,9 +227,18 @@ pub fn export_to_monday_diff(
 
     for (i, op) in ops.into_iter().enumerate() {
         let result = match op.kind {
-            PushKind::Timeline { from, to } => {
-                client.update_timeline(&op.board_id, &op.item_id, timeline_col, &from, &to)
-            }
+            PushKind::Timeline {
+                from,
+                to,
+                is_milestone,
+            } => client.update_timeline(
+                &op.board_id,
+                &op.item_id,
+                timeline_col,
+                &from,
+                &to,
+                is_milestone,
+            ),
             PushKind::Status { label } => {
                 client.update_status(&op.board_id, &op.item_id, status_col, &label)
             }
@@ -319,6 +344,7 @@ pub fn export_to_monday(
                 Some((
                     start.format("%Y-%m-%d").to_string(),
                     end.format("%Y-%m-%d").to_string(),
+                    false,
                 ))
             }
             NodeId::Milestone(ms_id) => {
@@ -327,7 +353,7 @@ pub fn export_to_monday(
                     continue;
                 };
                 let d = ms_alloc.date().format("%Y-%m-%d").to_string();
-                Some((d.clone(), d))
+                Some((d.clone(), d, true))
             }
             NodeId::PlanStart => {
                 skipped += 1;
@@ -335,8 +361,15 @@ pub fn export_to_monday(
             }
         };
 
-        if let Some((from, to)) = timeline_result {
-            match client.update_timeline(board_id, monday_item_id, timeline_col, &from, &to) {
+        if let Some((from, to, is_milestone)) = timeline_result {
+            match client.update_timeline(
+                board_id,
+                monday_item_id,
+                timeline_col,
+                &from,
+                &to,
+                is_milestone,
+            ) {
                 Ok(()) => updated += 1,
                 Err(e) => {
                     eprintln!("Warning: failed to update timeline for {monday_item_id}: {e}");

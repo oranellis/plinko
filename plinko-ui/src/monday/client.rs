@@ -320,6 +320,10 @@ impl MondayClient {
     }
 
     /// Update a timeline column on an item.
+    ///
+    /// When `is_milestone` is true the Monday.com `visualization_type` is set
+    /// to `"milestone"` so the item continues to display as a milestone diamond
+    /// rather than being converted to a regular task bar.
     pub fn update_timeline(
         &self,
         board_id: &str,
@@ -327,8 +331,15 @@ impl MondayClient {
         timeline_col: &str,
         from_date: &str,
         to_date: &str,
+        is_milestone: bool,
     ) -> Result<(), MondayApiError> {
-        let value = format!(r#"{{\"from\":\"{from_date}\",\"to\":\"{to_date}\"}}"#);
+        let value = if is_milestone {
+            format!(
+                r#"{{\"from\":\"{from_date}\",\"to\":\"{to_date}\",\"visualization_type\":\"milestone\"}}"#
+            )
+        } else {
+            format!(r#"{{\"from\":\"{from_date}\",\"to\":\"{to_date}\"}}"#)
+        };
         let query = format!(
             r#"mutation {{
                 change_column_value(
