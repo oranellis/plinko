@@ -1,5 +1,6 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
 
 use plinko_shared::data::{Plan, Storage};
 use plinko_shared::protocol::*;
@@ -16,45 +17,78 @@ enum InternalMsg {
     ImportDone { plan: Box<Plan>, message: String },
 }
 
-pub fn run_server(mut engine: PlanEngine, mut storage: Storage, port: u16) {
+pub fn run_server(engine: Arc<Mutex<PlanEngine>>, storage: Arc<Mutex<Storage>>, port: u16) {
     let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("bind failed");
     eprintln!("plinko server listening on 127.0.0.1:{port}");
     for stream in listener.incoming() {
         match stream {
-            Ok(s) => handle_connection(s, &mut engine, &mut storage),
+            Ok(s) => handle_tcp_connection(s, Arc::clone(&engine), Arc::clone(&storage)),
             Err(e) => eprintln!("accept error: {e}"),
         }
     }
 }
 
-fn send_msg(writer: &mut impl Write, msg: &ServerMessage) -> std::io::Result<()> {
+pub(crate) fn send_line(writer: &mut impl Write, msg: &ServerMessage) -> std::io::Result<()> {
     let mut line = serde_json::to_string(msg).unwrap();
     line.push('\n');
     writer.write_all(line.as_bytes())
 }
 
-fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut Storage) {
+fn handle_tcp_connection(
+    stream: TcpStream,
+    engine: Arc<Mutex<PlanEngine>>,
+    storage: Arc<Mutex<Storage>>,
+) {
     let peer = stream
         .peer_addr()
         .map(|a| a.to_string())
         .unwrap_or_else(|_| "unknown".to_string());
-    eprintln!("[connect] client connected from {peer}");
 
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut writer = stream;
 
-    let hello = ServerMessage::Hello {
+    handle_protocol(
+        peer,
+        move |msg| send_line(&mut writer, msg),
+        move |line| {
+            line.clear();
+            reader.read_line(line).map(|n| n > 0)
+        },
+        engine,
+        storage,
+    );
+}
+
+/// Core protocol handler — shared by TCP and WebSocket connections.
+///
+/// `send`: writes a `ServerMessage` to the client.
+/// `recv`: reads the next message text into the provided `String`; returns
+///         `Ok(true)` if data was received, `Ok(false)` on clean EOF, `Err` on error.
+pub(crate) fn handle_protocol(
+    peer: String,
+    mut send: impl FnMut(&ServerMessage) -> std::io::Result<()>,
+    mut recv: impl FnMut(&mut String) -> std::io::Result<bool>,
+    engine: Arc<Mutex<PlanEngine>>,
+    storage: Arc<Mutex<Storage>>,
+) {
+    eprintln!("[connect] client connected from {peer}");
+
+    if send(&ServerMessage::Hello {
         version: VERSION.to_string(),
-    };
-    if send_msg(&mut writer, &hello).is_err() {
+    })
+    .is_err()
+    {
         eprintln!("[connect] {peer}: failed to send Hello");
         return;
     }
 
     let mut line = String::new();
-    if reader.read_line(&mut line).is_err() || line.is_empty() {
-        eprintln!("[connect] {peer}: disconnected before handshake");
-        return;
+    match recv(&mut line) {
+        Ok(false) | Err(_) => {
+            eprintln!("[connect] {peer}: disconnected before handshake");
+            return;
+        }
+        Ok(true) => {}
     }
     let client_hello: ClientMessage = match serde_json::from_str(line.trim()) {
         Ok(m) => m,
@@ -73,64 +107,58 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
 
     if client_version != VERSION {
         eprintln!("[connect] {peer}: version mismatch — server {VERSION}, client {client_version}");
-        let _ = send_msg(
-            &mut writer,
-            &ServerMessage::VersionError {
-                expected: VERSION.to_string(),
-                got: client_version,
-            },
-        );
+        let _ = send(&ServerMessage::VersionError {
+            expected: VERSION.to_string(),
+            got: client_version,
+        });
         return;
     }
 
-    eprintln!(
-        "[connect] {peer}: handshake OK (version {VERSION}), sending plan \"{}\"",
-        engine.plan().name
-    );
-
-    if send_msg(
-        &mut writer,
-        &ServerMessage::PlanState {
-            plan: Box::new(engine.plan().clone()),
-        },
-    )
-    .is_err()
     {
-        eprintln!("[connect] {peer}: failed to send initial PlanState");
-        return;
+        let eng = engine.lock().unwrap();
+        eprintln!(
+            "[connect] {peer}: handshake OK (version {VERSION}), sending plan \"{}\"",
+            eng.plan().name
+        );
+        if send(&ServerMessage::PlanState {
+            plan: Box::new(eng.plan().clone()),
+        })
+        .is_err()
+        {
+            eprintln!("[connect] {peer}: failed to send initial PlanState");
+            return;
+        }
     }
 
-    // Channel for Monday background threads to send messages back to this connection loop.
+    // Channel for Monday background threads to communicate with this connection loop.
     let (monday_tx, monday_rx) = std::sync::mpsc::channel::<InternalMsg>();
 
     let mut request_count: u64 = 0;
     loop {
-        // Drain any pending Monday progress/done/error messages first.
+        // Drain any pending Monday progress/done/error messages.
         while let Ok(msg) = monday_rx.try_recv() {
             match msg {
                 InternalMsg::Forward(server_msg) => {
-                    if send_msg(&mut writer, &server_msg).is_err() {
+                    if send(&server_msg).is_err() {
                         return;
                     }
                 }
                 InternalMsg::ImportDone { plan, message } => {
-                    *engine = PlanEngine::new(*plan);
-                    let _ = storage.save(engine.plan());
-                    let _ = send_msg(&mut writer, &ServerMessage::MondayDone { message });
-                    let _ = send_msg(
-                        &mut writer,
-                        &ServerMessage::PlanState {
-                            plan: Box::new(engine.plan().clone()),
-                        },
-                    );
+                    let mut eng = engine.lock().unwrap();
+                    *eng = PlanEngine::new(*plan);
+                    let _ = storage.lock().unwrap().save(eng.plan());
+                    let _ = send(&ServerMessage::MondayDone { message });
+                    let _ = send(&ServerMessage::PlanState {
+                        plan: Box::new(eng.plan().clone()),
+                    });
                 }
             }
         }
 
         let mut line = String::new();
-        match reader.read_line(&mut line) {
-            Ok(0) | Err(_) => break,
-            Ok(_) => {}
+        match recv(&mut line) {
+            Ok(false) | Err(_) => break,
+            Ok(true) => {}
         }
         let msg: ClientMessage = match serde_json::from_str(line.trim()) {
             Ok(m) => m,
@@ -146,36 +174,14 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
 
         if matches!(&request, PlanRequest::SavePlan) {
             eprintln!("[{peer}] SavePlan");
-            if let Err(e) = storage.save(engine.plan()) {
+            let eng = engine.lock().unwrap();
+            if let Err(e) = storage.lock().unwrap().save(eng.plan()) {
                 eprintln!("[{peer}] save error: {e}");
             }
-            let resp = ServerMessage::Response {
+            if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,
-            };
-            if send_msg(&mut writer, &resp).is_err() {
-                break;
-            }
-            continue;
-        }
-
-        if matches!(&request, PlanRequest::NewPlan) {
-            let new_plan = plinko_shared::data::Plan::new("New Plan");
-            *engine = PlanEngine::new(new_plan);
-            let _ = storage.save(engine.plan());
-            let resp = ServerMessage::Response {
-                id,
-                response: PlanResponse::PlanUpdated,
-            };
-            if send_msg(&mut writer, &resp).is_err() {
-                break;
-            }
-            if send_msg(
-                &mut writer,
-                &ServerMessage::PlanState {
-                    plan: Box::new(engine.plan().clone()),
-                },
-            )
+            })
             .is_err()
             {
                 break;
@@ -183,24 +189,49 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
             continue;
         }
 
+        if matches!(&request, PlanRequest::NewPlan) {
+            let new_plan = plinko_shared::data::Plan::new("New Plan");
+            {
+                let mut eng = engine.lock().unwrap();
+                *eng = PlanEngine::new(new_plan);
+                let _ = storage.lock().unwrap().save(eng.plan());
+                if send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::PlanUpdated,
+                })
+                .is_err()
+                {
+                    break;
+                }
+                if send(&ServerMessage::PlanState {
+                    plan: Box::new(eng.plan().clone()),
+                })
+                .is_err()
+                {
+                    break;
+                }
+            }
+            continue;
+        }
+
         if let PlanRequest::LoadPlan { plan_id } = &request {
             let plan_id = *plan_id;
-            match storage.load_latest(plan_id) {
+            match storage.lock().unwrap().load_latest(plan_id) {
                 Ok(plan) => {
-                    *engine = PlanEngine::new(plan);
-                    let resp = ServerMessage::Response {
+                    let mut eng = engine.lock().unwrap();
+                    *eng = PlanEngine::new(plan);
+                    let _ = storage.lock().unwrap().save(eng.plan());
+                    if send(&ServerMessage::Response {
                         id,
                         response: PlanResponse::PlanUpdated,
-                    };
-                    if send_msg(&mut writer, &resp).is_err() {
+                    })
+                    .is_err()
+                    {
                         break;
                     }
-                    if send_msg(
-                        &mut writer,
-                        &ServerMessage::PlanState {
-                            plan: Box::new(engine.plan().clone()),
-                        },
-                    )
+                    if send(&ServerMessage::PlanState {
+                        plan: Box::new(eng.plan().clone()),
+                    })
                     .is_err()
                     {
                         break;
@@ -208,11 +239,12 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                 }
                 Err(e) => {
                     eprintln!("[{peer}] load error: {e}");
-                    let resp = ServerMessage::Response {
+                    if send(&ServerMessage::Response {
                         id,
                         response: PlanResponse::PlanUpdated,
-                    };
-                    if send_msg(&mut writer, &resp).is_err() {
+                    })
+                    .is_err()
+                    {
                         break;
                     }
                 }
@@ -221,18 +253,19 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
         }
 
         if matches!(&request, PlanRequest::ListPlans) {
-            let plan_ids = storage.list_plans().unwrap_or_default();
+            let plan_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
             let mut list = Vec::new();
             for pid in plan_ids {
-                if let Some((name, last_saved)) = storage.plan_summary(pid) {
+                if let Some((name, last_saved)) = storage.lock().unwrap().plan_summary(pid) {
                     list.push((pid, name, last_saved));
                 }
             }
-            let resp = ServerMessage::Response {
+            if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanList(list),
-            };
-            if send_msg(&mut writer, &resp).is_err() {
+            })
+            .is_err()
+            {
                 break;
             }
             continue;
@@ -240,20 +273,20 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
 
         if let PlanRequest::DeletePlan { plan_id } = &request {
             let plan_id = *plan_id;
-            let _ = storage.delete_plan(plan_id);
-            // Return a refreshed plan list so the UI updates immediately.
-            let plan_ids = storage.list_plans().unwrap_or_default();
+            let _ = storage.lock().unwrap().delete_plan(plan_id);
+            let plan_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
             let mut list = Vec::new();
             for pid in plan_ids {
-                if let Some((name, last_saved)) = storage.plan_summary(pid) {
+                if let Some((name, last_saved)) = storage.lock().unwrap().plan_summary(pid) {
                     list.push((pid, name, last_saved));
                 }
             }
-            let resp = ServerMessage::Response {
+            if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanList(list),
-            };
-            if send_msg(&mut writer, &resp).is_err() {
+            })
+            .is_err()
+            {
                 break;
             }
             continue;
@@ -261,27 +294,33 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
 
         if let PlanRequest::SetCurrentUser(uid) = &request {
             let uid = *uid;
-            storage.save_current_user_id(uid);
-            let resp = ServerMessage::Response {
+            storage.lock().unwrap().save_current_user_id(uid);
+            if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,
-            };
-            if send_msg(&mut writer, &resp).is_err() {
+            })
+            .is_err()
+            {
                 break;
             }
             continue;
         }
 
-        // ── Monday.com requests ───────────────────────────────────────────────
+        // ── Monday.com requests ──────────────────────────────────────────────
 
         if let PlanRequest::LoadMondayConfig { plan_id } = &request {
             let plan_id = *plan_id;
-            let config = storage.load_monday_config(plan_id).unwrap_or_default();
-            let resp = ServerMessage::Response {
+            let config = storage
+                .lock()
+                .unwrap()
+                .load_monday_config(plan_id)
+                .unwrap_or_default();
+            if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::MondayConfigLoaded(Box::new(config)),
-            };
-            if send_msg(&mut writer, &resp).is_err() {
+            })
+            .is_err()
+            {
                 break;
             }
             continue;
@@ -293,13 +332,15 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
             token,
         } = request
         {
-            storage.save_monday_config(plan_id, &config);
-            storage.save_monday_api_token(token.trim());
-            let resp = ServerMessage::Response {
+            let stor = storage.lock().unwrap();
+            stor.save_monday_config(plan_id, &config);
+            stor.save_monday_api_token(token.trim());
+            if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,
-            };
-            if send_msg(&mut writer, &resp).is_err() {
+            })
+            .is_err()
+            {
                 break;
             }
             continue;
@@ -323,11 +364,12 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                 }
                 drop(board_id);
             });
-            let resp = ServerMessage::Response {
+            if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,
-            };
-            if send_msg(&mut writer, &resp).is_err() {
+            })
+            .is_err()
+            {
                 break;
             }
             continue;
@@ -351,7 +393,6 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                     },
                 }));
             });
-            // Acknowledge receipt; actual result arrives via InternalMsg::Forward.
             continue;
         }
 
@@ -360,9 +401,13 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
         {
             let plan_id = *plan_id;
             let is_reimport = matches!(request, PlanRequest::MondayFullReimport { .. });
-            let config = storage.load_monday_config(plan_id).unwrap_or_default();
-            let token = storage.load_monday_api_token();
-            let mut plan_clone = engine.plan().clone();
+            let config = storage
+                .lock()
+                .unwrap()
+                .load_monday_config(plan_id)
+                .unwrap_or_default();
+            let token = storage.lock().unwrap().load_monday_api_token();
+            let mut plan_clone = engine.lock().unwrap().plan().clone();
             if is_reimport {
                 let mapped_node_ids: std::collections::HashSet<_> = config
                     .item_node_map
@@ -377,7 +422,7 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                 });
             }
             let tx = monday_tx.clone();
-            let storage_clone = storage.clone();
+            let storage_clone = Arc::clone(&storage);
             std::thread::spawn(move || {
                 let client = MondayClient::new(&token);
                 let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayProgress {
@@ -389,7 +434,10 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                     Ok((new_plan, new_map, message)) => {
                         let mut updated_config = config.clone();
                         updated_config.item_node_map = new_map;
-                        storage_clone.save_monday_config(plan_id, &updated_config);
+                        storage_clone
+                            .lock()
+                            .unwrap()
+                            .save_monday_config(plan_id, &updated_config);
                         let _ = tx.send(InternalMsg::ImportDone {
                             plan: Box::new(new_plan),
                             message,
@@ -407,12 +455,16 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
 
         if let PlanRequest::MondayPush { plan_id } = &request {
             let plan_id = *plan_id;
-            let config = storage.load_monday_config(plan_id).unwrap_or_default();
-            let token = storage.load_monday_api_token();
-            let plan_snapshot = engine.plan().clone();
+            let config = storage
+                .lock()
+                .unwrap()
+                .load_monday_config(plan_id)
+                .unwrap_or_default();
+            let token = storage.lock().unwrap().load_monday_api_token();
+            let plan_snapshot = engine.lock().unwrap().plan().clone();
             let item_node_map = config.item_node_map.clone();
             let tx = monday_tx.clone();
-            let storage_clone = storage.clone();
+            let storage_clone = Arc::clone(&storage);
             std::thread::spawn(move || {
                 let client = MondayClient::new(&token);
                 let result = export::export_to_monday_diff(
@@ -432,7 +484,10 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                     Ok((message, new_map)) => {
                         let mut updated_config = config.clone();
                         updated_config.item_node_map = new_map;
-                        storage_clone.save_monday_config(plan_id, &updated_config);
+                        storage_clone
+                            .lock()
+                            .unwrap()
+                            .save_monday_config(plan_id, &updated_config);
                         let _ =
                             tx.send(InternalMsg::Forward(ServerMessage::MondayDone { message }));
                     }
@@ -443,30 +498,31 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
                     }
                 }
             });
-            let resp = ServerMessage::Response {
+            if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,
-            };
-            if send_msg(&mut writer, &resp).is_err() {
+            })
+            .is_err()
+            {
                 break;
             }
             continue;
         }
 
-        let response = engine.apply_request(request);
+        let response = {
+            let mut eng = engine.lock().unwrap();
+            eng.apply_request(request)
+        };
         let plan_changed = matches!(response, PlanResponse::PlanUpdated);
-        let resp_msg = ServerMessage::Response { id, response };
-        if send_msg(&mut writer, &resp_msg).is_err() {
+        if send(&ServerMessage::Response { id, response }).is_err() {
             break;
         }
         if plan_changed {
-            let _ = storage.save(engine.plan());
-            if send_msg(
-                &mut writer,
-                &ServerMessage::PlanState {
-                    plan: Box::new(engine.plan().clone()),
-                },
-            )
+            let eng = engine.lock().unwrap();
+            let _ = storage.lock().unwrap().save(eng.plan());
+            if send(&ServerMessage::PlanState {
+                plan: Box::new(eng.plan().clone()),
+            })
             .is_err()
             {
                 break;

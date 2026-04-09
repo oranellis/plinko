@@ -1,6 +1,9 @@
 mod engine;
 mod monday;
 mod server;
+mod ws_server;
+
+use std::sync::{Arc, Mutex};
 
 use plinko_shared::data::{Plan, Storage};
 
@@ -63,6 +66,15 @@ fn main() {
             .unwrap_or(7891)
     });
 
-    let engine = engine::PlanEngine::new(plan);
+    let engine = Arc::new(Mutex::new(engine::PlanEngine::new(plan)));
+    let storage = Arc::new(Mutex::new(storage));
+
+    let ws_port = port + 1;
+    let engine_ws = Arc::clone(&engine);
+    let storage_ws = Arc::clone(&storage);
+    std::thread::spawn(move || {
+        ws_server::run_ws_server(engine_ws, storage_ws, ws_port);
+    });
+
     server::run_server(engine, storage, port);
 }
