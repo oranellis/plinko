@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
 import { MondayModal } from "../components/modals/MondayModal";
 import { NewPlanModal } from "../components/modals/NewPlanModal";
@@ -16,10 +16,10 @@ export function SettingsPage() {
   const [showMonday, setShowMonday] = useState(false);
   const [showNewPlan, setShowNewPlan] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  // Fetch saved plans list whenever connected or the active plan changes
-  useEffect(() => {
-    if (status !== "connected") return;
+  const fetchPlans = useCallback(() => {
+    setFetchError(null);
     sendRequest("ListPlans").then((resp) => {
       if (typeof resp === "object" && resp !== null && "PlanList" in resp) {
         setPlans(
@@ -27,13 +27,25 @@ export function SettingsPage() {
             ([id, name, ts]) => ({ id, name, timestamp: ts })
           )
         );
+      } else {
+        console.error("[SettingsPage] Unexpected ListPlans response:", resp);
+        setFetchError("Unexpected response from server.");
       }
-    }).catch(() => { /* ignore */ });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, plan?.id]);
+    }).catch((e: unknown) => {
+      console.error("[SettingsPage] ListPlans failed:", e);
+      setFetchError("Failed to fetch plans. Check server connection.");
+    });
+  }, [sendRequest]);
+
+  // Fetch saved plans list whenever connected or the active plan changes
+  useEffect(() => {
+    if (status !== "connected") return;
+    fetchPlans();
+  }, [status, plan?.id, fetchPlans]);
 
   const handleSave = async () => {
     await sendRequest("SavePlan");
+    fetchPlans();
   };
 
   const handleLoad = async (planId: string) => {
@@ -84,6 +96,12 @@ export function SettingsPage() {
         </div>
 
         <h3 className="settings-subheading">Saved Plans</h3>
+        <div className="settings-row" style={{ marginBottom: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={fetchPlans} disabled={status !== "connected"}>
+            Refresh
+          </button>
+          {fetchError && <span style={{ color: "#e57373", fontSize: 12 }}>{fetchError}</span>}
+        </div>
         <div className="settings-plan-list">
           {plans.length === 0 && (
             <div className="settings-empty">No saved plans</div>
