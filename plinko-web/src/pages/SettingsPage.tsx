@@ -11,23 +11,26 @@ interface PlanEntry {
 }
 
 export function SettingsPage() {
-  const { plan, sendRequest } = usePlanContext();
+  const { plan, status, sendRequest } = usePlanContext();
   const [plans, setPlans] = useState<PlanEntry[]>([]);
   const [showMonday, setShowMonday] = useState(false);
   const [showNewPlan, setShowNewPlan] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
-  // Fetch saved plans list on mount
+  // Fetch saved plans list whenever connected or the active plan changes
   useEffect(() => {
+    if (status !== "connected") return;
     sendRequest("ListPlans").then((resp) => {
-      if (typeof resp === "object" && "PlanList" in resp) {
+      if (typeof resp === "object" && resp !== null && "PlanList" in resp) {
         setPlans(
-          resp.PlanList.map(([id, name, ts]) => ({ id, name, timestamp: ts }))
+          (resp as { PlanList: [string, string, string][] }).PlanList.map(
+            ([id, name, ts]) => ({ id, name, timestamp: ts })
+          )
         );
       }
-    });
+    }).catch(() => { /* ignore */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan?.id]);
+  }, [status, plan?.id]);
 
   const handleSave = async () => {
     await sendRequest("SavePlan");
