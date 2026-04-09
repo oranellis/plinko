@@ -1,4 +1,5 @@
 import { usePlanContext } from "../context/PlanContext";
+import { IconBack } from "./icons";
 import "./Toolbar.css";
 
 export function Toolbar() {
@@ -14,7 +15,7 @@ export function Toolbar() {
           onClick={() => setPage("home")}
           title="Home"
         >
-          ←
+          <IconBack size={15} />
         </button>
       )}
       <span className="toolbar-title">

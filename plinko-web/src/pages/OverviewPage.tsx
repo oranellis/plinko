@@ -15,6 +15,14 @@ import { MilestoneFormModal } from "../components/modals/MilestoneFormModal";
 import { UsersModal } from "../components/modals/UsersModal";
 import { PlanSettingsModal } from "../components/modals/PlanSettingsModal";
 import { SearchModal } from "../components/modals/SearchModal";
+import {
+  IconAddMilestone,
+  IconAddTask,
+  IconSearch,
+  IconSettings,
+  IconToday,
+  IconUsers,
+} from "../components/icons";
 import "./OverviewPage.css";
 
 const ROW_H = 36;
@@ -476,13 +484,13 @@ export function OverviewPage() {
             const offset = daysBetween(plan.start_date, today);
             setScrollX(Math.max(0, offset * dayW - size.w / 2));
           }}
-        >📅 Today</button>
-        <button className="overview-tool-btn" onClick={() => setEditTaskId("new")}>＋ Task</button>
-        <button className="overview-tool-btn" onClick={() => setEditMsId("new")}>◇ Milestone</button>
-        <button className="overview-tool-btn" onClick={() => setShowSearch(true)}>⌕ Search</button>
+        ><IconToday size={15} /> Today</button>
+        <button className="overview-tool-btn" onClick={() => setEditTaskId("new")}><IconAddTask size={15} /> Task</button>
+        <button className="overview-tool-btn" onClick={() => setEditMsId("new")}><IconAddMilestone size={15} /> Milestone</button>
+        <button className="overview-tool-btn" onClick={() => setShowSearch(true)}><IconSearch size={15} /> Search</button>
         <span className="overview-toolbar-spacer" />
-        <button className="overview-tool-btn" onClick={() => setShowUsers(true)}>👤 Users</button>
-        <button className="overview-tool-btn" onClick={() => setShowSettings(true)}>⚙ Settings</button>
+        <button className="overview-tool-btn" onClick={() => setShowUsers(true)}><IconUsers size={15} /> Users</button>
+        <button className="overview-tool-btn" onClick={() => setShowSettings(true)}><IconSettings size={15} /> Settings</button>
       </div>
 
       {/* Canvas */}

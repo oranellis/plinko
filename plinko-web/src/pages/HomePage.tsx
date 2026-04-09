@@ -1,18 +1,26 @@
+import type { ReactNode } from "react";
 import { type PageId, usePlanContext } from "../context/PlanContext";
+import {
+  IconGantt,
+  IconAllocation,
+  IconCalendar,
+  IconSettings,
+  IconUsers,
+} from "../components/icons";
 import "./HomePage.css";
 
 interface NavCard {
   id: PageId;
   label: string;
-  icon: string;
+  icon: ReactNode;
 }
 
 const CARDS: NavCard[] = [
-  { id: "daily", label: "Daily", icon: "📅" },
-  { id: "overview", label: "Overview", icon: "📊" },
-  { id: "settings", label: "Settings", icon: "⚙️" },
-  { id: "allocation", label: "Allocation", icon: "👥" },
-  { id: "calendar", label: "Calendar", icon: "🗓️" },
+  { id: "overview",   label: "Overview",   icon: <IconGantt size={36} /> },
+  { id: "allocation", label: "Allocation", icon: <IconAllocation size={36} /> },
+  { id: "calendar",   label: "Calendar",   icon: <IconCalendar size={36} /> },
+  { id: "settings",   label: "Settings",   icon: <IconSettings size={36} /> },
+  { id: "daily",      label: "Users",      icon: <IconUsers size={36} /> },
 ];
 
 export function HomePage() {

@@ -27,6 +27,9 @@
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .overview-tool-btn:hover {
