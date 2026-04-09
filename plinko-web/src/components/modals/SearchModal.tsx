@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Modal } from "../Modal";
 import type { Plan } from "../../protocol";
 import { displayName } from "../../utils/planUtils";
@@ -12,6 +12,7 @@ interface Props {
 export function SearchModal({ plan, onSelect, onClose }: Props) {
   const [filter, setFilter] = useState("");
   const [flash, setFlash] = useState(false);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const q = filter.toLowerCase();
 
   const results: { id: string; type: "task" | "milestone"; name: string; contextLabel: string | null }[] = [
@@ -27,9 +28,12 @@ export function SearchModal({ plan, onSelect, onClose }: Props) {
 
   const handleFilterChange = (val: string) => {
     setFilter(val);
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
     if (val && results.length === 0) {
       setFlash(true);
-      setTimeout(() => setFlash(false), 600);
+      flashTimerRef.current = setTimeout(() => setFlash(false), 600);
+    } else {
+      setFlash(false);
     }
   };
 

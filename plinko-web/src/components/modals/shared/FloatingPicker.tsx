@@ -2,7 +2,7 @@
  * A portal-rendered dropdown picker that floats above the modal at a fixed
  * screen position anchored to a trigger element.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export interface PickerOption {
@@ -25,10 +25,11 @@ export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Position relative to anchor
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 200 });
+  // Position relative to anchor — computed synchronously in a layout effect so the
+  // picker appears at the correct location on the very first paint (no top-left flash).
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!anchor) return;
     const rect = anchor.getBoundingClientRect();
     // Decide whether to open below or above
@@ -58,6 +59,10 @@ export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder
   const filtered = filter.trim()
     ? options.filter((o) => o.label.toLowerCase().includes(filter.toLowerCase()))
     : options;
+
+  // Don't render until position is known — useLayoutEffect guarantees this is
+  // resolved before the first paint, so there is no visible flash.
+  if (!pos) return null;
 
   return createPortal(
     <div
