@@ -265,10 +265,30 @@ pub fn export_to_monday_diff(
         };
         let current = monday_map.get(monday_item_id.as_str());
 
+        // Resolve a human-readable name for debug messages.
+        let node_name = || match &mapping.plinko_node_id {
+            NodeId::Task(id) => plan
+                .tasks
+                .get(id)
+                .map(|t| t.name.clone())
+                .unwrap_or_else(|| format!("task:{}", id.0)),
+            NodeId::Milestone(id) => plan
+                .milestones
+                .get(id)
+                .map(|m| m.name.clone())
+                .unwrap_or_else(|| format!("milestone:{}", id.0)),
+            NodeId::PlanStart => "PlanStart".to_string(),
+        };
+
         // Timeline
         let timeline = match &mapping.plinko_node_id {
             NodeId::Task(task_id) => {
                 let Some(state) = plan.node_allocations.tasks.get(task_id) else {
+                    eprintln!(
+                        "Warning: skipping '{}' (monday id {}) — no scheduler allocation (task not yet scheduled)",
+                        node_name(),
+                        monday_item_id
+                    );
                     skipped += 1;
                     continue;
                 };
@@ -288,6 +308,11 @@ pub fn export_to_monday_diff(
             }
             NodeId::Milestone(ms_id) => {
                 let Some(ms_alloc) = plan.node_allocations.milestones.get(ms_id) else {
+                    eprintln!(
+                        "Warning: skipping '{}' (monday id {}) — no scheduler allocation (milestone not yet scheduled)",
+                        node_name(),
+                        monday_item_id
+                    );
                     skipped += 1;
                     continue;
                 };
@@ -569,10 +594,30 @@ pub fn export_to_monday(
             &mapping.board_id
         };
 
+        // Resolve a human-readable name for debug messages.
+        let node_name = || match &mapping.plinko_node_id {
+            NodeId::Task(id) => plan
+                .tasks
+                .get(id)
+                .map(|t| t.name.clone())
+                .unwrap_or_else(|| format!("task:{}", id.0)),
+            NodeId::Milestone(id) => plan
+                .milestones
+                .get(id)
+                .map(|m| m.name.clone())
+                .unwrap_or_else(|| format!("milestone:{}", id.0)),
+            NodeId::PlanStart => "PlanStart".to_string(),
+        };
+
         // ── Timeline ─────────────────────────────────────────────────────────
         let timeline_result = match &mapping.plinko_node_id {
             NodeId::Task(task_id) => {
                 let Some(state) = plan.node_allocations.tasks.get(task_id) else {
+                    eprintln!(
+                        "Warning: skipping '{}' (monday id {}) — no scheduler allocation (task not yet scheduled)",
+                        node_name(),
+                        monday_item_id
+                    );
                     skipped += 1;
                     continue;
                 };
@@ -592,6 +637,11 @@ pub fn export_to_monday(
             }
             NodeId::Milestone(ms_id) => {
                 let Some(ms_alloc) = plan.node_allocations.milestones.get(ms_id) else {
+                    eprintln!(
+                        "Warning: skipping '{}' (monday id {}) — no scheduler allocation (milestone not yet scheduled)",
+                        node_name(),
+                        monday_item_id
+                    );
                     skipped += 1;
                     continue;
                 };
