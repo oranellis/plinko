@@ -32,7 +32,7 @@ const MIN_DAY_W = 8;
 const MAX_DAY_W = 80;
 
 export function OverviewPage() {
-  const { plan, sendRequest } = usePlanContext();
+  const { plan, sendRequest, setToolbarActions } = usePlanContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +56,46 @@ export function OverviewPage() {
   // Drag momentum
   const dragRef = useRef({ active: false, startX: 0, startY: 0, velX: 0, velY: 0, lastX: 0, lastY: 0, lastT: 0 });
   const momRef = useRef<number | null>(null);
+
+  // Register toolbar action buttons; need refs to avoid stale closures
+  const setEditTaskIdRef = useRef(setEditTaskId);
+  const setEditMsIdRef = useRef(setEditMsId);
+  const setShowUsersRef = useRef(setShowUsers);
+  const setShowSettingsRef = useRef(setShowSettings);
+  const setShowSearchRef = useRef(setShowSearch);
+  const planRef = useRef(plan);
+  const scrollXRef = useRef(scrollX);
+  const sizeRef = useRef(size);
+  const dayWRef = useRef(dayW);
+  setEditTaskIdRef.current = setEditTaskId;
+  setEditMsIdRef.current = setEditMsId;
+  setShowUsersRef.current = setShowUsers;
+  setShowSettingsRef.current = setShowSettings;
+  setShowSearchRef.current = setShowSearch;
+  planRef.current = plan;
+  scrollXRef.current = scrollX;
+  sizeRef.current = size;
+  dayWRef.current = dayW;
+
+  useEffect(() => {
+    setToolbarActions(
+      <>
+        <button className="toolbar-btn" title="Jump to today" onClick={() => {
+          const p = planRef.current; const sw = sizeRef.current.w; const dw = dayWRef.current;
+          if (!p) return;
+          const today = formatDate(new Date());
+          const offset = daysBetween(p.start_date, today);
+          setScrollX(Math.max(-sw / 2, offset * dw - sw / 2));
+        }}><IconToday size={16} /></button>
+        <button className="toolbar-btn" title="Add task" onClick={() => setEditTaskIdRef.current("new")}><IconAddTask size={16} /></button>
+        <button className="toolbar-btn" title="Add milestone" onClick={() => setEditMsIdRef.current("new")}><IconAddMilestone size={16} /></button>
+        <button className="toolbar-btn" title="Search" onClick={() => setShowSearchRef.current(true)}><IconSearch size={16} /></button>
+        <button className="toolbar-btn" title="Users" onClick={() => setShowUsersRef.current(true)}><IconUsers size={16} /></button>
+        <button className="toolbar-btn" title="Settings" onClick={() => setShowSettingsRef.current(true)}><IconSettings size={16} /></button>
+      </>
+    );
+    return () => setToolbarActions(null);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize observer
   useEffect(() => {
@@ -220,7 +260,7 @@ export function OverviewPage() {
     // Map from item id → center point for dependency arrow drawing
     const itemCenters = new Map<string, { x: number; y: number; ex: number }>();
 
-    const BAR_PAD_Y = 5;
+    const BAR_PAD_Y = Math.round(ROW_H * 0.2);
     const barH = ROW_H - BAR_PAD_Y * 2;
     const targetId = plan.scheduler_target
       ? (typeof plan.scheduler_target === "object" && "Task" in plan.scheduler_target ? plan.scheduler_target.Task :
@@ -250,10 +290,10 @@ export function OverviewPage() {
         ctx.fill();
 
         // Border: coloured for dep relationships, gold for target
-        const borderColor = isTarget ? "#f5d020"
-          : isHovered ? "#4a90d9"
-          : isDepOf ? "#66bb6a"
-          : isDependent ? "#f5a623"
+        const borderColor = isTarget ? "#ffd600"
+          : isHovered ? "#1e88e5"
+          : isDepOf ? "#fc1ef1"
+          : isDependent ? "#07fcd7"
           : null;
         if (borderColor) {
           ctx.strokeStyle = borderColor;
@@ -291,10 +331,10 @@ export function OverviewPage() {
         ctx.fill();
 
         // Border
-        const borderColor = isTarget ? "#f5d020"
-          : isHovered ? "#4a90d9"
-          : isDepOf ? "#66bb6a"
-          : isDependent ? "#f5a623"
+        const borderColor = isTarget ? "#ffd600"
+          : isHovered ? "#1e88e5"
+          : isDepOf ? "#fc1ef1"
+          : isDependent ? "#07fcd7"
           : null;
         if (borderColor) {
           ctx.strokeStyle = borderColor;
@@ -339,7 +379,7 @@ export function OverviewPage() {
       for (const depId of hoveredDeps) {
         const dc = itemCenters.get(depId);
         if (!dc) continue;
-        ctx.strokeStyle = "#66bb6a";
+        ctx.strokeStyle = "rgba(252,30,241,0.66)";
         ctx.beginPath();
         ctx.moveTo(dc.ex, dc.y);
         ctx.lineTo(hc.x, hc.y);
@@ -350,7 +390,7 @@ export function OverviewPage() {
       for (const depId of hoveredDependents) {
         const dc = itemCenters.get(depId);
         if (!dc) continue;
-        ctx.strokeStyle = "#f5a623";
+        ctx.strokeStyle = "rgba(7,252,215,0.66)";
         ctx.beginPath();
         ctx.moveTo(hc.ex, hc.y);
         ctx.lineTo(dc.x, dc.y);
@@ -475,24 +515,6 @@ export function OverviewPage() {
 
   return (
     <div className="overview-page" ref={containerRef}>
-      {/* Toolbar */}
-      <div className="overview-toolbar">
-        <button className="overview-tool-btn" title="Today"
-          onClick={() => {
-            if (!plan) return;
-            const today = formatDate(new Date());
-            const offset = daysBetween(plan.start_date, today);
-            setScrollX(Math.max(0, offset * dayW - size.w / 2));
-          }}
-        ><IconToday size={15} /> Today</button>
-        <button className="overview-tool-btn" onClick={() => setEditTaskId("new")}><IconAddTask size={15} /> Task</button>
-        <button className="overview-tool-btn" onClick={() => setEditMsId("new")}><IconAddMilestone size={15} /> Milestone</button>
-        <button className="overview-tool-btn" onClick={() => setShowSearch(true)}><IconSearch size={15} /> Search</button>
-        <span className="overview-toolbar-spacer" />
-        <button className="overview-tool-btn" onClick={() => setShowUsers(true)}><IconUsers size={15} /> Users</button>
-        <button className="overview-tool-btn" onClick={() => setShowSettings(true)}><IconSettings size={15} /> Settings</button>
-      </div>
-
       {/* Canvas */}
       <canvas
         ref={canvasRef}
