@@ -5468,6 +5468,31 @@ impl FloatingWindow for TaskFormWindow {
         _plan: &Plan,
         cache: &RenderCache,
     ) -> FloatingWindowOutcome {
+        // Paste into open dropdown filter inputs.
+        if let Some(slot_idx) = self.open_slot_dropdown {
+            if slot_idx < self.workers.len() {
+                match self.workers[slot_idx].slot_type {
+                    SlotType::Specific => self.workers[slot_idx].user_filter.handle_paste(text),
+                    SlotType::Placeholder => self.workers[slot_idx].tag_filter.handle_paste(text),
+                }
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
+        }
+        if let Some(dep_idx) = self.dep_dropdown_open_for {
+            if dep_idx < self.dependencies.len() {
+                self.dependencies[dep_idx].dep_filter.handle_paste(text);
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
+        }
+        if let Some(dep_idx) = self.dep_fwd_dropdown_open_for {
+            if dep_idx < self.dependents.len() {
+                self.dependents[dep_idx].dep_filter.handle_paste(text);
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
+        }
         if let Some(slot_idx) = self.focused_slot_workload {
             if slot_idx < self.workers.len() {
                 let filtered: String = text
