@@ -1,7 +1,7 @@
 import { useState } from "react";
-import type React from "react";
 import type { DateConstraint, ConstraintKind } from "../../../protocol";
 import { SegmentedControl } from "./SegmentedControl";
+import { DatePicker } from "./DatePicker";
 
 const KIND_OPTIONS = ["None", "Earliest", "Fixed", "Latest"] as const;
 type KindOrNone = ConstraintKind | "None";
@@ -29,20 +29,6 @@ export function ConstraintEditor({ value, onChange }: Props) {
 
   const kindIdx = KIND_OPTIONS.indexOf(kind);
 
-  const inputStyle: React.CSSProperties = {
-    background: kind === "None" ? "#1a1a1c" : "#1e1e1e",
-    border: "1px solid #3a3a3c",
-    borderRadius: 4,
-    color: kind === "None" ? "#555" : "#d4d4d4",
-    fontSize: 13,
-    padding: "0 10px",
-    outline: "none",
-    width: "100%",
-    boxSizing: "border-box",
-    height: 30,
-    cursor: kind === "None" ? "not-allowed" : "auto",
-  };
-
   return (
     <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
       {/* Left column: Constraint Type */}
@@ -62,12 +48,11 @@ export function ConstraintEditor({ value, onChange }: Props) {
         <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
           Constraint Date
         </label>
-        <input
-          type="date"
+        <DatePicker
           value={date}
+          onChange={(d) => update(kind, d)}
           disabled={kind === "None"}
-          onChange={(e) => update(kind, e.target.value)}
-          style={inputStyle}
+          placeholder="Select date…"
         />
       </div>
     </div>
