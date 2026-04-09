@@ -25,9 +25,9 @@ import {
 } from "../components/icons";
 import "./OverviewPage.css";
 
-const ROW_H = 36;
-const HEADER_H = 46; // month (18) + day (28)
-const DAY_W_DEFAULT = 28;
+const ROW_H = 44;
+const HEADER_H = 56; // month (22) + day (34)
+const DAY_W_DEFAULT = 34;
 const MIN_DAY_W = 8;
 const MAX_DAY_W = 80;
 
@@ -172,8 +172,8 @@ export function OverviewPage() {
     const firstVisibleDay = Math.floor(scrollX / dayW);
     const lastVisibleDay = Math.ceil((scrollX + w) / dayW);
 
-    // Month header (top 18px)
-    ctx.font = "11px sans-serif";
+    // Month header (top 22px)
+    ctx.font = "13px sans-serif";
     ctx.fillStyle = "#888";
     let curMonthLabel = "";
     let monthStartX = 0;
@@ -183,18 +183,18 @@ export function OverviewPage() {
       const x = d * dayW - scrollX;
       if (label !== curMonthLabel) {
         if (curMonthLabel) {
-          ctx.fillText(curMonthLabel, monthStartX + 4, 13);
+          ctx.fillText(curMonthLabel, monthStartX + 4, 15);
           ctx.strokeStyle = "#3a3a3c";
-          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 18); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 22); ctx.stroke();
         }
         curMonthLabel = label;
         monthStartX = x;
       }
     }
-    if (curMonthLabel) ctx.fillText(curMonthLabel, monthStartX + 4, 13);
+    if (curMonthLabel) ctx.fillText(curMonthLabel, monthStartX + 4, 15);
 
-    // Day header (bottom 28px of header)
-    ctx.font = "10px sans-serif";
+    // Day header (bottom 34px of header)
+    ctx.font = "12px sans-serif";
     for (let d = firstVisibleDay; d <= lastVisibleDay; d++) {
       const date = parseDate(addDays(startDate, d));
       const x = d * dayW - scrollX;
@@ -202,15 +202,17 @@ export function OverviewPage() {
       const isWeekend = date.getDay() === 0 || date.getDay() === 6;
 
       ctx.fillStyle = isWeekend ? "#1e1e1e" : "#252526";
-      ctx.fillRect(x, 18, dayW, 28);
+      ctx.fillRect(x, 22, dayW, 34);
 
       ctx.fillStyle = d === todayOffset ? "#4a90d9" : (isWeekend ? "#555" : "#aaa");
       ctx.textAlign = "center";
-      ctx.fillText(String(dayNum), x + dayW / 2, 36);
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(dayNum), x + dayW / 2, 39);
       ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
 
       ctx.strokeStyle = "#2a2a2c";
-      ctx.beginPath(); ctx.moveTo(x, 18); ctx.lineTo(x, h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, 22); ctx.lineTo(x, h); ctx.stroke();
     }
 
     // Header bottom border
@@ -306,13 +308,15 @@ export function OverviewPage() {
         // Label
         const label = displayName(item.name, item.contextLabel);
         ctx.fillStyle = isHovered ? "#fff" : "rgba(255,255,255,0.9)";
-        ctx.font = "12px sans-serif";
+        ctx.font = "16px sans-serif";
+        ctx.textBaseline = "middle";
         ctx.save();
         ctx.beginPath();
         ctx.rect(x + 4, y, barW - 8, barH);
         ctx.clip();
-        ctx.fillText(label, x + 6, y + barH / 2 + 4);
+        ctx.fillText(label, x + 6, y + barH / 2);
         ctx.restore();
+        ctx.textBaseline = "alphabetic";
 
         itemCenters.set(item.id, { x, y: rowY + ROW_H / 2, ex: x + barW });
         hitRectsRef.current.push({ id: item.id, x, y, w: barW, h: barH });
@@ -320,7 +324,7 @@ export function OverviewPage() {
         // Milestone diamond
         const cx = x + dayW / 2;
         const cy = rowY + ROW_H / 2;
-        const r = 8;
+        const r = 10;
         ctx.fillStyle = isHovered || isFlashing ? lighten("#e0c040") : "#e0c040";
         ctx.beginPath();
         ctx.moveTo(cx, cy - r);
@@ -351,17 +355,19 @@ export function OverviewPage() {
 
         // Milestone name to the right
         const nameX = cx + r + 6;
-        const nameEndX = nameX + (item.name.length * 7 + 8);
+        const nameEndX = nameX + (item.name.length * 9 + 8);
         const nameVisible = nameX < w;
         if (nameVisible) {
           ctx.fillStyle = isHovered ? "#f5d040" : "#bbb";
-          ctx.font = "11px sans-serif";
+          ctx.font = "14px sans-serif";
+          ctx.textBaseline = "middle";
           ctx.save();
           ctx.beginPath();
           ctx.rect(nameX, rowY, Math.min(nameEndX, w) - nameX, ROW_H);
           ctx.clip();
-          ctx.fillText(displayName(item.name, item.contextLabel), nameX, rowY + ROW_H / 2 + 4);
+          ctx.fillText(displayName(item.name, item.contextLabel), nameX, rowY + ROW_H / 2);
           ctx.restore();
+          ctx.textBaseline = "alphabetic";
         }
 
         itemCenters.set(item.id, { x: cx - r, y: cy, ex: cx + r });
