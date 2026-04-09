@@ -1,0 +1,143 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --surface2: #0f3460;
+  --accent: #e94560;
+  --text: #eaeaea;
+  --text-dim: #8888aa;
+  --toolbar-h: 48px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+
+.toolbar {
+  height: var(--toolbar-h);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  border-bottom: 1px solid var(--surface2);
+  flex-shrink: 0;
+}
+
+.toolbar-title {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+.toolbar-plan-name {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.toolbar-status {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+
+/* ── Page area ───────────────────────────────────────────────────────────── */
+
+.page-area {
+  flex: 1;
+  overflow: auto;
+  padding: 24px;
+}
+
+/* ── Status screen ───────────────────────────────────────────────────────── */
+
+.status-screen {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: var(--text-dim);
+  font-size: 1rem;
+}
+
+.status-screen.error {
+  color: var(--accent);
+}
+
+/* ── Home page ───────────────────────────────────────────────────────────── */
+
+.home-page {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.home-page h1 {
+  font-size: 2rem;
+}
+
+.summary-cards {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.summary-card {
+  background: var(--surface);
+  border: 1px solid var(--surface2);
+  border-radius: 8px;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.summary-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.summary-label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.home-hint {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btn {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.btn:hover {
+  filter: brightness(1.15);
+}
