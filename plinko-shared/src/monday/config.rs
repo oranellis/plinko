@@ -94,7 +94,7 @@ pub struct ItemNodeMapping {
 }
 
 /// Describes a column on a Monday board (fetched from API, not persisted).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BoardColumn {
     pub id: String,
     pub title: String,
@@ -102,7 +102,7 @@ pub struct BoardColumn {
 }
 
 /// A Monday.com workspace user (fetched from API, not persisted).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MondayUser {
     pub id: String,
     pub name: String,

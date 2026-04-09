@@ -1,10 +1,20 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 
-use plinko_shared::data::Storage;
+use plinko_shared::data::{Plan, Storage};
 use plinko_shared::protocol::*;
 
 use crate::engine::PlanEngine;
+use crate::monday::client::MondayClient;
+use crate::monday::{export, import};
+
+/// Internal messages sent from background Monday threads back to the connection loop.
+enum InternalMsg {
+    /// A ServerMessage to forward directly to the client.
+    Forward(ServerMessage),
+    /// A successfully imported plan — apply to engine and broadcast PlanState.
+    ImportDone { plan: Box<Plan>, message: String },
+}
 
 pub fn run_server(mut engine: PlanEngine, mut storage: Storage, port: u16) {
     let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("bind failed");
@@ -90,8 +100,33 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
         return;
     }
 
+    // Channel for Monday background threads to send messages back to this connection loop.
+    let (monday_tx, monday_rx) = std::sync::mpsc::channel::<InternalMsg>();
+
     let mut request_count: u64 = 0;
     loop {
+        // Drain any pending Monday progress/done/error messages first.
+        while let Ok(msg) = monday_rx.try_recv() {
+            match msg {
+                InternalMsg::Forward(server_msg) => {
+                    if send_msg(&mut writer, &server_msg).is_err() {
+                        return;
+                    }
+                }
+                InternalMsg::ImportDone { plan, message } => {
+                    *engine = PlanEngine::new(*plan);
+                    let _ = storage.save(engine.plan());
+                    let _ = send_msg(&mut writer, &ServerMessage::MondayDone { message });
+                    let _ = send_msg(
+                        &mut writer,
+                        &ServerMessage::PlanState {
+                            plan: Box::new(engine.plan().clone()),
+                        },
+                    );
+                }
+            }
+        }
+
         let mut line = String::new();
         match reader.read_line(&mut line) {
             Ok(0) | Err(_) => break,
@@ -227,6 +262,187 @@ fn handle_connection(stream: TcpStream, engine: &mut PlanEngine, storage: &mut S
         if let PlanRequest::SetCurrentUser(uid) = &request {
             let uid = *uid;
             storage.save_current_user_id(uid);
+            let resp = ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanUpdated,
+            };
+            if send_msg(&mut writer, &resp).is_err() {
+                break;
+            }
+            continue;
+        }
+
+        // ── Monday.com requests ───────────────────────────────────────────────
+
+        if let PlanRequest::LoadMondayConfig { plan_id } = &request {
+            let plan_id = *plan_id;
+            let config = storage.load_monday_config(plan_id).unwrap_or_default();
+            let resp = ServerMessage::Response {
+                id,
+                response: PlanResponse::MondayConfigLoaded(Box::new(config)),
+            };
+            if send_msg(&mut writer, &resp).is_err() {
+                break;
+            }
+            continue;
+        }
+
+        if let PlanRequest::SaveMondayConfig {
+            plan_id,
+            config,
+            token,
+        } = request
+        {
+            storage.save_monday_config(plan_id, &config);
+            storage.save_monday_api_token(token.trim());
+            let resp = ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanUpdated,
+            };
+            if send_msg(&mut writer, &resp).is_err() {
+                break;
+            }
+            continue;
+        }
+
+        if let PlanRequest::MondayTestConnection { token, board_id } = request {
+            let tx = monday_tx.clone();
+            std::thread::spawn(move || {
+                let client = MondayClient::new(&token);
+                match client.test_connection() {
+                    Ok(name) => {
+                        let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayDone {
+                            message: format!("Connected as: {name}"),
+                        }));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayError {
+                            message: e.to_string(),
+                        }));
+                    }
+                }
+                drop(board_id);
+            });
+            let resp = ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanUpdated,
+            };
+            if send_msg(&mut writer, &resp).is_err() {
+                break;
+            }
+            continue;
+        }
+
+        if let PlanRequest::MondayFetchBoardInfo { token, board_id } = request {
+            let tx = monday_tx.clone();
+            std::thread::spawn(move || {
+                let client = MondayClient::new(&token);
+                let users = client.fetch_users().unwrap_or_default();
+                let columns = client.fetch_columns(&board_id).unwrap_or_default();
+                let status_labels = client
+                    .fetch_status_labels(&board_id, "")
+                    .unwrap_or_default();
+                let _ = tx.send(InternalMsg::Forward(ServerMessage::Response {
+                    id,
+                    response: PlanResponse::MondayBoardInfo {
+                        users,
+                        columns,
+                        status_labels,
+                    },
+                }));
+            });
+            // Acknowledge receipt; actual result arrives via InternalMsg::Forward.
+            continue;
+        }
+
+        if let PlanRequest::MondayPull { plan_id } | PlanRequest::MondayFullReimport { plan_id } =
+            &request
+        {
+            let plan_id = *plan_id;
+            let is_reimport = matches!(request, PlanRequest::MondayFullReimport { .. });
+            let config = storage.load_monday_config(plan_id).unwrap_or_default();
+            let token = storage.load_monday_api_token();
+            let mut plan_clone = engine.plan().clone();
+            if is_reimport {
+                let mapped_node_ids: std::collections::HashSet<_> = config
+                    .item_node_map
+                    .iter()
+                    .map(|m| m.plinko_node_id)
+                    .collect();
+                plan_clone.tasks.retain(|id, _| {
+                    !mapped_node_ids.contains(&plinko_shared::data::ids::NodeId::Task(*id))
+                });
+                plan_clone.milestones.retain(|id, _| {
+                    !mapped_node_ids.contains(&plinko_shared::data::ids::NodeId::Milestone(*id))
+                });
+            }
+            let tx = monday_tx.clone();
+            let storage_clone = storage.clone();
+            std::thread::spawn(move || {
+                let client = MondayClient::new(&token);
+                let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayProgress {
+                    done: 0,
+                    total: 0,
+                    message: "Fetching data from Monday...".to_string(),
+                }));
+                match import::import_from_monday(&client, &config, plan_clone) {
+                    Ok((new_plan, new_map, message)) => {
+                        let mut updated_config = config.clone();
+                        updated_config.item_node_map = new_map;
+                        storage_clone.save_monday_config(plan_id, &updated_config);
+                        let _ = tx.send(InternalMsg::ImportDone {
+                            plan: Box::new(new_plan),
+                            message,
+                        });
+                    }
+                    Err(e) => {
+                        let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayError {
+                            message: e.to_string(),
+                        }));
+                    }
+                }
+            });
+            continue;
+        }
+
+        if let PlanRequest::MondayPush { plan_id } = &request {
+            let plan_id = *plan_id;
+            let config = storage.load_monday_config(plan_id).unwrap_or_default();
+            let token = storage.load_monday_api_token();
+            let plan_snapshot = engine.plan().clone();
+            let item_node_map = config.item_node_map.clone();
+            let tx = monday_tx.clone();
+            let storage_clone = storage.clone();
+            std::thread::spawn(move || {
+                let client = MondayClient::new(&token);
+                let result = export::export_to_monday_diff(
+                    &client,
+                    &config,
+                    &plan_snapshot,
+                    &item_node_map,
+                    |done, total, msg| {
+                        let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayProgress {
+                            done,
+                            total,
+                            message: msg.to_string(),
+                        }));
+                    },
+                );
+                match result {
+                    Ok((message, new_map)) => {
+                        let mut updated_config = config.clone();
+                        updated_config.item_node_map = new_map;
+                        storage_clone.save_monday_config(plan_id, &updated_config);
+                        let _ =
+                            tx.send(InternalMsg::Forward(ServerMessage::MondayDone { message }));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayError {
+                            message: e.to_string(),
+                        }));
+                    }
+                }
+            });
             let resp = ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,

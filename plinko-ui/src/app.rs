@@ -737,6 +737,10 @@ impl ApplicationHandler for Application {
                         self.mark_dirty(DirtyRegion::PageOnly);
                     }
                 }
+                // Monday responses are handled by the MondayWindow via shared state.
+                PlanResponse::MondayConfigLoaded(_)
+                | PlanResponse::MondayBoardInfo { .. }
+                | PlanResponse::MondayApiToken(_) => {}
             }
         }
 

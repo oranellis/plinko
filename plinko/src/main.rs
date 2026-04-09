@@ -1,4 +1,5 @@
 mod engine;
+mod monday;
 mod server;
 
 use plinko_shared::data::{Plan, Storage};

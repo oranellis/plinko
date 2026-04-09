@@ -228,7 +228,14 @@ impl PlanEngine {
             | PlanRequest::LoadPlan { .. }
             | PlanRequest::DeletePlan { .. }
             | PlanRequest::ListPlans
-            | PlanRequest::SetCurrentUser(_) => PlanResponse::PlanUpdated,
+            | PlanRequest::SetCurrentUser(_)
+            | PlanRequest::MondayTestConnection { .. }
+            | PlanRequest::MondayFetchBoardInfo { .. }
+            | PlanRequest::MondayPull { .. }
+            | PlanRequest::MondayFullReimport { .. }
+            | PlanRequest::MondayPush { .. }
+            | PlanRequest::SaveMondayConfig { .. }
+            | PlanRequest::LoadMondayConfig { .. } => PlanResponse::PlanUpdated,
         }
     }
 }

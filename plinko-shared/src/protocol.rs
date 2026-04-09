@@ -5,6 +5,7 @@ use crate::data::plan::DependencyError;
 use crate::data::scheduler::SchedulerError;
 use crate::data::task::WorkerSlot;
 use crate::data::{Milestone, Plan, Status, Task, User, WorkSchedule};
+use crate::monday::{BoardColumn, MondayConfig, MondayUser};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -179,6 +180,32 @@ pub enum PlanRequest {
     },
     ListPlans,
     SetCurrentUser(Option<UserId>),
+    // Monday.com integration (handled server-side)
+    MondayTestConnection {
+        token: String,
+        board_id: String,
+    },
+    MondayFetchBoardInfo {
+        token: String,
+        board_id: String,
+    },
+    MondayPull {
+        plan_id: uuid::Uuid,
+    },
+    MondayFullReimport {
+        plan_id: uuid::Uuid,
+    },
+    MondayPush {
+        plan_id: uuid::Uuid,
+    },
+    SaveMondayConfig {
+        plan_id: uuid::Uuid,
+        config: Box<MondayConfig>,
+        token: String,
+    },
+    LoadMondayConfig {
+        plan_id: uuid::Uuid,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -186,6 +213,14 @@ pub enum PlanResponse {
     PlanUpdated,
     Error(PlanError),
     PlanList(Vec<(uuid::Uuid, String, String)>),
+    // Monday responses
+    MondayConfigLoaded(Box<MondayConfig>),
+    MondayBoardInfo {
+        users: Vec<MondayUser>,
+        columns: Vec<BoardColumn>,
+        status_labels: Vec<String>,
+    },
+    MondayApiToken(String),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -219,10 +254,32 @@ pub const VERSION: &str = "0.1";
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type")]
 pub enum ServerMessage {
-    Hello { version: String },
-    VersionError { expected: String, got: String },
-    PlanState { plan: Box<Plan> },
-    Response { id: u64, response: PlanResponse },
+    Hello {
+        version: String,
+    },
+    VersionError {
+        expected: String,
+        got: String,
+    },
+    PlanState {
+        plan: Box<Plan>,
+    },
+    Response {
+        id: u64,
+        response: PlanResponse,
+    },
+    // Monday progress — sent unsolicited while an operation is in-flight
+    MondayProgress {
+        done: usize,
+        total: usize,
+        message: String,
+    },
+    MondayDone {
+        message: String,
+    },
+    MondayError {
+        message: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
