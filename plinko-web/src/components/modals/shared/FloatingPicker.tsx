@@ -16,9 +16,11 @@ interface Props {
   onSelect: (key: string) => void;
   onClose: () => void;
   placeholder?: string;
+  /** Keys of currently-selected items — shown with a checkmark */
+  selectedKeys?: Set<string>;
 }
 
-export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder = "Search…" }: Props) {
+export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder = "Search…", selectedKeys }: Props) {
   const [filter, setFilter] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -103,28 +105,34 @@ export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder
         {filtered.length === 0 ? (
           <div style={{ padding: "8px 10px", fontSize: 12, color: "#666" }}>No results</div>
         ) : (
-          filtered.map((o) => (
+          filtered.map((o) => {
+            const isSel = selectedKeys?.has(o.key) ?? false;
+            return (
             <button
               key={o.key}
               onMouseDown={(e) => { e.preventDefault(); onSelect(o.key); }}
               style={{
-                display: "block",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
                 width: "100%",
                 textAlign: "left",
-                background: "none",
+                background: isSel ? "#1c3a5a" : "none",
                 border: "none",
                 padding: "6px 10px",
-                color: "#d4d4d4",
+                color: isSel ? "#7cb9f4" : "#d4d4d4",
                 fontSize: 13,
                 cursor: "pointer",
                 fontFamily: "inherit",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#37373d")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+              onMouseEnter={(e) => { if (!isSel) e.currentTarget.style.background = "#37373d"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = isSel ? "#1c3a5a" : "none"; }}
             >
+              <span style={{ width: 14, flexShrink: 0, color: "#4a90d9", fontSize: 11 }}>{isSel ? "✓" : ""}</span>
               {o.label}
             </button>
-          ))
+            );
+          })
         )}
       </div>
     </div>,

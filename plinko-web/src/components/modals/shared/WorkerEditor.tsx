@@ -39,18 +39,15 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const userOptions: PickerOption[] = users.map((u) => ({ key: u.id, label: u.name }));
-  const tagOptions: PickerOption[] = [
-    { key: "__any__", label: "Any user" },
-    ...plan.tags.map((t) => ({ key: t.id, label: t.name })),
-  ];
+  const tagOptions: PickerOption[] = plan.tags.map((t) => ({ key: t.id, label: t.name }));
 
   const setType = (idx: number, type: SlotType) => {
     onChange(workers.map((w, i) => {
       if (i !== idx) return w;
       const wl = slotWorkload(w);
       if (type === "Specific") {
-        const firstUser = users[0];
-        return { Specific: { user_id: firstUser?.id ?? "", workload_days: wl } };
+        // Start with empty user_id so user must pick a person
+        return { Specific: { user_id: "", workload_days: wl } };
       } else {
         return { Placeholder: { required_tags: [], workload_days: wl } };
       }
@@ -79,7 +76,6 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
       if (i !== idx) return w;
       if (!("Placeholder" in w)) return w;
       const wl = w.Placeholder.workload_days;
-      if (key === "__any__") return { Placeholder: { required_tags: [], workload_days: wl } };
       // Toggle the tag
       const existing: TagId[] = w.Placeholder.required_tags;
       const next = existing.includes(key) ? existing.filter((t) => t !== key) : [...existing, key];
@@ -94,12 +90,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
   };
 
   const addWorker = () => {
-    const firstUser = users[0];
-    if (firstUser) {
-      onChange([...workers, { Specific: { user_id: firstUser.id, workload_days: 1 } }]);
-    } else {
-      onChange([...workers, { Placeholder: { required_tags: [], workload_days: 1 } }]);
-    }
+    onChange([...workers, { Placeholder: { required_tags: [], workload_days: 1 } }]);
   };
 
   const listH = FIXED_LIST_H;
@@ -109,7 +100,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
       const u = plan.users_data[w.Specific.user_id]?.user;
       return u?.name ?? "Select person…";
     }
-    if (w.Placeholder.required_tags.length === 0) return "Any user";
+    if (w.Placeholder.required_tags.length === 0) return "Any (no tags required)";
     const names = w.Placeholder.required_tags
       .map((id) => plan.tags.find((t) => t.id === id)?.name ?? id)
       .sort();
@@ -118,7 +109,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
 
   const isPickerLabelMuted = (w: WorkerSlot): boolean => {
     if ("Specific" in w) return !w.Specific.user_id || !plan.users_data[w.Specific.user_id];
-    return false;
+    return w.Placeholder.required_tags.length === 0;
   };
 
   return (
@@ -159,7 +150,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
                   padding: "0 8px",
                   gap: 6,
                 }}>
-                  {/* T/P type toggle */}
+                  {/* T/P type toggle — P (Placeholder/tags) first, T (specific person) second */}
                   <div style={{
                     display: "flex",
                     border: "1px solid #3a3a3c",
@@ -167,7 +158,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
                     overflow: "hidden",
                     flexShrink: 0,
                   }}>
-                    {(["Specific", "Placeholder"] as SlotType[]).map((t, ti) => (
+                    {(["Placeholder", "Specific"] as SlotType[]).map((t, ti) => (
                       <button
                         key={t}
                         onClick={() => setType(idx, t)}
@@ -272,6 +263,9 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
                       }}
                       onClose={() => setOpenPickerIdx(null)}
                       placeholder={type === "Specific" ? "Search person…" : "Search tags…"}
+                      selectedKeys={type === "Placeholder" && "Placeholder" in w
+                        ? new Set(w.Placeholder.required_tags)
+                        : undefined}
                     />
                   )}
                 </div>
