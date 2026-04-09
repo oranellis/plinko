@@ -91,6 +91,12 @@ pub trait Page {
         DirtyRegion::None
     }
 
+    /// Called when this page becomes active (navigation arrives here).
+    ///
+    /// Use it to reset transient view state such as scroll position or
+    /// the displayed month. The default implementation is a no-op.
+    fn on_show(&mut self, _plan: &Plan, _width: f32, _height: f32) {}
+
     /// Reset all hover state.  Called when navigating away from or to this
     /// page so stale highlights don't persist across navigation.
     fn reset_hover(&mut self) {}

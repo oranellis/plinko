@@ -192,6 +192,10 @@ impl Application {
             self.refresh_settings();
         }
 
+        let (width, height) = self.logical_size();
+        let plan = self.engine.plan();
+        self.pages.active_page_mut().on_show(plan, width, height);
+
         self.mark_dirty(DirtyRegion::All);
     }
 

@@ -3,6 +3,7 @@
 pub mod render;
 pub mod state;
 
+use chrono::Datelike;
 use skia_safe::Canvas;
 use winit::keyboard::{Key, NamedKey};
 
@@ -305,6 +306,12 @@ impl Page for CalendarOverridesPage {
         self.state.toolbar_btn_hovered = None;
         self.state.hovered_date = None;
         self.state.hovered_user_tab = None;
+    }
+
+    fn on_show(&mut self, _plan: &Plan, _width: f32, _height: f32) {
+        let today = chrono::Local::now().date_naive();
+        self.state.year = today.year();
+        self.state.month = today.month();
     }
 }
 // }}}

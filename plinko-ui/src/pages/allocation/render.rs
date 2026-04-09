@@ -51,7 +51,7 @@ fn task_color(idx: usize) -> u32 {
     TASK_COLORS[idx % TASK_COLORS.len()]
 }
 
-fn date_range(plan: &Plan) -> Option<(NaiveDate, NaiveDate)> {
+pub fn date_range(plan: &Plan) -> Option<(NaiveDate, NaiveDate)> {
     if !plan.node_allocations.has_schedule() {
         return None;
     }

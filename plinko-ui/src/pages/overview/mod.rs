@@ -367,6 +367,15 @@ impl Page for OverviewPage {
         self.state.hovered_dependents.clear();
     }
 
+    fn on_show(&mut self, plan: &Plan, width: f32, _height: f32) {
+        let today = chrono::Local::now().date_naive();
+        let view_start = render::view_start_date(plan);
+        let days = (today - view_start).num_days();
+        self.state.scroll_x = days as f32 * self.state.zoom - width / 2.0;
+        self.state.vel_x = 0.0;
+        self.state.vel_y = 0.0;
+    }
+
     fn has_animation(&self) -> bool {
         self.state.vel_x.abs() > 0.1
             || self.state.vel_y.abs() > 0.1

@@ -236,6 +236,17 @@ impl Page for AllocationPage {
         self.state.hovered_task_idx = None;
     }
 
+    fn on_show(&mut self, plan: &Plan, width: f32, _height: f32) {
+        let today = chrono::Local::now().date_naive();
+        let view_start = render::date_range(plan)
+            .map(|(s, _)| s)
+            .unwrap_or(plan.start_date);
+        let days = (today - view_start).num_days();
+        let scrollable_w = width - ALLOC_USER_PANEL_W - ALLOC_TASK_LABEL_W;
+        self.state.scroll_x = days as f32 * self.state.zoom - scrollable_w / 2.0;
+        self.state.vel_x = 0.0;
+    }
+
     fn has_animation(&self) -> bool {
         self.state.vel_x.abs() > 0.1 || (self.state.zoom_target - self.state.zoom).abs() > 0.05
     }
