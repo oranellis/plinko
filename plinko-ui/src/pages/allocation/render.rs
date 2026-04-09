@@ -598,22 +598,22 @@ fn draw_util_row(
                     };
                     let (_, sm) = cache.small_font.metrics();
                     let sm_h = sm.descent - sm.ascent;
-                    if bar_h >= sm_h + 2.0 {
-                        if let Some(blob) = TextBlob::new(&label, &cache.small_font) {
-                            let tw = cache.small_font.measure_str(&label, None).0;
-                            let tx = x + 1.0 + (bar_w - tw) / 2.0;
-                            let ty = bar_y + (bar_h - sm_h) / 2.0 - sm.ascent;
-                            paint.set_color(Color::from(BTN_PRIMARY_FG));
-                            paint.set_style(PaintStyle::Fill);
-                            canvas.save();
-                            canvas.clip_rect(
-                                Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h),
-                                ClipOp::Intersect,
-                                false,
-                            );
-                            canvas.draw_text_blob(&blob, (tx, ty), paint);
-                            canvas.restore();
-                        }
+                    if bar_h >= sm_h + 2.0
+                        && let Some(blob) = TextBlob::new(&label, &cache.small_font)
+                    {
+                        let tw = cache.small_font.measure_str(&label, None).0;
+                        let tx = x + 1.0 + (bar_w - tw) / 2.0;
+                        let ty = bar_y + (bar_h - sm_h) / 2.0 - sm.ascent;
+                        paint.set_color(Color::from(BTN_PRIMARY_FG));
+                        paint.set_style(PaintStyle::Fill);
+                        canvas.save();
+                        canvas.clip_rect(
+                            Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h),
+                            ClipOp::Intersect,
+                            false,
+                        );
+                        canvas.draw_text_blob(&blob, (tx, ty), paint);
+                        canvas.restore();
                     }
                 }
             }

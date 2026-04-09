@@ -871,6 +871,7 @@ impl FloatingWindow for ScheduleWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         sender: &PlanRequestSender,
         width: f32,
         height: f32,
@@ -894,34 +895,27 @@ impl FloatingWindow for ScheduleWindow {
 
         if let Some(idx) = self.focused_day {
             let row = &mut self.days[idx];
+            // Numeric-only fields: filter Space and character keys specially
             match key {
-                Key::Named(NamedKey::Backspace) => {
-                    row.input.backspace();
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    row.input.move_left();
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    row.input.move_right();
-                }
-                Key::Named(NamedKey::Home) => {
-                    row.input.move_home();
-                }
-                Key::Named(NamedKey::End) => {
-                    row.input.move_end();
+                Key::Named(NamedKey::Space) => {
+                    return FloatingWindowOutcome::default();
                 }
                 Key::Character(s) => {
-                    // Only allow digits and one decimal point
                     for ch in s.chars() {
                         if ch.is_ascii_digit() || (ch == '.' && !row.input.content.contains('.')) {
                             row.input.insert_str(&ch.to_string());
                         }
                     }
+                    self.scheduler_error = None;
+                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
                 }
-                _ => return FloatingWindowOutcome::default(),
+                _ => {}
             }
-            self.scheduler_error = None;
-            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+            if row.input.handle_key(key, modifiers) {
+                self.scheduler_error = None;
+                return FloatingWindowOutcome::dirty(DirtyRegion::All);
+            }
+            return FloatingWindowOutcome::default();
         }
 
         // No focused day — use default handler (Escape already handled above)

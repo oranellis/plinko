@@ -165,15 +165,13 @@ impl Page for AllocationPage {
                 }
             } else if in_label_column {
                 // Click in label column → open task edit form for this row
-                if let Some(uid) = &self.state.selected_user.clone() {
-                    if let Some(row) = render::hit_test_label_column(x, y, plan, uid) {
-                        if let Some(task_id) = render::task_id_for_row(plan, uid, row) {
-                            if let Some(task) = plan.tasks.get(task_id) {
-                                self.state.pending_window =
-                                    Some(Box::new(TaskFormWindow::from_task(task, plan)));
-                            }
-                        }
-                    }
+                if let Some(uid) = &self.state.selected_user.clone()
+                    && let Some(row) = render::hit_test_label_column(x, y, plan, uid)
+                    && let Some(task_id) = render::task_id_for_row(plan, uid, row)
+                    && let Some(task) = plan.tasks.get(task_id)
+                {
+                    self.state.pending_window =
+                        Some(Box::new(TaskFormWindow::from_task(task, plan)));
                 }
             } else {
                 // Timeline drag

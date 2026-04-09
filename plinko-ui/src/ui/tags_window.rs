@@ -814,6 +814,7 @@ impl FloatingWindow for TagsWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         sender: &PlanRequestSender,
         _width: f32,
         _height: f32,
@@ -841,56 +842,15 @@ impl FloatingWindow for TagsWindow {
                     self.rename_error = false;
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                Key::Named(NamedKey::Backspace) => {
-                    if let Some((_, ref mut input)) = self.rename_state {
-                        input.backspace();
-                        self.rename_error = false;
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    if let Some((_, ref mut input)) = self.rename_state {
-                        input.move_left();
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    if let Some((_, ref mut input)) = self.rename_state {
-                        input.move_right();
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::Home) => {
-                    if let Some((_, ref mut input)) = self.rename_state {
-                        input.move_home();
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::End) => {
-                    if let Some((_, ref mut input)) = self.rename_state {
-                        input.move_end();
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::Space) => {
-                    if let Some((_, ref mut input)) = self.rename_state {
-                        input.insert_str(" ");
-                        self.rename_error = false;
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Character(c) => {
-                    if c.chars().all(|ch| !ch.is_control()) {
-                        if let Some((_, ref mut input)) = self.rename_state {
-                            input.insert_str(c.as_str());
-                            self.rename_error = false;
-                        }
-                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                    }
-                    return FloatingWindowOutcome::default();
-                }
-                _ => return FloatingWindowOutcome::default(),
+                _ => {}
             }
+            if let Some((_, ref mut input)) = self.rename_state
+                && input.handle_key(key, modifiers)
+            {
+                self.rename_error = false;
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
         }
 
         if let Some(input) = &mut self.add_input {
@@ -898,47 +858,19 @@ impl FloatingWindow for TagsWindow {
                 Key::Named(NamedKey::Escape) => {
                     self.add_input = None;
                     self.add_input_error = false;
-                    FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                Key::Named(NamedKey::Enter) => self.submit_add(sender),
-                Key::Named(NamedKey::Backspace) => {
-                    input.backspace();
-                    self.add_input_error = false;
-                    FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    input.move_left();
-                    FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    input.move_right();
-                    FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-                }
-                Key::Named(NamedKey::Home) => {
-                    input.move_home();
-                    FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-                }
-                Key::Named(NamedKey::End) => {
-                    input.move_end();
-                    FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-                }
-                Key::Named(NamedKey::Space) => {
-                    input.insert_str(" ");
-                    self.add_input_error = false;
-                    FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-                }
-                Key::Character(c) => {
-                    if c.chars().all(|ch| !ch.is_control()) {
-                        input.insert_str(c.as_str());
-                        self.add_input_error = false;
-                        FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-                    } else {
-                        FloatingWindowOutcome::default()
-                    }
-                }
-                _ => FloatingWindowOutcome::default(),
+                Key::Named(NamedKey::Enter) => return self.submit_add(sender),
+                _ => {}
             }
-        } else if *key == Key::Named(NamedKey::Escape) {
+            if input.handle_key(key, modifiers) {
+                self.add_input_error = false;
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
+        }
+
+        if *key == Key::Named(NamedKey::Escape) {
             FloatingWindowOutcome::close()
         } else {
             FloatingWindowOutcome::default()
@@ -955,11 +887,11 @@ impl FloatingWindow for TagsWindow {
         _cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if let Some((_, ref mut input)) = self.rename_state {
-            input.insert_str(text);
+            input.handle_paste(text);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
         if let Some(ref mut input) = self.add_input {
-            input.insert_str(text);
+            input.handle_paste(text);
             return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
         }
         FloatingWindowOutcome::default()

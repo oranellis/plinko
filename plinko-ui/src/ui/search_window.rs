@@ -364,6 +364,7 @@ impl FloatingWindow for SearchWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         _sender: &PlanRequestSender,
         _width: f32,
         _height: f32,
@@ -372,24 +373,6 @@ impl FloatingWindow for SearchWindow {
     ) -> FloatingWindowOutcome {
         match key {
             Key::Named(NamedKey::Escape) => FloatingWindowOutcome::close(),
-            Key::Named(NamedKey::Backspace) => {
-                self.filter.backspace();
-                self.scroll_y = 0.0;
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Named(NamedKey::Space) => {
-                self.filter.insert_str(" ");
-                self.scroll_y = 0.0;
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Named(NamedKey::ArrowLeft) => {
-                self.filter.move_left();
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Named(NamedKey::ArrowRight) => {
-                self.filter.move_right();
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
             Key::Named(NamedKey::Enter) => {
                 // Open edit form for the first result.
                 let items = Self::compute_items(plan, &self.filter.content);
@@ -415,12 +398,14 @@ impl FloatingWindow for SearchWindow {
                 }
                 FloatingWindowOutcome::default()
             }
-            Key::Character(s) => {
-                self.filter.insert_str(s);
-                self.scroll_y = 0.0;
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
+            _ => {
+                if self.filter.handle_key(key, modifiers) {
+                    self.scroll_y = 0.0;
+                    FloatingWindowOutcome::dirty(DirtyRegion::All)
+                } else {
+                    FloatingWindowOutcome::default()
+                }
             }
-            _ => FloatingWindowOutcome::default(),
         }
     }
 
@@ -433,7 +418,7 @@ impl FloatingWindow for SearchWindow {
         _plan: &Plan,
         _cache: &RenderCache,
     ) -> FloatingWindowOutcome {
-        self.filter.insert_str(text);
+        self.filter.handle_paste(text);
         self.scroll_y = 0.0;
         FloatingWindowOutcome::dirty(DirtyRegion::All)
     }

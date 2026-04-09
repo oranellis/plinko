@@ -42,19 +42,16 @@ use plinko_shared::protocol::{PlanRequest, PlanResponse};
 fn read_clipboard() -> String {
     // Wayland: use wl-paste if available.
     #[cfg(target_os = "linux")]
-    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-        if let Ok(out) = std::process::Command::new("wl-paste")
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && let Ok(out) = std::process::Command::new("wl-paste")
             .arg("--no-newline")
             .arg("--type")
             .arg("text/plain")
             .output()
-        {
-            if out.status.success() {
-                if let Ok(s) = String::from_utf8(out.stdout) {
-                    return s;
-                }
-            }
-        }
+        && out.status.success()
+        && let Ok(s) = String::from_utf8(out.stdout)
+    {
+        return s;
     }
     // General fallback via arboard (macOS, Windows, X11).
     arboard::Clipboard::new()
@@ -301,7 +298,7 @@ impl ApplicationHandler for Application {
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         let today = chrono::Local::now().date_naive();
         if self.last_daily_recompute != Some(today) {
-            let _ = self.engine.sender().send(PlanRequest::RunScheduler);
+            self.engine.sender().send(PlanRequest::RunScheduler);
             self.last_daily_recompute = Some(today);
             self.mark_dirty(DirtyRegion::All);
         }
@@ -378,6 +375,7 @@ impl ApplicationHandler for Application {
                     } else if self.floats.is_open() {
                         self.floats.on_key_input(
                             &logical_key,
+                            &self.modifiers,
                             &sender,
                             width,
                             height,

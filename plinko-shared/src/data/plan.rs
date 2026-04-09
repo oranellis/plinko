@@ -310,10 +310,10 @@ impl Plan {
 
     pub fn task_actual_start(&self, id: &TaskId) -> Option<NaiveDate> {
         // Prefer the field stored on the task itself (set when task is started).
-        if let Some(task) = self.tasks.get(id) {
-            if let Some(d) = task.actual_start {
-                return Some(d);
-            }
+        if let Some(task) = self.tasks.get(id)
+            && let Some(d) = task.actual_start
+        {
+            return Some(d);
         }
         // Fall back to Fixed allocation start_date for legacy plans.
         match self.node_allocations.tasks.get(id)?.allocation {
@@ -394,10 +394,10 @@ impl Plan {
         }
         let today = chrono::Local::now().date_naive();
         // Record actual_start on the task only if not already set.
-        if let Some(task) = self.tasks.get_mut(&id) {
-            if task.actual_start.is_none() {
-                task.actual_start = Some(today);
-            }
+        if let Some(task) = self.tasks.get_mut(&id)
+            && task.actual_start.is_none()
+        {
+            task.actual_start = Some(today);
         }
         let actual_start = self.tasks[&id].actual_start.unwrap_or(today);
         // Set status to InProgress. Use a Fixed allocation so the status

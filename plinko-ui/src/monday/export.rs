@@ -163,10 +163,8 @@ pub fn export_to_monday_diff(
     let mut created_count = 0usize;
 
     // Collect all plinko node IDs that have no Monday mapping yet.
-    let mapped_nodes: std::collections::HashSet<NodeId> = working_map
-        .iter()
-        .map(|m| m.plinko_node_id.clone())
-        .collect();
+    let mapped_nodes: std::collections::HashSet<NodeId> =
+        working_map.iter().map(|m| m.plinko_node_id).collect();
 
     let unmapped_tasks: Vec<_> = plan
         .tasks
@@ -342,7 +340,7 @@ pub fn export_to_monday_diff(
         };
 
         if let Some((from, to, is_milestone)) = timeline {
-            let needs_update = current.map_or(true, |item| {
+            let needs_update = current.is_none_or(|item| {
                 let cur_from = item
                     .timeline_start
                     .map(|d| d.format("%Y-%m-%d").to_string());
@@ -378,7 +376,7 @@ pub fn export_to_monday_diff(
             };
             if let Some(label) = plinko_status.and_then(find_label) {
                 let needs_update =
-                    current.map_or(true, |item| item.status_label.as_deref() != Some(label));
+                    current.is_none_or(|item| item.status_label.as_deref() != Some(label));
                 if needs_update {
                     ops.push(PushOp {
                         board_id: board_id.clone(),
@@ -400,7 +398,7 @@ pub fn export_to_monday_diff(
                 .collect();
             plinko_dep_ids.sort();
 
-            let needs_update = current.map_or(true, |item| {
+            let needs_update = current.is_none_or(|item| {
                 let mut cur_deps = item.dependency_item_ids.clone();
                 cur_deps.sort();
                 cur_deps != plinko_dep_ids
@@ -417,25 +415,25 @@ pub fn export_to_monday_diff(
         }
 
         // Person column (tasks only)
-        if !person_col.is_empty() {
-            if let NodeId::Task(_) = &mapping.plinko_node_id {
-                let plinko_user_ids = resolve_monday_users(&mapping.plinko_node_id);
-                let mut sorted_plinko = plinko_user_ids.clone();
-                sorted_plinko.sort();
-                let needs_update = current.map_or(true, |item| {
-                    let mut cur = item.assigned_user_ids.clone();
-                    cur.sort();
-                    cur != sorted_plinko
+        if !person_col.is_empty()
+            && let NodeId::Task(_) = &mapping.plinko_node_id
+        {
+            let plinko_user_ids = resolve_monday_users(&mapping.plinko_node_id);
+            let mut sorted_plinko = plinko_user_ids.clone();
+            sorted_plinko.sort();
+            let needs_update = current.is_none_or(|item| {
+                let mut cur = item.assigned_user_ids.clone();
+                cur.sort();
+                cur != sorted_plinko
+            });
+            if needs_update {
+                ops.push(PushOp {
+                    board_id: board_id.clone(),
+                    item_id: monday_item_id.clone(),
+                    kind: PushKind::Person {
+                        monday_user_ids: plinko_user_ids,
+                    },
                 });
-                if needs_update {
-                    ops.push(PushOp {
-                        board_id: board_id.clone(),
-                        item_id: monday_item_id.clone(),
-                        kind: PushKind::Person {
-                            monday_user_ids: plinko_user_ids,
-                        },
-                    });
-                }
             }
         }
 
@@ -446,7 +444,7 @@ pub fn export_to_monday_diff(
             NodeId::PlanStart => None,
         };
         if let Some(name) = plinko_name {
-            let needs_update = current.map_or(true, |item| item.name.trim() != name.trim());
+            let needs_update = current.is_none_or(|item| item.name.trim() != name.trim());
             if needs_update {
                 ops.push(PushOp {
                     board_id: board_id.clone(),
@@ -459,21 +457,20 @@ pub fn export_to_monday_diff(
         }
 
         // Workload column (tasks only)
-        if !workload_col.is_empty() {
-            if let NodeId::Task(task_id) = &mapping.plinko_node_id {
-                if let Some(plinko_wl) = task_workload(task_id) {
-                    let needs_update = current.map_or(true, |item| {
-                        item.workload
-                            .map_or(true, |cur_wl| (cur_wl - plinko_wl).abs() > 0.01)
-                    });
-                    if needs_update {
-                        ops.push(PushOp {
-                            board_id: board_id.clone(),
-                            item_id: monday_item_id.clone(),
-                            kind: PushKind::Workload { value: plinko_wl },
-                        });
-                    }
-                }
+        if !workload_col.is_empty()
+            && let NodeId::Task(task_id) = &mapping.plinko_node_id
+            && let Some(plinko_wl) = task_workload(task_id)
+        {
+            let needs_update = current.is_none_or(|item| {
+                item.workload
+                    .is_none_or(|cur_wl| (cur_wl - plinko_wl).abs() > 0.01)
+            });
+            if needs_update {
+                ops.push(PushOp {
+                    board_id: board_id.clone(),
+                    item_id: monday_item_id.clone(),
+                    kind: PushKind::Workload { value: plinko_wl },
+                });
             }
         }
     }

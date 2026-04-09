@@ -1564,6 +1564,7 @@ impl FloatingWindow for PlanSettingsWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         sender: &PlanRequestSender,
         _width: f32,
         _height: f32,
@@ -1581,21 +1582,13 @@ impl FloatingWindow for PlanSettingsWindow {
                     self.close_target_dropdown();
                     return FloatingWindowOutcome::dirty(DirtyRegion::All);
                 }
-                Key::Named(NamedKey::Backspace) => {
-                    self.target_filter.backspace();
-                    self.target_dropdown_scroll = 0;
-                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
-                }
-                Key::Character(c) => {
-                    if c.chars().all(|ch| !ch.is_control()) {
-                        self.target_filter.insert_str(c.as_str());
-                        self.target_dropdown_scroll = 0;
-                        return FloatingWindowOutcome::dirty(DirtyRegion::All);
-                    }
-                    return FloatingWindowOutcome::default();
-                }
-                _ => return FloatingWindowOutcome::default(),
+                _ => {}
             }
+            if self.target_filter.handle_key(key, modifiers) {
+                self.target_dropdown_scroll = 0;
+                return FloatingWindowOutcome::dirty(DirtyRegion::All);
+            }
+            return FloatingWindowOutcome::default();
         }
 
         // Calendar open: only Escape closes it
@@ -1620,39 +1613,8 @@ impl FloatingWindow for PlanSettingsWindow {
                 self.name.focused = !self.name.focused;
                 FloatingWindowOutcome::dirty(DirtyRegion::All)
             }
-            Key::Named(NamedKey::Backspace) if self.name.focused => {
-                self.name.backspace();
-                self.error = None;
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Named(NamedKey::Delete) if self.name.focused => {
-                // Delete forward not available; treat as no-op
-                FloatingWindowOutcome::default()
-            }
-            Key::Named(NamedKey::ArrowLeft) if self.name.focused => {
-                self.name.move_left();
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Named(NamedKey::ArrowRight) if self.name.focused => {
-                self.name.move_right();
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Named(NamedKey::Home) if self.name.focused => {
-                self.name.move_home();
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Named(NamedKey::End) if self.name.focused => {
-                self.name.move_end();
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Named(NamedKey::Space) if self.name.focused => {
-                self.name.insert_str(" ");
-                self.error = None;
-                FloatingWindowOutcome::dirty(DirtyRegion::All)
-            }
-            Key::Character(c) if self.name.focused => {
-                if c.chars().all(|ch| !ch.is_control()) {
-                    self.name.insert_str(c.as_str());
+            _ if self.name.focused => {
+                if self.name.handle_key(key, modifiers) {
                     self.error = None;
                     FloatingWindowOutcome::dirty(DirtyRegion::All)
                 } else {
@@ -1673,11 +1635,11 @@ impl FloatingWindow for PlanSettingsWindow {
         _cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if self.name.focused {
-            self.name.insert_str(text);
+            self.name.handle_paste(text);
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
         if self.target_dropdown_open {
-            self.target_filter.insert_str(text);
+            self.target_filter.handle_paste(text);
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
         FloatingWindowOutcome::default()

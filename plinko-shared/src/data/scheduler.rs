@@ -125,13 +125,12 @@ impl Plan {
             .copied()
             .collect();
         for id in non_terminal_ids {
-            if let Some(ts) = self.node_allocations.tasks.get_mut(&id) {
-                if let TaskAllocation::Fixed {
+            if let Some(ts) = self.node_allocations.tasks.get_mut(&id)
+                && let TaskAllocation::Fixed {
                     corrected_end_date, ..
                 } = &mut ts.allocation
-                {
-                    *corrected_end_date = None;
-                }
+            {
+                *corrected_end_date = None;
             }
         }
 
@@ -386,23 +385,23 @@ impl Plan {
     ) -> NaiveDate {
         // InProgress tasks have already started — their actual_start is the
         // definitive start date regardless of dependencies.
-        if let NodeId::Task(tid) = node_id {
-            if state.inprogress_ids.contains(&tid) {
-                return self
-                    .tasks
-                    .get(&tid)
-                    .and_then(|t| t.actual_start)
-                    .or_else(|| {
-                        self.node_allocations
-                            .tasks
-                            .get(&tid)
-                            .and_then(|ts| match &ts.allocation {
-                                TaskAllocation::Fixed { start_date, .. } => Some(*start_date),
-                                _ => None,
-                            })
-                    })
-                    .unwrap_or(state.today);
-            }
+        if let NodeId::Task(tid) = node_id
+            && state.inprogress_ids.contains(&tid)
+        {
+            return self
+                .tasks
+                .get(&tid)
+                .and_then(|t| t.actual_start)
+                .or_else(|| {
+                    self.node_allocations
+                        .tasks
+                        .get(&tid)
+                        .and_then(|ts| match &ts.allocation {
+                            TaskAllocation::Fixed { start_date, .. } => Some(*start_date),
+                            _ => None,
+                        })
+                })
+                .unwrap_or(state.today);
         }
 
         let deps = self.get_dependencies(&node_id);

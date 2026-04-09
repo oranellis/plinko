@@ -3643,6 +3643,7 @@ impl FloatingWindow for MilestoneFormWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         sender: &PlanRequestSender,
         width: f32,
         height: f32,
@@ -3664,31 +3665,18 @@ impl FloatingWindow for MilestoneFormWindow {
                     self.close_dep_dropdown();
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                Key::Named(NamedKey::Backspace) => {
-                    if dep_idx < self.dependencies.len() {
-                        self.dependencies[dep_idx].dep_filter.backspace();
-                        self.dep_dropdown_scroll = 0;
-                        self.dep_dropdown_hovered = None;
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::Space) => {
-                    if dep_idx < self.dependencies.len() {
-                        self.dependencies[dep_idx].dep_filter.insert_str(" ");
-                        self.dep_dropdown_scroll = 0;
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Character(c) => {
-                    if c.chars().all(|ch| !ch.is_control()) && dep_idx < self.dependencies.len() {
-                        self.dependencies[dep_idx].dep_filter.insert_str(c.as_str());
-                        self.dep_dropdown_scroll = 0;
-                        self.dep_dropdown_hovered = None;
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                _ => return FloatingWindowOutcome::default(),
+                _ => {}
             }
+            if dep_idx < self.dependencies.len()
+                && self.dependencies[dep_idx]
+                    .dep_filter
+                    .handle_key(key, modifiers)
+            {
+                self.dep_dropdown_scroll = 0;
+                self.dep_dropdown_hovered = None;
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
         }
 
         // Fwd dropdown open: route keys to filter input
@@ -3698,31 +3686,18 @@ impl FloatingWindow for MilestoneFormWindow {
                     self.close_fwd_dropdown();
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                Key::Named(NamedKey::Backspace) => {
-                    if dep_idx < self.dependents.len() {
-                        self.dependents[dep_idx].dep_filter.backspace();
-                        self.dep_fwd_dropdown_scroll = 0;
-                        self.dep_fwd_dropdown_hovered = None;
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::Space) => {
-                    if dep_idx < self.dependents.len() {
-                        self.dependents[dep_idx].dep_filter.insert_str(" ");
-                        self.dep_fwd_dropdown_scroll = 0;
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Character(c) => {
-                    if c.chars().all(|ch| !ch.is_control()) && dep_idx < self.dependents.len() {
-                        self.dependents[dep_idx].dep_filter.insert_str(c.as_str());
-                        self.dep_fwd_dropdown_scroll = 0;
-                        self.dep_fwd_dropdown_hovered = None;
-                    }
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                _ => return FloatingWindowOutcome::default(),
+                _ => {}
             }
+            if dep_idx < self.dependents.len()
+                && self.dependents[dep_idx]
+                    .dep_filter
+                    .handle_key(key, modifiers)
+            {
+                self.dep_fwd_dropdown_scroll = 0;
+                self.dep_fwd_dropdown_hovered = None;
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
         }
 
         // Dep lag input focused
@@ -3740,26 +3715,6 @@ impl FloatingWindow for MilestoneFormWindow {
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::Enter) => return self.try_submit(plan, sender),
-                Key::Named(NamedKey::Backspace) => {
-                    self.dependencies[lag_idx].lag_input.backspace();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    self.dependencies[lag_idx].lag_input.move_left();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    self.dependencies[lag_idx].lag_input.move_right();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::Home) => {
-                    self.dependencies[lag_idx].lag_input.move_home();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::End) => {
-                    self.dependencies[lag_idx].lag_input.move_end();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
                 Key::Named(NamedKey::Space) => {
                     return FloatingWindowOutcome::default();
                 }
@@ -3772,8 +3727,15 @@ impl FloatingWindow for MilestoneFormWindow {
                     }
                     return FloatingWindowOutcome::default();
                 }
-                _ => return FloatingWindowOutcome::default(),
+                _ => {}
             }
+            if self.dependencies[lag_idx]
+                .lag_input
+                .handle_key(key, modifiers)
+            {
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
         }
 
         // Fwd lag input focused
@@ -3791,26 +3753,6 @@ impl FloatingWindow for MilestoneFormWindow {
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
                 Key::Named(NamedKey::Enter) => return self.try_submit(plan, sender),
-                Key::Named(NamedKey::Backspace) => {
-                    self.dependents[lag_idx].lag_input.backspace();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    self.dependents[lag_idx].lag_input.move_left();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    self.dependents[lag_idx].lag_input.move_right();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::Home) => {
-                    self.dependents[lag_idx].lag_input.move_home();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::End) => {
-                    self.dependents[lag_idx].lag_input.move_end();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
                 Key::Named(NamedKey::Space) => {
                     return FloatingWindowOutcome::default();
                 }
@@ -3823,11 +3765,17 @@ impl FloatingWindow for MilestoneFormWindow {
                     }
                     return FloatingWindowOutcome::default();
                 }
-                _ => return FloatingWindowOutcome::default(),
+                _ => {}
             }
+            if self.dependents[lag_idx]
+                .lag_input
+                .handle_key(key, modifiers)
+            {
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
         }
 
-        // Description (multi-line): Enter inserts newline, not submit
         if self.focused == TextField::None {
             if *key == Key::Named(NamedKey::Escape) {
                 return FloatingWindowOutcome::close();
@@ -3835,6 +3783,7 @@ impl FloatingWindow for MilestoneFormWindow {
             return FloatingWindowOutcome::default();
         }
 
+        // Description (multi-line): handle Tab and Escape explicitly; handle_key handles the rest
         if self.focused == TextField::Description {
             let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
             let inner_width = desc_rect.width() - 16.0;
@@ -3843,87 +3792,23 @@ impl FloatingWindow for MilestoneFormWindow {
             let visible_h = DESC_H - 8.0;
             match key {
                 Key::Named(NamedKey::Escape) => return FloatingWindowOutcome::close(),
-                Key::Named(NamedKey::Enter) => {
-                    self.description.insert_newline();
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
                 Key::Named(NamedKey::Tab) => {
                     self.set_focus(TextField::Name);
                     return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
-                Key::Named(NamedKey::Backspace) => {
-                    self.description.backspace();
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    self.description.move_left();
-                    self.description.x_hint = None;
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    self.description.move_right();
-                    self.description.x_hint = None;
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowUp) => {
-                    self.description.move_up(inner_width, &cache.font);
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::ArrowDown) => {
-                    self.description.move_down(inner_width, &cache.font);
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::Home) => {
-                    self.description.move_to_start();
-                    self.description.x_hint = None;
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::End) => {
-                    self.description.move_to_end();
-                    self.description.x_hint = None;
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Named(NamedKey::Space) => {
-                    self.description.insert_char(' ');
-                    self.description.x_hint = None;
-                    self.description
-                        .scroll_to_cursor(inner_width, &cache.font, line_h, visible_h);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                }
-                Key::Character(c) => {
-                    if c.chars().all(|ch| !ch.is_control()) {
-                        for ch in c.chars() {
-                            self.description.insert_char(ch);
-                        }
-                        self.description.x_hint = None;
-                        self.description.scroll_to_cursor(
-                            inner_width,
-                            &cache.font,
-                            line_h,
-                            visible_h,
-                        );
-                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
-                    }
-                    return FloatingWindowOutcome::default();
-                }
-                _ => return FloatingWindowOutcome::default(),
+                _ => {}
             }
+            if self.description.handle_key(
+                key,
+                modifiers,
+                inner_width,
+                line_h,
+                visible_h,
+                &cache.font,
+            ) {
+                return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+            }
+            return FloatingWindowOutcome::default();
         }
 
         match key {
@@ -3938,39 +3823,8 @@ impl FloatingWindow for MilestoneFormWindow {
                 self.set_focus(next);
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
-            Key::Named(NamedKey::Backspace) => {
-                self.focused_input().backspace();
-                if self.focused == TextField::Name {
-                    self.name_error = false;
-                }
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::ArrowLeft) => {
-                self.focused_input().move_left();
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::ArrowRight) => {
-                self.focused_input().move_right();
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::Home) => {
-                self.focused_input().move_home();
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::End) => {
-                self.focused_input().move_end();
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::Space) => {
-                self.focused_input().insert_str(" ");
-                if self.focused == TextField::Name {
-                    self.name_error = false;
-                }
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Character(c) => {
-                if c.chars().all(|ch| !ch.is_control()) {
-                    self.focused_input().insert_str(c.as_str());
+            _ => {
+                if self.focused_input().handle_key(key, modifiers) {
                     if self.focused == TextField::Name {
                         self.name_error = false;
                     }
@@ -3979,7 +3833,6 @@ impl FloatingWindow for MilestoneFormWindow {
                     FloatingWindowOutcome::default()
                 }
             }
-            _ => FloatingWindowOutcome::default(),
         }
     }
 
@@ -4008,10 +3861,10 @@ impl FloatingWindow for MilestoneFormWindow {
         &mut self,
         text: &str,
         _sender: &PlanRequestSender,
-        _width: f32,
-        _height: f32,
+        width: f32,
+        height: f32,
         _plan: &Plan,
-        _cache: &RenderCache,
+        cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if let Some(lag_idx) = self.focused_dep_lag {
             if lag_idx < self.dependencies.len() {
@@ -4043,13 +3896,17 @@ impl FloatingWindow for MilestoneFormWindow {
         }
         match self.focused {
             TextField::Name => {
-                self.name.insert_str(text);
+                self.name.handle_paste(text);
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             TextField::Description => {
-                for ch in text.chars() {
-                    self.description.insert_char(ch);
-                }
+                let desc_rect = Self::full_input_rect(ROW_DESC, width, height);
+                let inner_width = desc_rect.width() - 16.0;
+                let (_, metrics) = cache.font.metrics();
+                let line_h = metrics.descent - metrics.ascent + 2.0;
+                let visible_h = DESC_H - 8.0;
+                self.description
+                    .handle_paste(text, inner_width, line_h, visible_h, &cache.font);
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             TextField::None => FloatingWindowOutcome::default(),

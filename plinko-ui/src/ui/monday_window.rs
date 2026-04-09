@@ -979,10 +979,10 @@ impl FloatingWindow for MondayWindow {
                         .ok()
                         .map(|g| g.clone())
                         .unwrap_or_default();
-                    if let Ok(prog) = self.push_progress.try_lock() {
-                        if let Some((done, total)) = *prog {
-                            return format!("{phase_msg} ({done}/{total})");
-                        }
+                    if let Ok(prog) = self.push_progress.try_lock()
+                        && let Some((done, total)) = *prog
+                    {
+                        return format!("{phase_msg} ({done}/{total})");
                     }
                     phase_msg
                 }
@@ -1093,17 +1093,17 @@ impl FloatingWindow for MondayWindow {
                     let mut users: Vec<UserId> = plan.users_data.keys().copied().collect();
                     users.sort_by_key(|id| plan.users_data[id].user.name.to_lowercase());
                     if let Some(idx) = self.open_user_dropdown {
-                        if abs < users.len() {
-                            if let Some(mapping) = self.user_mappings.get_mut(idx) {
-                                let uid = users[abs];
-                                // Toggle: clicking the already-selected user clears the mapping.
-                                if mapping.plinko_user_id == Some(uid) {
-                                    mapping.plinko_user_id = None;
-                                } else {
-                                    mapping.plinko_user_id = Some(uid);
-                                }
-                                self.save_config();
+                        if abs < users.len()
+                            && let Some(mapping) = self.user_mappings.get_mut(idx)
+                        {
+                            let uid = users[abs];
+                            // Toggle: clicking the already-selected user clears the mapping.
+                            if mapping.plinko_user_id == Some(uid) {
+                                mapping.plinko_user_id = None;
+                            } else {
+                                mapping.plinko_user_id = Some(uid);
                             }
+                            self.save_config();
                         }
                         self.open_user_dropdown = None;
                         self.user_dropdown_hovered = None;
@@ -1373,6 +1373,7 @@ impl FloatingWindow for MondayWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         _sender: &PlanRequestSender,
         _width: f32,
         _height: f32,
@@ -1387,43 +1388,12 @@ impl FloatingWindow for MondayWindow {
                 self.focused = FocusedInput::None;
                 return FloatingWindowOutcome::dirty(DirtyRegion::All);
             }
-            Key::Named(NamedKey::Backspace) => {
-                if let Some(input) = self.focused_input_mut() {
-                    input.backspace();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
-                }
-            }
-            Key::Named(NamedKey::ArrowLeft) => {
-                if let Some(input) = self.focused_input_mut() {
-                    input.move_left();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
-                }
-            }
-            Key::Named(NamedKey::ArrowRight) => {
-                if let Some(input) = self.focused_input_mut() {
-                    input.move_right();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
-                }
-            }
-            Key::Named(NamedKey::Home) => {
-                if let Some(input) = self.focused_input_mut() {
-                    input.move_home();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
-                }
-            }
-            Key::Named(NamedKey::End) => {
-                if let Some(input) = self.focused_input_mut() {
-                    input.move_end();
-                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
-                }
-            }
-            Key::Character(s) => {
-                if let Some(input) = self.focused_input_mut() {
-                    input.insert_str(s);
-                    return FloatingWindowOutcome::dirty(DirtyRegion::All);
-                }
-            }
             _ => {}
+        }
+        if let Some(input) = self.focused_input_mut()
+            && input.handle_key(key, modifiers)
+        {
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
         FloatingWindowOutcome::default()
     }
@@ -1438,7 +1408,7 @@ impl FloatingWindow for MondayWindow {
         _cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if let Some(input) = self.focused_input_mut() {
-            input.insert_str(text);
+            input.handle_paste(text);
             FloatingWindowOutcome::dirty(DirtyRegion::All)
         } else {
             FloatingWindowOutcome::default()

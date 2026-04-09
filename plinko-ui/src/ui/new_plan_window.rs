@@ -989,6 +989,7 @@ impl FloatingWindow for NewPlanWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         _sender: &PlanRequestSender,
         _width: f32,
         _height: f32,
@@ -1002,57 +1003,8 @@ impl FloatingWindow for NewPlanWindow {
             }
             return FloatingWindowOutcome::close();
         }
-        if self.focused == Field::Name {
-            match key {
-                Key::Named(NamedKey::Backspace) => {
-                    if self.name.cursor > 0 {
-                        let pos = self.name.cursor - 1;
-                        // Walk back to char boundary
-                        let mut byte_pos = pos;
-                        while !self.name.content.is_char_boundary(byte_pos) {
-                            byte_pos -= 1;
-                        }
-                        let mut end = pos;
-                        while end < self.name.content.len()
-                            && !self.name.content.is_char_boundary(end)
-                        {
-                            end += 1;
-                        }
-                        self.name.content.remove(byte_pos);
-                        self.name.cursor = byte_pos;
-                        self.name_error = false;
-                    }
-                }
-                Key::Named(NamedKey::ArrowLeft) => {
-                    if self.name.cursor > 0 {
-                        self.name.cursor -= 1;
-                        while self.name.cursor > 0
-                            && !self.name.content.is_char_boundary(self.name.cursor)
-                        {
-                            self.name.cursor -= 1;
-                        }
-                    }
-                }
-                Key::Named(NamedKey::ArrowRight) => {
-                    if self.name.cursor < self.name.content.len() {
-                        self.name.cursor += 1;
-                        while self.name.cursor < self.name.content.len()
-                            && !self.name.content.is_char_boundary(self.name.cursor)
-                        {
-                            self.name.cursor += 1;
-                        }
-                    }
-                }
-                Key::Named(NamedKey::Home) => self.name.cursor = 0,
-                Key::Named(NamedKey::End) => self.name.cursor = self.name.content.len(),
-                Key::Character(s) => {
-                    let ch = s.as_str();
-                    self.name.content.insert_str(self.name.cursor, ch);
-                    self.name.cursor += ch.len();
-                    self.name_error = false;
-                }
-                _ => {}
-            }
+        if self.focused == Field::Name && self.name.handle_key(key, modifiers) {
+            self.name_error = false;
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
         FloatingWindowOutcome::default()
@@ -1068,8 +1020,7 @@ impl FloatingWindow for NewPlanWindow {
         _cache: &RenderCache,
     ) -> FloatingWindowOutcome {
         if self.focused == Field::Name {
-            self.name.content.insert_str(self.name.cursor, text);
-            self.name.cursor += text.len();
+            self.name.handle_paste(text);
             self.name_error = false;
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }

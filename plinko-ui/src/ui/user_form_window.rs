@@ -865,6 +865,7 @@ impl FloatingWindow for UserFormWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         sender: &PlanRequestSender,
         _width: f32,
         _height: f32,
@@ -889,82 +890,29 @@ impl FloatingWindow for UserFormWindow {
             _ if self.focused == Field::None && !self.dropdown_open => {
                 FloatingWindowOutcome::default()
             }
-            Key::Named(NamedKey::Backspace) => {
+            _ => {
                 if self.dropdown_open {
-                    self.tag_filter.backspace();
-                    self.dropdown_scroll = 0;
-                } else if self.focused != Field::TagFilter {
-                    self.focused_input().backspace();
-                    if self.focused == Field::Name {
-                        self.name_error = false;
-                    }
-                }
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::ArrowLeft) => {
-                if self.dropdown_open {
-                    self.tag_filter.move_left();
-                } else if self.focused != Field::TagFilter {
-                    self.focused_input().move_left();
-                }
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::ArrowRight) => {
-                if self.dropdown_open {
-                    self.tag_filter.move_right();
-                } else if self.focused != Field::TagFilter {
-                    self.focused_input().move_right();
-                }
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::Home) => {
-                if self.dropdown_open {
-                    self.tag_filter.move_home();
-                } else if self.focused != Field::TagFilter {
-                    self.focused_input().move_home();
-                }
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::End) => {
-                if self.dropdown_open {
-                    self.tag_filter.move_end();
-                } else if self.focused != Field::TagFilter {
-                    self.focused_input().move_end();
-                }
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Named(NamedKey::Space) => {
-                if self.dropdown_open {
-                    self.tag_filter.insert_str(" ");
-                    self.dropdown_scroll = 0;
-                } else if self.focused != Field::TagFilter {
-                    self.focused_input().insert_str(" ");
-                    if self.focused == Field::Name {
-                        self.name_error = false;
-                    }
-                }
-                FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-            }
-            Key::Character(c) => {
-                if c.chars().all(|ch| !ch.is_control()) {
-                    if self.dropdown_open {
-                        self.tag_filter.insert_str(c.as_str());
+                    if self.tag_filter.handle_key(key, modifiers) {
                         self.dropdown_scroll = 0;
-                    } else if self.focused == Field::TagFilter {
-                        self.open_dropdown();
-                        self.tag_filter.insert_str(c.as_str());
-                    } else {
-                        self.focused_input().insert_str(c.as_str());
-                        if self.focused == Field::Name {
-                            self.name_error = false;
-                        }
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                     }
-                    FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
-                } else {
-                    FloatingWindowOutcome::default()
+                } else if self.focused == Field::TagFilter {
+                    // TagFilter not in dropdown — open it on character input
+                    if let Key::Character(c) = key
+                        && c.chars().all(|ch| !ch.is_control())
+                    {
+                        self.open_dropdown();
+                        self.tag_filter.handle_key(key, modifiers);
+                        return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
+                    }
+                } else if self.focused_input().handle_key(key, modifiers) {
+                    if self.focused == Field::Name {
+                        self.name_error = false;
+                    }
+                    return FloatingWindowOutcome::dirty(DirtyRegion::PageOnly);
                 }
+                FloatingWindowOutcome::default()
             }
-            _ => FloatingWindowOutcome::default(),
         }
     }
 
@@ -979,11 +927,11 @@ impl FloatingWindow for UserFormWindow {
     ) -> FloatingWindowOutcome {
         match self.focused {
             Field::Name => {
-                self.name.insert_str(text);
+                self.name.handle_paste(text);
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Field::TagFilter => {
-                self.tag_filter.insert_str(text);
+                self.tag_filter.handle_paste(text);
                 FloatingWindowOutcome::dirty(DirtyRegion::PageOnly)
             }
             Field::None => FloatingWindowOutcome::default(),

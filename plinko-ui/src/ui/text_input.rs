@@ -1,5 +1,8 @@
 //! A simple single-line text input component with cursor navigation.
 
+use winit::event::Modifiers;
+use winit::keyboard::{Key, NamedKey};
+
 /// Single-line text input with a byte-index cursor.
 pub struct TextInput {
     pub content: String,
@@ -82,6 +85,138 @@ impl TextInput {
     /// Move the cursor to the end of the content.
     pub fn move_end(&mut self) {
         self.cursor = self.content.len();
+    }
+
+    /// Delete the character immediately after the cursor (forward delete / Delete key).
+    /// Does nothing if the cursor is at the end.
+    pub fn delete_forward(&mut self) {
+        let cursor = self.clamped_cursor();
+        if cursor >= self.content.len() {
+            return;
+        }
+        let mut next = cursor + 1;
+        while next < self.content.len() && !self.content.is_char_boundary(next) {
+            next += 1;
+        }
+        self.content.drain(cursor..next);
+    }
+
+    /// Move the cursor one word to the left (Ctrl+Left).
+    pub fn move_word_left(&mut self) {
+        let mut pos = self.clamped_cursor();
+        // Skip whitespace before the cursor.
+        while pos > 0 {
+            let prev = self.prev_char_boundary(pos);
+            if self.content[prev..pos]
+                .chars()
+                .next()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(false)
+            {
+                pos = prev;
+            } else {
+                break;
+            }
+        }
+        // Skip the word characters.
+        while pos > 0 {
+            let prev = self.prev_char_boundary(pos);
+            if self.content[prev..pos]
+                .chars()
+                .next()
+                .map(|c| !c.is_whitespace())
+                .unwrap_or(false)
+            {
+                pos = prev;
+            } else {
+                break;
+            }
+        }
+        self.cursor = pos;
+    }
+
+    /// Move the cursor one word to the right (Ctrl+Right).
+    pub fn move_word_right(&mut self) {
+        let mut pos = self.clamped_cursor();
+        let len = self.content.len();
+        // Skip the current word characters.
+        while pos < len {
+            let ch = self.content[pos..].chars().next().unwrap();
+            if !ch.is_whitespace() {
+                pos += ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        // Skip whitespace after the word.
+        while pos < len {
+            let ch = self.content[pos..].chars().next().unwrap();
+            if ch.is_whitespace() {
+                pos += ch.len_utf8();
+            } else {
+                break;
+            }
+        }
+        self.cursor = pos;
+    }
+
+    /// Handle a keyboard key for standard single-line editing.
+    ///
+    /// Returns `true` if the key was consumed (and the caller should redraw).
+    /// Returns `false` for keys the caller must handle (Tab, Enter, Escape, …).
+    pub fn handle_key(&mut self, key: &Key, modifiers: &Modifiers) -> bool {
+        match key {
+            Key::Named(NamedKey::Backspace) => {
+                self.backspace();
+                true
+            }
+            Key::Named(NamedKey::Delete) => {
+                self.delete_forward();
+                true
+            }
+            Key::Named(NamedKey::ArrowLeft) => {
+                if modifiers.state().control_key() {
+                    self.move_word_left();
+                } else {
+                    self.move_left();
+                }
+                true
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                if modifiers.state().control_key() {
+                    self.move_word_right();
+                } else {
+                    self.move_right();
+                }
+                true
+            }
+            Key::Named(NamedKey::Home) => {
+                self.move_home();
+                true
+            }
+            Key::Named(NamedKey::End) => {
+                self.move_end();
+                true
+            }
+            Key::Named(NamedKey::Space) => {
+                self.insert_str(" ");
+                true
+            }
+            Key::Character(s) if s.chars().all(|c| !c.is_control()) => {
+                self.insert_str(s.as_str());
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Paste text into the input at the cursor, replacing newlines with spaces.
+    pub fn handle_paste(&mut self, text: &str) {
+        let filtered: String = text
+            .chars()
+            .map(|c| if c == '\n' || c == '\r' { ' ' } else { c })
+            .collect();
+        self.insert_str(&filtered);
     }
 
     /// Return the byte cursor position closest to `x_in_inner` pixels from the

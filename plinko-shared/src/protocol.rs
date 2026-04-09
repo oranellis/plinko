@@ -277,21 +277,21 @@ pub fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result
         ts.status = v;
         // Non-NotStarted statuses must use a Fixed allocation so the status
         // survives invalidate() which purges Dynamic (scheduler-output) entries.
-        if v != crate::data::Status::NotStarted {
-            if matches!(ts.allocation, TaskAllocation::Dynamic { .. }) {
-                let sentinel = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
-                let start = plan
-                    .tasks
-                    .get(&id)
-                    .and_then(|t| t.actual_start)
-                    .unwrap_or(sentinel);
-                ts.allocation = TaskAllocation::Fixed {
-                    start_date: start,
-                    end_date: start,
-                    corrected_end_date: None,
-                    time_allocation: vec![],
-                };
-            }
+        if v != crate::data::Status::NotStarted
+            && matches!(ts.allocation, TaskAllocation::Dynamic { .. })
+        {
+            let sentinel = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+            let start = plan
+                .tasks
+                .get(&id)
+                .and_then(|t| t.actual_start)
+                .unwrap_or(sentinel);
+            ts.allocation = TaskAllocation::Fixed {
+                start_date: start,
+                end_date: start,
+                corrected_end_date: None,
+                time_allocation: vec![],
+            };
         }
     }
     if let Some(v) = patch.actual_start_date {

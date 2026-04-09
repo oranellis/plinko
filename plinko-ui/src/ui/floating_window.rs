@@ -83,6 +83,7 @@ pub trait FloatingWindow {
     fn on_key_input(
         &mut self,
         key: &Key,
+        _modifiers: &Modifiers,
         _sender: &PlanRequestSender,
         _width: f32,
         _height: f32,
@@ -222,6 +223,7 @@ impl FloatingWindowManager {
     pub fn on_key_input(
         &mut self,
         key: &Key,
+        modifiers: &Modifiers,
         sender: &PlanRequestSender,
         width: f32,
         height: f32,
@@ -229,7 +231,7 @@ impl FloatingWindowManager {
         cache: &RenderCache,
     ) -> DirtyRegion {
         let outcome = match self.stack.last_mut() {
-            Some(w) => w.on_key_input(key, sender, width, height, plan, cache),
+            Some(w) => w.on_key_input(key, modifiers, sender, width, height, plan, cache),
             None => return DirtyRegion::None,
         };
         if outcome.close {

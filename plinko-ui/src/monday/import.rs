@@ -70,7 +70,7 @@ pub fn import_from_monday(
     let existing: HashMap<String, NodeId> = config
         .item_node_map
         .iter()
-        .map(|m| (m.monday_item_id.clone(), m.plinko_node_id.clone()))
+        .map(|m| (m.monday_item_id.clone(), m.plinko_node_id))
         .collect();
 
     // Mutable map of Monday item ID → plinko node ID (accumulates new entries).
@@ -119,7 +119,7 @@ pub fn import_from_monday(
             } else {
                 // Skip tasks with no person assigned and no workload — they're empty placeholders.
                 let has_person = !item.assigned_user_ids.is_empty();
-                let has_workload = item.workload.map_or(false, |w| w > 0.0);
+                let has_workload = item.workload.is_some_and(|w| w > 0.0);
                 if !has_person && !has_workload {
                     continue;
                 }
@@ -140,10 +140,10 @@ pub fn import_from_monday(
     // so that historical tasks don't end up before plan start.
     let earliest_timeline: Option<NaiveDate> =
         items.iter().filter_map(|item| item.timeline_start).min();
-    if let Some(earliest) = earliest_timeline {
-        if earliest < plan.start_date {
-            plan.start_date = earliest;
-        }
+    if let Some(earliest) = earliest_timeline
+        && earliest < plan.start_date
+    {
+        plan.start_date = earliest;
     }
 
     // ── Pass 2: wire dependencies ─────────────────────────────────────────────
@@ -160,7 +160,7 @@ pub fn import_from_monday(
             .iter()
             .filter_map(|dep_monday_id| {
                 let dep_node = id_map.get(dep_monday_id)?;
-                Some(Dependency::new(dep_node.clone()))
+                Some(Dependency::new(*dep_node))
             })
             .collect();
 
@@ -194,21 +194,18 @@ pub fn import_from_monday(
         // start with a 1-day duration so they don't show the 1970 sentinel.
         // For incomplete tasks (NotStarted/InProgress/OnHold) without a timeline:
         // derive a sensible duration estimate: ceil(2 * total_workload / #workers).
-        if !has_timeline {
-            if let Some(task) = plan.tasks.get_mut(task_id) {
-                match status {
-                    Status::Complete | Status::Dropped => {
-                        // No timeline available — use a 1-day placeholder so we
-                        // don't show the 1970 sentinel.
-                        task.duration_days_target = 1.0;
-                    }
-                    Status::NotStarted | Status::InProgress | Status::OnHold => {
-                        let total_workload: f32 =
-                            task.workers.iter().map(|w| w.workload_days()).sum();
-                        let num_workers = task.workers.len().max(1) as f32;
-                        task.duration_days_target =
-                            (2.0 * total_workload / num_workers).ceil().max(1.0);
-                    }
+        if !has_timeline && let Some(task) = plan.tasks.get_mut(task_id) {
+            match status {
+                Status::Complete | Status::Dropped => {
+                    // No timeline available — use a 1-day placeholder so we
+                    // don't show the 1970 sentinel.
+                    task.duration_days_target = 1.0;
+                }
+                Status::NotStarted | Status::InProgress | Status::OnHold => {
+                    let total_workload: f32 = task.workers.iter().map(|w| w.workload_days()).sum();
+                    let num_workers = task.workers.len().max(1) as f32;
+                    task.duration_days_target =
+                        (2.0 * total_workload / num_workers).ceil().max(1.0);
                 }
             }
         }
@@ -220,10 +217,10 @@ pub fn import_from_monday(
                 // (e.g. 8 days → 4 days) is reflected on re-import.
                 if has_timeline {
                     let wd = timeline_working_days(*tl_start, *tl_end);
-                    if wd > 0.0 {
-                        if let Some(task) = plan.tasks.get_mut(task_id) {
-                            task.duration_days_target = wd;
-                        }
+                    if wd > 0.0
+                        && let Some(task) = plan.tasks.get_mut(task_id)
+                    {
+                        task.duration_days_target = wd;
                     }
                 }
             }

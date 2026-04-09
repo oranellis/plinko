@@ -563,16 +563,16 @@ fn parse_item(
     for cv in col_values {
         let col_id = cv["id"].as_str().unwrap_or("");
         if col_id == person_col {
-            if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null")) {
-                if let Some(persons) = v["personsAndTeams"].as_array() {
-                    for p in persons {
-                        // Only map actual persons, not teams.
-                        if p["kind"].as_str() != Some("person") {
-                            continue;
-                        }
-                        if let Some(uid) = p["id"].as_u64() {
-                            assigned_user_ids.push(uid.to_string());
-                        }
+            if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null"))
+                && let Some(persons) = v["personsAndTeams"].as_array()
+            {
+                for p in persons {
+                    // Only map actual persons, not teams.
+                    if p["kind"].as_str() != Some("person") {
+                        continue;
+                    }
+                    if let Some(uid) = p["id"].as_u64() {
+                        assigned_user_ids.push(uid.to_string());
                     }
                 }
             }

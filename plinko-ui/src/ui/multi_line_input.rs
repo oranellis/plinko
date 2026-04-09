@@ -4,6 +4,8 @@ use std::cell::Cell;
 use std::ops::Range;
 
 use skia_safe::Font;
+use winit::event::Modifiers;
+use winit::keyboard::{Key, NamedKey};
 
 // ── Data types ────────────────────────────────────────────────────────────────
 
@@ -106,6 +108,107 @@ impl MultiLineInput {
         self.content.drain(prev..cursor);
         self.cursor = prev;
         self.x_hint = None;
+    }
+
+    /// Delete the character immediately after the cursor (forward delete / Delete key).
+    pub fn delete_forward(&mut self) {
+        let cursor = self.clamped_cursor();
+        if cursor >= self.content.len() {
+            return;
+        }
+        let next = self.next_char_boundary(cursor);
+        self.content.drain(cursor..next);
+        self.x_hint = None;
+    }
+
+    /// Handle a keyboard key for standard multi-line editing.
+    ///
+    /// Handles Backspace, Delete, arrow keys, Home, End, Enter, Space, and
+    /// printable characters. Also calls `scroll_to_cursor` after every edit.
+    ///
+    /// Returns `true` if the key was consumed (caller should redraw).
+    /// Returns `false` for keys the caller must handle (Tab, Escape, …).
+    pub fn handle_key(
+        &mut self,
+        key: &Key,
+        _modifiers: &Modifiers,
+        inner_width: f32,
+        line_h: f32,
+        visible_h: f32,
+        font: &Font,
+    ) -> bool {
+        let consumed = match key {
+            Key::Named(NamedKey::Backspace) => {
+                self.backspace();
+                true
+            }
+            Key::Named(NamedKey::Delete) => {
+                self.delete_forward();
+                true
+            }
+            Key::Named(NamedKey::ArrowLeft) => {
+                self.move_left();
+                true
+            }
+            Key::Named(NamedKey::ArrowRight) => {
+                self.move_right();
+                true
+            }
+            Key::Named(NamedKey::ArrowUp) => {
+                self.move_up(inner_width, font);
+                true
+            }
+            Key::Named(NamedKey::ArrowDown) => {
+                self.move_down(inner_width, font);
+                true
+            }
+            Key::Named(NamedKey::Home) => {
+                self.move_to_start();
+                true
+            }
+            Key::Named(NamedKey::End) => {
+                self.move_to_end();
+                true
+            }
+            Key::Named(NamedKey::Enter) => {
+                self.insert_newline();
+                true
+            }
+            Key::Named(NamedKey::Space) => {
+                self.insert_char(' ');
+                true
+            }
+            Key::Character(s) if s.chars().all(|c| !c.is_control()) => {
+                for ch in s.chars() {
+                    self.insert_char(ch);
+                }
+                true
+            }
+            _ => false,
+        };
+        if consumed {
+            self.scroll_to_cursor(inner_width, font, line_h, visible_h);
+        }
+        consumed
+    }
+
+    /// Paste text into the input at the cursor.  Control characters other than
+    /// `\n` are stripped; `\r\n` sequences are normalised to `\n`.
+    pub fn handle_paste(
+        &mut self,
+        text: &str,
+        inner_width: f32,
+        line_h: f32,
+        visible_h: f32,
+        font: &Font,
+    ) {
+        let normalised = text.replace("\r\n", "\n").replace('\r', "\n");
+        for ch in normalised.chars() {
+            if ch == '\n' || !ch.is_control() {
+                self.insert_char(ch);
+            }
+        }
+        self.scroll_to_cursor(inner_width, font, line_h, visible_h);
     }
 
     pub fn move_left(&mut self) {
