@@ -753,8 +753,8 @@ fn draw_task_rows(
                 paint.set_style(PaintStyle::Fill);
                 canvas.draw_rect(Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h), paint);
 
-                // Hours label on the bar when bar is tall enough
-                if bar_h >= sm_line_h + 2.0 {
+                // Hours label — always shown, positioned in the cell above the bar
+                {
                     let label = if (seg.hours_worked - seg.hours_worked.round()).abs() < 0.05 {
                         format!("{}h", seg.hours_worked.round() as i32)
                     } else {
@@ -762,25 +762,16 @@ fn draw_task_rows(
                     };
                     if let Some(blob) = TextBlob::new(&label, &cache.small_font) {
                         let tw = cache.small_font.measure_str(&label, None).0;
-                        let tx = x + 1.0 + (bar_w - tw) / 2.0;
-                        let ty = bar_y + (bar_h - sm_line_h) / 2.0 - sm.ascent;
-                        // Pick label color based on bar luminance
-                        let lum = {
-                            let r = ((base_color >> 16) & 0xff) as f32;
-                            let g = ((base_color >> 8) & 0xff) as f32;
-                            let b = (base_color & 0xff) as f32;
-                            0.299 * r + 0.587 * g + 0.114 * b
-                        };
-                        let label_fg = if lum > 160.0 {
-                            GANTT_TASK_LABEL_DARK
-                        } else {
-                            GANTT_TASK_LABEL_LIGHT
-                        };
-                        paint.set_color(Color::from(label_fg));
+                        let cell_left = x + 1.0;
+                        let cell_w = bar_w;
+                        let tx = cell_left + (cell_w - tw) / 2.0;
+                        // Vertically centre in the full cell
+                        let ty = row_y + (GANTT_ROW_H - sm_line_h) / 2.0 - sm.ascent;
+                        paint.set_color(Color::from(MUTED_FG));
                         paint.set_style(PaintStyle::Fill);
                         canvas.save();
                         canvas.clip_rect(
-                            Rect::from_xywh(x + 1.0, bar_y, bar_w, bar_h),
+                            Rect::from_xywh(cell_left, row_y, cell_w, GANTT_ROW_H),
                             ClipOp::Intersect,
                             false,
                         );
