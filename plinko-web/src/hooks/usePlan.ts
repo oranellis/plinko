@@ -136,7 +136,10 @@ export function usePlan(): UsePlanResult {
       };
 
       ws.onclose = () => {
-        wsRef.current = null;
+        // Only clear wsRef if this is still the active WebSocket — in React
+        // StrictMode the effect runs twice; the first WS's onclose fires after
+        // the second WS has already been stored in wsRef, so we must not null it.
+        if (wsRef.current === ws) wsRef.current = null;
         // Reject all pending requests
         for (const { reject } of pendingRef.current.values()) {
           reject(new Error("WebSocket closed"));
@@ -155,8 +158,13 @@ export function usePlan(): UsePlanResult {
     return () => {
       alive = false;
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      wsRef.current?.close();
+      const currentWs = wsRef.current;
       wsRef.current = null;
+      currentWs?.close();
+      // Reset status so that when the effect re-runs (React StrictMode) and WS
+      // reconnects, status transitions "connecting" → "connected" and any
+      // dependent effects (e.g. SettingsPage plan list fetch) re-fire correctly.
+      setStatus("connecting");
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
