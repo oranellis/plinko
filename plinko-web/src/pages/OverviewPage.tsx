@@ -263,11 +263,27 @@ export function OverviewPage() {
     const itemCenters = new Map<string, { x: number; y: number; ex: number }>();
 
     const BAR_PAD_Y = Math.round(ROW_H * 0.2);
+    const BAR_PAD_X = dayW * 0.2;
     const barH = ROW_H - BAR_PAD_Y * 2;
     const targetId = plan.scheduler_target
       ? (typeof plan.scheduler_target === "object" && "Task" in plan.scheduler_target ? plan.scheduler_target.Task :
          typeof plan.scheduler_target === "object" && "Milestone" in plan.scheduler_target ? plan.scheduler_target.Milestone : null)
       : null;
+
+    // Pre-compute next-item start x per row (for milestone text clipping)
+    const nextItemX = new Map<string, number>();
+    const rowBuckets = new Map<number, Array<{ id: string; startX: number }>>();
+    for (const it of items) {
+      const sx = daysBetween(startDate, it.start) * dayW - scrollX;
+      if (!rowBuckets.has(it.row)) rowBuckets.set(it.row, []);
+      rowBuckets.get(it.row)!.push({ id: it.id, startX: sx });
+    }
+    for (const arr of rowBuckets.values()) {
+      arr.sort((a, b) => a.startX - b.startX);
+      for (let i = 0; i < arr.length; i++) {
+        nextItemX.set(arr[i].id, i + 1 < arr.length ? arr[i + 1].startX : w + 9999);
+      }
+    }
 
     for (const item of items) {
       const rowY = HEADER_H + item.row * ROW_H - scrollY;
@@ -275,8 +291,8 @@ export function OverviewPage() {
 
       const startOff = daysBetween(startDate, item.start);
       const endOff = daysBetween(startDate, item.end) + 1;
-      const x = startOff * dayW - scrollX;
-      const barW = Math.max((endOff - startOff) * dayW, 4);
+      const x = startOff * dayW - scrollX + BAR_PAD_X;
+      const barW = Math.max((endOff - startOff) * dayW - 2 * BAR_PAD_X, 4);
       const y = rowY + BAR_PAD_Y;
 
       const color = STATUS_COLORS[item.status];
@@ -307,7 +323,8 @@ export function OverviewPage() {
 
         // Label
         const label = displayName(item.name, item.contextLabel);
-        ctx.fillStyle = isHovered ? "#fff" : "rgba(255,255,255,0.9)";
+        const isInProgress = item.status === "InProgress";
+        ctx.fillStyle = isHovered ? "#fff" : isInProgress ? "rgba(0,0,0,0.85)" : "rgba(255,255,255,0.9)";
         ctx.font = "16px sans-serif";
         ctx.textBaseline = "middle";
         ctx.save();
@@ -353,17 +370,17 @@ export function OverviewPage() {
           ctx.lineWidth = 1;
         }
 
-        // Milestone name to the right
+        // Milestone name to the right — clipped at the next item in this row
         const nameX = cx + r + 6;
-        const nameEndX = nameX + (item.name.length * 9 + 8);
-        const nameVisible = nameX < w;
+        const nameClipEnd = Math.min((nextItemX.get(item.id) ?? w) - 4, w);
+        const nameVisible = nameX < nameClipEnd;
         if (nameVisible) {
           ctx.fillStyle = isHovered ? "#f5d040" : "#bbb";
           ctx.font = "14px sans-serif";
           ctx.textBaseline = "middle";
           ctx.save();
           ctx.beginPath();
-          ctx.rect(nameX, rowY, Math.min(nameEndX, w) - nameX, ROW_H);
+          ctx.rect(nameX, rowY, nameClipEnd - nameX, ROW_H);
           ctx.clip();
           ctx.fillText(displayName(item.name, item.contextLabel), nameX, rowY + ROW_H / 2);
           ctx.restore();
@@ -483,9 +500,15 @@ export function OverviewPage() {
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     if (e.shiftKey) {
-      // Zoom
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
-      setDayW((w) => Math.max(MIN_DAY_W, Math.min(MAX_DAY_W, w * factor)));
+      const newDayW = Math.max(MIN_DAY_W, Math.min(MAX_DAY_W, dayW * factor));
+      const rect = canvasRef.current!.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      // Keep the day under the cursor fixed
+      const dayAtCursor = (scrollX + cursorX) / dayW;
+      const newScrollX = dayAtCursor * newDayW - cursorX;
+      setDayW(newDayW);
+      setScrollX(Math.max(-size.w / 2, Math.min(maxScrollX, newScrollX)));
     } else {
       setScrollX((sx) => Math.max(-size.w / 2, Math.min(maxScrollX, sx + e.deltaX)));
       setScrollY((sy) => Math.max(0, Math.min(maxScrollY, sy + e.deltaY)));
