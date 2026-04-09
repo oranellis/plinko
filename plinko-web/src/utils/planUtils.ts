@@ -140,39 +140,47 @@ export function getTasksForUser(plan: Plan, userId: string): Task[] {
 
 // ── Gantt packing ────────────────────────────────────────────────────────────
 
-export interface GanttItem {
-  id: string;
-  type: "task" | "milestone";
-  name: string;
-  contextLabel: string | null;
-  start: IsoDate;
-  end: IsoDate;
-  status: Status;
-  row: number;
-}
+export type GanttItem =
+  | {
+      type: "task" | "milestone";
+      id: string;
+      name: string;
+      contextLabel: string | null;
+      start: IsoDate;
+      end: IsoDate;
+      status: Status;
+      row: number;
+    }
+  | { type: "separator"; id: "__separator__"; row: number };
 
-/** Pack tasks and milestones into rows (greedy bin packing). */
+/** Pack tasks and milestones into rows (greedy bin packing).
+ *  Dropped tasks are packed separately below a separator row. */
 export function packGanttRows(plan: Plan): GanttItem[] {
-  const items: Omit<GanttItem, "row">[] = [];
+  type RawItem = Omit<Extract<GanttItem, { type: "task" | "milestone" }>, "row">;
+  const activeItems: RawItem[] = [];
+  const droppedItems: RawItem[] = [];
 
   for (const [id, task] of Object.entries(plan.tasks)) {
     const dates = taskDates(id as TaskId, plan.node_allocations);
     if (!dates) continue;
-    items.push({
+    const status = taskStatus(id as TaskId, plan.node_allocations);
+    const item: RawItem = {
       id,
       type: "task",
       name: task.name,
       contextLabel: task.context_label ?? null,
       start: dates.start,
       end: dates.end,
-      status: taskStatus(id as TaskId, plan.node_allocations),
-    });
+      status,
+    };
+    if (status === "Dropped") droppedItems.push(item);
+    else activeItems.push(item);
   }
 
   for (const [id, ms] of Object.entries(plan.milestones)) {
     const dates = milestoneDates(id as MilestoneId, plan.node_allocations);
     if (!dates) continue;
-    items.push({
+    activeItems.push({
       id,
       type: "milestone",
       name: ms.name,
@@ -183,29 +191,41 @@ export function packGanttRows(plan: Plan): GanttItem[] {
     });
   }
 
-  // Sort by start date, then name.
-  items.sort((a, b) => a.start.localeCompare(b.start) || a.name.localeCompare(b.name));
+  const sortItems = (a: RawItem, b: RawItem) =>
+    a.start.localeCompare(b.start) || a.name.localeCompare(b.name);
+  activeItems.sort(sortItems);
+  droppedItems.sort(sortItems);
 
-  // Greedy row packing: track latest end date per row (+ 1 gap day).
-  const rowEnds: IsoDate[] = [];
-  const result: GanttItem[] = [];
-
-  for (const item of items) {
-    let placed = false;
-    for (let r = 0; r < rowEnds.length; r++) {
-      if (item.start > rowEnds[r]) {
-        rowEnds[r] = addDays(item.end, 1);
-        result.push({ ...item, row: r });
-        placed = true;
-        break;
+  const pack = (items: RawItem[], startRow: number): GanttItem[] => {
+    const rowEnds: IsoDate[] = [];
+    const result: GanttItem[] = [];
+    for (const item of items) {
+      let placed = false;
+      for (let r = 0; r < rowEnds.length; r++) {
+        if (item.start > rowEnds[r]) {
+          rowEnds[r] = addDays(item.end, 1);
+          result.push({ ...item, row: startRow + r });
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        const r = rowEnds.length;
+        rowEnds.push(addDays(item.end, 1));
+        result.push({ ...item, row: startRow + r });
       }
     }
-    if (!placed) {
-      const r = rowEnds.length;
-      rowEnds.push(addDays(item.end, 1));
-      result.push({ ...item, row: r });
-    }
-  }
+    return result;
+  };
 
-  return result;
+  const activeResult = pack(activeItems, 0);
+  const activeRowCount = activeResult.reduce((max, it) => Math.max(max, it.row + 1), 0);
+
+  if (droppedItems.length === 0) return activeResult;
+
+  const separatorRow = activeRowCount;
+  const separator: GanttItem = { type: "separator", id: "__separator__", row: separatorRow };
+  const droppedResult = pack(droppedItems, separatorRow + 1);
+
+  return [...activeResult, separator, ...droppedResult];
 }

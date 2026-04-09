@@ -128,8 +128,8 @@ export function OverviewPage() {
   const maxRows = items.length > 0 ? Math.max(...items.map((i) => i.row)) + 1 : 1;
   const maxScrollY = Math.max(0, maxRows * ROW_H - (size.h - HEADER_H));
   const maxScrollX = items.length > 0
-    ? Math.max(...items.map((i) => {
-        const off = daysBetween(plan!.start_date, i.end) + 1;
+    ? Math.max(...items.filter((i) => i.type !== "separator").map((i) => {
+        const off = daysBetween(plan!.start_date, (i as { end: string }).end) + 1;
         return off * dayW;
       })) + size.w / 2
     : size.w;
@@ -279,6 +279,7 @@ export function OverviewPage() {
     const nextItemX = new Map<string, number>();
     const rowBuckets = new Map<number, Array<{ id: string; startX: number }>>();
     for (const it of items) {
+      if (it.type === "separator") continue;
       const sx = daysBetween(startDate, it.start) * dayW - scrollX;
       if (!rowBuckets.has(it.row)) rowBuckets.set(it.row, []);
       rowBuckets.get(it.row)!.push({ id: it.id, startX: sx });
@@ -290,8 +291,10 @@ export function OverviewPage() {
       }
     }
 
-    // Pass 1: pre-compute day-center anchors for all items
+    // Pass 1: pre-compute day-center anchors for all non-separator, non-dropped items
+    const droppedIds = new Set(items.filter((it) => it.type !== "separator" && it.status === "Dropped").map((it) => it.id));
     for (const item of items) {
+      if (item.type === "separator" || item.status === "Dropped") continue;
       const rowY = HEADER_H + item.row * ROW_H - scrollY;
       const startOff = daysBetween(startDate, item.start);
       const endOff = daysBetween(startDate, item.end) + 1;
@@ -300,13 +303,14 @@ export function OverviewPage() {
       itemCenters.set(item.id, { xIn, xOut, y: rowY + ROW_H / 2 });
     }
 
-    // Pass 2: draw dependency lines (behind items)
-    if (hoverId && itemCenters.has(hoverId)) {
+    // Pass 2: draw dependency lines (behind items), skipping dropped tasks
+    if (hoverId && itemCenters.has(hoverId) && !droppedIds.has(hoverId)) {
       const hc = itemCenters.get(hoverId)!;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 3]);
 
       for (const depId of hoveredDeps) {
+        if (droppedIds.has(depId)) continue;
         const dc = itemCenters.get(depId);
         if (!dc) continue;
         ctx.strokeStyle = "rgba(252,30,241,0.66)";
@@ -317,6 +321,7 @@ export function OverviewPage() {
       }
 
       for (const depId of hoveredDependents) {
+        if (droppedIds.has(depId)) continue;
         const dc = itemCenters.get(depId);
         if (!dc) continue;
         ctx.strokeStyle = "rgba(7,252,215,0.66)";
@@ -334,6 +339,18 @@ export function OverviewPage() {
     for (const item of items) {
       const rowY = HEADER_H + item.row * ROW_H - scrollY;
       if (rowY + ROW_H < HEADER_H || rowY > h) continue;
+
+      // Separator row: draw a subtle horizontal rule across the full width
+      if (item.type === "separator") {
+        const lineY = rowY + ROW_H / 2;
+        ctx.strokeStyle = "rgba(138,138,138,0.31)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, lineY);
+        ctx.lineTo(w, lineY);
+        ctx.stroke();
+        continue;
+      }
 
       const startOff = daysBetween(startDate, item.start);
       const endOff = daysBetween(startDate, item.end) + 1;
@@ -651,7 +668,7 @@ export function OverviewPage() {
     setShowSearch(false);
     if (!plan) return;
     const item = items.find((it) => it.id === id);
-    if (!item) return;
+    if (!item || item.type === "separator") return;
     const offset = daysBetween(plan.start_date, item.start);
     // Center task horizontally (task start at screen center) and vertically (row center at screen center)
     setScrollX(Math.max(-size.w / 2, Math.min(maxScrollX, offset * dayW - size.w / 2)));
