@@ -123,8 +123,16 @@ let draw_y = box_top + (h - text_h) / 2.0 - metrics.ascent;
 
 **Skia typefaces**: use `FontMgr::new().match_family_style(...)` or `.legacy_make_typeface(...)`. There is no `Typeface::from_name()`. `Font::default()` works as a fallback.
 
-**`TextInput`** (`plinko-ui/src/ui/text_input.rs`): the scroll offset field uses `Cell<f32>` for interior mutability so the render function can update it without `&mut self` on the containing struct.
+**`TextInput`** (`plinko-ui/src/ui/text_input.rs`): the scroll offset field uses `Cell<f32>` for interior mutability so the render function can update it without `&mut self` on the containing struct. Always use `handle_key(key, modifiers) -> bool` and `handle_paste(text)` instead of manually handling individual keys — they cover Backspace, Delete, Ctrl+arrow word-jump, Home, End, and character insertion consistently. `handle_key` returns `true` if consumed; Tab/Enter/Escape are left for the window to handle.
+
+**`MultiLineInput`** (`plinko-ui/src/ui/multi_line_input.rs`): similarly use `handle_key(key, modifiers, inner_width, line_h, visible_h, font)` and `handle_paste(text, ...)`. These take extra layout params needed for cursor scrolling.
+
+**`FloatingWindow::on_key_input`** takes `modifiers: &Modifiers` as a parameter (needed for Ctrl+arrow word navigation). All window implementors must accept and forward it.
 
 **`TaskPatch` / `MilestonePatch`**: use chainable setters to build partial updates. `Option<Option<T>>` fields follow the pattern: `Some(None)` clears, `Some(Some(v))` sets, `None` leaves unchanged.
 
 **Render-time caching**: when `render` (immutable `&self`) must produce data for hit testing, store it in `RefCell<Vec<Rect>>` (or similar) on the page's `State`. Populate in `render`, consume in `on_cursor_moved` / `on_mouse_input`.
+
+**Engine mutations and scheduling**: any `PlanRequest` handler in `plinko/src/engine.rs` that modifies plan data affecting the schedule (dependencies, dates, workers, scheduler_target, start_date) must call `self.plan.compute_time_optimised_plan()` before returning `PlanResponse::PlanUpdated`.
+
+**Task/Milestone context labels**: `Task` and `Milestone` both have `#[serde(default)] pub context_label: Option<String>`. This is populated from Monday.com (group name for top-level items, parent item name for subitems) when `MondayConfig::show_monday_context` is true. Display it as `"{name} | {context}"` using a local `display_name(name, ctx)` helper wherever task/milestone names are rendered.
