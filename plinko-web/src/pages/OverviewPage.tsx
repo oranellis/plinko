@@ -430,6 +430,114 @@ export function OverviewPage() {
       ctx.lineWidth = 1;
     }
 
+    // === HOVER INFO PANEL (bottom-left) ===
+    if (hoverId) {
+      const panelPad = 10;
+      const margin = 8;
+      const lineGap = 4;
+      const titleSize = 24;
+      const bodySize = 15;
+
+      // Build lines
+      const lines: string[] = [];
+      const taskId = hoverId as import("../protocol").TaskId;
+      const msId = hoverId as import("../protocol").MilestoneId;
+      const task = plan.tasks[taskId];
+      const ms = plan.milestones[msId];
+
+      if (task) {
+        const tname = task.context_label ? `[${task.context_label}] ${task.name}` : task.name;
+        lines.push(tname);
+        const taskState = plan.node_allocations.tasks[taskId];
+        const status = taskState?.status ?? "Unknown";
+        lines.push(`Status: ${status}`);
+        if (task.actual_start) {
+          lines.push(`Started: ${task.actual_start}`);
+        } else if (taskState) {
+          const alloc = taskState.allocation;
+          const sched = "Fixed" in alloc ? alloc.Fixed.start_date : alloc.Dynamic.scheduled_start_date;
+          lines.push(`Scheduled: ${sched}`);
+        }
+        // End date
+        if (taskState) {
+          const alloc = taskState.allocation;
+          const endDate = "Fixed" in alloc ? alloc.Fixed.end_date : alloc.Dynamic.scheduled_end_date;
+          lines.push(`Ends: ${endDate}`);
+        }
+        // Workers
+        const workerNames = task.workers.flatMap((slot) => {
+          if ("Specific" in slot) {
+            const user = plan.users_data[slot.Specific.user_id];
+            return user ? [user.user.name] : [];
+          } else {
+            const tagNames = slot.Placeholder.required_tags
+              .map((tid) => plan.tags.find((t) => t.id === tid)?.name)
+              .filter(Boolean).join(", ");
+            return tagNames ? [`needs: ${tagNames}`] : ["(unassigned)"];
+          }
+        });
+        if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
+      } else if (ms) {
+        const mname = ms.context_label ? `[${ms.context_label}] ${ms.name}` : ms.name;
+        lines.push(mname);
+        lines.push("Milestone");
+        const msState = plan.node_allocations.milestones[msId];
+        if (msState) lines.push(`Scheduled: ${msState.date}`);
+      }
+
+      if (lines.length > 0) {
+        ctx.save();
+        ctx.resetTransform();
+        ctx.scale(dpr, dpr);
+
+        // Measure
+        ctx.font = `bold ${titleSize}px sans-serif`;
+        const titleW = ctx.measureText(lines[0]).width;
+        ctx.font = `${bodySize}px sans-serif`;
+        const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
+        const panelW = Math.max(titleW, bodyMaxW) + panelPad * 2;
+        const panelH = panelPad * 2
+          + (titleSize * 1.25)
+          + (lines.length > 1 ? lineGap + (lines.length - 1) * (bodySize * 1.4) + (lines.length - 2) * lineGap : 0);
+
+        const px = margin;
+        const py = h - margin - panelH;
+
+        // Shadow
+        ctx.fillStyle = "rgba(0,0,0,0.19)";
+        ctx.beginPath();
+        roundRect(ctx, px + 2, py + 3, panelW, panelH, 6);
+        ctx.fill();
+
+        // Background
+        ctx.fillStyle = "rgba(30,30,30,0.86)";
+        roundRect(ctx, px, py, panelW, panelH, 6);
+        ctx.fill();
+
+        // Border
+        ctx.strokeStyle = "#4a4a4a";
+        ctx.lineWidth = 1;
+        roundRect(ctx, px, py, panelW, panelH, 6);
+        ctx.stroke();
+
+        // Title line
+        ctx.font = `bold ${titleSize}px sans-serif`;
+        ctx.fillStyle = "#d4d4d4";
+        ctx.textBaseline = "top";
+        ctx.fillText(lines[0], px + panelPad, py + panelPad);
+
+        // Body lines
+        ctx.font = `${bodySize}px sans-serif`;
+        ctx.fillStyle = "#8a8a8a";
+        const bodyStartY = py + panelPad + titleSize * 1.25 + lineGap;
+        for (let i = 0; i < lines.length - 1; i++) {
+          ctx.fillText(lines[i + 1], px + panelPad, bodyStartY + i * (bodySize * 1.4 + lineGap));
+        }
+
+        ctx.restore();
+      }
+    }
+
     ctx.restore();
   }, [plan, items, size, scrollX, scrollY, dayW, hoverId, flashId]);
 
