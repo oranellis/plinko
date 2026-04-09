@@ -27,6 +27,10 @@ pub struct MondayConfig {
     pub use_subitems: bool,
     /// When true, workload column values are in hours. When false, in days.
     pub workload_in_hours: bool,
+    /// When true, import the Monday group name (for items) or parent item name
+    /// (for subitems) and store it as a context label shown alongside the task name.
+    #[serde(default)]
+    pub show_monday_context: bool,
 }
 
 impl Default for MondayConfig {
@@ -39,6 +43,7 @@ impl Default for MondayConfig {
             item_node_map: Vec::new(),
             use_subitems: true,
             workload_in_hours: false,
+            show_monday_context: false,
         }
     }
 }
@@ -125,4 +130,7 @@ pub struct MondayItem {
     pub timeline_start: Option<NaiveDate>,
     /// Timeline end date (from the `to` field of the timeline column value).
     pub timeline_end: Option<NaiveDate>,
+    /// Group title (for top-level items) or parent item name (for subitems),
+    /// used as the context label when `MondayConfig::show_monday_context` is true.
+    pub context_label: Option<String>,
 }

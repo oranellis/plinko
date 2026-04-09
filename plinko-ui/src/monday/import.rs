@@ -85,6 +85,11 @@ pub fn import_from_monday(
 
     // ── Pass 1: create or update all nodes in the plan ────────────────────────
     for item in &items {
+        let ctx = if config.show_monday_context {
+            item.context_label.clone()
+        } else {
+            None
+        };
         if let Some(node_id) = existing.get(&item.id) {
             // Update existing task workers/workload.
             match node_id {
@@ -93,6 +98,7 @@ pub fn import_from_monday(
                     if let Some(task) = plan.tasks.get_mut(task_id) {
                         task.workers = workers;
                         task.name = item.name.clone();
+                        task.context_label = ctx;
                     }
                     let status = resolve_status(item, config);
                     task_statuses
@@ -101,6 +107,7 @@ pub fn import_from_monday(
                 NodeId::Milestone(ms_id) => {
                     if let Some(ms) = plan.milestones.get_mut(ms_id) {
                         ms.name = item.name.clone();
+                        ms.context_label = ctx;
                     }
                 }
                 NodeId::PlanStart => {}
@@ -112,7 +119,8 @@ pub fn import_from_monday(
                 if resolve_status(item, config) == Status::Dropped {
                     continue;
                 }
-                let ms = Milestone::new(&item.name, "");
+                let mut ms = Milestone::new(&item.name, "");
+                ms.context_label = ctx;
                 let ms_id = ms.id;
                 plan.add_milestone(ms);
                 NodeId::Milestone(ms_id)
@@ -123,7 +131,8 @@ pub fn import_from_monday(
                 if !has_person && !has_workload {
                     continue;
                 }
-                let task = build_task(item, config);
+                let mut task = build_task(item, config);
+                task.context_label = ctx;
                 let task_id = task.id;
                 let status = resolve_status(item, config);
                 task_statuses.insert(task_id, (status, item.timeline_start, item.timeline_end));
@@ -303,6 +312,7 @@ fn build_task(item: &MondayItem, config: &MondayConfig) -> Task {
         duration_days_target,
         relaxed_mode: false,
         actual_start: None,
+        context_label: None,
     }
 }
 

@@ -581,7 +581,10 @@ fn draw_gantt_rows(
                         );
                         let label_color = label_color_for(bar_color);
                         paint.set_color(Color::from(label_color));
-                        if let Some(blob) = TextBlob::new(&task.name, &cache.font) {
+                        if let Some(blob) = TextBlob::new(
+                            &display_name(&task.name, &task.context_label),
+                            &cache.font,
+                        ) {
                             let text_y = bar_y + (bar_h - (metrics.descent - metrics.ascent)) / 2.0
                                 - metrics.ascent;
                             canvas.draw_text_blob(&blob, (bar_x + 6.0, text_y), &paint);
@@ -686,7 +689,7 @@ fn draw_gantt_rows(
                             cx,
                             cy,
                             half,
-                            &ms.name,
+                            &display_name(&ms.name, &ms.context_label),
                             GANTT_HEADER_FG,
                             &cache.font,
                             &metrics,
@@ -1659,6 +1662,14 @@ pub fn hit_test_gantt_item(
     None
 }
 
+/// Returns the display name for a task/milestone, appending the context label if present.
+fn display_name(name: &str, ctx: &Option<String>) -> String {
+    match ctx {
+        Some(c) => format!("{name} | {c}"),
+        None => name.to_string(),
+    }
+}
+
 fn draw_node_info_panel(
     canvas: &Canvas,
     node_id: NodeId,
@@ -1682,7 +1693,7 @@ fn draw_node_info_panel(
     match node_id {
         NodeId::Task(id) => {
             if let Some(task) = plan.tasks.get(&id) {
-                lines.push(task.name.clone());
+                lines.push(display_name(&task.name, &task.context_label));
                 let status = plan.task_status(&id);
                 lines.push(format!("Status: {:?}", status));
                 if let Some(start) = plan.task_actual_start(&id) {
@@ -1782,7 +1793,7 @@ fn draw_node_info_panel(
         }
         NodeId::Milestone(id) => {
             if let Some(ms) = plan.milestones.get(&id) {
-                lines.push(ms.name.clone());
+                lines.push(display_name(&ms.name, &ms.context_label));
                 lines.push(String::from("Milestone"));
                 if let Some(state) = plan.node_allocations.milestones.get(&id) {
                     lines.push(format!("Scheduled: {}", state.date));

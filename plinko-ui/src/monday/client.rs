@@ -213,6 +213,7 @@ impl MondayClient {
                     items_page(limit: 500) {{
                         items {{
                             id name
+                            group {{ id title }}
                             column_values(ids: [{col_ids}]) {{
                                 id type value text
                                 {dep_fragment}
@@ -233,10 +234,11 @@ impl MondayClient {
         for raw in &raw_items {
             let item_id = raw["id"].as_str().unwrap_or("").to_string();
             let name = raw["name"].as_str().unwrap_or("").to_string();
+            let group_title = raw["group"]["title"].as_str().map(|s| s.to_string());
             let cv = raw["column_values"].as_array().cloned().unwrap_or_default();
-            let item = parse_item(
+            let mut item = parse_item(
                 item_id.clone(),
-                name,
+                name.clone(),
                 None,
                 &cv,
                 person_col,
@@ -245,6 +247,7 @@ impl MondayClient {
                 workload_col,
                 timeline_col,
             );
+            item.context_label = group_title;
             result.push(item);
 
             if let Some(subs) = raw["subitems"].as_array() {
@@ -252,7 +255,7 @@ impl MondayClient {
                     let sub_id = sub["id"].as_str().unwrap_or("").to_string();
                     let sub_name = sub["name"].as_str().unwrap_or("").to_string();
                     let sub_cv = sub["column_values"].as_array().cloned().unwrap_or_default();
-                    let sub_item = parse_item(
+                    let mut sub_item = parse_item(
                         sub_id,
                         sub_name,
                         Some(item_id.clone()),
@@ -263,6 +266,8 @@ impl MondayClient {
                         workload_col,
                         timeline_col,
                     );
+                    // For subitems the context label is the parent item's name.
+                    sub_item.context_label = Some(name.clone());
                     result.push(sub_item);
                 }
             }
@@ -622,5 +627,6 @@ fn parse_item(
         is_milestone,
         timeline_start,
         timeline_end,
+        context_label: None, // Populated by the caller after group/parent resolution.
     }
 }

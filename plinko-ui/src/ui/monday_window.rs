@@ -82,6 +82,7 @@ pub struct MondayWindow {
     timeline_col: TextInput,
     workload_in_hours: bool,
     use_subitems: bool,
+    show_monday_context: bool,
     // ── Fetched / mapped data ──
     fetched_columns: Vec<BoardColumn>,
     fetched_monday_users: Vec<MondayUser>,
@@ -136,6 +137,7 @@ struct HitRects {
     timeline_col_field: Rect,
     use_subitems_radio: [Rect; 2],
     workload_hours_radio: [Rect; 2],
+    show_context_radio: [Rect; 2],
     user_plinko_selectors: Vec<Rect>,
     status_plinko_selectors: Vec<Rect>,
     user_dropdown: Rect,
@@ -179,6 +181,7 @@ impl MondayWindow {
             timeline_col: TextInput::new(&config.column_map.timeline_column_id),
             workload_in_hours: config.workload_in_hours,
             use_subitems: config.use_subitems,
+            show_monday_context: config.show_monday_context,
             fetched_columns: Vec::new(),
             fetched_monday_users: Vec::new(),
             fetched_status_labels: Vec::new(),
@@ -222,6 +225,7 @@ impl MondayWindow {
             item_node_map: self.item_node_map.clone(),
             use_subitems: self.use_subitems,
             workload_in_hours: self.workload_in_hours,
+            show_monday_context: self.show_monday_context,
         }
     }
 
@@ -772,6 +776,25 @@ impl FloatingWindow for MondayWindow {
         let wr1 = Rect::from_xywh(px, y, field_w / 2.0, RADIO_SIZE);
         Self::draw_radio(canvas, px, y, "Hours", self.workload_in_hours, cache);
         hit.workload_hours_radio[1] = wr1;
+        y += RADIO_SIZE;
+
+        // ── Section: Show Context Label ───────────────────────────────────────
+        y += PLAN_FIELD_GAP;
+        paint.set_color(Color::from(DIVIDER_COLOR));
+        canvas.draw_rect(Rect::from_xywh(px, y, field_w, 1.0), &paint);
+        y += PLAN_FIELD_GAP;
+
+        Self::draw_section_title(canvas, "Show Group/Parent Context", px, y, cache);
+        y += SECTION_TITLE_H + SECTION_GAP;
+
+        let cr0 = Rect::from_xywh(px, y, field_w / 2.0, RADIO_SIZE);
+        Self::draw_radio(canvas, px, y, "On", self.show_monday_context, cache);
+        hit.show_context_radio[0] = cr0;
+        y += RADIO_SIZE + MAP_ROW_GAP;
+
+        let cr1 = Rect::from_xywh(px, y, field_w / 2.0, RADIO_SIZE);
+        Self::draw_radio(canvas, px, y, "Off", !self.show_monday_context, cache);
+        hit.show_context_radio[1] = cr1;
         y += RADIO_SIZE;
 
         // ── Section: User Mappings ────────────────────────────────────────────
@@ -1340,6 +1363,14 @@ impl FloatingWindow for MondayWindow {
         }
         if hit.workload_hours_radio[1].contains(pt) {
             self.workload_in_hours = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
+        if hit.show_context_radio[0].contains(pt) {
+            self.show_monday_context = true;
+            return FloatingWindowOutcome::dirty(DirtyRegion::All);
+        }
+        if hit.show_context_radio[1].contains(pt) {
+            self.show_monday_context = false;
             return FloatingWindowOutcome::dirty(DirtyRegion::All);
         }
 

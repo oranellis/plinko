@@ -9,6 +9,9 @@ pub struct Milestone {
     pub description: String,
     pub dependencies: Vec<Dependency>,
     pub constraint: Option<DateConstraint>,
+    /// Optional context label shown alongside the milestone name (e.g. Monday group or parent item).
+    #[serde(default)]
+    pub context_label: Option<String>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -20,6 +23,7 @@ impl Milestone {
             description: description.into(),
             dependencies: Vec::new(),
             constraint: None,
+            context_label: None,
         }
     }
 }

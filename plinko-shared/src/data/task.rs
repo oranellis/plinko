@@ -56,6 +56,9 @@ pub struct Task {
     /// for InProgress tasks so allocation is placed from this date forward.
     #[serde(default)]
     pub actual_start: Option<NaiveDate>,
+    /// Optional context label shown alongside the task name (e.g. Monday group or parent item).
+    #[serde(default)]
+    pub context_label: Option<String>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -71,6 +74,7 @@ impl Task {
             duration_days_target: 0.0,
             relaxed_mode: false,
             actual_start: None,
+            context_label: None,
         }
     }
 
@@ -101,6 +105,7 @@ impl Task {
             duration_days_target: 0.0,
             relaxed_mode: false,
             actual_start: None,
+            context_label: None,
         }
     }
 
