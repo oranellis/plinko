@@ -186,7 +186,7 @@ export function packGanttRows(plan: Plan): GanttItem[] {
   // Sort by start date, then name.
   items.sort((a, b) => a.start.localeCompare(b.start) || a.name.localeCompare(b.name));
 
-  // Greedy row packing: track latest end date per row.
+  // Greedy row packing: track latest end date per row (+ 1 gap day).
   const rowEnds: IsoDate[] = [];
   const result: GanttItem[] = [];
 
@@ -194,7 +194,7 @@ export function packGanttRows(plan: Plan): GanttItem[] {
     let placed = false;
     for (let r = 0; r < rowEnds.length; r++) {
       if (item.start > rowEnds[r]) {
-        rowEnds[r] = item.end;
+        rowEnds[r] = addDays(item.end, 1);
         result.push({ ...item, row: r });
         placed = true;
         break;
@@ -202,7 +202,7 @@ export function packGanttRows(plan: Plan): GanttItem[] {
     }
     if (!placed) {
       const r = rowEnds.length;
-      rowEnds.push(item.end);
+      rowEnds.push(addDays(item.end, 1));
       result.push({ ...item, row: r });
     }
   }

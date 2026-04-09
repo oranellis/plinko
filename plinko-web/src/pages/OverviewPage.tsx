@@ -72,6 +72,16 @@ export function OverviewPage() {
 
   const items = plan ? packGanttRows(plan) : [];
 
+  // Scroll limits
+  const maxRows = items.length > 0 ? Math.max(...items.map((i) => i.row)) + 1 : 1;
+  const maxScrollY = Math.max(0, maxRows * ROW_H - (size.h - HEADER_H));
+  const maxScrollX = items.length > 0
+    ? Math.max(...items.map((i) => {
+        const off = daysBetween(plan!.start_date, i.end) + 1;
+        return off * dayW;
+      })) + size.w / 2
+    : size.w;
+
   // Hit-test refs (populated during render)
   const hitRectsRef = useRef<{ id: string; x: number; y: number; w: number; h: number }[]>([]);
 
@@ -83,8 +93,12 @@ export function OverviewPage() {
     if (!ctx) return;
 
     const { w, h } = size;
-    canvas.width = w;
-    canvas.height = h;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    ctx.scale(dpr, dpr);
     hitRectsRef.current = [];
 
     ctx.clearRect(0, 0, w, h);
@@ -155,12 +169,55 @@ export function OverviewPage() {
     ctx.strokeStyle = "#3a3a3c";
     ctx.beginPath(); ctx.moveTo(0, HEADER_H); ctx.lineTo(w, HEADER_H); ctx.stroke();
 
+    // Pre-compute dependency sets for hover highlighting
+    const hoveredDeps = new Set<string>();   // items the hovered item depends on
+    const hoveredDependents = new Set<string>(); // items that depend on the hovered item
+    if (hoverId && plan) {
+      const getDeps = (id: string): string[] => {
+        const task = plan.tasks[id as TaskId];
+        if (task) return task.dependencies.map((d) =>
+          typeof d.id === "object" && "Task" in d.id ? d.id.Task :
+          typeof d.id === "object" && "Milestone" in d.id ? d.id.Milestone : "");
+        const ms = plan.milestones[id as MilestoneId];
+        if (ms) return ms.dependencies.map((d) =>
+          typeof d.id === "object" && "Task" in d.id ? d.id.Task :
+          typeof d.id === "object" && "Milestone" in d.id ? d.id.Milestone : "");
+        return [];
+      };
+      for (const depId of getDeps(hoverId)) {
+        if (depId) hoveredDeps.add(depId);
+      }
+      // Compute forward dependents
+      for (const [tid, task] of Object.entries(plan.tasks)) {
+        if (task.dependencies.some((d) =>
+          (typeof d.id === "object" && "Task" in d.id && d.id.Task === hoverId) ||
+          (typeof d.id === "object" && "Milestone" in d.id && d.id.Milestone === hoverId)
+        )) hoveredDependents.add(tid);
+      }
+      for (const [mid, ms] of Object.entries(plan.milestones)) {
+        if (ms.dependencies.some((d) =>
+          (typeof d.id === "object" && "Task" in d.id && d.id.Task === hoverId) ||
+          (typeof d.id === "object" && "Milestone" in d.id && d.id.Milestone === hoverId)
+        )) hoveredDependents.add(mid);
+      }
+    }
+
     // === GANTT ROWS ===
     const clipTop = HEADER_H;
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, clipTop, w, h - clipTop);
     ctx.clip();
+
+    // Map from item id → center point for dependency arrow drawing
+    const itemCenters = new Map<string, { x: number; y: number; ex: number }>();
+
+    const BAR_PAD_Y = 5;
+    const barH = ROW_H - BAR_PAD_Y * 2;
+    const targetId = plan.scheduler_target
+      ? (typeof plan.scheduler_target === "object" && "Task" in plan.scheduler_target ? plan.scheduler_target.Task :
+         typeof plan.scheduler_target === "object" && "Milestone" in plan.scheduler_target ? plan.scheduler_target.Milestone : null)
+      : null;
 
     for (const item of items) {
       const rowY = HEADER_H + item.row * ROW_H - scrollY;
@@ -170,34 +227,52 @@ export function OverviewPage() {
       const endOff = daysBetween(startDate, item.end) + 1;
       const x = startOff * dayW - scrollX;
       const barW = Math.max((endOff - startOff) * dayW, 4);
-      const y = rowY + 4;
-      const barH = ROW_H - 8;
+      const y = rowY + BAR_PAD_Y;
 
       const color = STATUS_COLORS[item.status];
       const isHovered = hoverId === item.id;
       const isFlashing = flashId === item.id;
+      const isDepOf = hoveredDeps.has(item.id);
+      const isDependent = hoveredDependents.has(item.id);
+      const isTarget = targetId === item.id;
 
       if (item.type === "task") {
-        // Rounded rect bar
         ctx.fillStyle = isHovered || isFlashing ? lighten(color) : color;
-        roundRect(ctx, x, y, barW, barH, 4);
+        roundRect(ctx, x, y, barW, barH, 3);
         ctx.fill();
+
+        // Border: coloured for dep relationships, gold for target
+        const borderColor = isTarget ? "#f5d020"
+          : isHovered ? "#4a90d9"
+          : isDepOf ? "#66bb6a"
+          : isDependent ? "#f5a623"
+          : null;
+        if (borderColor) {
+          ctx.strokeStyle = borderColor;
+          ctx.lineWidth = isTarget ? 2 : 1.5;
+          roundRect(ctx, x, y, barW, barH, 3);
+          ctx.stroke();
+          ctx.lineWidth = 1;
+        }
 
         // Label
         const label = displayName(item.name, item.contextLabel);
-        ctx.fillStyle = "#fff";
-        ctx.font = "11px sans-serif";
+        ctx.fillStyle = isHovered ? "#fff" : "rgba(255,255,255,0.9)";
+        ctx.font = "12px sans-serif";
         ctx.save();
         ctx.beginPath();
         ctx.rect(x + 4, y, barW - 8, barH);
         ctx.clip();
         ctx.fillText(label, x + 6, y + barH / 2 + 4);
         ctx.restore();
+
+        itemCenters.set(item.id, { x, y: rowY + ROW_H / 2, ex: x + barW });
+        hitRectsRef.current.push({ id: item.id, x, y, w: barW, h: barH });
       } else {
         // Milestone diamond
         const cx = x + dayW / 2;
         const cy = rowY + ROW_H / 2;
-        const r = 7;
+        const r = 8;
         ctx.fillStyle = isHovered || isFlashing ? lighten("#e0c040") : "#e0c040";
         ctx.beginPath();
         ctx.moveTo(cx, cy - r);
@@ -206,10 +281,76 @@ export function OverviewPage() {
         ctx.lineTo(cx - r, cy);
         ctx.closePath();
         ctx.fill();
+
+        // Border
+        const borderColor = isTarget ? "#f5d020"
+          : isHovered ? "#4a90d9"
+          : isDepOf ? "#66bb6a"
+          : isDependent ? "#f5a623"
+          : null;
+        if (borderColor) {
+          ctx.strokeStyle = borderColor;
+          ctx.lineWidth = isTarget ? 2 : 1.5;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - r);
+          ctx.lineTo(cx + r, cy);
+          ctx.lineTo(cx, cy + r);
+          ctx.lineTo(cx - r, cy);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.lineWidth = 1;
+        }
+
+        // Milestone name to the right
+        const nameX = cx + r + 6;
+        const nameEndX = nameX + (item.name.length * 7 + 8);
+        const nameVisible = nameX < w;
+        if (nameVisible) {
+          ctx.fillStyle = isHovered ? "#f5d040" : "#bbb";
+          ctx.font = "11px sans-serif";
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(nameX, rowY, Math.min(nameEndX, w) - nameX, ROW_H);
+          ctx.clip();
+          ctx.fillText(displayName(item.name, item.contextLabel), nameX, rowY + ROW_H / 2 + 4);
+          ctx.restore();
+        }
+
+        itemCenters.set(item.id, { x: cx - r, y: cy, ex: cx + r });
+        hitRectsRef.current.push({ id: item.id, x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
+      }
+    }
+
+    // === HOVER DEPENDENCY ARROWS ===
+    if (hoverId && itemCenters.has(hoverId)) {
+      const hc = itemCenters.get(hoverId)!;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+
+      // Draw lines to predecessors (items this depends on)
+      for (const depId of hoveredDeps) {
+        const dc = itemCenters.get(depId);
+        if (!dc) continue;
+        ctx.strokeStyle = "#66bb6a";
+        ctx.beginPath();
+        ctx.moveTo(dc.ex, dc.y);
+        ctx.lineTo(hc.x, hc.y);
+        ctx.stroke();
       }
 
-      // Register hit rect
-      hitRectsRef.current.push({ id: item.id, x, y, w: barW, h: barH });
+      // Draw lines to successors (items that depend on this)
+      for (const depId of hoveredDependents) {
+        const dc = itemCenters.get(depId);
+        if (!dc) continue;
+        ctx.strokeStyle = "#f5a623";
+        ctx.beginPath();
+        ctx.moveTo(hc.ex, hc.y);
+        ctx.lineTo(dc.x, dc.y);
+        ctx.stroke();
+      }
+
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1;
     }
 
     ctx.restore();
@@ -243,8 +384,8 @@ export function OverviewPage() {
       dragRef.current.lastY = e.clientY;
       dragRef.current.lastT = now;
 
-      setScrollX((sx) => Math.max(0, sx - dx));
-      setScrollY((sy) => Math.max(0, sy - dy));
+      setScrollX((sx) => Math.max(-size.w / 2, Math.min(maxScrollX, sx - dx)));
+      setScrollY((sy) => Math.max(0, Math.min(maxScrollY, sy - dy)));
     }
   };
 
@@ -278,8 +419,8 @@ export function OverviewPage() {
       vx *= friction;
       vy *= friction;
       if (Math.abs(vx) < 0.5 && Math.abs(vy) < 0.5) return;
-      setScrollX((sx) => Math.max(0, sx - vx * 0.016));
-      setScrollY((sy) => Math.max(0, sy - vy * 0.016));
+      setScrollX((sx) => Math.max(-size.w / 2, Math.min(maxScrollX, sx - vx * 0.016)));
+      setScrollY((sy) => Math.max(0, Math.min(maxScrollY, sy - vy * 0.016)));
       momRef.current = requestAnimationFrame(step);
     };
     momRef.current = requestAnimationFrame(step);
@@ -292,8 +433,8 @@ export function OverviewPage() {
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       setDayW((w) => Math.max(MIN_DAY_W, Math.min(MAX_DAY_W, w * factor)));
     } else {
-      setScrollX((sx) => Math.max(0, sx + e.deltaX));
-      setScrollY((sy) => Math.max(0, sy + e.deltaY));
+      setScrollX((sx) => Math.max(-size.w / 2, Math.min(maxScrollX, sx + e.deltaX)));
+      setScrollY((sy) => Math.max(0, Math.min(maxScrollY, sy + e.deltaY)));
     }
   };
   const onWheelRef = useRef(onWheel);
@@ -313,8 +454,8 @@ export function OverviewPage() {
     const item = items.find((it) => it.id === id);
     if (!item) return;
     const offset = daysBetween(plan.start_date, item.start);
-    setScrollX(Math.max(0, offset * dayW - size.w / 2));
-    setScrollY(item.row * ROW_H - size.h / 2);
+    setScrollX(Math.max(-size.w / 2, Math.min(maxScrollX, offset * dayW - size.w / 2)));
+    setScrollY(Math.max(0, Math.min(maxScrollY, item.row * ROW_H - size.h / 2)));
     setFlashId(id);
     let count = 0;
     const flash = () => {
