@@ -16,6 +16,7 @@ export function UserFormModal({ user, plan, sendRequest, onClose }: Props) {
     new Set(user?.tags ?? [])
   );
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const toggleTag = (tagId: string) => {
     setSelectedTags((prev) => {
@@ -29,20 +30,24 @@ export function UserFormModal({ user, plan, sendRequest, onClose }: Props) {
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
+    setError(null);
     try {
       const tags = [...selectedTags];
+      let resp;
       if (user) {
-        await sendRequest({ UpdateUser: [user.id, { name: name.trim(), tags }] });
+        resp = await sendRequest({ UpdateUser: [user.id, { name: name.trim(), tags }] });
       } else {
-        await sendRequest({
-          CreateUser: {
-            id: uuidv4(),
-            name: name.trim(),
-            tags,
-          },
+        resp = await sendRequest({
+          CreateUser: { id: uuidv4(), name: name.trim(), tags },
         });
       }
+      if (typeof resp === "object" && "Error" in resp) {
+        setError(JSON.stringify(resp.Error));
+        return;
+      }
       onClose();
+    } catch (e) {
+      setError(String(e));
     } finally {
       setSaving(false);
     }
@@ -61,6 +66,7 @@ export function UserFormModal({ user, plan, sendRequest, onClose }: Props) {
 
   return (
     <Modal title={user ? `Edit ${user.name}` : "New User"} onClose={onClose} width={400}>
+      {error && <div style={{ color: "#e57373", fontSize: 13, marginBottom: 10 }}>{error}</div>}
       <div className="form-row">
         <label>Name</label>
         <input

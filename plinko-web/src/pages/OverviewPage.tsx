@@ -285,7 +285,7 @@ export function OverviewPage() {
     momRef.current = requestAnimationFrame(step);
   };
 
-  const onWheel = (e: React.WheelEvent) => {
+  const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     if (e.shiftKey) {
       // Zoom
@@ -296,6 +296,16 @@ export function OverviewPage() {
       setScrollY((sy) => Math.max(0, sy + e.deltaY));
     }
   };
+  const onWheelRef = useRef(onWheel);
+  onWheelRef.current = onWheel;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handler = (e: WheelEvent) => onWheelRef.current(e);
+    canvas.addEventListener("wheel", handler, { passive: false });
+    return () => canvas.removeEventListener("wheel", handler);
+  }, []);
 
   const handleSearchSelect = (id: string) => {
     setShowSearch(false);
@@ -344,7 +354,6 @@ export function OverviewPage() {
         onMouseDown={onMouseDown}
         onMouseUp={onMouseUp}
         onMouseLeave={() => { dragRef.current.active = false; setHoverId(null); }}
-        onWheel={onWheel}
       />
 
       {/* Modals */}

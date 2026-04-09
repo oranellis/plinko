@@ -282,7 +282,8 @@ export function AllocationPage() {
     }
   };
 
-  const onWheel = (e: React.WheelEvent) => {
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     if (mx < USER_PANEL_W) {
@@ -294,10 +295,20 @@ export function AllocationPage() {
         const factor = e.deltaY > 0 ? 0.9 : 1.1;
         setDayW((w) => Math.max(MIN_DAY_W, Math.min(MAX_DAY_W, w * factor)));
       } else {
-        setScrollX((sx) => Math.max(0, sx + e.deltaX + e.deltaY));
+        setScrollX((sx) => Math.max(0, sx + e.deltaX));
       }
     }
   };
+  const onWheelRef = useRef(onWheel);
+  onWheelRef.current = onWheel;
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handler = (e: WheelEvent) => onWheelRef.current(e);
+    canvas.addEventListener("wheel", handler, { passive: false });
+    return () => canvas.removeEventListener("wheel", handler);
+  }, []);
 
   return (
     <div className="allocation-page" ref={containerRef}>
@@ -321,7 +332,6 @@ export function AllocationPage() {
         height={size.h}
         style={{ display: "block" }}
         onMouseDown={onMouseDown}
-        onWheel={onWheel}
       />
 
       {editTaskId && plan?.tasks[editTaskId] && (

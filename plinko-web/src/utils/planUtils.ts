@@ -87,11 +87,11 @@ export function milestoneDates(
 // ── Status helpers ────────────────────────────────────────────────────────────
 
 export const STATUS_COLORS: Record<Status, string> = {
-  NotStarted: "#4a90d9",
-  InProgress: "#4caf50",
-  OnHold: "#ff9800",
-  Complete: "#26a69a",
-  Dropped: "#666666",
+  NotStarted: "#555555",
+  InProgress: "#f5a623",
+  OnHold: "#b39ddb",
+  Complete: "#66bb6a",
+  Dropped: "#8b7355",
 };
 
 export const STATUS_LABELS: Record<Status, string> = {
