@@ -1,10 +1,18 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import type { DateConstraint, Dependency, Plan, PlanRequest, PlanResponse, Status, Task, TaskPatch, UserId, WorkerSlot } from "../../protocol";
+import type { DateConstraint, Dependency, Milestone, NodeId, Plan, PlanRequest, PlanResponse, Status, Task, TaskId, TaskPatch, WorkerSlot } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
+import { WorkerEditor } from "./shared/WorkerEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
-import { STATUS_LABELS, workerUserId, workerWorkload } from "../../utils/planUtils";
+import { STATUS_LABELS } from "../../utils/planUtils";
 import { v4 as uuidv4 } from "uuid";
+
+function nodeKey(n: NodeId): string {
+  if (n === "PlanStart") return "PlanStart";
+  if (typeof n === "object" && "Task" in n) return `task:${n.Task}`;
+  if (typeof n === "object" && "Milestone" in n) return `milestone:${n.Milestone}`;
+  return String(n);
+}
 
 interface Props {
   task: Task | null;
@@ -14,6 +22,27 @@ interface Props {
 }
 
 const STATUSES: Status[] = ["NotStarted", "InProgress", "OnHold", "Complete", "Dropped"];
+
+/** Build initial forward-dependents list: nodes that currently depend on this task */
+function buildInitialDependents(task: Task | null, plan: Plan): Dependency[] {
+  if (!task) return [];
+  const result: Dependency[] = [];
+  for (const t of Object.values(plan.tasks)) {
+    for (const d of t.dependencies) {
+      if (typeof d.id === "object" && "Task" in d.id && d.id.Task === task.id) {
+        result.push({ id: { Task: t.id as TaskId }, lag_days: d.lag_days });
+      }
+    }
+  }
+  for (const m of Object.values(plan.milestones) as Milestone[]) {
+    for (const d of m.dependencies) {
+      if (typeof d.id === "object" && "Task" in d.id && d.id.Task === task.id) {
+        result.push({ id: { Milestone: m.id }, lag_days: d.lag_days });
+      }
+    }
+  }
+  return result;
+}
 
 export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
   const [name, setName] = useState(task?.name ?? "");
@@ -28,33 +57,19 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
   const [actualStart, setActualStart] = useState(task?.actual_start ?? "");
   const [workers, setWorkers] = useState<WorkerSlot[]>(task?.workers ?? []);
   const [dependencies, setDependencies] = useState<Dependency[]>(task?.dependencies ?? []);
+  const [dependents, setDependents] = useState<Dependency[]>(() => buildInitialDependents(task, plan));
   const [relaxed, setRelaxed] = useState(task?.relaxed_mode ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [workerFilter, setWorkerFilter] = useState("");
+  const thisNodeId: NodeId | null = task ? { Task: task.id } : null;
 
-  const users = Object.values(plan.users_data)
-    .map((ud) => ud.user)
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  // Compute forward dependents (tasks/milestones that depend on this task)
-  const forwardDependents = task ? [
-    ...Object.entries(plan.tasks)
-      .filter(([, t]) => t.dependencies.some((d) =>
-        typeof d.id === "object" && "Task" in d.id && d.id.Task === task.id
-      ))
-      .map(([, t]) => ({ id: t.id, name: t.name, type: "Task" as const })),
-    ...Object.entries(plan.milestones)
-      .filter(([, m]) => m.dependencies.some((d) =>
-        typeof d.id === "object" && "Task" in d.id && d.id.Task === task.id
-      ))
-      .map(([, m]) => ({ id: m.id, name: m.name, type: "Milestone" as const })),
-  ] : [];
-
-  const filteredUsers = workerFilter.trim()
-    ? users.filter((u) => u.name.toLowerCase().includes(workerFilter.toLowerCase()))
-    : users;
+  // Keys of nodes already in the dependents list, to exclude from the picker
+  const dependentKeys = new Set(dependents.map((d) => {
+    if (typeof d.id === "object" && "Task" in d.id) return `task:${d.id.Task}`;
+    if (typeof d.id === "object" && "Milestone" in d.id) return `milestone:${d.id.Milestone}`;
+    return String(d.id);
+  }));
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -63,6 +78,8 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
     try {
       const dur = parseFloat(durationDays) || 0;
       const actualStartVal = actualStart || null;
+      const newTaskId = task?.id ?? uuidv4();
+      const newNodeId: NodeId = { Task: newTaskId as TaskId };
 
       if (task) {
         const patch: TaskPatch = {
@@ -84,7 +101,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
       } else {
         const resp = await sendRequest({
           CreateTask: {
-            id: uuidv4(),
+            id: newTaskId,
             name: name.trim(),
             description,
             constraint,
@@ -101,6 +118,56 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
           return;
         }
       }
+
+      // Sync forward dependents: diff old vs new
+      const oldDependents = buildInitialDependents(task, plan);
+      const oldKeys = new Set(oldDependents.map((d) => nodeKey(d.id)));
+      const newDepMap = new Map(dependents.map((d) => [nodeKey(d.id), d]));
+      const newKeys = new Set(newDepMap.keys());
+
+      // Removed: strip our node from their dependencies
+      for (const old of oldDependents) {
+        const k = nodeKey(old.id);
+        if (!newKeys.has(k)) {
+          if (typeof old.id === "object" && "Task" in old.id) {
+            const t = plan.tasks[old.id.Task];
+            if (t) {
+              await sendRequest({ UpdateTask: [t.id, {
+                dependencies: t.dependencies.filter((d) => nodeKey(d.id) !== nodeKey(newNodeId)),
+              }] });
+            }
+          } else if (typeof old.id === "object" && "Milestone" in old.id) {
+            const m = plan.milestones[old.id.Milestone];
+            if (m) {
+              await sendRequest({ UpdateMilestone: [m.id, {
+                dependencies: m.dependencies.filter((d) => nodeKey(d.id) !== nodeKey(newNodeId)),
+              }] });
+            }
+          }
+        }
+      }
+      // Added: add our node to their dependencies
+      for (const dep of dependents) {
+        const k = nodeKey(dep.id);
+        if (!oldKeys.has(k)) {
+          if (typeof dep.id === "object" && "Task" in dep.id) {
+            const t = plan.tasks[dep.id.Task];
+            if (t) {
+              await sendRequest({ UpdateTask: [t.id, {
+                dependencies: [...t.dependencies, { id: newNodeId, lag_days: dep.lag_days }],
+              }] });
+            }
+          } else if (typeof dep.id === "object" && "Milestone" in dep.id) {
+            const m = plan.milestones[dep.id.Milestone];
+            if (m) {
+              await sendRequest({ UpdateMilestone: [m.id, {
+                dependencies: [...m.dependencies, { id: newNodeId, lag_days: dep.lag_days }],
+              }] });
+            }
+          }
+        }
+      }
+
       onClose();
     } finally {
       setSaving(false);
@@ -116,18 +183,6 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
     } finally {
       setSaving(false);
     }
-  };
-
-  const updateWorker = (idx: number, userId: UserId, workload: number) => {
-    setWorkers((prev) => {
-      const next = [...prev];
-      next[idx] = { Specific: { user_id: userId, workload_days: workload } };
-      return next;
-    });
-  };
-
-  const removeWorker = (idx: number) => {
-    setWorkers((prev) => prev.filter((_, i) => i !== idx));
   };
 
   return (
@@ -222,116 +277,28 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
       </div>
 
       {/* Workers */}
-      <div className="form-row">
-        <label>Workers</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {workers.map((w, idx) => {
-            const uid = workerUserId(w) ?? "";
-            const wl = workerWorkload(w);
-            return (
-              <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <select
-                  value={uid}
-                  onChange={(e) => updateWorker(idx, e.target.value, wl)}
-                  style={{
-                    flex: 1,
-                    background: "#1e1e1e",
-                    border: "1px solid #3a3a3c",
-                    borderRadius: 4,
-                    color: "#d4d4d4",
-                    fontSize: 12,
-                    padding: "4px 8px",
-                    outline: "none",
-                  }}
-                >
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={wl}
-                  title="Workload (days)"
-                  onChange={(e) =>
-                    updateWorker(idx, uid, parseFloat(e.target.value) || 0)
-                  }
-                  style={{
-                    width: 70,
-                    background: "#1e1e1e",
-                    border: "1px solid #3a3a3c",
-                    borderRadius: 4,
-                    color: "#d4d4d4",
-                    fontSize: 12,
-                    padding: "3px 6px",
-                    outline: "none",
-                  }}
-                />
-                <span style={{ fontSize: 11, color: "#666" }}>days</span>
-                <button
-                  onClick={() => removeWorker(idx)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "#888",
-                    cursor: "pointer",
-                    fontSize: 14,
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
-          {users.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <input
-                type="text"
-                placeholder="Filter users…"
-                value={workerFilter}
-                onChange={(e) => setWorkerFilter(e.target.value)}
-                style={{ fontSize: 12, padding: "3px 8px", background: "#1e1e1e", border: "1px solid #3a3a3c", borderRadius: 4, color: "#d4d4d4", outline: "none" }}
-              />
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => {
-                  const first = filteredUsers[0];
-                  if (first) setWorkers((prev) => [...prev, { Specific: { user_id: first.id, workload_days: 1 } }]);
-                }}
-                disabled={filteredUsers.length === 0}
-                style={{ alignSelf: "flex-start" }}
-              >
-                + Add {filteredUsers.length === 1 ? filteredUsers[0].name : "Worker"}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <WorkerEditor workers={workers} plan={plan} onChange={setWorkers} />
 
       <DependencyEditor
         label="Dependencies"
         deps={dependencies}
         plan={plan}
-        excludeNodeId={task ? { Task: task.id } : null}
+        excludeNodeId={thisNodeId}
         onChange={setDependencies}
       />
 
-      {/* Forward dependents (read-only) */}
-      {forwardDependents.length > 0 && (
-        <div className="form-row">
-          <label>Dependents</label>
-          <div style={{ maxHeight: 120, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
-            {forwardDependents.map((d) => (
-              <div key={d.id} style={{ fontSize: 12, color: "#aaa", padding: "2px 0" }}>
-                {d.type === "Milestone" ? "◇ " : "■ "}{d.name}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Forward dependents — editable, like Rust UI ("Required by") */}
+      <DependencyEditor
+        label="Required by"
+        deps={dependents}
+        plan={plan}
+        excludeNodeId={thisNodeId}
+        excludeKeys={dependentKeys}
+        noPlanStart
+        onChange={setDependents}
+        emptyLabel="Select dependent…"
+        emptyStateText="No dependents added yet"
+      />
 
       <div className="form-actions">
         {task && (

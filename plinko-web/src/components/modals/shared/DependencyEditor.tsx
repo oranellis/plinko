@@ -1,48 +1,93 @@
-import { useState } from "react";
+/**
+ * Dependency / "Required by" list editor matching the Rust UI:
+ * - Bordered scrollable list (max 3 visible rows)
+ * - Each row: target selector button (portal dropdown) | lag input | × remove
+ * - Row separators between entries
+ * - Empty state text
+ * - "+" button below to add
+ * - When mode="dependents", excludes PlanStart from options and only allows Task/Milestone nodes
+ */
+import { useRef, useState } from "react";
 import type { Dependency, NodeId, Plan } from "../../../protocol";
+import { FloatingPicker } from "./FloatingPicker";
+import type { PickerOption } from "./FloatingPicker";
 
 interface Props {
   label: string;
   deps: Dependency[];
   plan: Plan;
+  /** Node to exclude from options (the node being edited) */
   excludeNodeId: NodeId | null;
+  /** Additional node IDs to exclude (as stringified keys) */
+  excludeKeys?: Set<string>;
+  /** When true, do not offer PlanStart as an option */
+  noPlanStart?: boolean;
   onChange: (deps: Dependency[]) => void;
+  /** Placeholder text for the target button when unset */
+  emptyLabel?: string;
+  /** Text shown when list is empty */
+  emptyStateText?: string;
+  error?: boolean;
 }
 
-interface NodeOption {
-  key: string;
-  label: string;
+interface NodeOption extends PickerOption {
   nodeId: NodeId;
 }
 
-function buildNodeOptions(plan: Plan, exclude: NodeId | null): NodeOption[] {
-  const excludeKey = exclude ? nodeKey(exclude) : null;
-  const opts: NodeOption[] = [
-    { key: "PlanStart", label: "Plan Start", nodeId: "PlanStart" },
-    ...Object.values(plan.tasks).map((t) => ({
-      key: `task:${t.id}`,
-      label: t.name,
-      nodeId: { Task: t.id } as NodeId,
-    })),
-    ...Object.values(plan.milestones).map((m) => ({
-      key: `milestone:${m.id}`,
-      label: m.name,
-      nodeId: { Milestone: m.id } as NodeId,
-    })),
-  ];
-  return opts.filter((o) => o.key !== excludeKey).sort((a, b) => a.label.localeCompare(b.label));
-}
+const ROW_H = 36;
+const MAX_VISIBLE = 3;
 
 function nodeKey(n: NodeId): string {
   if (n === "PlanStart") return "PlanStart";
-  if ("Task" in n) return `task:${n.Task}`;
-  return `milestone:${n.Milestone}`;
+  if (typeof n === "object" && "Task" in n) return `task:${n.Task}`;
+  if (typeof n === "object" && "Milestone" in n) return `milestone:${n.Milestone}`;
+  return String(n);
 }
 
-export function DependencyEditor({ label, deps, plan, excludeNodeId, onChange }: Props) {
-  const [filter, setFilter] = useState("");
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
-  const options = buildNodeOptions(plan, excludeNodeId);
+function buildOptions(plan: Plan, exclude: NodeId | null, excludeKeys: Set<string>, noPlanStart: boolean): NodeOption[] {
+  const excludeK = exclude ? nodeKey(exclude) : null;
+  const opts: NodeOption[] = [];
+  if (!noPlanStart) {
+    opts.push({ key: "PlanStart", label: "Plan Start", nodeId: "PlanStart" });
+  }
+  for (const t of Object.values(plan.tasks)) {
+    const k = `task:${t.id}`;
+    if (k !== excludeK && !excludeKeys.has(k)) {
+      opts.push({ key: k, label: t.name, nodeId: { Task: t.id } });
+    }
+  }
+  for (const m of Object.values(plan.milestones)) {
+    const k = `milestone:${m.id}`;
+    if (k !== excludeK && !excludeKeys.has(k)) {
+      opts.push({ key: k, label: m.name, nodeId: { Milestone: m.id } });
+    }
+  }
+  return opts.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function nodeLabel(id: NodeId, plan: Plan): string {
+  if (id === "PlanStart") return "Plan Start";
+  if (typeof id === "object" && "Task" in id) return plan.tasks[id.Task]?.name ?? id.Task;
+  if (typeof id === "object" && "Milestone" in id) return plan.milestones[id.Milestone]?.name ?? id.Milestone;
+  return String(id);
+}
+
+export function DependencyEditor({
+  label,
+  deps,
+  plan,
+  excludeNodeId,
+  excludeKeys = new Set(),
+  noPlanStart = false,
+  onChange,
+  emptyLabel = "Select dependency…",
+  emptyStateText = "No dependencies added yet",
+  error = false,
+}: Props) {
+  const [openPickerIdx, setOpenPickerIdx] = useState<number | null>(null);
+  const btnRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const allOptions = buildOptions(plan, excludeNodeId, excludeKeys, noPlanStart);
 
   const updateDep = (idx: number, dep: Dependency) => {
     const next = [...deps];
@@ -52,134 +97,164 @@ export function DependencyEditor({ label, deps, plan, excludeNodeId, onChange }:
 
   const removeDep = (idx: number) => {
     onChange(deps.filter((_, i) => i !== idx));
+    setOpenPickerIdx(null);
   };
 
-  const addDep = (nodeId: NodeId) => {
-    onChange([...deps, { id: nodeId, lag_days: 0 }]);
-    setActiveIdx(null);
-    setFilter("");
+  const addDep = () => {
+    onChange([...deps, { id: allOptions[0]?.nodeId ?? "PlanStart", lag_days: 0 }]);
+    // Open picker for the new row
+    setOpenPickerIdx(deps.length);
   };
 
-  const filteredOpts = options.filter((o) => {
-    if (!filter) return true;
-    return o.label.toLowerCase().includes(filter.toLowerCase());
-  });
+  const selectTarget = (idx: number, key: string) => {
+    const opt = allOptions.find((o) => o.key === key);
+    if (!opt) return;
+    updateDep(idx, { ...deps[idx], id: opt.nodeId });
+    setOpenPickerIdx(null);
+  };
+
+  const listH = ROW_H * Math.min(deps.length || 1, MAX_VISIBLE);
+  const borderColor = error ? "#e53935" : "#3a3a3c";
 
   return (
     <div className="form-row">
-      <label>{label}</label>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
-        {deps.map((dep, idx) => {
-          const opt = options.find((o) => nodeKey(o.nodeId) === nodeKey(dep.id));
-          return (
-            <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ flex: 1, fontSize: 12, color: "#d4d4d4" }}>
-                {opt?.label ?? nodeKey(dep.id)}
-              </span>
-              <input
-                type="number"
-                step={0.5}
-                value={dep.lag_days}
-                onChange={(e) =>
-                  updateDep(idx, { ...dep, lag_days: parseFloat(e.target.value) || 0 })
-                }
-                title="Lag days"
-                style={{
-                  width: 60,
-                  background: "#1e1e1e",
-                  border: "1px solid #3a3a3c",
-                  borderRadius: 4,
-                  color: "#d4d4d4",
-                  fontSize: 12,
-                  padding: "3px 6px",
-                  outline: "none",
-                }}
-              />
-              <span style={{ fontSize: 11, color: "#666" }}>lag</span>
-              <button
-                onClick={() => removeDep(idx)}
-                style={{
-                  background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 14
-                }}
-              >
-                ×
-              </button>
-            </div>
-          );
-        })}
-        </div>
+      <label style={{ color: error ? "#e57373" : undefined }}>{label}</label>
 
-        {/* Picker */}
-        {activeIdx === -1 ? (
-          <div style={{ position: "relative" }}>
-            <input
-              type="text"
-              value={filter}
-              autoFocus
-              placeholder="Search…"
-              onChange={(e) => setFilter(e.target.value)}
-              onBlur={() => setTimeout(() => setActiveIdx(null), 150)}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                background: "#1e1e1e",
-                border: "1px solid #4a90d9",
-                borderRadius: 4,
-                color: "#d4d4d4",
-                fontSize: 12,
-                padding: "4px 8px",
-                outline: "none",
-              }}
-            />
-            {filteredOpts.length > 0 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  background: "#252526",
-                  border: "1px solid #3a3a3c",
-                  borderRadius: 4,
-                  maxHeight: 160,
-                  overflowY: "auto",
-                  zIndex: 100,
-                }}
-              >
-                {filteredOpts.map((o) => (
-                  <button
-                    key={o.key}
-                    onMouseDown={() => addDep(o.nodeId)}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      textAlign: "left",
-                      background: "none",
-                      border: "none",
-                      padding: "6px 10px",
-                      color: "#d4d4d4",
-                      fontSize: 12,
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                    }}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-            )}
+      {/* Bordered list */}
+      <div style={{
+        border: `1px solid ${borderColor}`,
+        borderRadius: 4,
+        height: listH,
+        overflowY: "auto",
+        background: "#1e1e1e",
+      }}>
+        {deps.length === 0 ? (
+          <div style={{ padding: "8px 12px", fontSize: 13, color: "#555" }}>
+            {emptyStateText}
           </div>
         ) : (
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={() => setActiveIdx(-1)}
-            style={{ alignSelf: "flex-start" }}
-          >
-            + Add
-          </button>
+          deps.map((dep, idx) => {
+            const pickerOpen = openPickerIdx === idx;
+            const targetSet = dep.id !== null && dep.id !== undefined;
+            const label = targetSet ? nodeLabel(dep.id, plan) : "";
+            const isPlanStart = dep.id === "PlanStart";
+
+            return (
+              <div key={idx}>
+                {idx > 0 && (
+                  <div style={{ height: 1, background: "#2d2d30" }} />
+                )}
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  height: ROW_H,
+                  padding: "0 8px",
+                  gap: 6,
+                }}>
+                  {/* Target selector button */}
+                  <button
+                    ref={(el) => { btnRefs.current[idx] = el; }}
+                    onClick={() => setOpenPickerIdx(pickerOpen ? null : idx)}
+                    style={{
+                      flex: 1,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      background: "#252526",
+                      border: `1px solid ${pickerOpen ? "#4a90d9" : "#3a3a3c"}`,
+                      borderRadius: 4,
+                      color: !label ? "#555" : isPlanStart ? "#a78bfa" : "#d4d4d4",
+                      fontSize: 13,
+                      padding: "0 8px",
+                      height: 26,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      textAlign: "left",
+                      minWidth: 0,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {label || emptyLabel}
+                    </span>
+                    <span style={{ color: "#666", fontSize: 10, flexShrink: 0, marginLeft: 4 }}>▾</span>
+                  </button>
+
+                  {/* Lag input */}
+                  <input
+                    type="number"
+                    step={0.5}
+                    value={dep.lag_days}
+                    title="Lag days (positive = delay, negative = lead)"
+                    onChange={(e) => updateDep(idx, { ...dep, lag_days: parseFloat(e.target.value) || 0 })}
+                    style={{
+                      width: 56,
+                      flexShrink: 0,
+                      background: "#252526",
+                      border: "1px solid #3a3a3c",
+                      borderRadius: 4,
+                      color: "#d4d4d4",
+                      fontSize: 13,
+                      padding: "3px 6px",
+                      outline: "none",
+                      textAlign: "center",
+                    }}
+                  />
+                  <span style={{ fontSize: 11, color: "#555", flexShrink: 0 }}>lag</span>
+
+                  {/* Remove */}
+                  <button
+                    onClick={() => removeDep(idx)}
+                    title="Remove"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "#555",
+                      cursor: "pointer",
+                      fontSize: 16,
+                      lineHeight: 1,
+                      padding: "2px 4px",
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = "#e57373")}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = "#555")}
+                  >
+                    ×
+                  </button>
+
+                  {/* Floating picker */}
+                  {pickerOpen && (
+                    <FloatingPicker
+                      anchor={btnRefs.current[idx]}
+                      options={allOptions}
+                      onSelect={(key) => selectTarget(idx, key)}
+                      onClose={() => setOpenPickerIdx(null)}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
+
+      {/* + Add button */}
+      <button
+        className="btn btn-secondary"
+        onClick={addDep}
+        disabled={allOptions.length === 0}
+        style={{
+          alignSelf: "flex-start",
+          fontSize: 13,
+          padding: "5px 12px",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Add
+      </button>
     </div>
   );
 }
+

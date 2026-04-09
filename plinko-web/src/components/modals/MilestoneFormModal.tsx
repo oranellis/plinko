@@ -1,9 +1,17 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import type { DateConstraint, Dependency, Milestone, MilestonePatch, Plan, PlanRequest, PlanResponse } from "../../protocol";
+import type { DateConstraint, Dependency, Milestone, MilestoneId, NodeId, Plan, PlanRequest, PlanResponse, Task, TaskId } from "../../protocol";
+import type { MilestonePatch } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
 import { v4 as uuidv4 } from "uuid";
+
+function nodeKey(n: NodeId): string {
+  if (n === "PlanStart") return "PlanStart";
+  if (typeof n === "object" && "Task" in n) return `task:${n.Task}`;
+  if (typeof n === "object" && "Milestone" in n) return `milestone:${n.Milestone}`;
+  return String(n);
+}
 
 interface Props {
   milestone: Milestone | null;
@@ -12,19 +20,48 @@ interface Props {
   onClose: () => void;
 }
 
+function buildInitialDependents(milestone: Milestone | null, plan: Plan): Dependency[] {
+  if (!milestone) return [];
+  const result: Dependency[] = [];
+  for (const t of Object.values(plan.tasks) as Task[]) {
+    for (const d of t.dependencies) {
+      if (typeof d.id === "object" && "Milestone" in d.id && d.id.Milestone === milestone.id) {
+        result.push({ id: { Task: t.id as TaskId }, lag_days: d.lag_days });
+      }
+    }
+  }
+  for (const m of Object.values(plan.milestones) as Milestone[]) {
+    if (m.id === milestone.id) continue;
+    for (const d of m.dependencies) {
+      if (typeof d.id === "object" && "Milestone" in d.id && d.id.Milestone === milestone.id) {
+        result.push({ id: { Milestone: m.id as MilestoneId }, lag_days: d.lag_days });
+      }
+    }
+  }
+  return result;
+}
+
 export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Props) {
   const [name, setName] = useState(milestone?.name ?? "");
   const [description, setDescription] = useState(milestone?.description ?? "");
   const [constraint, setConstraint] = useState<DateConstraint | null>(milestone?.constraint ?? null);
   const [dependencies, setDependencies] = useState<Dependency[]>(milestone?.dependencies ?? []);
+  const [dependents, setDependents] = useState<Dependency[]>(() => buildInitialDependents(milestone, plan));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const thisNodeId: NodeId | null = milestone ? { Milestone: milestone.id } : null;
+
+  const dependentKeys = new Set(dependents.map((d) => nodeKey(d.id)));
 
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
     setError(null);
     try {
+      const newMsId = milestone?.id ?? uuidv4();
+      const newNodeId: NodeId = { Milestone: newMsId as MilestoneId };
+
       if (milestone) {
         const patch: MilestonePatch = {
           name: name.trim(),
@@ -40,7 +77,7 @@ export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Pr
       } else {
         const resp = await sendRequest({
           CreateMilestone: {
-            id: uuidv4(),
+            id: newMsId,
             name: name.trim(),
             description,
             constraint,
@@ -53,6 +90,46 @@ export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Pr
           return;
         }
       }
+
+      // Sync forward dependents
+      const oldDependents = buildInitialDependents(milestone, plan);
+      const oldKeys = new Set(oldDependents.map((d) => nodeKey(d.id)));
+      const newDepMap = new Map(dependents.map((d) => [nodeKey(d.id), d]));
+      const newKeys = new Set(newDepMap.keys());
+
+      for (const old of oldDependents) {
+        const k = nodeKey(old.id);
+        if (!newKeys.has(k)) {
+          if (typeof old.id === "object" && "Task" in old.id) {
+            const t = plan.tasks[old.id.Task];
+            if (t) await sendRequest({ UpdateTask: [t.id, {
+              dependencies: t.dependencies.filter((d) => nodeKey(d.id) !== nodeKey(newNodeId)),
+            }] });
+          } else if (typeof old.id === "object" && "Milestone" in old.id) {
+            const m = plan.milestones[old.id.Milestone];
+            if (m) await sendRequest({ UpdateMilestone: [m.id, {
+              dependencies: m.dependencies.filter((d) => nodeKey(d.id) !== nodeKey(newNodeId)),
+            }] });
+          }
+        }
+      }
+      for (const dep of dependents) {
+        const k = nodeKey(dep.id);
+        if (!oldKeys.has(k)) {
+          if (typeof dep.id === "object" && "Task" in dep.id) {
+            const t = plan.tasks[dep.id.Task];
+            if (t) await sendRequest({ UpdateTask: [t.id, {
+              dependencies: [...t.dependencies, { id: newNodeId, lag_days: dep.lag_days }],
+            }] });
+          } else if (typeof dep.id === "object" && "Milestone" in dep.id) {
+            const m = plan.milestones[dep.id.Milestone];
+            if (m) await sendRequest({ UpdateMilestone: [m.id, {
+              dependencies: [...m.dependencies, { id: newNodeId, lag_days: dep.lag_days }],
+            }] });
+          }
+        }
+      }
+
       onClose();
     } finally {
       setSaving(false);
@@ -69,20 +146,6 @@ export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Pr
       setSaving(false);
     }
   };
-
-  // Compute forward dependents
-  const forwardDependents = milestone ? [
-    ...Object.entries(plan.tasks)
-      .filter(([, t]) => t.dependencies.some((d) =>
-        typeof d.id === "object" && "Milestone" in d.id && d.id.Milestone === milestone.id
-      ))
-      .map(([, t]) => ({ id: t.id, name: t.name, type: "Task" as const })),
-    ...Object.entries(plan.milestones)
-      .filter(([, m]) => m.id !== milestone.id && m.dependencies.some((d) =>
-        typeof d.id === "object" && "Milestone" in d.id && d.id.Milestone === milestone.id
-      ))
-      .map(([, m]) => ({ id: m.id, name: m.name, type: "Milestone" as const })),
-  ] : [];
 
   return (
     <Modal
@@ -117,22 +180,21 @@ export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Pr
         label="Dependencies"
         deps={dependencies}
         plan={plan}
-        excludeNodeId={milestone ? { Milestone: milestone.id } : null}
+        excludeNodeId={thisNodeId}
         onChange={setDependencies}
       />
 
-      {forwardDependents.length > 0 && (
-        <div className="form-row">
-          <label>Dependents</label>
-          <div style={{ maxHeight: 120, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
-            {forwardDependents.map((d) => (
-              <div key={d.id} style={{ fontSize: 12, color: "#aaa", padding: "2px 0" }}>
-                {d.type === "Milestone" ? "◇ " : "■ "}{d.name}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <DependencyEditor
+        label="Required by"
+        deps={dependents}
+        plan={plan}
+        excludeNodeId={thisNodeId}
+        excludeKeys={dependentKeys}
+        noPlanStart
+        onChange={setDependents}
+        emptyLabel="Select dependent…"
+        emptyStateText="No dependents added yet"
+      />
 
       <div className="form-actions">
         {milestone && (
