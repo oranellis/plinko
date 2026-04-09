@@ -33,6 +33,16 @@ fn timeline_top() -> f32 {
     content_top() + GANTT_HEADER_H + ALLOC_UTIL_ROW_H
 }
 
+/// Public accessor used by `mod.rs` for scroll clamping.
+pub fn timeline_top_pub() -> f32 {
+    timeline_top()
+}
+
+/// Returns the number of tasks allocated to `user_id` (for scroll clamping).
+pub fn task_count_for_user(plan: &Plan, user_id: &UserId) -> usize {
+    tasks_for_user(plan, user_id).len()
+}
+
 fn util_row_top() -> f32 {
     content_top() + GANTT_HEADER_H
 }
@@ -652,6 +662,7 @@ fn draw_task_rows(
 ) {
     let top = timeline_top();
     let content_h = height - top;
+    let scroll_y = state.task_scroll_y;
 
     let user_tasks = tasks_for_user(plan, user_id);
 
@@ -671,6 +682,7 @@ fn draw_task_rows(
         ClipOp::Intersect,
         false,
     );
+    canvas.translate((0.0, -scroll_y));
 
     let num_rows = user_tasks.len();
     let rows_h = (num_rows as f32 * GANTT_ROW_H).max(content_h);
@@ -846,6 +858,7 @@ fn draw_task_rows(
             ClipOp::Intersect,
             false,
         );
+        canvas.translate((0.0, -scroll_y));
 
         let (_, m) = cache.small_font.metrics();
         for (row_idx, (_task_id, task_name)) in user_tasks.iter().enumerate() {
@@ -1141,7 +1154,13 @@ pub fn hit_test_user_panel<'a>(
 }
 
 /// Returns the task row index hovered in the timeline, or None.
-pub fn hit_test_task_row(x: f32, y: f32, plan: &Plan, user_id: &UserId) -> Option<usize> {
+pub fn hit_test_task_row(
+    x: f32,
+    y: f32,
+    plan: &Plan,
+    user_id: &UserId,
+    scroll_y: f32,
+) -> Option<usize> {
     if x <= timeline_left() {
         return None;
     }
@@ -1150,7 +1169,7 @@ pub fn hit_test_task_row(x: f32, y: f32, plan: &Plan, user_id: &UserId) -> Optio
         return None;
     }
     let tasks = tasks_for_user(plan, user_id);
-    let row = ((y - top) / GANTT_ROW_H) as usize;
+    let row = ((y + scroll_y - top) / GANTT_ROW_H) as usize;
     if row < tasks.len() { Some(row) } else { None }
 }
 
@@ -1163,7 +1182,13 @@ pub fn task_id_for_row<'a>(plan: &'a Plan, user_id: &UserId, row: usize) -> Opti
 }
 
 /// Hit-tests the label column (between user panel and timeline). Returns task row index.
-pub fn hit_test_label_column(x: f32, y: f32, plan: &Plan, user_id: &UserId) -> Option<usize> {
+pub fn hit_test_label_column(
+    x: f32,
+    y: f32,
+    plan: &Plan,
+    user_id: &UserId,
+    scroll_y: f32,
+) -> Option<usize> {
     if x <= ALLOC_USER_PANEL_W || x > timeline_left() {
         return None;
     }
@@ -1172,7 +1197,7 @@ pub fn hit_test_label_column(x: f32, y: f32, plan: &Plan, user_id: &UserId) -> O
         return None;
     }
     let tasks = tasks_for_user(plan, user_id);
-    let row = ((y - top) / GANTT_ROW_H) as usize;
+    let row = ((y + scroll_y - top) / GANTT_ROW_H) as usize;
     if row < tasks.len() { Some(row) } else { None }
 }
 

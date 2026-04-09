@@ -41,6 +41,13 @@ impl AllocationPage {
         let visible_h = height - Self::content_top();
         (content_h - visible_h).max(0.0)
     }
+
+    fn max_task_scroll(num_tasks: usize, height: f32) -> f32 {
+        let timeline_top = render::timeline_top_pub();
+        let visible_h = height - timeline_top;
+        let content_h = num_tasks as f32 * crate::ui::layout::GANTT_ROW_H;
+        (content_h - visible_h).max(0.0)
+    }
 }
 // }}}
 
@@ -76,7 +83,7 @@ impl Page for AllocationPage {
 
         // Task row hover (only when a user is selected and cursor is in timeline)
         let new_task_hover = if let Some(uid) = &self.state.selected_user {
-            render::hit_test_task_row(x, y, plan, uid)
+            render::hit_test_task_row(x, y, plan, uid, self.state.task_scroll_y)
         } else {
             None
         };
@@ -158,15 +165,18 @@ impl Page for AllocationPage {
                     if self.state.selected_user.as_ref() == Some(uid) {
                         // Deselect on second click
                         self.state.selected_user = None;
+                        self.state.task_scroll_y = 0.0;
                     } else {
                         self.state.selected_user = Some(*uid);
                         self.state.hovered_task_idx = None;
+                        self.state.task_scroll_y = 0.0;
                     }
                 }
             } else if in_label_column {
                 // Click in label column → open task edit form for this row
                 if let Some(uid) = &self.state.selected_user.clone()
-                    && let Some(row) = render::hit_test_label_column(x, y, plan, uid)
+                    && let Some(row) =
+                        render::hit_test_label_column(x, y, plan, uid, self.state.task_scroll_y)
                     && let Some(task_id) = render::task_id_for_row(plan, uid, row)
                     && let Some(task) = plan.tasks.get(task_id)
                 {
@@ -204,6 +214,14 @@ impl Page for AllocationPage {
             let max_scroll = Self::max_user_panel_scroll(plan.users_data.len(), height);
             self.state.user_panel_scroll =
                 (self.state.user_panel_scroll - delta_y * 3.0).clamp(0.0, max_scroll);
+        } else if self.state.cursor_x <= ALLOC_USER_PANEL_W + ALLOC_TASK_LABEL_W {
+            // Scroll task rows vertically (label column)
+            if let Some(uid) = &self.state.selected_user.clone() {
+                let num_tasks = render::task_count_for_user(plan, uid);
+                let max_scroll = Self::max_task_scroll(num_tasks, height);
+                self.state.task_scroll_y =
+                    (self.state.task_scroll_y - delta_y * 3.0).clamp(0.0, max_scroll);
+            }
         } else if shift {
             let factor = if delta_y > 0.0 {
                 1.025_f32
@@ -213,11 +231,19 @@ impl Page for AllocationPage {
             self.state.zoom_target =
                 (self.state.zoom_target * factor).clamp(GANTT_ZOOM_MIN, GANTT_ZOOM_MAX);
         } else {
-            // Trackpad horizontal scroll drives X directly; vertical scrolls X too (legacy).
+            // Trackpad horizontal scroll drives X directly; vertical scrolls task rows.
             if delta_x.abs() > 0.01 {
                 self.state.vel_x -= delta_x * 4.0;
-            } else {
-                self.state.vel_x -= delta_y * 4.0;
+            } else if delta_y.abs() > 0.01 {
+                // If a user is selected, vertical scroll moves task rows; otherwise scroll X.
+                if let Some(uid) = &self.state.selected_user.clone() {
+                    let num_tasks = render::task_count_for_user(plan, uid);
+                    let max_scroll = Self::max_task_scroll(num_tasks, height);
+                    self.state.task_scroll_y =
+                        (self.state.task_scroll_y - delta_y * 3.0).clamp(0.0, max_scroll);
+                } else {
+                    self.state.vel_x -= delta_y * 4.0;
+                }
             }
             self.state.vel_x = self.state.vel_x.clamp(-300.0, 300.0);
         }
