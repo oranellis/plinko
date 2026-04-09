@@ -35,7 +35,7 @@ interface NodeOption extends PickerOption {
 }
 
 const ROW_H = 36;
-const MAX_VISIBLE = 3;
+const FIXED_LIST_H = ROW_H * 3.5;
 
 function nodeKey(n: NodeId): string {
   if (n === "PlanStart") return "PlanStart";
@@ -113,7 +113,7 @@ export function DependencyEditor({
     setOpenPickerIdx(null);
   };
 
-  const listH = ROW_H * Math.min(deps.length || 1, MAX_VISIBLE);
+  const listH = FIXED_LIST_H;
   const borderColor = error ? "#e53935" : "#3a3a3c";
 
   return (

@@ -20,7 +20,7 @@ interface Props {
 type SlotType = "Specific" | "Placeholder";
 
 const ROW_H = 36;
-const MAX_VISIBLE = 3;
+const FIXED_LIST_H = ROW_H * 3.5;
 
 function slotType(w: WorkerSlot): SlotType {
   return "Specific" in w ? "Specific" : "Placeholder";
@@ -102,7 +102,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
     }
   };
 
-  const listH = ROW_H * Math.min(workers.length || 1, MAX_VISIBLE);
+  const listH = FIXED_LIST_H;
 
   const getPickerLabel = (w: WorkerSlot): string => {
     if ("Specific" in w) {
