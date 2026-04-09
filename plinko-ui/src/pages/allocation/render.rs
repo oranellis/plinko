@@ -1151,4 +1151,26 @@ pub fn hit_test_task_row(x: f32, y: f32, plan: &Plan, user_id: &UserId) -> Optio
     if row < tasks.len() { Some(row) } else { None }
 }
 
+/// Returns the TaskId for the task at the given row index for a user, or None.
+pub fn task_id_for_row<'a>(plan: &'a Plan, user_id: &UserId, row: usize) -> Option<&'a TaskId> {
+    tasks_for_user(plan, user_id)
+        .into_iter()
+        .nth(row)
+        .map(|(id, _)| id)
+}
+
+/// Hit-tests the label column (between user panel and timeline). Returns task row index.
+pub fn hit_test_label_column(x: f32, y: f32, plan: &Plan, user_id: &UserId) -> Option<usize> {
+    if x <= ALLOC_USER_PANEL_W || x > timeline_left() {
+        return None;
+    }
+    let top = timeline_top();
+    if y < top {
+        return None;
+    }
+    let tasks = tasks_for_user(plan, user_id);
+    let row = ((y - top) / GANTT_ROW_H) as usize;
+    if row < tasks.len() { Some(row) } else { None }
+}
+
 // }}}

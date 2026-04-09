@@ -16,6 +16,8 @@ use crate::ui::layout::{
     INPUT_CURSOR_COLOR, INPUT_FG, ITEM_FG, ITEM_MILESTONE_DOT, ITEM_TASK_DOT, LIST_BG,
     LIST_ITEM_HOVER_BG, PLACEHOLDER_FG, PLAN_BTN_CORNER, SCROLLBAR_THUMB_COLOR,
 };
+use crate::ui::milestone_form_window::MilestoneFormWindow;
+use crate::ui::task_form_window::TaskFormWindow;
 use crate::ui::text_input::TextInput;
 use crate::ui::window_chrome::draw_window_chrome;
 use plinko_shared::data::Plan;
@@ -41,6 +43,8 @@ pub struct SearchWindow {
     /// Shared result channel. When a node is selected, its `NodeId` is written here
     /// and the window closes. The overview page drains this in `tick_animation`.
     result: Arc<Mutex<Option<NodeId>>>,
+    /// Set when a row is clicked; consumed by `take_open_request`.
+    pending_edit: Option<Box<dyn FloatingWindow>>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -55,6 +59,7 @@ impl SearchWindow {
             hovered_row: None,
             filter_results: RefCell::new(Vec::new()),
             result,
+            pending_edit: None,
         }
     }
 
@@ -102,12 +107,6 @@ impl SearchWindow {
             .collect();
         items.sort_by(|a, b| a.1.cmp(&b.1));
         items
-    }
-
-    fn select_node(&self, node_id: NodeId) {
-        if let Ok(mut guard) = self.result.lock() {
-            *guard = Some(node_id);
-        }
     }
 }
 // }}}
@@ -306,7 +305,7 @@ impl FloatingWindow for SearchWindow {
         width: f32,
         height: f32,
         _modifiers: &Modifiers,
-        _plan: &Plan,
+        plan: &Plan,
         _sender: &PlanRequestSender,
         _cache: &RenderCache,
     ) -> FloatingWindowOutcome {
@@ -324,15 +323,42 @@ impl FloatingWindow for SearchWindow {
             let rel_y = y - list.top + self.scroll_y;
             let row = (rel_y / ROW_H) as usize;
             let items = self.filter_results.borrow();
-            if let Some((node_id, _, _)) = items.get(row) {
+            if let Some((node_id, _, is_milestone)) = items.get(row) {
                 let node_id = *node_id;
+                let is_milestone = *is_milestone;
                 drop(items);
-                self.select_node(node_id);
-                return FloatingWindowOutcome::close();
+                // Open edit form as a child window; keep search open underneath.
+                let edit_win: Box<dyn FloatingWindow> = match node_id {
+                    NodeId::Task(task_id) => {
+                        if let Some(task) = plan.tasks.get(&task_id) {
+                            Box::new(TaskFormWindow::from_task(task, plan))
+                        } else {
+                            return FloatingWindowOutcome::default();
+                        }
+                    }
+                    NodeId::Milestone(ms_id) => {
+                        if is_milestone {
+                            if let Some(ms) = plan.milestones.get(&ms_id) {
+                                Box::new(MilestoneFormWindow::from_milestone(ms, plan))
+                            } else {
+                                return FloatingWindowOutcome::default();
+                            }
+                        } else {
+                            return FloatingWindowOutcome::default();
+                        }
+                    }
+                    NodeId::PlanStart => return FloatingWindowOutcome::default(),
+                };
+                self.pending_edit = Some(edit_win);
+                return FloatingWindowOutcome::dirty(DirtyRegion::All);
             }
         }
 
         FloatingWindowOutcome::default()
+    }
+
+    fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+        self.pending_edit.take()
     }
 
     fn on_key_input(
@@ -365,11 +391,27 @@ impl FloatingWindow for SearchWindow {
                 FloatingWindowOutcome::dirty(DirtyRegion::All)
             }
             Key::Named(NamedKey::Enter) => {
-                // Select the first result
+                // Open edit form for the first result.
                 let items = Self::compute_items(plan, &self.filter.content);
-                if let Some((node_id, _, _)) = items.first() {
-                    self.select_node(*node_id);
-                    return FloatingWindowOutcome::close();
+                if let Some((node_id, _, is_milestone)) = items.first() {
+                    let edit_win: Option<Box<dyn FloatingWindow>> = match node_id {
+                        NodeId::Task(task_id) => {
+                            plan.tasks.get(task_id).map(|t| -> Box<dyn FloatingWindow> {
+                                Box::new(TaskFormWindow::from_task(t, plan))
+                            })
+                        }
+                        NodeId::Milestone(ms_id) if *is_milestone => plan
+                            .milestones
+                            .get(ms_id)
+                            .map(|m| -> Box<dyn FloatingWindow> {
+                                Box::new(MilestoneFormWindow::from_milestone(m, plan))
+                            }),
+                        _ => None,
+                    };
+                    if let Some(w) = edit_win {
+                        self.pending_edit = Some(w);
+                        return FloatingWindowOutcome::dirty(DirtyRegion::All);
+                    }
                 }
                 FloatingWindowOutcome::default()
             }

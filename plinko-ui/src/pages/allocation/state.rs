@@ -1,5 +1,6 @@
 //! Mutable state for the allocation page.
 
+use crate::ui::floating_window::FloatingWindow;
 use crate::ui::layout::{GANTT_ZOOM_DEFAULT, GANTT_ZOOM_MAX, GANTT_ZOOM_MIN};
 use plinko_shared::data::ids::{NodeId, UserId};
 
@@ -24,6 +25,8 @@ pub struct AllocationState {
     pub settings_init_name: String,
     pub settings_init_date: String,
     pub settings_init_scheduler_target: NodeId,
+    /// Set when a task/milestone row is clicked; consumed by `take_open_request`.
+    pub pending_window: Option<Box<dyn FloatingWindow>>,
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -50,6 +53,7 @@ impl AllocationState {
             settings_init_name: String::new(),
             settings_init_date: String::new(),
             settings_init_scheduler_target: NodeId::PlanStart,
+            pending_window: None,
         }
     }
 

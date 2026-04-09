@@ -14,6 +14,7 @@ use crate::ui::layout::{
     ALLOC_TASK_LABEL_W, ALLOC_USER_ENTRY_H, ALLOC_USER_PANEL_W, GANTT_ZOOM_MAX, GANTT_ZOOM_MIN,
     TOOLBAR_BTN_SIZE, TOOLBAR_BTN_Y,
 };
+use crate::ui::task_form_window::TaskFormWindow;
 use crate::ui::users_window::UsersWindow;
 use plinko_shared::data::Plan;
 
@@ -162,7 +163,19 @@ impl Page for AllocationPage {
                         self.state.hovered_task_idx = None;
                     }
                 }
-            } else if !in_label_column {
+            } else if in_label_column {
+                // Click in label column → open task edit form for this row
+                if let Some(uid) = &self.state.selected_user.clone() {
+                    if let Some(row) = render::hit_test_label_column(x, y, plan, uid) {
+                        if let Some(task_id) = render::task_id_for_row(plan, uid, row) {
+                            if let Some(task) = plan.tasks.get(task_id) {
+                                self.state.pending_window =
+                                    Some(Box::new(TaskFormWindow::from_task(task, plan)));
+                            }
+                        }
+                    }
+                }
+            } else {
                 // Timeline drag
                 self.state.is_dragging = true;
                 self.state.press_start_x = x;
@@ -214,6 +227,9 @@ impl Page for AllocationPage {
     }
 
     fn take_open_request(&mut self) -> Option<Box<dyn FloatingWindow>> {
+        if let Some(w) = self.state.pending_window.take() {
+            return Some(w);
+        }
         if self.state.open_users_window {
             self.state.open_users_window = false;
             return Some(Box::new(UsersWindow::new()));
