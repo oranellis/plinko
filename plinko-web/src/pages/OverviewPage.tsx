@@ -267,7 +267,7 @@ export function OverviewPage() {
     // xIn = center of start-day column, xOut = center of end-day column, y = row center
     const itemCenters = new Map<string, { xIn: number; xOut: number; y: number }>();
 
-    const BAR_PAD_Y = Math.round(ROW_H * 0.12);
+    const BAR_PAD_Y = Math.round(ROW_H * 0.16);
     const BAR_PAD_X = dayW * 0.12;
     const barH = ROW_H - BAR_PAD_Y * 2;
     const targetId = plan.scheduler_target
@@ -405,7 +405,11 @@ export function OverviewPage() {
         const cx = x + dayW / 2;
         const cy = rowY + ROW_H / 2;
         const r = 10;
-        ctx.fillStyle = "#e0c040";
+        const msStatus = plan.node_allocations.milestones[item.id]?.derived_status;
+        const msColor = msStatus === "Complete" ? "#66bb6a"
+          : msStatus === "InProgress" ? "#f5a623"
+          : "#888888";
+        ctx.fillStyle = msColor;
         ctx.beginPath();
         ctx.moveTo(cx, cy - r);
         ctx.lineTo(cx + r, cy);
