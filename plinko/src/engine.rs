@@ -219,6 +219,7 @@ impl PlanEngine {
                 self.plan.name = name;
                 self.plan.start_date = start_date;
                 self.plan.scheduler_target = scheduler_target;
+                let _ = self.plan.compute_time_optimised_plan();
                 PlanResponse::PlanUpdated
             }
             // Server-level requests handled in server.rs
