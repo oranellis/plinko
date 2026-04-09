@@ -38,6 +38,8 @@ export function AllocationPage() {
   const [showUsers, setShowUsers] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
+  const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0 });
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -97,8 +99,12 @@ export function AllocationPage() {
     if (!ctx) return;
 
     const { w, h } = size;
-    canvas.width = w;
-    canvas.height = h;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+    ctx.scale(dpr, dpr);
     hitUserRectsRef.current = [];
     hitTaskRectsRef.current = [];
 
@@ -176,6 +182,11 @@ export function AllocationPage() {
       ctx.fillText(label, labelX + 10, y + ROW_H / 2 + 4);
       ctx.restore();
 
+      // row separator
+      ctx.strokeStyle = "#2e2e2e";
+      ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(labelX, y + ROW_H); ctx.lineTo(labelX + LABEL_COL_W, y + ROW_H); ctx.stroke();
+
       hitTaskRectsRef.current.push({ id, y, h: ROW_H });
     }
     ctx.restore();
@@ -248,6 +259,11 @@ export function AllocationPage() {
         ctx.fillStyle = color + "aa";
         ctx.fillRect(x + 1, y + ROW_H - 3 - bh, dayW - 2, bh);
       }
+
+      // row separator in timeline
+      ctx.strokeStyle = "#2e2e2e";
+      ctx.lineWidth = 0.5;
+      ctx.beginPath(); ctx.moveTo(tlX, y + ROW_H); ctx.lineTo(w, y + ROW_H); ctx.stroke();
     }
 
     ctx.restore();
@@ -269,18 +285,33 @@ export function AllocationPage() {
           return;
         }
       }
+      return;
     }
 
     // Label column click
-    if (mx >= USER_PANEL_W && mx < USER_PANEL_W + LABEL_COL_W) {
+    if (mx < USER_PANEL_W + LABEL_COL_W) {
       for (const r of hitTaskRectsRef.current) {
         if (my >= r.y && my <= r.y + r.h) {
           setEditTaskId(r.id);
           return;
         }
       }
+      return;
     }
+
+    // Timeline drag
+    dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, scrollXStart: scrollX };
   };
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragRef.current.active) return;
+    const dx = e.clientX - dragRef.current.lastX;
+    dragRef.current.lastX = e.clientX;
+    setScrollX((sx) => Math.max(0, sx - dx));
+  };
+
+  const onMouseUp = () => { dragRef.current.active = false; };
+  const onMouseLeave = () => { dragRef.current.active = false; };
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -330,8 +361,11 @@ export function AllocationPage() {
         ref={canvasRef}
         width={size.w}
         height={size.h}
-        style={{ display: "block" }}
+        style={{ display: "block", cursor: dragRef.current.active ? "grabbing" : "default" }}
         onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseLeave}
       />
 
       {editTaskId && plan?.tasks[editTaskId] && (
