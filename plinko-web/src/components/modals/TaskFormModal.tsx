@@ -1,11 +1,11 @@
 import { useState } from "react";
-import type React from "react";
 import { Modal } from "../Modal";
 import type { DateConstraint, Dependency, Milestone, NodeId, Plan, PlanRequest, PlanResponse, Status, Task, TaskId, TaskPatch, WorkerSlot } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
 import { WorkerEditor } from "./shared/WorkerEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
 import { SegmentedControl } from "./shared/SegmentedControl";
+import { DatePicker } from "./shared/DatePicker";
 import { STATUS_LABELS } from "../../utils/planUtils";
 import { v4 as uuidv4 } from "uuid";
 
@@ -224,7 +224,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
       <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
           <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            Duration (days, 0 = from workload)
+            Duration (days)
           </label>
           <input
             type="number"
@@ -276,43 +276,26 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
       {(() => {
         const startDisabled = status === "NotStarted";
         const endDisabled = status !== "Complete" && status !== "Dropped";
-        const dateInputStyle = (disabled: boolean): React.CSSProperties => ({
-          background: disabled ? "#1a1a1c" : "#1e1e1e",
-          border: "1px solid #3a3a3c",
-          borderRadius: 4,
-          color: disabled ? "#555" : "#d4d4d4",
-          fontSize: 13,
-          padding: "0 10px",
-          outline: "none",
-          width: "100%",
-          boxSizing: "border-box",
-          height: 30,
-          cursor: disabled ? "not-allowed" : "auto",
-        });
         return (
           <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
               <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Actual Start
               </label>
-              <input
-                type="date"
+              <DatePicker
                 value={actualStart}
+                onChange={setActualStart}
                 disabled={startDisabled}
-                onChange={(e) => setActualStart(e.target.value)}
-                style={dateInputStyle(startDisabled)}
               />
             </div>
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
               <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
                 Actual End
               </label>
-              <input
-                type="date"
+              <DatePicker
                 value={""}
+                onChange={() => {}}
                 disabled={endDisabled}
-                style={dateInputStyle(endDisabled)}
-                readOnly
               />
             </div>
           </div>
