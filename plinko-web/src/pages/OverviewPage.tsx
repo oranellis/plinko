@@ -25,7 +25,7 @@ import {
 } from "../components/icons";
 import "./OverviewPage.css";
 
-const ROW_H = 44;
+const ROW_H = 36;
 const HEADER_H = 56; // month (22) + day (34)
 const DAY_W_DEFAULT = 34;
 const MIN_DAY_W = 8;
@@ -311,15 +311,16 @@ export function OverviewPage() {
         roundRect(ctx, x, y, barW, barH, 6);
         ctx.fill();
 
-        // Border: coloured for dep relationships, gold for target
-        const borderColor = isTarget ? "#ffd600"
-          : isHovered || isFlashing ? "#1e88e5"
+        // Border: coloured for dep relationships, gold for target, red flash
+        const borderColor = isFlashing ? "#e53935"
+          : isTarget ? "#ffd600"
+          : isHovered ? "#1e88e5"
           : isDepOf ? "#fc1ef1"
           : isDependent ? "#07fcd7"
           : null;
         if (borderColor) {
           ctx.strokeStyle = borderColor;
-          ctx.lineWidth = isTarget ? 3 : 2.5;
+          ctx.lineWidth = isFlashing ? 4 : isTarget ? 3 : 2.5;
           roundRect(ctx, x, y, barW, barH, 6);
           ctx.stroke();
           ctx.lineWidth = 1;
@@ -356,14 +357,15 @@ export function OverviewPage() {
         ctx.fill();
 
         // Border
-        const borderColor = isTarget ? "#ffd600"
-          : isHovered || isFlashing ? "#1e88e5"
+        const borderColor = isFlashing ? "#e53935"
+          : isTarget ? "#ffd600"
+          : isHovered ? "#1e88e5"
           : isDepOf ? "#fc1ef1"
           : isDependent ? "#07fcd7"
           : null;
         if (borderColor) {
           ctx.strokeStyle = borderColor;
-          ctx.lineWidth = isTarget ? 3 : 2.5;
+          ctx.lineWidth = isFlashing ? 4 : isTarget ? 3 : 2.5;
           ctx.beginPath();
           ctx.moveTo(cx, cy - r);
           ctx.lineTo(cx + r, cy);
@@ -535,15 +537,18 @@ export function OverviewPage() {
     const item = items.find((it) => it.id === id);
     if (!item) return;
     const offset = daysBetween(plan.start_date, item.start);
+    // Center task horizontally (task start at screen center) and vertically (row center at screen center)
     setScrollX(Math.max(-size.w / 2, Math.min(maxScrollX, offset * dayW - size.w / 2)));
-    setScrollY(Math.max(0, Math.min(maxScrollY, item.row * ROW_H - size.h / 2)));
+    setScrollY(Math.max(0, Math.min(maxScrollY, item.row * ROW_H + ROW_H / 2 - (size.h - HEADER_H) / 2)));
+    // 3 flashes over 3 seconds (on 500ms, off 500ms × 3)
     setFlashId(id);
     let count = 0;
     const flash = () => {
-      setFlashId(() => (count++ % 2 === 0 ? id : null));
-      if (count < 6) setTimeout(flash, 250);
+      count++;
+      setFlashId(count % 2 === 0 ? id : null);
+      if (count < 6) setTimeout(flash, 500);
     };
-    setTimeout(flash, 100);
+    setTimeout(flash, 500);
   };
 
   return (
