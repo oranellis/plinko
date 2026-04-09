@@ -216,7 +216,12 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::LoadPlan { plan_id } = &request {
             let plan_id = *plan_id;
-            match storage.lock().unwrap().load_latest(plan_id) {
+            // Bind the result before matching so the MutexGuard is dropped immediately
+            // (match scrutinee temporaries live for the entire match block; holding the
+            // storage lock across the match would self-deadlock when line 223 tries to
+            // re-acquire it).
+            let load_result = storage.lock().unwrap().load_latest(plan_id);
+            match load_result {
                 Ok(plan) => {
                     let mut eng = engine.lock().unwrap();
                     *eng = PlanEngine::new(plan);
