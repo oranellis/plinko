@@ -108,6 +108,10 @@ pub fn import_from_monday(
             updated += 1;
         } else {
             let node_id = if item.is_milestone {
+                // Don't import dropped milestones.
+                if resolve_status(item, config) == Status::Dropped {
+                    continue;
+                }
                 let ms = Milestone::new(&item.name, "");
                 let ms_id = ms.id;
                 plan.add_milestone(ms);
