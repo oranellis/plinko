@@ -462,6 +462,19 @@ fn draw_gantt_rows(
     for (row_idx, row) in rows.iter().enumerate() {
         let row_y = row_top_y(row_idx, rows.len(), height, scroll_y);
 
+        // Separator row: draw a subtle horizontal rule.
+        if row.is_separator {
+            let line_y = row_y + GANTT_ROW_H / 2.0;
+            paint.set_style(PaintStyle::Stroke);
+            paint.set_stroke_width(1.0);
+            paint.set_color(Color::from(MUTED_FG).with_a(80));
+            paint.set_anti_alias(false);
+            canvas.draw_line((0.0, line_y), (width, line_y), &paint);
+            paint.set_anti_alias(true);
+            paint.set_style(PaintStyle::Fill);
+            continue;
+        }
+
         for item in &row.items {
             match item {
                 GanttItem::Task { id, start, end } => {
@@ -1265,6 +1278,41 @@ fn build_item_pos_map(
     pos_map
 }
 
+/// Resolve the visible (non-dropped) dependency endpoints for a given node.
+///
+/// If a direct dependency is a dropped task, this walks through its own
+/// dependencies recursively until reaching non-dropped nodes, effectively
+/// "threading" arrows through the dropped task's chain.
+fn resolve_visible_deps(id: NodeId, plan: &Plan, visited: &mut HashSet<NodeId>) -> Vec<NodeId> {
+    let deps: Vec<NodeId> = match id {
+        NodeId::Task(t_id) => plan
+            .tasks
+            .get(&t_id)
+            .map(|t| t.dependencies.iter().map(|d| d.id).collect())
+            .unwrap_or_default(),
+        NodeId::Milestone(m_id) => plan
+            .milestones
+            .get(&m_id)
+            .map(|m| m.dependencies.iter().map(|d| d.id).collect())
+            .unwrap_or_default(),
+        NodeId::PlanStart => vec![],
+    };
+
+    let mut result = Vec::new();
+    for dep_id in deps {
+        let is_dropped_task =
+            matches!(dep_id, NodeId::Task(t_id) if plan.task_status(&t_id) == Status::Dropped);
+        if is_dropped_task {
+            if visited.insert(dep_id) {
+                result.extend(resolve_visible_deps(dep_id, plan, visited));
+            }
+        } else {
+            result.push(dep_id);
+        }
+    }
+    result
+}
+
 fn draw_gantt_dependencies(
     canvas: &Canvas,
     state: &OverviewState,
@@ -1303,13 +1351,17 @@ fn draw_gantt_dependencies(
     let radius = 6.0f32;
 
     for task in plan.tasks.values() {
+        // Don't draw arrows to/from dropped tasks.
+        if plan.task_status(&task.id) == Status::Dropped {
+            continue;
+        }
         let to_id = NodeId::Task(task.id);
         let to_pos = match pos_map.get(&to_id) {
             Some(p) => p,
             None => continue,
         };
-        for dep in &task.dependencies {
-            let from_id = dep.id;
+        let mut visited = HashSet::new();
+        for from_id in resolve_visible_deps(to_id, plan, &mut visited) {
             if has_hover
                 && (state.hovered_node == Some(from_id) || state.hovered_node == Some(to_id))
             {
@@ -1336,8 +1388,8 @@ fn draw_gantt_dependencies(
             Some(p) => p,
             None => continue,
         };
-        for dep in &ms.dependencies {
-            let from_id = dep.id;
+        let mut visited = HashSet::new();
+        for from_id in resolve_visible_deps(to_id, plan, &mut visited) {
             if has_hover
                 && (state.hovered_node == Some(from_id) || state.hovered_node == Some(to_id))
             {
@@ -1395,52 +1447,51 @@ fn draw_highlighted_dep_arrows(
     let mut upstream: Vec<Arrow> = Vec::new();
     let mut downstream: Vec<Arrow> = Vec::new();
 
-    let collect = |deps: &[plinko_shared::data::dependency::Dependency],
-                   to_id: NodeId,
-                   to_pos: &ItemPos,
-                   upstream: &mut Vec<Arrow>,
-                   downstream: &mut Vec<Arrow>| {
-        for dep in deps {
-            let from_id = dep.id;
-            let Some(from_pos) = pos_map.get(&from_id) else {
-                continue;
-            };
-            let arrow = Arrow {
-                from_x: from_pos.end_x,
-                from_y: from_pos.center_y,
-                to_x: to_pos.start_x,
-                to_y: to_pos.center_y,
-            };
-            if state.hovered_node == Some(to_id) {
-                upstream.push(arrow);
-            } else if state.hovered_node == Some(from_id) {
-                downstream.push(arrow);
-            }
-        }
-    };
-
     for task in plan.tasks.values() {
+        if plan.task_status(&task.id) == Status::Dropped {
+            continue;
+        }
         let to_id = NodeId::Task(task.id);
         if let Some(to_pos) = pos_map.get(&to_id) {
-            collect(
-                &task.dependencies,
-                to_id,
-                to_pos,
-                &mut upstream,
-                &mut downstream,
-            );
+            let mut visited = HashSet::new();
+            for from_id in resolve_visible_deps(to_id, plan, &mut visited) {
+                let Some(from_pos) = pos_map.get(&from_id) else {
+                    continue;
+                };
+                let arrow = Arrow {
+                    from_x: from_pos.end_x,
+                    from_y: from_pos.center_y,
+                    to_x: to_pos.start_x,
+                    to_y: to_pos.center_y,
+                };
+                if state.hovered_node == Some(to_id) {
+                    upstream.push(arrow);
+                } else if state.hovered_node == Some(from_id) {
+                    downstream.push(arrow);
+                }
+            }
         }
     }
     for ms in plan.milestones.values() {
         let to_id = NodeId::Milestone(ms.id);
         if let Some(to_pos) = pos_map.get(&to_id) {
-            collect(
-                &ms.dependencies,
-                to_id,
-                to_pos,
-                &mut upstream,
-                &mut downstream,
-            );
+            let mut visited = HashSet::new();
+            for from_id in resolve_visible_deps(to_id, plan, &mut visited) {
+                let Some(from_pos) = pos_map.get(&from_id) else {
+                    continue;
+                };
+                let arrow = Arrow {
+                    from_x: from_pos.end_x,
+                    from_y: from_pos.center_y,
+                    to_x: to_pos.start_x,
+                    to_y: to_pos.center_y,
+                };
+                if state.hovered_node == Some(to_id) {
+                    upstream.push(arrow);
+                } else if state.hovered_node == Some(from_id) {
+                    downstream.push(arrow);
+                }
+            }
         }
     }
 

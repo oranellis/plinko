@@ -316,7 +316,7 @@ impl Page for OverviewPage {
         } else {
             // Trackpad horizontal scroll drives X directly; vertical drives Y.
             if delta_x.abs() > 0.01 {
-                self.state.vel_x += delta_x * 4.0;
+                self.state.vel_x -= delta_x * 4.0;
                 self.state.vel_x = self.state.vel_x.clamp(-300.0, 300.0);
             }
             self.state.vel_y -= delta_y * 4.0;

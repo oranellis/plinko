@@ -204,7 +204,7 @@ impl Page for AllocationPage {
         } else {
             // Trackpad horizontal scroll drives X directly; vertical scrolls X too (legacy).
             if delta_x.abs() > 0.01 {
-                self.state.vel_x += delta_x * 4.0;
+                self.state.vel_x -= delta_x * 4.0;
             } else {
                 self.state.vel_x -= delta_y * 4.0;
             }

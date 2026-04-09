@@ -60,6 +60,9 @@ impl GanttItem {
 #[derive(Clone, Debug, Default)]
 pub struct GanttRow {
     pub items: Vec<GanttItem>,
+    /// When `true` this row renders as a visual separator between active and
+    /// dropped tasks rather than a normal item row.
+    pub is_separator: bool,
 }
 
 // ── Row packing ───────────────────────────────────────────────────────────────
@@ -135,26 +138,33 @@ pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
     };
     let mut rows: Vec<GanttRow> = vec![GanttRow {
         items: vec![plan_start_item],
+        is_separator: false,
     }];
 
-    // Collect all schedulable items.
-    let mut items: Vec<GanttItem> = Vec::new();
+    // Collect all schedulable items, split into active and dropped.
+    let mut active_items: Vec<GanttItem> = Vec::new();
+    let mut dropped_items: Vec<GanttItem> = Vec::new();
     for id in plan.tasks.keys() {
         if let Some((start, end)) = task_display_dates(plan, id) {
-            items.push(GanttItem::Task {
+            let item = GanttItem::Task {
                 id: *id,
                 start,
                 end,
-            });
+            };
+            if plan.task_status(id) == Status::Dropped {
+                dropped_items.push(item);
+            } else {
+                active_items.push(item);
+            }
         }
     }
     for id in plan.milestones.keys() {
         if let Some(date) = plan.node_allocations.milestones.get(id).map(|ma| ma.date()) {
-            items.push(GanttItem::Milestone { id: *id, date });
+            active_items.push(GanttItem::Milestone { id: *id, date });
         }
     }
-    // Sort: milestones before tasks at same depth, then by depth, then by start date.
-    items.sort_by(|a, b| {
+
+    let sort_key = |a: &GanttItem, b: &GanttItem| -> std::cmp::Ordering {
         let depth_a = match a {
             GanttItem::Task { id, .. } => depths.get(&NodeId::Task(*id)).copied().unwrap_or(0),
             GanttItem::Milestone { id, .. } => {
@@ -171,8 +181,6 @@ pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
         };
         let ms_a = matches!(a, GanttItem::Milestone { .. });
         let ms_b = matches!(b, GanttItem::Milestone { .. });
-        // Stable tiebreaker using the node's UUID so the row assignment is
-        // identical for the same plan state, regardless of HashMap iteration order.
         let id_a = match a {
             GanttItem::Task { id, .. } => id.0.to_string(),
             GanttItem::Milestone { id, .. } => id.0.to_string(),
@@ -183,36 +191,57 @@ pub fn pack_rows(plan: &Plan) -> Vec<GanttRow> {
             GanttItem::Milestone { id, .. } => id.0.to_string(),
             GanttItem::PlanStart { .. } => String::new(),
         };
-        // Milestones go first at the same depth.
         depth_a
             .cmp(&depth_b)
             .then(ms_b.cmp(&ms_a))
             .then(a.start().cmp(&b.start()))
             .then(id_a.cmp(&id_b))
-    });
+    };
 
-    for item in items {
-        let item_start = (item.start() - ref_date).num_days();
-        // Include the gap buffer in the end so adjacent items get ROW_GAP_DAYS space.
-        let item_end_with_gap = (item.end() - ref_date).num_days() + ROW_GAP_DAYS;
+    // Sort: milestones before tasks at same depth, then by depth, then by start date.
+    active_items.sort_by(sort_key);
 
-        // Find the first row with no overlapping interval.
-        let target = grid.iter().position(|row_intervals| {
-            row_intervals
-                .iter()
-                .all(|&(s, e)| item_end_with_gap < s || item_start > e)
+    let pack =
+        |items: Vec<GanttItem>, grid: &mut Vec<Vec<(i64, i64)>>, rows: &mut Vec<GanttRow>| {
+            for item in items {
+                let item_start = (item.start() - ref_date).num_days();
+                let item_end_with_gap = (item.end() - ref_date).num_days() + ROW_GAP_DAYS;
+                let target = grid.iter().position(|row_intervals| {
+                    row_intervals
+                        .iter()
+                        .all(|&(s, e)| item_end_with_gap < s || item_start > e)
+                });
+                match target {
+                    Some(idx) => {
+                        grid[idx].push((item_start, item_end_with_gap));
+                        rows[idx].items.push(item);
+                    }
+                    None => {
+                        grid.push(vec![(item_start, item_end_with_gap)]);
+                        rows.push(GanttRow {
+                            items: vec![item],
+                            is_separator: false,
+                        });
+                    }
+                }
+            }
+        };
+
+    pack(active_items, &mut grid, &mut rows);
+
+    // Dropped tasks go below all active rows, packed into their own section.
+    if !dropped_items.is_empty() {
+        dropped_items.sort_by(sort_key);
+        // Insert a blank separator row between active and dropped sections.
+        rows.push(GanttRow {
+            items: vec![],
+            is_separator: true,
         });
-
-        match target {
-            Some(idx) => {
-                grid[idx].push((item_start, item_end_with_gap));
-                rows[idx].items.push(item);
-            }
-            None => {
-                grid.push(vec![(item_start, item_end_with_gap)]);
-                rows.push(GanttRow { items: vec![item] });
-            }
-        }
+        grid.push(vec![]);
+        let mut dropped_grid: Vec<Vec<(i64, i64)>> = Vec::new();
+        let mut dropped_rows: Vec<GanttRow> = Vec::new();
+        pack(dropped_items, &mut dropped_grid, &mut dropped_rows);
+        rows.extend(dropped_rows);
     }
 
     rows
