@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Modal } from "../Modal";
 import type { PlanRequest, PlanResponse } from "../../protocol";
 import { todayIso } from "../../utils/planUtils";
+import { DatePicker } from "./shared/DatePicker";
 
 interface Props {
   sendRequest: (r: PlanRequest) => Promise<PlanResponse>;
@@ -46,11 +47,7 @@ export function NewPlanModal({ sendRequest, onClose }: Props) {
       </div>
       <div className="form-row">
         <label>Start Date</label>
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-        />
+        <DatePicker value={startDate} onChange={setStartDate} placeholder="Plan start date…" />
       </div>
       <div className="form-actions">
         <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
