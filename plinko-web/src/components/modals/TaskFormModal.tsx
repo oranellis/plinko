@@ -188,7 +188,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
   };
 
   return (
-    <Modal title={task ? task.name : "New Task"} onClose={onClose} width={500}>
+    <Modal title={task ? "Edit Task" : "New Task"} onClose={onClose} width={500}>
       {error && (
         <div style={{ color: "#e57373", fontSize: 13, marginBottom: 12 }}>{error}</div>
       )}
