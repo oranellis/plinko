@@ -1,8 +1,10 @@
 mod engine;
 mod monday;
 mod server;
+mod static_server;
 mod ws_server;
 
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use plinko_shared::data::{Plan, Storage};
@@ -75,6 +77,27 @@ fn main() {
     std::thread::spawn(move || {
         ws_server::run_ws_server(engine_ws, storage_ws, ws_port);
     });
+
+    // Serve the React app's built assets on port+2 if the dist directory exists.
+    let static_port = port + 2;
+    let dist_dir: PathBuf = std::env::var("PLINKO_WEB_DIST")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let exe = std::env::current_exe().unwrap_or_default();
+            exe.parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join("plinko-web/dist")
+        });
+    if dist_dir.exists() {
+        std::thread::spawn(move || {
+            static_server::run_static_server(dist_dir, static_port);
+        });
+    } else {
+        eprintln!(
+            "static server: dist dir not found at {}, skipping (run `npm run build` in plinko-web/)",
+            dist_dir.display()
+        );
+    }
 
     server::run_server(engine, storage, port);
 }

@@ -1,0 +1,119 @@
+.settings-page {
+  padding: 32px 40px;
+  overflow-y: auto;
+  height: 100%;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  box-sizing: border-box;
+}
+
+.settings-section {
+  margin-bottom: 36px;
+}
+
+.settings-heading {
+  font-size: 16px;
+  font-weight: 600;
+  color: #d4d4d4;
+  margin: 0 0 14px 0;
+}
+
+.settings-subheading {
+  font-size: 13px;
+  font-weight: 500;
+  color: #999;
+  margin: 20px 0 10px 0;
+}
+
+.settings-row {
+  display: flex;
+  gap: 12px;
+}
+
+.settings-plan-list {
+  border: 1px solid #3a3a3c;
+  border-radius: 6px;
+  overflow-y: auto;
+  max-height: 220px; /* 5 rows approx */
+  background: #252526;
+}
+
+.settings-empty {
+  padding: 16px;
+  color: #666;
+  font-size: 13px;
+  text-align: center;
+}
+
+.settings-plan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2a2c;
+}
+
+.settings-plan-row:last-child {
+  border-bottom: none;
+}
+
+.settings-plan-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.settings-plan-name {
+  font-size: 14px;
+  color: #d4d4d4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-plan-ts {
+  font-size: 11px;
+  color: #666;
+}
+
+.settings-plan-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.settings-monday-btn {
+  width: 100%;
+  max-width: 320px;
+  padding: 10px 0;
+  font-size: 14px;
+}
+
+.settings-identity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-identity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.settings-identity-row input[type="radio"] {
+  accent-color: #4a90d9;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}

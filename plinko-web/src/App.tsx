@@ -1,44 +1,35 @@
-import { usePlan } from "./hooks/usePlan";
-import { Plan } from "./protocol";
+import { PlanProvider, usePlanContext } from "./context/PlanContext";
+import { Toolbar } from "./components/Toolbar";
+import { HomePage } from "./pages/HomePage";
+import { DailyPage } from "./pages/DailyPage";
+import { OverviewPage } from "./pages/OverviewPage";
+import { AllocationPage } from "./pages/AllocationPage";
+import { CalendarPage } from "./pages/CalendarPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import "./App.css";
 
-export default function App() {
-  const { plan, status, sendRequest } = usePlan();
+function PageRouter() {
+  const { page, status } = usePlanContext();
 
-  return (
-    <div className="app">
-      <Toolbar plan={plan} status={status} />
-      <main className="page-area">
-        {status === "connecting" || status === "handshaking" ? (
-          <StatusScreen message="Connecting to Plinko server…" />
-        ) : status === "disconnected" ? (
-          <StatusScreen message="Disconnected — reconnecting…" />
-        ) : status === "error" ? (
-          <StatusScreen message="Protocol error — check server version." error />
-        ) : plan ? (
-          <HomePage plan={plan} sendRequest={sendRequest} />
-        ) : (
-          <StatusScreen message="Waiting for plan data…" />
-        )}
-      </main>
-    </div>
-  );
-}
+  if (status === "connecting" || status === "handshaking") {
+    return <StatusScreen message="Connecting to Plinko server…" />;
+  }
+  if (status === "disconnected") {
+    return <StatusScreen message="Disconnected — reconnecting…" />;
+  }
+  if (status === "error") {
+    return <StatusScreen message="Protocol error — check server version." error />;
+  }
 
-// ── Placeholder components ────────────────────────────────────────────────────
-
-function Toolbar({ plan, status }: { plan: Plan | null; status: string }) {
-  const dot =
-    status === "connected" ? "🟢" : status === "connecting" || status === "handshaking" ? "🟡" : "🔴";
-  return (
-    <header className="toolbar">
-      <span className="toolbar-title">Plinko</span>
-      {plan && <span className="toolbar-plan-name">{plan.name}</span>}
-      <span className="toolbar-status" title={status}>
-        {dot}
-      </span>
-    </header>
-  );
+  switch (page) {
+    case "home": return <HomePage />;
+    case "daily": return <DailyPage />;
+    case "overview": return <OverviewPage />;
+    case "allocation": return <AllocationPage />;
+    case "calendar": return <CalendarPage />;
+    case "settings": return <SettingsPage />;
+    default: return <HomePage />;
+  }
 }
 
 function StatusScreen({ message, error }: { message: string; error?: boolean }) {
@@ -49,43 +40,15 @@ function StatusScreen({ message, error }: { message: string; error?: boolean }) 
   );
 }
 
-function HomePage({
-  plan,
-  sendRequest,
-}: {
-  plan: Plan;
-  sendRequest: ReturnType<typeof usePlan>["sendRequest"];
-}) {
-  const taskCount = Object.keys(plan.tasks).length;
-  const milestoneCount = Object.keys(plan.milestones).length;
-  const userCount = Object.keys(plan.users_data).length;
-
+export default function App() {
   return (
-    <div className="home-page">
-      <h1>{plan.name}</h1>
-      <div className="summary-cards">
-        <SummaryCard label="Tasks" value={taskCount} />
-        <SummaryCard label="Milestones" value={milestoneCount} />
-        <SummaryCard label="Team members" value={userCount} />
+    <PlanProvider>
+      <div className="app">
+        <Toolbar />
+        <main className="page-area">
+          <PageRouter />
+        </main>
       </div>
-      <p className="home-hint">
-        Full page navigation coming soon. More pages will appear here as the migration progresses.
-      </p>
-      <button
-        className="btn"
-        onClick={() => sendRequest("RunScheduler").catch(console.error)}
-      >
-        Run Scheduler
-      </button>
-    </div>
-  );
-}
-
-function SummaryCard({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="summary-card">
-      <span className="summary-value">{value}</span>
-      <span className="summary-label">{label}</span>
-    </div>
+    </PlanProvider>
   );
 }
