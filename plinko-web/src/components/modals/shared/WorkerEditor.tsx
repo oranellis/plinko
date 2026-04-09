@@ -150,7 +150,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
                   padding: "0 8px",
                   gap: 6,
                 }}>
-                  {/* T/P type toggle — P (Placeholder/tags) first, T (specific person) second */}
+                  {/* T/P type toggle — T (tags/Placeholder) first, P (person/Specific) second */}
                   <div style={{
                     display: "flex",
                     border: "1px solid #3a3a3c",
@@ -175,7 +175,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
                           borderRight: ti === 0 ? "1px solid #3a3a3c" : "none",
                         }}
                       >
-                        {t === "Specific" ? "T" : "P"}
+                        {t === "Specific" ? "P" : "T"}
                       </button>
                     ))}
                   </div>
@@ -241,9 +241,9 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
                       border: "none",
                       color: "#555",
                       cursor: "pointer",
-                      fontSize: 16,
+                      fontSize: 20,
                       lineHeight: 1,
-                      padding: "2px 4px",
+                      padding: "4px 8px",
                       flexShrink: 0,
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.color = "#e57373")}
