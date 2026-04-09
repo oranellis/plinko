@@ -32,7 +32,7 @@ const MIN_DAY_W = 8;
 const MAX_DAY_W = 80;
 
 export function OverviewPage() {
-  const { plan, sendRequest, setToolbarActions } = usePlanContext();
+  const { plan, sendRequest, setToolbarActions, setToolbarRightActions } = usePlanContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -86,15 +86,19 @@ export function OverviewPage() {
           const today = formatDate(new Date());
           const offset = daysBetween(p.start_date, today);
           setScrollX(Math.max(-sw / 2, offset * dw - sw / 2));
-        }}><IconToday size={16} /></button>
-        <button className="toolbar-btn" title="Add task" onClick={() => setEditTaskIdRef.current("new")}><IconAddTask size={16} /></button>
-        <button className="toolbar-btn" title="Add milestone" onClick={() => setEditMsIdRef.current("new")}><IconAddMilestone size={16} /></button>
-        <button className="toolbar-btn" title="Search" onClick={() => setShowSearchRef.current(true)}><IconSearch size={16} /></button>
-        <button className="toolbar-btn" title="Users" onClick={() => setShowUsersRef.current(true)}><IconUsers size={16} /></button>
-        <button className="toolbar-btn" title="Settings" onClick={() => setShowSettingsRef.current(true)}><IconSettings size={16} /></button>
+        }}><IconToday size={24} /></button>
+        <button className="toolbar-btn" title="Add task" onClick={() => setEditTaskIdRef.current("new")}><IconAddTask size={24} /></button>
+        <button className="toolbar-btn" title="Add milestone" onClick={() => setEditMsIdRef.current("new")}><IconAddMilestone size={24} /></button>
+        <button className="toolbar-btn" title="Search" onClick={() => setShowSearchRef.current(true)}><IconSearch size={24} /></button>
       </>
     );
-    return () => setToolbarActions(null);
+    setToolbarRightActions(
+      <>
+        <button className="toolbar-btn" title="Users" onClick={() => setShowUsersRef.current(true)}><IconUsers size={24} /></button>
+        <button className="toolbar-btn" title="Settings" onClick={() => setShowSettingsRef.current(true)}><IconSettings size={24} /></button>
+      </>
+    );
+    return () => { setToolbarActions(null); setToolbarRightActions(null); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize observer
@@ -262,8 +266,8 @@ export function OverviewPage() {
     // Map from item id → center point for dependency arrow drawing
     const itemCenters = new Map<string, { x: number; y: number; ex: number }>();
 
-    const BAR_PAD_Y = Math.round(ROW_H * 0.2);
-    const BAR_PAD_X = dayW * 0.2;
+    const BAR_PAD_Y = Math.round(ROW_H * 0.12);
+    const BAR_PAD_X = dayW * 0.12;
     const barH = ROW_H - BAR_PAD_Y * 2;
     const targetId = plan.scheduler_target
       ? (typeof plan.scheduler_target === "object" && "Task" in plan.scheduler_target ? plan.scheduler_target.Task :
@@ -303,20 +307,20 @@ export function OverviewPage() {
       const isTarget = targetId === item.id;
 
       if (item.type === "task") {
-        ctx.fillStyle = isHovered || isFlashing ? lighten(color) : color;
-        roundRect(ctx, x, y, barW, barH, 3);
+        ctx.fillStyle = color;
+        roundRect(ctx, x, y, barW, barH, 6);
         ctx.fill();
 
         // Border: coloured for dep relationships, gold for target
         const borderColor = isTarget ? "#ffd600"
-          : isHovered ? "#1e88e5"
+          : isHovered || isFlashing ? "#1e88e5"
           : isDepOf ? "#fc1ef1"
           : isDependent ? "#07fcd7"
           : null;
         if (borderColor) {
           ctx.strokeStyle = borderColor;
-          ctx.lineWidth = isTarget ? 2 : 1.5;
-          roundRect(ctx, x, y, barW, barH, 3);
+          ctx.lineWidth = isTarget ? 3 : 2.5;
+          roundRect(ctx, x, y, barW, barH, 6);
           ctx.stroke();
           ctx.lineWidth = 1;
         }
@@ -324,7 +328,7 @@ export function OverviewPage() {
         // Label
         const label = displayName(item.name, item.contextLabel);
         const isInProgress = item.status === "InProgress";
-        ctx.fillStyle = isHovered ? "#fff" : isInProgress ? "rgba(0,0,0,0.85)" : "rgba(255,255,255,0.9)";
+        ctx.fillStyle = isInProgress ? "rgba(0,0,0,0.85)" : "rgba(255,255,255,0.9)";
         ctx.font = "16px sans-serif";
         ctx.textBaseline = "middle";
         ctx.save();
@@ -342,7 +346,7 @@ export function OverviewPage() {
         const cx = x + dayW / 2;
         const cy = rowY + ROW_H / 2;
         const r = 10;
-        ctx.fillStyle = isHovered || isFlashing ? lighten("#e0c040") : "#e0c040";
+        ctx.fillStyle = "#e0c040";
         ctx.beginPath();
         ctx.moveTo(cx, cy - r);
         ctx.lineTo(cx + r, cy);
@@ -353,13 +357,13 @@ export function OverviewPage() {
 
         // Border
         const borderColor = isTarget ? "#ffd600"
-          : isHovered ? "#1e88e5"
+          : isHovered || isFlashing ? "#1e88e5"
           : isDepOf ? "#fc1ef1"
           : isDependent ? "#07fcd7"
           : null;
         if (borderColor) {
           ctx.strokeStyle = borderColor;
-          ctx.lineWidth = isTarget ? 2 : 1.5;
+          ctx.lineWidth = isTarget ? 3 : 2.5;
           ctx.beginPath();
           ctx.moveTo(cx, cy - r);
           ctx.lineTo(cx + r, cy);
@@ -630,12 +634,4 @@ function roundRect(
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
-}
-
-function lighten(hex: string): string {
-  const c = parseInt(hex.slice(1), 16);
-  const r = Math.min(255, ((c >> 16) & 0xff) + 40);
-  const g = Math.min(255, ((c >> 8) & 0xff) + 40);
-  const b = Math.min(255, (c & 0xff) + 40);
-  return `rgb(${r},${g},${b})`;
 }

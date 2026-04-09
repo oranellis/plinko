@@ -3,7 +3,7 @@ import { IconBack } from "./icons";
 import "./Toolbar.css";
 
 export function Toolbar() {
-  const { plan, status, page, setPage, toolbarActions } = usePlanContext();
+  const { plan, status, page, setPage, toolbarActions, toolbarRightActions } = usePlanContext();
 
   const isHome = page === "home";
 
@@ -25,6 +25,7 @@ export function Toolbar() {
         {plan?.name ?? "Plinko"}
       </span>
       <div className="toolbar-right">
+        {toolbarRightActions}
         <span
           className={`toolbar-status toolbar-status--${status}`}
           title={status}

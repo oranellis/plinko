@@ -19,6 +19,8 @@ interface PlanContextValue {
   setPage: (p: PageId) => void;
   toolbarActions: React.ReactNode;
   setToolbarActions: (actions: React.ReactNode) => void;
+  toolbarRightActions: React.ReactNode;
+  setToolbarRightActions: (actions: React.ReactNode) => void;
 }
 
 const PlanContext = createContext<PlanContextValue | null>(null);
@@ -27,9 +29,10 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
   const planData = usePlan();
   const [page, setPage] = React.useState<PageId>("home");
   const [toolbarActions, setToolbarActions] = React.useState<React.ReactNode>(null);
+  const [toolbarRightActions, setToolbarRightActions] = React.useState<React.ReactNode>(null);
 
   return (
-    <PlanContext.Provider value={{ ...planData, page, setPage, toolbarActions, setToolbarActions }}>
+    <PlanContext.Provider value={{ ...planData, page, setPage, toolbarActions, setToolbarActions, toolbarRightActions, setToolbarRightActions }}>
       {children}
     </PlanContext.Provider>
   );
