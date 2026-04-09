@@ -218,6 +218,7 @@ impl Page for SettingsPage {
     fn on_scroll(
         &mut self,
         delta_y: f32,
+        _delta_x: f32,
         _shift: bool,
         width: f32,
         height: f32,

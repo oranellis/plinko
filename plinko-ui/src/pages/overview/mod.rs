@@ -297,6 +297,7 @@ impl Page for OverviewPage {
     fn on_scroll(
         &mut self,
         delta_y: f32,
+        delta_x: f32,
         shift: bool,
         _width: f32,
         _height: f32,
@@ -313,6 +314,11 @@ impl Page for OverviewPage {
                 (self.state.zoom_target * factor).clamp(GANTT_ZOOM_MIN, GANTT_ZOOM_MAX);
             DirtyRegion::PageOnly
         } else {
+            // Trackpad horizontal scroll drives X directly; vertical drives Y.
+            if delta_x.abs() > 0.01 {
+                self.state.vel_x += delta_x * 4.0;
+                self.state.vel_x = self.state.vel_x.clamp(-300.0, 300.0);
+            }
             self.state.vel_y -= delta_y * 4.0;
             self.state.vel_y = self.state.vel_y.clamp(-300.0, 300.0);
             DirtyRegion::PageOnly

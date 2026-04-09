@@ -679,9 +679,11 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 if let AppState::InPage(_) = self.app_state {
-                    let delta_y = match delta {
-                        MouseScrollDelta::LineDelta(_, y) => y,
-                        MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 40.0,
+                    let (delta_x, delta_y) = match delta {
+                        MouseScrollDelta::LineDelta(x, y) => (x, y),
+                        MouseScrollDelta::PixelDelta(pos) => {
+                            (pos.x as f32 / 40.0, pos.y as f32 / 40.0)
+                        }
                     };
                     let (width, height) = self.logical_size();
                     let plan = self.engine.plan();
@@ -694,7 +696,7 @@ impl ApplicationHandler for Application {
                         let dirty = self
                             .pages
                             .active_page_mut()
-                            .on_scroll(delta_y, shift, width, height, plan);
+                            .on_scroll(delta_y, delta_x, shift, width, height, plan);
                         self.mark_dirty(dirty);
                     }
                 }

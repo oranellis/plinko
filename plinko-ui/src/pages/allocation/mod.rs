@@ -182,6 +182,7 @@ impl Page for AllocationPage {
     fn on_scroll(
         &mut self,
         delta_y: f32,
+        delta_x: f32,
         shift: bool,
         _width: f32,
         height: f32,
@@ -201,7 +202,12 @@ impl Page for AllocationPage {
             self.state.zoom_target =
                 (self.state.zoom_target * factor).clamp(GANTT_ZOOM_MIN, GANTT_ZOOM_MAX);
         } else {
-            self.state.vel_x -= delta_y * 4.0;
+            // Trackpad horizontal scroll drives X directly; vertical scrolls X too (legacy).
+            if delta_x.abs() > 0.01 {
+                self.state.vel_x += delta_x * 4.0;
+            } else {
+                self.state.vel_x -= delta_y * 4.0;
+            }
             self.state.vel_x = self.state.vel_x.clamp(-300.0, 300.0);
         }
         DirtyRegion::PageOnly

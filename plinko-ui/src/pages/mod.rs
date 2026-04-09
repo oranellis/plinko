@@ -77,10 +77,12 @@ pub trait Page {
     /// Called on mouse-wheel scroll events while this page is active.
     ///
     /// `delta_y` is positive = scroll up / zoom in, negative = scroll down / zoom out.
+    /// `delta_x` is positive = scroll right, negative = scroll left (trackpad horizontal).
     /// `shift` is true when the Shift modifier is held.
     fn on_scroll(
         &mut self,
         _delta_y: f32,
+        _delta_x: f32,
         _shift: bool,
         _width: f32,
         _height: f32,
