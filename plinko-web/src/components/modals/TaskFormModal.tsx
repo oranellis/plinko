@@ -1,9 +1,11 @@
 import { useState } from "react";
+import type React from "react";
 import { Modal } from "../Modal";
 import type { DateConstraint, Dependency, Milestone, NodeId, Plan, PlanRequest, PlanResponse, Status, Task, TaskId, TaskPatch, WorkerSlot } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
 import { WorkerEditor } from "./shared/WorkerEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
+import { SegmentedControl } from "./shared/SegmentedControl";
 import { STATUS_LABELS } from "../../utils/planUtils";
 import { v4 as uuidv4 } from "uuid";
 
@@ -211,70 +213,111 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
       {/* Status */}
       <div className="form-row">
         <label>Status</label>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {STATUSES.map((s) => (
-            <label
-              key={s}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                fontSize: 12,
-                cursor: "pointer",
-                color: "#d4d4d4",
-              }}
-            >
-              <input
-                type="radio"
-                name="task-status"
-                checked={status === s}
-                onChange={() => setStatus(s)}
-              />
-              {STATUS_LABELS[s]}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {/* Duration */}
-      <div className="form-row">
-        <label>Duration (days, 0 = derive from workload)</label>
-        <input
-          type="number"
-          min={0}
-          step={0.5}
-          value={durationDays}
-          onChange={(e) => setDurationDays(e.target.value)}
-          style={{ maxWidth: 120 }}
+        <SegmentedControl
+          options={STATUSES.map((s) => STATUS_LABELS[s])}
+          selected={STATUSES.indexOf(status)}
+          onChange={(i) => setStatus(STATUSES[i])}
         />
       </div>
 
-      {/* Relaxed mode */}
-      <div className="form-row">
-        <label
-          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-        >
+      {/* Duration + Mode (two columns) */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            Duration (days, 0 = from workload)
+          </label>
           <input
-            type="checkbox"
-            checked={relaxed}
-            onChange={(e) => setRelaxed(e.target.checked)}
+            type="number"
+            min={0}
+            step={0.5}
+            value={durationDays}
+            onChange={(e) => setDurationDays(e.target.value)}
+            style={{
+              background: "#1e1e1e",
+              border: "1px solid #3a3a3c",
+              borderRadius: 4,
+              color: "#d4d4d4",
+              fontSize: 13,
+              padding: "0 10px",
+              outline: "none",
+              width: "100%",
+              boxSizing: "border-box",
+              height: 30,
+            }}
           />
-          Relaxed mode (workers don't need to share same days)
-        </label>
+        </div>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+            Mode
+          </label>
+          <button
+            onClick={() => setRelaxed(!relaxed)}
+            style={{
+              background: relaxed ? "#3a3a3c" : "#4a90d9",
+              border: "1px solid #3a3a3c",
+              borderRadius: 4,
+              color: relaxed ? "#d4d4d4" : "#fff",
+              fontSize: 13,
+              fontWeight: relaxed ? 400 : 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              height: 30,
+              width: "100%",
+            }}
+          >
+            {relaxed ? "Relaxed" : "Strict"}
+          </button>
+        </div>
       </div>
 
       <ConstraintEditor value={constraint} onChange={setConstraint} />
 
-      {/* Actual start */}
-      <div className="form-row">
-        <label>Actual Start</label>
-        <input
-          type="date"
-          value={actualStart}
-          onChange={(e) => setActualStart(e.target.value)}
-          style={{ maxWidth: 200 }}
-        />
-      </div>
+      {/* Actual dates (two columns) */}
+      {(() => {
+        const startDisabled = status === "NotStarted";
+        const endDisabled = status !== "Complete" && status !== "Dropped";
+        const dateInputStyle = (disabled: boolean): React.CSSProperties => ({
+          background: disabled ? "#1a1a1c" : "#1e1e1e",
+          border: "1px solid #3a3a3c",
+          borderRadius: 4,
+          color: disabled ? "#555" : "#d4d4d4",
+          fontSize: 13,
+          padding: "0 10px",
+          outline: "none",
+          width: "100%",
+          boxSizing: "border-box",
+          height: 30,
+          cursor: disabled ? "not-allowed" : "auto",
+        });
+        return (
+          <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Actual Start
+              </label>
+              <input
+                type="date"
+                value={actualStart}
+                disabled={startDisabled}
+                onChange={(e) => setActualStart(e.target.value)}
+                style={dateInputStyle(startDisabled)}
+              />
+            </div>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Actual End
+              </label>
+              <input
+                type="date"
+                value={""}
+                disabled={endDisabled}
+                style={dateInputStyle(endDisabled)}
+                readOnly
+              />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Workers */}
       <WorkerEditor workers={workers} plan={plan} onChange={setWorkers} />
