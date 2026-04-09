@@ -263,8 +263,9 @@ export function OverviewPage() {
     ctx.rect(0, clipTop, w, h - clipTop);
     ctx.clip();
 
-    // Map from item id → center point for dependency arrow drawing
-    const itemCenters = new Map<string, { x: number; y: number; ex: number }>();
+    // Map from item id → day-center anchors for dependency arrow drawing
+    // xIn = center of start-day column, xOut = center of end-day column, y = row center
+    const itemCenters = new Map<string, { xIn: number; xOut: number; y: number }>();
 
     const BAR_PAD_Y = Math.round(ROW_H * 0.12);
     const BAR_PAD_X = dayW * 0.12;
@@ -289,6 +290,47 @@ export function OverviewPage() {
       }
     }
 
+    // Pass 1: pre-compute day-center anchors for all items
+    for (const item of items) {
+      const rowY = HEADER_H + item.row * ROW_H - scrollY;
+      const startOff = daysBetween(startDate, item.start);
+      const endOff = daysBetween(startDate, item.end) + 1;
+      const xIn = startOff * dayW + dayW / 2 - scrollX;
+      const xOut = (endOff - 1) * dayW + dayW / 2 - scrollX;
+      itemCenters.set(item.id, { xIn, xOut, y: rowY + ROW_H / 2 });
+    }
+
+    // Pass 2: draw dependency lines (behind items)
+    if (hoverId && itemCenters.has(hoverId)) {
+      const hc = itemCenters.get(hoverId)!;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+
+      for (const depId of hoveredDeps) {
+        const dc = itemCenters.get(depId);
+        if (!dc) continue;
+        ctx.strokeStyle = "rgba(252,30,241,0.66)";
+        ctx.beginPath();
+        ctx.moveTo(dc.xOut, dc.y);
+        ctx.lineTo(hc.xIn, hc.y);
+        ctx.stroke();
+      }
+
+      for (const depId of hoveredDependents) {
+        const dc = itemCenters.get(depId);
+        if (!dc) continue;
+        ctx.strokeStyle = "rgba(7,252,215,0.66)";
+        ctx.beginPath();
+        ctx.moveTo(hc.xOut, hc.y);
+        ctx.lineTo(dc.xIn, dc.y);
+        ctx.stroke();
+      }
+
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1;
+    }
+
+    // Pass 3: draw items on top of dep lines
     for (const item of items) {
       const rowY = HEADER_H + item.row * ROW_H - scrollY;
       if (rowY + ROW_H < HEADER_H || rowY > h) continue;
@@ -320,7 +362,7 @@ export function OverviewPage() {
           : null;
         if (borderColor) {
           ctx.strokeStyle = borderColor;
-          ctx.lineWidth = isFlashing ? 4 : isTarget ? 3 : 2.5;
+          ctx.lineWidth = isFlashing ? 4 : isTarget ? 3 : isHovered ? 3.5 : 3;
           roundRect(ctx, x, y, barW, barH, 6);
           ctx.stroke();
           ctx.lineWidth = 1;
@@ -340,7 +382,6 @@ export function OverviewPage() {
         ctx.restore();
         ctx.textBaseline = "alphabetic";
 
-        itemCenters.set(item.id, { x, y: rowY + ROW_H / 2, ex: x + barW });
         hitRectsRef.current.push({ id: item.id, x, y, w: barW, h: barH });
       } else {
         // Milestone diamond
@@ -365,7 +406,7 @@ export function OverviewPage() {
           : null;
         if (borderColor) {
           ctx.strokeStyle = borderColor;
-          ctx.lineWidth = isFlashing ? 4 : isTarget ? 3 : 2.5;
+          ctx.lineWidth = isFlashing ? 4 : isTarget ? 3 : isHovered ? 3.5 : 3;
           ctx.beginPath();
           ctx.moveTo(cx, cy - r);
           ctx.lineTo(cx + r, cy);
@@ -393,41 +434,8 @@ export function OverviewPage() {
           ctx.textBaseline = "alphabetic";
         }
 
-        itemCenters.set(item.id, { x: cx - r, y: cy, ex: cx + r });
         hitRectsRef.current.push({ id: item.id, x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
       }
-    }
-
-    // === HOVER DEPENDENCY ARROWS ===
-    if (hoverId && itemCenters.has(hoverId)) {
-      const hc = itemCenters.get(hoverId)!;
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-
-      // Draw lines to predecessors (items this depends on)
-      for (const depId of hoveredDeps) {
-        const dc = itemCenters.get(depId);
-        if (!dc) continue;
-        ctx.strokeStyle = "rgba(252,30,241,0.66)";
-        ctx.beginPath();
-        ctx.moveTo(dc.ex, dc.y);
-        ctx.lineTo(hc.x, hc.y);
-        ctx.stroke();
-      }
-
-      // Draw lines to successors (items that depend on this)
-      for (const depId of hoveredDependents) {
-        const dc = itemCenters.get(depId);
-        if (!dc) continue;
-        ctx.strokeStyle = "rgba(7,252,215,0.66)";
-        ctx.beginPath();
-        ctx.moveTo(hc.ex, hc.y);
-        ctx.lineTo(dc.x, dc.y);
-        ctx.stroke();
-      }
-
-      ctx.setLineDash([]);
-      ctx.lineWidth = 1;
     }
 
     // === HOVER INFO PANEL (bottom-left) ===
@@ -435,7 +443,7 @@ export function OverviewPage() {
       const panelPad = 10;
       const margin = 8;
       const lineGap = 4;
-      const titleSize = 24;
+      const titleSize = 20;
       const bodySize = 15;
 
       // Build lines
@@ -446,7 +454,7 @@ export function OverviewPage() {
       const ms = plan.milestones[msId];
 
       if (task) {
-        const tname = task.context_label ? `[${task.context_label}] ${task.name}` : task.name;
+        const tname = task.context_label ? `${task.name} | ${task.context_label}` : task.name;
         lines.push(tname);
         const taskState = plan.node_allocations.tasks[taskId];
         const status = taskState?.status ?? "Unknown";
@@ -478,7 +486,7 @@ export function OverviewPage() {
         });
         if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
       } else if (ms) {
-        const mname = ms.context_label ? `[${ms.context_label}] ${ms.name}` : ms.name;
+        const mname = ms.context_label ? `${ms.name} | ${ms.context_label}` : ms.name;
         lines.push(mname);
         lines.push("Milestone");
         const msState = plan.node_allocations.milestones[msId];
@@ -491,7 +499,7 @@ export function OverviewPage() {
         ctx.scale(dpr, dpr);
 
         // Measure
-        ctx.font = `bold ${titleSize}px sans-serif`;
+        ctx.font = `${titleSize}px sans-serif`;
         const titleW = ctx.measureText(lines[0]).width;
         ctx.font = `${bodySize}px sans-serif`;
         const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
@@ -521,7 +529,7 @@ export function OverviewPage() {
         ctx.stroke();
 
         // Title line
-        ctx.font = `bold ${titleSize}px sans-serif`;
+        ctx.font = `${titleSize}px sans-serif`;
         ctx.fillStyle = "#d4d4d4";
         ctx.textBaseline = "top";
         ctx.fillText(lines[0], px + panelPad, py + panelPad);
