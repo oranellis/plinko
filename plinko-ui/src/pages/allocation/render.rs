@@ -94,7 +94,10 @@ fn tasks_for_user<'a>(plan: &'a Plan, user_id: &UserId) -> Vec<(&'a TaskId, Stri
             let name = plan
                 .tasks
                 .get(id)
-                .map(|t| t.name.clone())
+                .map(|t| match &t.context_label {
+                    Some(ctx) => format!("{} | {}", t.name, ctx),
+                    None => t.name.clone(),
+                })
                 .unwrap_or_default();
             (id, name)
         })
