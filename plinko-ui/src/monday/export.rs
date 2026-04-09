@@ -56,6 +56,9 @@ enum PushKind {
 /// `done` is incremented after every completed operation so callers can display
 /// live progress.
 ///
+/// `status_msg` is updated with a human-readable phase description throughout
+/// the operation so the UI can show more than just the progress counter.
+///
 /// Returns the human-readable status message and the fully-updated item→node map
 /// (existing + newly-created entries). Callers should persist this map.
 pub fn export_to_monday_diff(
@@ -64,7 +67,15 @@ pub fn export_to_monday_diff(
     plan: &Plan,
     item_node_map: &[ItemNodeMapping],
     progress: &Arc<Mutex<Option<(usize, usize)>>>,
+    status_msg: &Arc<Mutex<String>>,
 ) -> Result<(String, Vec<ItemNodeMapping>), MondayApiError> {
+    let set_status = |msg: &str| {
+        eprintln!("[push] {msg}");
+        if let Ok(mut g) = status_msg.lock() {
+            *g = msg.to_string();
+        }
+    };
+
     let timeline_col = &config.column_map.timeline_column_id;
     let status_col = &config.column_map.status_column_id;
     let dep_col = &config.column_map.dependency_column_id;
@@ -78,6 +89,7 @@ pub fn export_to_monday_diff(
     }
 
     // ── Phase 1: fetch current Monday state ───────────────────────────────────
+    set_status("Fetching current Monday board state...");
     let monday_items = client.fetch_items(
         &config.board_id,
         person_col,
@@ -168,7 +180,10 @@ pub fn export_to_monday_diff(
         .collect();
 
     if !unmapped_tasks.is_empty() || !unmapped_milestones.is_empty() {
-        // Find or create the "From Plinko" group on the parent board.
+        set_status(&format!(
+            "Creating {} new item(s) on Monday...",
+            unmapped_tasks.len() + unmapped_milestones.len()
+        ));
         let groups = client.fetch_groups(&config.board_id)?;
         let group_id =
             if let Some((id, _)) = groups.iter().find(|(_, title)| title == FROM_PLINKO_GROUP) {
@@ -253,6 +268,7 @@ pub fn export_to_monday_diff(
     };
 
     // ── Phase 2: compute diff ─────────────────────────────────────────────────
+    set_status("Computing changes...");
     let mut ops: Vec<PushOp> = Vec::new();
     let mut skipped = 0usize;
 
@@ -464,6 +480,7 @@ pub fn export_to_monday_diff(
 
     // ── Phase 3: execute ops with progress tracking ───────────────────────────
     let total = ops.len();
+    eprintln!("[push] Phase 3: {total} ops to execute ({skipped} items skipped)");
     *progress.lock().unwrap() = Some((0, total));
 
     if total == 0 {
@@ -474,13 +491,30 @@ pub fn export_to_monday_diff(
         } else {
             format!("Nothing to update ({skipped} items skipped — already up to date).")
         };
+        set_status(&msg);
         return Ok((msg, working_map));
     }
+
+    set_status(&format!("Pushing {total} update(s) to Monday..."));
 
     let mut updated = 0usize;
     let mut failed = 0usize;
 
     for (i, op) in ops.into_iter().enumerate() {
+        let kind_label = match &op.kind {
+            PushKind::Timeline { .. } => "timeline",
+            PushKind::Status { .. } => "status",
+            PushKind::Deps { .. } => "deps",
+            PushKind::Person { .. } => "person",
+            PushKind::Workload { .. } => "workload",
+            PushKind::Name { .. } => "name",
+        };
+        eprintln!(
+            "[push] [{kind_label}] item {} ({}/{})",
+            op.item_id,
+            i + 1,
+            total
+        );
         let result = match op.kind {
             PushKind::Timeline {
                 from,
