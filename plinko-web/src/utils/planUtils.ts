@@ -2,17 +2,7 @@
  * Shared utility helpers for the Plinko React UI.
  */
 
-import {
-  IsoDate,
-  MilestoneId,
-  NodeAllocations,
-  NodeId,
-  Plan,
-  Status,
-  Task,
-  TaskId,
-  WorkerSlot,
-} from "../protocol";
+import type { IsoDate, MilestoneId, NodeAllocations, NodeId, Plan, Status, Task, TaskId, WorkerSlot } from "../protocol";
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 

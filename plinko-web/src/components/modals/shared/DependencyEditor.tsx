@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Dependency, NodeId, Plan } from "../../../protocol";
+import type { Dependency, NodeId, Plan } from "../../../protocol";
 
 interface Props {
   label: string;

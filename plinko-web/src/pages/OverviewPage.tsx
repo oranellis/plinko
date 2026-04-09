@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
-import { MilestoneId, TaskId } from "../protocol";
+import type { MilestoneId, TaskId } from "../protocol";
 import {
-  GanttItem,
   STATUS_COLORS,
   addDays,
   daysBetween,
@@ -72,7 +71,6 @@ export function OverviewPage() {
   }, [plan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const items = plan ? packGanttRows(plan) : [];
-  const totalRows = items.reduce((m, it) => Math.max(m, it.row + 1), 0);
 
   // Hit-test refs (populated during render)
   const hitRectsRef = useRef<{ id: string; x: number; y: number; w: number; h: number }[]>([]);
@@ -310,13 +308,11 @@ export function OverviewPage() {
     setFlashId(id);
     let count = 0;
     const flash = () => {
-      setFlashId((fid) => (count++ % 2 === 0 ? id : null));
+      setFlashId(() => (count++ % 2 === 0 ? id : null));
       if (count < 6) setTimeout(flash, 250);
     };
     setTimeout(flash, 100);
   };
-
-  const totalHeight = totalRows * ROW_H + HEADER_H;
 
   return (
     <div className="overview-page" ref={containerRef}>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import { Plan, PlanRequest, PlanResponse, UserId, Weekday, WorkSchedule } from "../../protocol";
+import type { Plan, PlanRequest, PlanResponse, UserId, Weekday, WorkSchedule } from "../../protocol";
 
 const WEEKDAYS: Weekday[] = [
   "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
-import { TaskId, UserId, WorkSegment } from "../protocol";
+import type { TaskId, UserId, WorkSegment } from "../protocol";
 import {
   STATUS_COLORS,
   addDays,

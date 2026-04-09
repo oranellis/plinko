@@ -1,4 +1,4 @@
-import { PageId, usePlanContext } from "../context/PlanContext";
+import { type PageId, usePlanContext } from "../context/PlanContext";
 import "./HomePage.css";
 
 interface NavCard {

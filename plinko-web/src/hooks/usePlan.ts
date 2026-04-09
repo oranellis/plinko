@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ClientMessage,
-  Plan,
-  PlanRequest,
-  PlanResponse,
-  PROTOCOL_VERSION,
-  ServerMessage,
-} from "../protocol";
+import type { ClientMessage, Plan, PlanRequest, PlanResponse, ServerMessage } from "../protocol";
+import { PROTOCOL_VERSION } from "../protocol";
 
 export type ConnectionStatus = "connecting" | "handshaking" | "connected" | "disconnected" | "error";
 

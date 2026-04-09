@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import { Plan, PlanRequest, PlanResponse, TagId } from "../../protocol";
+import type { Plan, PlanRequest, PlanResponse, TagId } from "../../protocol";
 
 interface Props {
   plan: Plan;

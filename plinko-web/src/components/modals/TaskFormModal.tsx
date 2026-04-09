@@ -1,17 +1,6 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import {
-  DateConstraint,
-  Dependency,
-  Plan,
-  PlanRequest,
-  PlanResponse,
-  Status,
-  Task,
-  TaskPatch,
-  UserId,
-  WorkerSlot,
-} from "../../protocol";
+import type { DateConstraint, Dependency, Plan, PlanRequest, PlanResponse, Status, Task, TaskPatch, UserId, WorkerSlot } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
 import { STATUS_LABELS, workerUserId, workerWorkload } from "../../utils/planUtils";
@@ -82,7 +71,6 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
             duration_days_target: dur,
             workers,
             dependencies,
-            required_tags: [],
             relaxed_mode: relaxed,
             actual_start: actualStartVal,
             context_label: null,

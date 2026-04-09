@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { DateConstraint, ConstraintKind } from "../../../protocol";
+import type { DateConstraint, ConstraintKind } from "../../../protocol";
 
 interface Props {
   value: DateConstraint | null;

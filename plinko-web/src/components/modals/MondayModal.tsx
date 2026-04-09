@@ -1,15 +1,6 @@
 import { useEffect, useState } from "react";
 import { Modal } from "../Modal";
-import {
-  BoardColumn,
-  MondayConfig,
-  MondayUser,
-  Plan,
-  PlanRequest,
-  PlanResponse,
-  Status,
-  UserId,
-} from "../../protocol";
+import type { MondayConfig, Status, UserId } from "../../protocol";
 import { usePlanContext } from "../../context/PlanContext";
 
 interface Props {
@@ -42,8 +33,6 @@ export function MondayModal({ planId, onClose }: Props) {
   const { plan, sendRequest, monday } = usePlanContext();
   const [token, setToken] = useState("");
   const [config, setConfig] = useState<MondayConfig>(DEFAULT_CONFIG);
-  const [boardUsers, setBoardUsers] = useState<MondayUser[]>([]);
-  const [statusLabels, setStatusLabels] = useState<string[]>([]);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -84,8 +73,6 @@ export function MondayModal({ planId, onClose }: Props) {
       });
       if (typeof resp === "object" && "MondayBoardInfo" in resp) {
         const info = resp.MondayBoardInfo;
-        setBoardUsers(info.users);
-        setStatusLabels(info.status_labels);
         // Auto-populate user mappings for new users
         setConfig((c) => {
           const existing = new Set(c.user_mappings.map((m) => m.monday_user_id));

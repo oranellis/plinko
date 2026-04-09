@@ -1,6 +1,6 @@
 import React, { createContext, useContext } from "react";
-import { Plan, PlanRequest, PlanResponse } from "../protocol";
-import { ConnectionStatus, MondayState, usePlan } from "../hooks/usePlan";
+import type { Plan, PlanRequest, PlanResponse } from "../protocol";
+import { type ConnectionStatus, type MondayState, usePlan } from "../hooks/usePlan";
 
 export type PageId =
   | "home"

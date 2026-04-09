@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import { PlanRequest, PlanResponse } from "../../protocol";
+import type { PlanRequest, PlanResponse } from "../../protocol";
 import { todayIso } from "../../utils/planUtils";
 
 interface Props {

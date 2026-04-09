@@ -1,15 +1,6 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import {
-  DateConstraint,
-  Dependency,
-  Milestone,
-  MilestonePatch,
-  NodeId,
-  Plan,
-  PlanRequest,
-  PlanResponse,
-} from "../../protocol";
+import type { DateConstraint, Dependency, Milestone, MilestonePatch, Plan, PlanRequest, PlanResponse } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
 import { v4 as uuidv4 } from "uuid";
@@ -77,12 +68,6 @@ export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Pr
     } finally {
       setSaving(false);
     }
-  };
-
-  const nodeId = (n: NodeId): string => {
-    if (n === "PlanStart") return "PlanStart";
-    if ("Task" in n) return n.Task;
-    return n.Milestone;
   };
 
   return (

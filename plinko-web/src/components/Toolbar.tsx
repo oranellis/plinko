@@ -1,4 +1,4 @@
-import { PageId, usePlanContext } from "../context/PlanContext";
+import { usePlanContext } from "../context/PlanContext";
 import "./Toolbar.css";
 
 export function Toolbar() {

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import { Plan, PlanRequest, PlanResponse, User, UserId } from "../../protocol";
+import type { Plan, PlanRequest, PlanResponse, User, UserId } from "../../protocol";
 import { UserFormModal } from "./UserFormModal";
 import { ScheduleModal } from "./ScheduleModal";
 import { TagsModal } from "./TagsModal";

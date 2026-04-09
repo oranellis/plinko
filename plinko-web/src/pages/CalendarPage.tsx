@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
-import { IsoDate, UserId } from "../protocol";
-import { formatDate, parseDate } from "../utils/planUtils";
+import type { IsoDate, UserId } from "../protocol";
+import { formatDate } from "../utils/planUtils";
 import "./CalendarPage.css";
 
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
