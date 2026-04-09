@@ -767,15 +767,31 @@ fn draw_task_rows(
                         let tx = cell_left + (cell_w - tw) / 2.0;
                         // Vertically centre in the full cell
                         let ty = row_y + (GANTT_ROW_H - sm_line_h) / 2.0 - sm.ascent;
-                        paint.set_color(Color::from(MUTED_FG));
-                        paint.set_style(PaintStyle::Fill);
+
                         canvas.save();
                         canvas.clip_rect(
                             Rect::from_xywh(cell_left, row_y, cell_w, GANTT_ROW_H),
                             ClipOp::Intersect,
                             false,
                         );
+
+                        // 50% opacity rounded-rect backdrop for legibility
+                        let pad_x = 2.0_f32;
+                        let pad_y = 1.0_f32;
+                        let bg_rect = Rect::from_xywh(
+                            tx - pad_x,
+                            ty + sm.ascent - pad_y,
+                            tw + pad_x * 2.0,
+                            sm_line_h + pad_y * 2.0,
+                        );
+                        let bg_color = Color::from(0xff_000000u32).with_a(128);
+                        paint.set_color(bg_color);
+                        paint.set_style(PaintStyle::Fill);
+                        canvas.draw_round_rect(bg_rect, 3.0, 3.0, paint);
+
+                        paint.set_color(Color::from(MUTED_FG));
                         canvas.draw_text_blob(&blob, (tx, ty), paint);
+
                         canvas.restore();
                     }
                 }
