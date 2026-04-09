@@ -211,9 +211,9 @@ export function DependencyEditor({
                       border: "none",
                       color: "#555",
                       cursor: "pointer",
-                      fontSize: 16,
+                      fontSize: 20,
                       lineHeight: 1,
-                      padding: "2px 4px",
+                      padding: "4px 8px",
                       flexShrink: 0,
                     }}
                     onMouseEnter={(e) => (e.currentTarget.style.color = "#e57373")}
