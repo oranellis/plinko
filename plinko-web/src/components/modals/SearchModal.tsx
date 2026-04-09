@@ -11,6 +11,7 @@ interface Props {
 
 export function SearchModal({ plan, onSelect, onClose }: Props) {
   const [filter, setFilter] = useState("");
+  const [flash, setFlash] = useState(false);
   const q = filter.toLowerCase();
 
   const results: { id: string; type: "task" | "milestone"; name: string; contextLabel: string | null }[] = [
@@ -24,6 +25,14 @@ export function SearchModal({ plan, onSelect, onClose }: Props) {
     .filter((r) => !q || displayName(r.name, r.contextLabel).toLowerCase().includes(q))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  const handleFilterChange = (val: string) => {
+    setFilter(val);
+    if (val && results.length === 0) {
+      setFlash(true);
+      setTimeout(() => setFlash(false), 600);
+    }
+  };
+
   return (
     <Modal title="Search" onClose={onClose} width={420}>
       <input
@@ -31,18 +40,19 @@ export function SearchModal({ plan, onSelect, onClose }: Props) {
         value={filter}
         autoFocus
         placeholder="Filter tasks and milestones…"
-        onChange={(e) => setFilter(e.target.value)}
+        onChange={(e) => handleFilterChange(e.target.value)}
         style={{
           width: "100%",
           boxSizing: "border-box",
           background: "#1e1e1e",
-          border: "1px solid #3a3a3c",
+          border: `1px solid ${flash ? "#e53935" : "#3a3a3c"}`,
           borderRadius: 4,
           color: "#d4d4d4",
           fontSize: 14,
           padding: "7px 10px",
           outline: "none",
           marginBottom: 10,
+          transition: "border-color 0.15s",
         }}
       />
       <div style={{ maxHeight: 320, overflowY: "auto" }}>

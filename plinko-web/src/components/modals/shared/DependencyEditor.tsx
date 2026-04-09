@@ -69,6 +69,7 @@ export function DependencyEditor({ label, deps, plan, excludeNodeId, onChange }:
     <div className="form-row">
       <label>{label}</label>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ maxHeight: 160, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
         {deps.map((dep, idx) => {
           const opt = options.find((o) => nodeKey(o.nodeId) === nodeKey(dep.id));
           return (
@@ -107,6 +108,7 @@ export function DependencyEditor({ label, deps, plan, excludeNodeId, onChange }:
             </div>
           );
         })}
+        </div>
 
         {/* Picker */}
         {activeIdx === -1 ? (

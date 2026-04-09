@@ -13,6 +13,8 @@ export function PlanSettingsModal({ plan, sendRequest, onClose }: Props) {
   const [name, setName] = useState(plan.name);
   const [startDate, setStartDate] = useState(plan.start_date);
   const [targetKey, setTargetKey] = useState(nodeIdString(plan.scheduler_target));
+  const [targetFilter, setTargetFilter] = useState("");
+  const [targetOpen, setTargetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const nodeOptions: { key: string; label: string }[] = [
@@ -71,11 +73,38 @@ export function PlanSettingsModal({ plan, sendRequest, onClose }: Props) {
       </div>
       <div className="form-row">
         <label>Scheduler Target</label>
-        <select value={targetKey} onChange={(e) => setTargetKey(e.target.value)}>
-          {nodeOptions.map((o) => (
-            <option key={o.key} value={o.key}>{o.label}</option>
-          ))}
-        </select>
+        <div style={{ position: "relative" }}>
+          <input
+            type="text"
+            value={targetOpen ? targetFilter : (nodeOptions.find((o) => o.key === targetKey)?.label ?? targetKey)}
+            placeholder="Search nodes…"
+            onFocus={() => { setTargetOpen(true); setTargetFilter(""); }}
+            onBlur={() => setTimeout(() => setTargetOpen(false), 150)}
+            onChange={(e) => setTargetFilter(e.target.value)}
+            style={{
+              width: "100%", background: "#1e1e1e", border: "1px solid #3a3a3c",
+              borderRadius: 4, color: "#d4d4d4", fontSize: 12, padding: "4px 8px", outline: "none"
+            }}
+          />
+          {targetOpen && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, right: 0,
+              background: "#252526", border: "1px solid #3a3a3c", borderRadius: 4,
+              maxHeight: 180, overflowY: "auto", zIndex: 200,
+            }}>
+              {nodeOptions.filter((o) => !targetFilter || o.label.toLowerCase().includes(targetFilter.toLowerCase())).map((o) => (
+                <button key={o.key} onMouseDown={() => { setTargetKey(o.key); setTargetOpen(false); }}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left",
+                    background: o.key === targetKey ? "#2d4a6a" : "none",
+                    border: "none", padding: "6px 10px", color: "#d4d4d4",
+                    fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                  }}
+                >{o.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       <div className="form-actions">
         <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
