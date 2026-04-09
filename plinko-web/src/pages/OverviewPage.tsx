@@ -401,8 +401,8 @@ export function OverviewPage() {
 
         hitRectsRef.current.push({ id: item.id, x, y, w: barW, h: barH });
       } else {
-        // Milestone diamond
-        const cx = x + dayW / 2;
+        // Milestone diamond — center on the start day column center
+        const cx = startOff * dayW - scrollX + dayW / 2;
         const cy = rowY + ROW_H / 2;
         const r = 10;
         const msStatus = plan.node_allocations.milestones[item.id]?.derived_status;
