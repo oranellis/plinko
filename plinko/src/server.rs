@@ -157,6 +157,7 @@ pub(crate) fn handle_protocol(
 
         let mut line = String::new();
         match recv(&mut line) {
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
             Ok(false) | Err(_) => break,
             Ok(true) => {}
         }
@@ -482,6 +483,16 @@ pub(crate) fn handle_protocol(
                     }
                 }
             });
+            // Send immediate ack so the client's sendRequest promise resolves.
+            // The actual result arrives as MondayDone/MondayError push messages.
+            if send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanUpdated,
+            })
+            .is_err()
+            {
+                break;
+            }
             continue;
         }
 

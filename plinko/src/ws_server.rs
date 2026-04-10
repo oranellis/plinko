@@ -86,12 +86,15 @@ fn handle_ws_connection(
                     .send(msg.clone())
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))
             },
-            move |buf| match in_rx.recv() {
+            move |buf| match in_rx.recv_timeout(std::time::Duration::from_millis(50)) {
                 Ok(line) => {
                     *buf = line;
                     Ok(true)
                 }
-                Err(_) => Ok(false),
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    Err(std::io::Error::from(std::io::ErrorKind::WouldBlock))
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Ok(false),
             },
             engine_clone,
             storage_clone,

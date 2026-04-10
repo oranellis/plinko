@@ -132,12 +132,19 @@ export function MondayModal({ planId, onClose }: Props) {
 
   const [syncOp, setSyncOp] = useState<"pull" | "reimport" | "push" | null>(null);
 
+  // Clear syncOp when monday signals done or error (push messages arrive after the ack)
+  useEffect(() => {
+    if (monday.lastMessage !== null || monday.lastError !== null) {
+      setSyncOp(null);
+    }
+  }, [monday.lastMessage, monday.lastError]);
+
   const handlePull = async () => {
     setSyncOp("pull");
     try {
       await handleSaveConfig();
       await sendRequest({ MondayPull: { plan_id: planId } });
-    } finally {
+    } catch {
       setSyncOp(null);
     }
   };
@@ -147,7 +154,7 @@ export function MondayModal({ planId, onClose }: Props) {
     try {
       await handleSaveConfig();
       await sendRequest({ MondayFullReimport: { plan_id: planId } });
-    } finally {
+    } catch {
       setSyncOp(null);
     }
   };
@@ -157,7 +164,7 @@ export function MondayModal({ planId, onClose }: Props) {
     try {
       await handleSaveConfig();
       await sendRequest({ MondayPush: { plan_id: planId } });
-    } finally {
+    } catch {
       setSyncOp(null);
     }
   };
@@ -197,11 +204,12 @@ export function MondayModal({ planId, onClose }: Props) {
           <div className="form-row">
             <label>API Token</label>
             <input
-              type="password"
+              type="text"
               value={token}
               onChange={(e) => { setToken(e.target.value); setTestStatus("idle"); }}
               placeholder="eyJ…"
               autoComplete="off"
+              spellCheck={false}
             />
           </div>
           <div className="form-row">
