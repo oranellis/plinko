@@ -157,11 +157,33 @@ impl Storage {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().to_string();
             if name.ends_with(".json") && entry.file_type()?.is_file() {
-                versions.push(name.trim_end_matches(".json").to_string());
+                let stem = name.trim_end_matches(".json");
+                // Only include timestamped snapshots (YYYY-MM-DDTHH-MM-SS).
+                // This excludes monday.json and any other metadata files that
+                // share the plan directory.
+                if Self::is_version_stamp(stem) {
+                    versions.push(stem.to_string());
+                }
             }
         }
         versions.sort();
         Ok(versions)
+    }
+
+    fn is_version_stamp(s: &str) -> bool {
+        // Matches exactly YYYY-MM-DDTHH-MM-SS (19 chars, digits and separators).
+        s.len() == 19
+            && s.as_bytes()[4] == b'-'
+            && s.as_bytes()[7] == b'-'
+            && s.as_bytes()[10] == b'T'
+            && s.as_bytes()[13] == b'-'
+            && s.as_bytes()[16] == b'-'
+            && s[..4].chars().all(|c| c.is_ascii_digit())
+            && s[5..7].chars().all(|c| c.is_ascii_digit())
+            && s[8..10].chars().all(|c| c.is_ascii_digit())
+            && s[11..13].chars().all(|c| c.is_ascii_digit())
+            && s[14..16].chars().all(|c| c.is_ascii_digit())
+            && s[17..19].chars().all(|c| c.is_ascii_digit())
     }
 
     fn version_stamp() -> String {
@@ -242,3 +264,22 @@ impl Storage {
     }
 }
 // }}}
+
+#[cfg(test)]
+mod tests {
+    use super::Storage;
+
+    #[test]
+    fn is_version_stamp_accepts_valid() {
+        assert!(Storage::is_version_stamp("2026-04-10T09-30-05"));
+        assert!(Storage::is_version_stamp("2000-01-01T00-00-00"));
+    }
+
+    #[test]
+    fn is_version_stamp_rejects_metadata_files() {
+        assert!(!Storage::is_version_stamp("monday"));
+        assert!(!Storage::is_version_stamp("config"));
+        assert!(!Storage::is_version_stamp("2026-04-10"));
+        assert!(!Storage::is_version_stamp(""));
+    }
+}
