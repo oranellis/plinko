@@ -540,6 +540,11 @@ pub(crate) fn handle_protocol(
             let storage_clone = Arc::clone(&storage);
             std::thread::spawn(move || {
                 let client = MondayClient::new(&token);
+                let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayProgress {
+                    done: 0,
+                    total: 0,
+                    message: "Preparing push…".to_string(),
+                }));
                 let result = export::export_to_monday_diff(
                     &client,
                     &config,

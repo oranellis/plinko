@@ -3,27 +3,29 @@ import { usePlanContext } from "../context/PlanContext";
 import { IconBack, IconPullMonday, IconPushMonday, IconSettings } from "./icons";
 import "./Toolbar.css";
 
+type MondayOp = "pull" | "push" | null;
+
 export function Toolbar() {
   const { plan, status, page, setPage, previousPage, setPreviousPage, toolbarActions, toolbarRightActions, hasMondayIntegration, monday, sendRequest } = usePlanContext();
 
   const isHome = page === "home";
-  const [toast, setToast] = useState<{ text: string; isError: boolean } | null>(null);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [mondayBusy, setMondayBusy] = useState(false);
+  const [activeOp, setActiveOp] = useState<MondayOp>(null);
+  const [doneText, setDoneText] = useState<{ text: string; isError: boolean } | null>(null);
+  const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Show toast when monday state changes.
+  // Track completion and errors, show brief done text then clear.
   useEffect(() => {
     if (monday.lastMessage) {
-      setToast({ text: monday.lastMessage, isError: false });
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = setTimeout(() => setToast(null), 4000);
-      setMondayBusy(false);
+      setActiveOp(null);
+      setDoneText({ text: monday.lastMessage, isError: false });
+      if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
+      doneTimerRef.current = setTimeout(() => setDoneText(null), 5000);
     }
     if (monday.lastError) {
-      setToast({ text: monday.lastError, isError: true });
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = setTimeout(() => setToast(null), 7000);
-      setMondayBusy(false);
+      setActiveOp(null);
+      setDoneText({ text: monday.lastError, isError: true });
+      if (doneTimerRef.current) clearTimeout(doneTimerRef.current);
+      doneTimerRef.current = setTimeout(() => setDoneText(null), 8000);
     }
   }, [monday.lastMessage, monday.lastError]);
 
@@ -47,18 +49,26 @@ export function Toolbar() {
   };
 
   const handlePull = () => {
-    if (!plan || mondayBusy) return;
-    setMondayBusy(true);
-    setToast({ text: "Pulling from Monday…", isError: false });
-    sendRequest({ MondayPull: { plan_id: plan.id } }).catch(() => setMondayBusy(false));
+    if (!plan || activeOp) return;
+    setActiveOp("pull");
+    setDoneText(null);
+    sendRequest({ MondayPull: { plan_id: plan.id } }).catch(() => setActiveOp(null));
   };
 
   const handlePush = () => {
-    if (!plan || mondayBusy) return;
-    setMondayBusy(true);
-    setToast({ text: "Pushing to Monday…", isError: false });
-    sendRequest({ MondayPush: { plan_id: plan.id } }).catch(() => setMondayBusy(false));
+    if (!plan || activeOp) return;
+    setActiveOp("push");
+    setDoneText(null);
+    sendRequest({ MondayPush: { plan_id: plan.id } }).catch(() => setActiveOp(null));
   };
+
+  // Build the label shown inside the active button.
+  const progressLabel = (() => {
+    if (!monday.progress) return null;
+    const { done, total, message } = monday.progress;
+    const counter = total > 0 ? ` (${done}/${total})` : "";
+    return `${message}${counter}`;
+  })();
 
   return (
     <div className="toolbar">
@@ -80,26 +90,46 @@ export function Toolbar() {
       <div className="toolbar-right">
         {toolbarRightActions}
         {hasMondayIntegration && (
-          <>
+          <div className="monday-btn-group">
+            {/* Pull button — expands when active */}
             <button
-              className="toolbar-btn"
+              className={`toolbar-btn monday-op-btn${activeOp === "pull" ? " monday-op-btn--active" : ""}`}
               title="Pull from Monday"
               onClick={handlePull}
-              disabled={mondayBusy}
-              style={mondayBusy ? { opacity: 0.5 } : undefined}
+              disabled={!!activeOp}
             >
-              <IconPullMonday size={18} />
+              <IconPullMonday size={16} />
+              {activeOp === "pull" && (
+                <span className="monday-op-label">
+                  {progressLabel ?? "Fetching…"}
+                </span>
+              )}
             </button>
+            {/* Push button — expands when active */}
             <button
-              className="toolbar-btn"
+              className={`toolbar-btn monday-op-btn${activeOp === "push" ? " monday-op-btn--active" : ""}`}
               title="Push to Monday"
               onClick={handlePush}
-              disabled={mondayBusy}
-              style={mondayBusy ? { opacity: 0.5 } : undefined}
+              disabled={!!activeOp}
             >
-              <IconPushMonday size={18} />
+              <IconPushMonday size={16} />
+              {activeOp === "push" && (
+                <span className="monday-op-label">
+                  {progressLabel ?? "Preparing…"}
+                </span>
+              )}
             </button>
-          </>
+            {/* Completion / error chip */}
+            {doneText && !activeOp && (
+              <span
+                className={`monday-done-chip${doneText.isError ? " monday-done-chip--error" : ""}`}
+                onClick={() => setDoneText(null)}
+                title="Click to dismiss"
+              >
+                {doneText.text}
+              </span>
+            )}
+          </div>
         )}
         <button
           className="toolbar-btn"
@@ -114,14 +144,7 @@ export function Toolbar() {
           title={status}
         />
       </div>
-      {toast && (
-        <div
-          className={`toolbar-toast${toast.isError ? " toolbar-toast--error" : ""}`}
-          onClick={() => setToast(null)}
-        >
-          {toast.text}
-        </div>
-      )}
     </div>
   );
 }
+

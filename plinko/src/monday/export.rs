@@ -539,11 +539,7 @@ pub fn export_to_monday_diff(
                 failed += 1;
             }
         }
-        on_progress(
-            i + 1,
-            total,
-            &format!("Pushing updates ({}/{total})...", i + 1),
-        );
+        on_progress(i + 1, total, "Pushing updates...");
     }
 
     let msg = if failed == 0 {

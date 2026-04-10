@@ -87,31 +87,71 @@
 .toolbar-status--disconnected,
 .toolbar-status--error { background: #e53935; }
 
-/* Monday sync toast */
-.toolbar-toast {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 12px;
-  background: rgba(30, 30, 30, 0.92);
-  border: 1px solid #3a3a3c;
-  border-radius: 6px;
-  color: #d4d4d4;
-  font-size: 13px;
-  padding: 7px 14px;
-  z-index: 1000;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  pointer-events: all;
+/* Monday pull/push button group */
+.monday-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The pull/push buttons animate wider when their operation is active */
+.monday-op-btn {
+  gap: 6px;
+  transition: padding 0.15s ease, background 0.15s ease;
   white-space: nowrap;
-  animation: toolbar-toast-in 0.15s ease;
+  overflow: hidden;
+  max-width: 32px;
+  transition: max-width 0.2s ease, padding 0.15s ease, background 0.15s ease;
 }
 
-.toolbar-toast--error {
-  border-color: #c0392b;
-  color: #ff6b6b;
+.monday-op-btn--active {
+  max-width: 320px;
+  background: #2a2a2e;
+  border-color: #4a4a5a !important;
+  color: #a0a8d0;
+  cursor: default;
 }
 
-@keyframes toolbar-toast-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+.monday-op-btn--active:hover {
+  background: #2a2a2e;
+}
+
+.monday-op-label {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+/* Completion / error chip — appears after op finishes */
+.monday-done-chip {
+  font-size: 12px;
+  color: #8fc88f;
+  background: rgba(100, 180, 100, 0.1);
+  border: 1px solid rgba(100, 180, 100, 0.25);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: chip-in 0.15s ease;
+}
+
+.monday-done-chip--error {
+  color: #e07070;
+  background: rgba(180, 60, 60, 0.1);
+  border-color: rgba(180, 60, 60, 0.25);
+}
+
+.monday-done-chip:hover {
+  opacity: 0.75;
+}
+
+@keyframes chip-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
 }
