@@ -380,10 +380,31 @@ pub(crate) fn handle_protocol(
         if let PlanRequest::MondayFetchBoardInfo { token, board_id } = request {
             let client = MondayClient::new(&token);
             let users = client.fetch_users().unwrap_or_default();
-            let columns = client.fetch_columns(&board_id).unwrap_or_default();
-            let status_labels = client
-                .fetch_status_labels(&board_id, "")
-                .unwrap_or_default();
+            let mut columns = client.fetch_columns(&board_id).unwrap_or_default();
+
+            // Status columns typically live on the subitems board, not the parent board.
+            // Fetch subitems board ID and include its columns so the user can map them.
+            let subitem_board_id = client.fetch_subitem_board_id(&board_id).unwrap_or_default();
+            let mut status_labels = vec![];
+            if !subitem_board_id.is_empty() {
+                let sub_columns = client.fetch_columns(&subitem_board_id).unwrap_or_default();
+                // Find the first status-type column on the subitems board to populate labels.
+                if let Some(status_col) = sub_columns
+                    .iter()
+                    .find(|c| c.column_type == "status" && c.title.to_lowercase() == "status")
+                    .or_else(|| sub_columns.iter().find(|c| c.column_type == "status"))
+                {
+                    status_labels = client
+                        .fetch_status_labels(&subitem_board_id, &status_col.id.clone())
+                        .unwrap_or_default();
+                }
+                // Merge subitem columns into the column list (tagged so UI can distinguish them).
+                for mut col in sub_columns {
+                    col.title = format!("Subitems: {}", col.title);
+                    columns.push(col);
+                }
+            }
+
             if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::MondayBoardInfo {
