@@ -114,14 +114,25 @@ pub(crate) fn handle_protocol(
         return;
     }
 
-    {
+    let (initial_plan, initial_plan_id) = {
         let eng = engine.lock().unwrap();
         eprintln!(
             "[connect] {peer}: handshake OK (version {VERSION}), sending plan \"{}\"",
             eng.plan().name
         );
+        let p = eng.plan().clone();
+        let id = p.id;
+        (p, id)
+    };
+    {
+        let has_monday_integration = storage
+            .lock()
+            .unwrap()
+            .load_monday_config(initial_plan_id)
+            .is_some();
         if send(&ServerMessage::PlanState {
-            plan: Box::new(eng.plan().clone()),
+            plan: Box::new(initial_plan),
+            has_monday_integration,
         })
         .is_err()
         {
@@ -144,12 +155,22 @@ pub(crate) fn handle_protocol(
                     }
                 }
                 InternalMsg::ImportDone { plan, message } => {
-                    let mut eng = engine.lock().unwrap();
-                    *eng = PlanEngine::new(*plan);
-                    let _ = storage.lock().unwrap().save(eng.plan());
+                    let incoming_plan_id = plan.id;
+                    {
+                        let mut eng = engine.lock().unwrap();
+                        *eng = PlanEngine::new(*plan);
+                        let _ = storage.lock().unwrap().save(eng.plan());
+                    }
                     let _ = send(&ServerMessage::MondayDone { message });
+                    let done_plan = engine.lock().unwrap().plan().clone();
+                    let has_monday_integration = storage
+                        .lock()
+                        .unwrap()
+                        .load_monday_config(incoming_plan_id)
+                        .is_some();
                     let _ = send(&ServerMessage::PlanState {
-                        plan: Box::new(eng.plan().clone()),
+                        plan: Box::new(done_plan),
+                        has_monday_integration,
                     });
                 }
             }
@@ -192,7 +213,7 @@ pub(crate) fn handle_protocol(
 
         if matches!(&request, PlanRequest::NewPlan) {
             let new_plan = plinko_shared::data::Plan::new("New Plan");
-            {
+            let new_plan_clone = {
                 let mut eng = engine.lock().unwrap();
                 *eng = PlanEngine::new(new_plan);
                 let _ = storage.lock().unwrap().save(eng.plan());
@@ -204,13 +225,20 @@ pub(crate) fn handle_protocol(
                 {
                     break;
                 }
-                if send(&ServerMessage::PlanState {
-                    plan: Box::new(eng.plan().clone()),
-                })
-                .is_err()
-                {
-                    break;
-                }
+                eng.plan().clone()
+            };
+            let has_monday_integration = storage
+                .lock()
+                .unwrap()
+                .load_monday_config(new_plan_clone.id)
+                .is_some();
+            if send(&ServerMessage::PlanState {
+                plan: Box::new(new_plan_clone),
+                has_monday_integration,
+            })
+            .is_err()
+            {
+                break;
             }
             continue;
         }
@@ -224,19 +252,28 @@ pub(crate) fn handle_protocol(
             let load_result = storage.lock().unwrap().load_latest(plan_id);
             match load_result {
                 Ok(plan) => {
-                    let mut eng = engine.lock().unwrap();
-                    *eng = PlanEngine::new(plan);
-                    let _ = storage.lock().unwrap().save(eng.plan());
-                    if send(&ServerMessage::Response {
-                        id,
-                        response: PlanResponse::PlanUpdated,
-                    })
-                    .is_err()
-                    {
-                        break;
-                    }
+                    let loaded_plan_clone = {
+                        let mut eng = engine.lock().unwrap();
+                        *eng = PlanEngine::new(plan);
+                        let _ = storage.lock().unwrap().save(eng.plan());
+                        if send(&ServerMessage::Response {
+                            id,
+                            response: PlanResponse::PlanUpdated,
+                        })
+                        .is_err()
+                        {
+                            break;
+                        }
+                        eng.plan().clone()
+                    };
+                    let has_monday_integration = storage
+                        .lock()
+                        .unwrap()
+                        .load_monday_config(loaded_plan_clone.id)
+                        .is_some();
                     if send(&ServerMessage::PlanState {
-                        plan: Box::new(eng.plan().clone()),
+                        plan: Box::new(loaded_plan_clone),
+                        has_monday_integration,
                     })
                     .is_err()
                     {
@@ -554,10 +591,19 @@ pub(crate) fn handle_protocol(
             break;
         }
         if plan_changed {
-            let eng = engine.lock().unwrap();
-            let _ = storage.lock().unwrap().save(eng.plan());
+            let changed_plan = {
+                let eng = engine.lock().unwrap();
+                let _ = storage.lock().unwrap().save(eng.plan());
+                eng.plan().clone()
+            };
+            let has_monday_integration = storage
+                .lock()
+                .unwrap()
+                .load_monday_config(changed_plan.id)
+                .is_some();
             if send(&ServerMessage::PlanState {
-                plan: Box::new(eng.plan().clone()),
+                plan: Box::new(changed_plan),
+                has_monday_integration,
             })
             .is_err()
             {

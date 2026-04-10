@@ -75,7 +75,7 @@ impl NetworkEngine {
         reader.read_line(&mut line).map_err(|e| e.to_string())?;
         let plan_state: ServerMessage =
             serde_json::from_str(line.trim()).map_err(|e| format!("parse plan state: {e}"))?;
-        let ServerMessage::PlanState { plan } = plan_state else {
+        let ServerMessage::PlanState { plan, .. } = plan_state else {
             return Err("expected PlanState from server".to_string());
         };
         let plan = *plan;
@@ -126,7 +126,7 @@ impl NetworkEngine {
         };
         for msg in msgs {
             match msg {
-                ServerMessage::PlanState { plan } => self.plan = *plan,
+                ServerMessage::PlanState { plan, .. } => self.plan = *plan,
                 ServerMessage::Response { response, .. } => responses.push(response),
                 _ => {}
             }

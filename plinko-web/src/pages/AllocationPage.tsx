@@ -541,10 +541,21 @@ export function AllocationPage() {
         }
       }
 
-      // Floating task label — drawn over the timeline at the left edge
+      // Floating task label — drawn over the timeline at the left edge (max ~200px)
       {
-        const label = displayName(task.name, task.context_label ?? null);
+        const MAX_LABEL_W = 200;
+        let label = displayName(task.name, task.context_label ?? null);
         ctx.font = "13px sans-serif";
+        if (ctx.measureText(label).width > MAX_LABEL_W) {
+          // Binary search for largest prefix that fits with ellipsis.
+          let lo = 0, hi = label.length;
+          while (lo < hi - 1) {
+            const mid = (lo + hi) >> 1;
+            if (ctx.measureText(label.slice(0, mid) + "…").width <= MAX_LABEL_W) lo = mid;
+            else hi = mid;
+          }
+          label = label.slice(0, lo) + "…";
+        }
         const tw = ctx.measureText(label).width;
         const padX = 6, padY = 3;
         const lx = tlX + 6;
@@ -622,7 +633,7 @@ export function AllocationPage() {
           + titleSize * 1.25
           + (lines.length > 1 ? lineGap + (lines.length - 1) * (bodySize * 1.4) + (lines.length - 2) * lineGap : 0);
 
-        const px = margin;
+        const px = USER_PANEL_W + margin;
         const py = h - margin - panelH;
 
         ctx.fillStyle = "rgba(0,0,0,0.19)";

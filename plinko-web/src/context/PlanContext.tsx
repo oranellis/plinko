@@ -14,6 +14,7 @@ interface PlanContextValue {
   plan: Plan | null;
   status: ConnectionStatus;
   monday: MondayState;
+  hasMondayIntegration: boolean;
   sendRequest: (req: PlanRequest) => Promise<PlanResponse>;
   page: PageId;
   setPage: (p: PageId) => void;

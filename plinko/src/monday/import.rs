@@ -87,14 +87,24 @@ pub fn import_from_monday(
             None
         };
         if let Some(node_id) = existing.get(&item.id) {
-            // Update existing task workers/workload.
+            // Update existing task workers/workload; only count as changed if data differs.
+            let mut changed = false;
             match node_id {
                 NodeId::Task(task_id) => {
                     let (workers, _) = build_workers_and_days(item, config);
                     if let Some(task) = plan.tasks.get_mut(task_id) {
-                        task.workers = workers;
-                        task.name = item.name.clone();
-                        task.context_label = ctx;
+                        let name_changed = task.name != item.name;
+                        let ctx_changed = task.context_label != ctx;
+                        // Compare worker count and serialised slots as a proxy for changes.
+                        let workers_changed = task.workers.len() != workers.len()
+                            || serde_json::to_string(&task.workers).ok()
+                                != serde_json::to_string(&workers).ok();
+                        if name_changed || ctx_changed || workers_changed {
+                            task.workers = workers;
+                            task.name = item.name.clone();
+                            task.context_label = ctx;
+                            changed = true;
+                        }
                     }
                     let status = resolve_status(item, config);
                     task_statuses
@@ -102,13 +112,18 @@ pub fn import_from_monday(
                 }
                 NodeId::Milestone(ms_id) => {
                     if let Some(ms) = plan.milestones.get_mut(ms_id) {
-                        ms.name = item.name.clone();
-                        ms.context_label = ctx;
+                        if ms.name != item.name || ms.context_label != ctx {
+                            ms.name = item.name.clone();
+                            ms.context_label = ctx;
+                            changed = true;
+                        }
                     }
                 }
                 NodeId::PlanStart => {}
             }
-            updated += 1;
+            if changed {
+                updated += 1;
+            }
         } else {
             let node_id = if item.is_milestone {
                 // Don't import dropped milestones.

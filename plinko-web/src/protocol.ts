@@ -344,7 +344,7 @@ export type PlanError =
 export type ServerMessage =
   | { type: "Hello"; version: string }
   | { type: "VersionError"; expected: string; got: string }
-  | { type: "PlanState"; plan: Plan }
+  | { type: "PlanState"; plan: Plan; has_monday_integration: boolean }
   | { type: "Response"; id: number; response: PlanResponse }
   | { type: "MondayProgress"; done: number; total: number; message: string }
   | { type: "MondayDone"; message: string }

@@ -267,6 +267,7 @@ pub enum ServerMessage {
     },
     PlanState {
         plan: Box<Plan>,
+        has_monday_integration: bool,
     },
     Response {
         id: u64,

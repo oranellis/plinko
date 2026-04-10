@@ -14,6 +14,7 @@ export interface UsePlanResult {
   plan: Plan | null;
   status: ConnectionStatus;
   monday: MondayState;
+  hasMondayIntegration: boolean;
   sendRequest: (request: PlanRequest) => Promise<PlanResponse>;
 }
 
@@ -22,6 +23,7 @@ const WS_PORT = 7892; // TCP port + 1
 export function usePlan(): UsePlanResult {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [hasMondayIntegration, setHasMondayIntegration] = useState(false);
   const [monday, setMonday] = useState<MondayState>({
     progress: null,
     lastMessage: null,
@@ -87,6 +89,7 @@ export function usePlan(): UsePlanResult {
 
           case "PlanState":
             setPlan(msg.plan);
+            setHasMondayIntegration(msg.has_monday_integration);
             if (status !== "connected") setStatus("connected");
             break;
 
@@ -168,5 +171,5 @@ export function usePlan(): UsePlanResult {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { plan, status, monday, sendRequest };
+  return { plan, status, monday, hasMondayIntegration, sendRequest };
 }

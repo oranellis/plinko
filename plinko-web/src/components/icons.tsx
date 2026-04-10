@@ -125,3 +125,25 @@ export function IconHome({ size = defaults.size, color = defaults.color }: IconP
     </svg>
   );
 }
+
+// Arrow pointing down into a box — "pull from Monday"
+export function IconPullMonday({ size = defaults.size, color = defaults.color }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 2V10" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M5 7L8 10.5L11 7" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 13H13" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Arrow pointing up from a box — "push to Monday"
+export function IconPushMonday({ size = defaults.size, color = defaults.color }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 10V2" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M5 5L8 1.5L11 5" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 13H13" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}

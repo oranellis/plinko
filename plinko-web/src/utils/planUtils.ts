@@ -208,6 +208,12 @@ export function packGanttRows(plan: Plan): GanttItem[] {
   const sortItems = (a: RawItem, b: RawItem) =>
     a.start.localeCompare(b.start) || a.name.localeCompare(b.name);
   activeItems.sort(sortItems);
+  // Plan start must always be the first row regardless of name/date sort.
+  const psIdx = activeItems.findIndex((i) => i.id === PLAN_START_ID);
+  if (psIdx > 0) {
+    const [ps] = activeItems.splice(psIdx, 1);
+    activeItems.unshift(ps);
+  }
   droppedItems.sort(sortItems);
 
   const pack = (items: RawItem[], startRow: number): GanttItem[] => {

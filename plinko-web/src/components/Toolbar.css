@@ -86,3 +86,32 @@
 .toolbar-status--handshaking { background: #ff9800; }
 .toolbar-status--disconnected,
 .toolbar-status--error { background: #e53935; }
+
+/* Monday sync toast */
+.toolbar-toast {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 12px;
+  background: rgba(30, 30, 30, 0.92);
+  border: 1px solid #3a3a3c;
+  border-radius: 6px;
+  color: #d4d4d4;
+  font-size: 13px;
+  padding: 7px 14px;
+  z-index: 1000;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  pointer-events: all;
+  white-space: nowrap;
+  animation: toolbar-toast-in 0.15s ease;
+}
+
+.toolbar-toast--error {
+  border-color: #c0392b;
+  color: #ff6b6b;
+}
+
+@keyframes toolbar-toast-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
