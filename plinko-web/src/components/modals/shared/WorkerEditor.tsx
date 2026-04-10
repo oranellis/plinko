@@ -9,6 +9,7 @@
 import { useRef, useState } from "react";
 import type { Plan, TagId, WorkerSlot } from "../../../protocol";
 import { FloatingPicker } from "./FloatingPicker";
+import { NumberInput } from "./NumberInput";
 import type { PickerOption } from "./FloatingPicker";
 
 interface Props {
@@ -210,13 +211,12 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
                   </button>
 
                   {/* Workload input */}
-                  <input
-                    type="number"
+                  <NumberInput
                     min={0}
                     step={0.5}
                     value={wl}
                     title="Workload (days)"
-                    onChange={(e) => setWorkload(idx, parseFloat(e.target.value) || 0)}
+                    onChange={(v) => setWorkload(idx, v)}
                     style={{
                       width: 56,
                       flexShrink: 0,

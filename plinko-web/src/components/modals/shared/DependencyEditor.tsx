@@ -7,9 +7,10 @@
  * - "+" button below to add
  * - When mode="dependents", excludes PlanStart from options and only allows Task/Milestone nodes
  */
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Dependency, NodeId, Plan } from "../../../protocol";
 import { FloatingPicker } from "./FloatingPicker";
+import { NumberInput } from "./NumberInput";
 import type { PickerOption } from "./FloatingPicker";
 
 interface Props {
@@ -86,6 +87,20 @@ export function DependencyEditor({
 }: Props) {
   const [openPickerIdx, setOpenPickerIdx] = useState<number | null>(null);
   const btnRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // When a new dep is added, we want to open the picker for it — but the button
+  // ref isn't available until after the DOM is committed. Store the pending index
+  // and open it in a layout effect once the ref exists.
+  const pendingOpenRef = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (pendingOpenRef.current !== null) {
+      const idx = pendingOpenRef.current;
+      if (btnRefs.current[idx]) {
+        pendingOpenRef.current = null;
+        setOpenPickerIdx(idx);
+      }
+    }
+  });
 
   const allOptions = buildOptions(plan, excludeNodeId, excludeKeys, noPlanStart);
 
@@ -101,9 +116,11 @@ export function DependencyEditor({
   };
 
   const addDep = () => {
+    const newIdx = deps.length;
     onChange([...deps, { id: allOptions[0]?.nodeId ?? "PlanStart", lag_days: 0 }]);
-    // Open picker for the new row
-    setOpenPickerIdx(deps.length);
+    // Don't call setOpenPickerIdx here — the new button's ref isn't in the DOM yet.
+    // The useLayoutEffect above will open it once the ref is available.
+    pendingOpenRef.current = newIdx;
   };
 
   const selectTarget = (idx: number, key: string) => {
@@ -181,12 +198,11 @@ export function DependencyEditor({
                   </button>
 
                   {/* Lag input */}
-                  <input
-                    type="number"
-                    step={0.5}
+                  <NumberInput
                     value={dep.lag_days}
+                    step={0.5}
                     title="Lag days (positive = delay, negative = lead)"
-                    onChange={(e) => updateDep(idx, { ...dep, lag_days: parseFloat(e.target.value) || 0 })}
+                    onChange={(v) => updateDep(idx, { ...dep, lag_days: v })}
                     style={{
                       width: 56,
                       flexShrink: 0,
