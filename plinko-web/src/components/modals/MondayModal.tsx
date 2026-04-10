@@ -369,7 +369,7 @@ export function MondayModal({ planId, onClose }: Props) {
         {/* Sync actions */}
         <section>
           <h3 style={sectionTitle}>Sync</h3>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
             <button
               className="btn btn-primary btn-sm"
               onClick={handlePull}
@@ -380,19 +380,25 @@ export function MondayModal({ planId, onClose }: Props) {
             </button>
             <button
               className="btn btn-secondary btn-sm"
-              onClick={handleFullReimport}
-              disabled={progressing || syncOp !== null}
-              style={{ opacity: syncOp !== null && syncOp !== "reimport" ? 0.5 : 1 }}
-            >
-              {syncOp === "reimport" ? "⏳ Re-importing…" : "Full Re-import"}
-            </button>
-            <button
-              className="btn btn-secondary btn-sm"
               onClick={handlePush}
               disabled={progressing || syncOp !== null}
               style={{ opacity: syncOp !== null && syncOp !== "push" ? 0.5 : 1 }}
             >
               {syncOp === "push" ? "⏳ Pushing…" : "Push dates to Monday"}
+            </button>
+            <span style={{ flex: 1 }} />
+            <button
+              className="btn btn-sm"
+              onClick={handleFullReimport}
+              disabled={progressing || syncOp !== null}
+              style={{
+                opacity: syncOp !== null && syncOp !== "reimport" ? 0.5 : 1,
+                background: "#7f1d1d",
+                color: "#fca5a5",
+                border: "1px solid #ef4444",
+              }}
+            >
+              {syncOp === "reimport" ? "⏳ Re-importing…" : "Full Re-import"}
             </button>
           </div>
           {(progressing || syncOp !== null) && monday.progress && (

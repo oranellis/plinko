@@ -441,17 +441,10 @@ pub(crate) fn handle_protocol(
             // subsequent reimport to add another full set of duplicate tasks.
             let mut import_config = config.clone();
             if is_reimport {
-                let mapped_node_ids: std::collections::HashSet<_> = config
-                    .item_node_map
-                    .iter()
-                    .map(|m| m.plinko_node_id)
-                    .collect();
-                plan_clone.tasks.retain(|id, _| {
-                    !mapped_node_ids.contains(&plinko_shared::data::ids::NodeId::Task(*id))
-                });
-                plan_clone.milestones.retain(|id, _| {
-                    !mapped_node_ids.contains(&plinko_shared::data::ids::NodeId::Milestone(*id))
-                });
+                // Clear everything so we start completely fresh — the whole
+                // point of Full Re-import is a clean slate, not a partial diff.
+                plan_clone.tasks.clear();
+                plan_clone.milestones.clear();
                 import_config.item_node_map.clear();
             }
             let tx = monday_tx.clone();
