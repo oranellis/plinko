@@ -317,7 +317,8 @@ export type PlanRequest =
   | { MondayFullReimport: { plan_id: string } }
   | { MondayPush: { plan_id: string } }
   | { SaveMondayConfig: { plan_id: string; config: MondayConfig; token: string } }
-  | { LoadMondayConfig: { plan_id: string } };
+  | { LoadMondayConfig: { plan_id: string } }
+  | "LoadMondayApiToken";
 
 // ── Protocol: PlanResponse ────────────────────────────────────────────────────
 
@@ -327,14 +328,16 @@ export type PlanResponse =
   | { PlanList: [string, string, string][] }
   | { MondayConfigLoaded: MondayConfig }
   | { MondayBoardInfo: { users: MondayUser[]; columns: BoardColumn[]; status_labels: string[] } }
-  | { MondayApiToken: string };
+  | { MondayApiToken: string }
+  | { MondayConnected: string };
 
 export type PlanError =
   | { TaskNotFound: TaskId }
   | { MilestoneNotFound: MilestoneId }
   | { UserNotFound: UserId }
   | { Scheduler: string }
-  | { Dependency: "Cycle" | "NotFound" };
+  | { Dependency: "Cycle" | "NotFound" }
+  | { Monday: string };
 
 // ── Protocol: ServerMessage (`#[serde(tag = "type")]`) ───────────────────────
 

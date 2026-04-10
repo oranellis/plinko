@@ -33,47 +33,61 @@ export function MondayModal({ planId, onClose }: Props) {
   const { plan, sendRequest, monday } = usePlanContext();
   const [token, setToken] = useState("");
   const [config, setConfig] = useState<MondayConfig>(DEFAULT_CONFIG);
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [testStatus, setTestStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [testMsg, setTestMsg] = useState("");
+  const [fetchStatus, setFetchStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [fetchMsg, setFetchMsg] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  // Load existing config on mount
+  // Load existing config AND api token on mount
   useEffect(() => {
     sendRequest({ LoadMondayConfig: { plan_id: planId } }).then((resp) => {
       if (typeof resp === "object" && "MondayConfigLoaded" in resp) {
         setConfig(resp.MondayConfigLoaded);
       }
     });
+    sendRequest("LoadMondayApiToken").then((resp) => {
+      if (typeof resp === "object" && "MondayApiToken" in resp) {
+        setToken(resp.MondayApiToken);
+      }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planId]);
 
   const handleTestConnection = async () => {
-    setTestResult(null);
-    setLoading(true);
+    setTestStatus("loading");
+    setTestMsg("");
     try {
       const resp = await sendRequest({
         MondayTestConnection: { token, board_id: config.board_id },
       });
       if (typeof resp === "object" && "Error" in resp) {
-        setTestResult("❌ " + JSON.stringify(resp.Error));
+        const err = resp.Error;
+        const msg = typeof err === "object" && "Monday" in err ? err.Monday : JSON.stringify(err);
+        setTestStatus("error");
+        setTestMsg(msg);
+      } else if (typeof resp === "object" && "MondayConnected" in resp) {
+        setTestStatus("ok");
+        setTestMsg(resp.MondayConnected);
       } else {
-        setTestResult("✓ Connected");
+        setTestStatus("ok");
+        setTestMsg("Connected");
       }
     } catch (e) {
-      setTestResult("❌ " + String(e));
-    } finally {
-      setLoading(false);
+      setTestStatus("error");
+      setTestMsg(String(e));
     }
   };
 
   const handleFetchBoardInfo = async () => {
-    setLoading(true);
+    setFetchStatus("loading");
+    setFetchMsg("");
     try {
       const resp = await sendRequest({
         MondayFetchBoardInfo: { token, board_id: config.board_id },
       });
       if (typeof resp === "object" && "MondayBoardInfo" in resp) {
         const info = resp.MondayBoardInfo;
-        // Auto-populate user mappings for new users
         setConfig((c) => {
           const existing = new Set(c.user_mappings.map((m) => m.monday_user_id));
           const newMappings = info.users
@@ -88,14 +102,32 @@ export function MondayModal({ planId, onClose }: Props) {
             status_mappings: [...c.status_mappings, ...newStatusMappings],
           };
         });
+        const total = info.users.length + info.status_labels.length + info.columns.length;
+        setFetchStatus("ok");
+        setFetchMsg(`Fetched ${info.columns.length} columns, ${info.users.length} users, ${info.status_labels.length} statuses`);
+        if (total === 0) {
+          setFetchStatus("error");
+          setFetchMsg("No data returned — check your token and board ID");
+        }
+      } else if (typeof resp === "object" && "Error" in resp) {
+        const err = resp.Error;
+        const msg = typeof err === "object" && "Monday" in err ? err.Monday : JSON.stringify(err);
+        setFetchStatus("error");
+        setFetchMsg(msg);
       }
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      setFetchStatus("error");
+      setFetchMsg(String(e));
     }
   };
 
   const handleSaveConfig = async () => {
-    await sendRequest({ SaveMondayConfig: { plan_id: planId, config, token } });
+    setSaving(true);
+    try {
+      await sendRequest({ SaveMondayConfig: { plan_id: planId, config, token } });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handlePull = async () => {
@@ -148,10 +180,11 @@ export function MondayModal({ planId, onClose }: Props) {
           <div className="form-row">
             <label>API Token</label>
             <input
-              type="text"
+              type="password"
               value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="xxxx-xxxx…"
+              onChange={(e) => { setToken(e.target.value); setTestStatus("idle"); }}
+              placeholder="eyJ…"
+              autoComplete="off"
             />
           </div>
           <div className="form-row">
@@ -159,30 +192,37 @@ export function MondayModal({ planId, onClose }: Props) {
             <input
               type="text"
               value={config.board_id}
-              onChange={(e) => setConfig((c) => ({ ...c, board_id: e.target.value }))}
+              onChange={(e) => { setConfig((c) => ({ ...c, board_id: e.target.value })); setFetchStatus("idle"); }}
             />
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button
               className="btn btn-secondary btn-sm"
               onClick={handleTestConnection}
-              disabled={loading}
+              disabled={testStatus === "loading" || !token}
+              style={testStatus === "loading" ? loadingStyle : undefined}
             >
-              Test Connection
+              {testStatus === "loading" ? "⏳ Testing…" : "Test Connection"}
             </button>
             <button
               className="btn btn-secondary btn-sm"
               onClick={handleFetchBoardInfo}
-              disabled={loading}
+              disabled={fetchStatus === "loading" || !token || !config.board_id}
+              style={fetchStatus === "loading" ? loadingStyle : undefined}
             >
-              Fetch Board Info
+              {fetchStatus === "loading" ? "⏳ Fetching…" : "Fetch Board Info"}
             </button>
-            {testResult && (
-              <span style={{ fontSize: 12, color: testResult.startsWith("✓") ? "#4caf50" : "#e57373" }}>
-                {testResult}
-              </span>
-            )}
           </div>
+          {testStatus !== "idle" && testMsg && (
+            <div style={{ marginTop: 6, fontSize: 12, color: testStatus === "ok" ? "#4caf50" : "#e57373" }}>
+              {testStatus === "ok" ? "✓ " : "✗ "}{testMsg}
+            </div>
+          )}
+          {fetchStatus !== "idle" && fetchMsg && (
+            <div style={{ marginTop: 6, fontSize: 12, color: fetchStatus === "ok" ? "#4caf50" : "#e57373" }}>
+              {fetchStatus === "ok" ? "✓ " : "✗ "}{fetchMsg}
+            </div>
+          )}
         </section>
 
         {/* Column mapping */}
@@ -266,7 +306,7 @@ export function MondayModal({ planId, onClose }: Props) {
                 <span style={{ color: "#666", fontSize: 12 }}>→</span>
                 <select
                   value={m.plinko_user_id ?? ""}
-                  onChange={(e) => setUserMapping(m.monday_user_id, e.target.value || null)}
+                  onChange={(e) => setUserMapping(m.monday_user_id, (e.target.value as UserId) || null)}
                   style={selectStyle}
                 >
                   <option value="">Unassigned</option>
@@ -306,7 +346,7 @@ export function MondayModal({ planId, onClose }: Props) {
           <h3 style={sectionTitle}>Sync</h3>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
             <button className="btn btn-primary btn-sm" onClick={handlePull} disabled={progressing}>
-              Pull from Monday
+              {progressing ? "⏳ Working…" : "Pull from Monday"}
             </button>
             <button className="btn btn-secondary btn-sm" onClick={handleFullReimport} disabled={progressing}>
               Full Re-import
@@ -317,20 +357,22 @@ export function MondayModal({ planId, onClose }: Props) {
           </div>
           {progressing && monday.progress && (
             <div style={{ fontSize: 12, color: "#4a90d9" }}>
-              {monday.progress.message} ({monday.progress.done}/{monday.progress.total})
+              ⏳ {monday.progress.message} ({monday.progress.done}/{monday.progress.total})
             </div>
           )}
           {monday.lastMessage && !progressing && (
-            <div style={{ fontSize: 12, color: "#4caf50" }}>{monday.lastMessage}</div>
+            <div style={{ fontSize: 12, color: "#4caf50" }}>✓ {monday.lastMessage}</div>
           )}
           {monday.lastError && (
-            <div style={{ fontSize: 12, color: "#e57373" }}>{monday.lastError}</div>
+            <div style={{ fontSize: 12, color: "#e57373" }}>✗ {monday.lastError}</div>
           )}
         </section>
 
         <div className="form-actions">
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
-          <button className="btn btn-primary" onClick={handleSaveConfig}>Save Config</button>
+          <button className="btn btn-primary" onClick={handleSaveConfig} disabled={saving}>
+            {saving ? "⏳ Saving…" : "Save Config"}
+          </button>
         </div>
       </div>
     </Modal>
@@ -354,4 +396,9 @@ const selectStyle: React.CSSProperties = {
   fontSize: 12,
   padding: "3px 6px",
   outline: "none",
+};
+
+const loadingStyle: React.CSSProperties = {
+  opacity: 0.7,
+  cursor: "wait",
 };
