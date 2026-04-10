@@ -13,13 +13,11 @@ import {
 import { TaskFormModal } from "../components/modals/TaskFormModal";
 import { MilestoneFormModal } from "../components/modals/MilestoneFormModal";
 import { UsersModal } from "../components/modals/UsersModal";
-import { PlanSettingsModal } from "../components/modals/PlanSettingsModal";
 import { SearchModal } from "../components/modals/SearchModal";
 import {
   IconAddMilestone,
   IconAddTask,
   IconSearch,
-  IconSettings,
   IconToday,
   IconUsers,
 } from "../components/icons";
@@ -30,6 +28,11 @@ const HEADER_H = 56; // month (22) + day (34)
 const DAY_W_DEFAULT = 34;
 const MIN_DAY_W = 8;
 const MAX_DAY_W = 80;
+
+/** Sentinel ID used internally for the plan-start anchor node */
+const PLAN_START_ID = "__plan_start__";
+/** Vertical position of the plan-start marker (fixed, not scrolled vertically) */
+const PLAN_START_Y = HEADER_H + 14;
 
 export function OverviewPage() {
   const { plan, sendRequest, setToolbarActions, setToolbarRightActions } = usePlanContext();
@@ -46,7 +49,6 @@ export function OverviewPage() {
   const [editTaskId, setEditTaskId] = useState<TaskId | null | "new">(null);
   const [editMsId, setEditMsId] = useState<MilestoneId | null | "new">(null);
   const [showUsers, setShowUsers] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
   // Hover / flash
@@ -61,7 +63,6 @@ export function OverviewPage() {
   const setEditTaskIdRef = useRef(setEditTaskId);
   const setEditMsIdRef = useRef(setEditMsId);
   const setShowUsersRef = useRef(setShowUsers);
-  const setShowSettingsRef = useRef(setShowSettings);
   const setShowSearchRef = useRef(setShowSearch);
   const planRef = useRef(plan);
   const scrollXRef = useRef(scrollX);
@@ -70,7 +71,6 @@ export function OverviewPage() {
   setEditTaskIdRef.current = setEditTaskId;
   setEditMsIdRef.current = setEditMsId;
   setShowUsersRef.current = setShowUsers;
-  setShowSettingsRef.current = setShowSettings;
   setShowSearchRef.current = setShowSearch;
   planRef.current = plan;
   scrollXRef.current = scrollX;
@@ -95,7 +95,6 @@ export function OverviewPage() {
     setToolbarRightActions(
       <>
         <button className="toolbar-btn" title="Users" onClick={() => setShowUsersRef.current(true)}><IconUsers size={24} /></button>
-        <button className="toolbar-btn" title="Settings" onClick={() => setShowSettingsRef.current(true)}><IconSettings size={24} /></button>
       </>
     );
     return () => { setToolbarActions(null); setToolbarRightActions(null); };
@@ -227,32 +226,30 @@ export function OverviewPage() {
     const hoveredDeps = new Set<string>();   // items the hovered item depends on
     const hoveredDependents = new Set<string>(); // items that depend on the hovered item
     if (hoverId && plan) {
+      const depIdToString = (d: { id: unknown }): string => {
+        if (d.id === "PlanStart") return PLAN_START_ID;
+        if (typeof d.id === "object" && d.id !== null && "Task" in (d.id as object)) return (d.id as { Task: string }).Task;
+        if (typeof d.id === "object" && d.id !== null && "Milestone" in (d.id as object)) return (d.id as { Milestone: string }).Milestone;
+        return "";
+      };
       const getDeps = (id: string): string[] => {
         const task = plan.tasks[id as TaskId];
-        if (task) return task.dependencies.map((d) =>
-          typeof d.id === "object" && "Task" in d.id ? d.id.Task :
-          typeof d.id === "object" && "Milestone" in d.id ? d.id.Milestone : "");
+        if (task) return task.dependencies.map(depIdToString).filter(Boolean);
         const ms = plan.milestones[id as MilestoneId];
-        if (ms) return ms.dependencies.map((d) =>
-          typeof d.id === "object" && "Task" in d.id ? d.id.Task :
-          typeof d.id === "object" && "Milestone" in d.id ? d.id.Milestone : "");
+        if (ms) return ms.dependencies.map(depIdToString).filter(Boolean);
         return [];
       };
       for (const depId of getDeps(hoverId)) {
-        if (depId) hoveredDeps.add(depId);
+        hoveredDeps.add(depId);
       }
-      // Compute forward dependents
+      // Compute forward dependents (items that directly depend on hoverId)
+      const isDepOnHover = (deps: { id: unknown }[]) =>
+        deps.some((d) => depIdToString(d) === hoverId || (hoverId === PLAN_START_ID && d.id === "PlanStart"));
       for (const [tid, task] of Object.entries(plan.tasks)) {
-        if (task.dependencies.some((d) =>
-          (typeof d.id === "object" && "Task" in d.id && d.id.Task === hoverId) ||
-          (typeof d.id === "object" && "Milestone" in d.id && d.id.Milestone === hoverId)
-        )) hoveredDependents.add(tid);
+        if (isDepOnHover(task.dependencies)) hoveredDependents.add(tid);
       }
       for (const [mid, ms] of Object.entries(plan.milestones)) {
-        if (ms.dependencies.some((d) =>
-          (typeof d.id === "object" && "Task" in d.id && d.id.Task === hoverId) ||
-          (typeof d.id === "object" && "Milestone" in d.id && d.id.Milestone === hoverId)
-        )) hoveredDependents.add(mid);
+        if (isDepOnHover(ms.dependencies)) hoveredDependents.add(mid);
       }
     }
 
@@ -293,6 +290,11 @@ export function OverviewPage() {
 
     // Pass 1: pre-compute day-center anchors for all non-separator, non-dropped items
     const droppedIds = new Set(items.filter((it) => it.type !== "separator" && it.status === "Dropped").map((it) => it.id));
+
+    // Plan-start anchor: fixed vertical position, scrolls horizontally with day 0
+    const planStartX = dayW / 2 - scrollX;
+    itemCenters.set(PLAN_START_ID, { xIn: planStartX, xOut: planStartX, y: PLAN_START_Y });
+
     for (const item of items) {
       if (item.type === "separator" || item.status === "Dropped") continue;
       const rowY = HEADER_H + item.row * ROW_H - scrollY;
@@ -459,6 +461,44 @@ export function OverviewPage() {
       }
     }
 
+    // === PLAN START MARKER ===
+    {
+      const cx = planStartX;
+      const cy = PLAN_START_Y;
+      const r = 9;
+      const isPSHovered = hoverId === PLAN_START_ID;
+      const isPSDependent = hoveredDependents.has(PLAN_START_ID); // can't be a dependent since nothing depends on plan start
+      const isPSDepOf = hoveredDeps.has(PLAN_START_ID); // hovered item depends on plan start
+      ctx.fillStyle = isPSHovered ? "#c4b5fd" : "#a78bfa";
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r, cy);
+      ctx.lineTo(cx, cy + r);
+      ctx.lineTo(cx - r, cy);
+      ctx.closePath();
+      ctx.fill();
+      const psBorderColor = isPSHovered ? "#1e88e5" : isPSDepOf ? "#fc1ef1" : isPSDependent ? "#07fcd7" : null;
+      if (psBorderColor) {
+        ctx.strokeStyle = psBorderColor;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - r);
+        ctx.lineTo(cx + r, cy);
+        ctx.lineTo(cx, cy + r);
+        ctx.lineTo(cx - r, cy);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+      const nameX = cx + r + 5;
+      ctx.fillStyle = isPSHovered ? "#f5d040" : "#bbb";
+      ctx.font = "13px sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillText("Plan Start", nameX, cy);
+      ctx.textBaseline = "alphabetic";
+      hitRectsRef.current.push({ id: PLAN_START_ID, x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
+    }
+
     // === HOVER INFO PANEL (bottom-left) ===
     if (hoverId) {
       const panelPad = 10;
@@ -471,8 +511,8 @@ export function OverviewPage() {
       const lines: string[] = [];
       const taskId = hoverId as import("../protocol").TaskId;
       const msId = hoverId as import("../protocol").MilestoneId;
-      const task = plan.tasks[taskId];
-      const ms = plan.milestones[msId];
+      const task = hoverId === PLAN_START_ID ? null : plan.tasks[taskId];
+      const ms = hoverId === PLAN_START_ID ? null : plan.milestones[msId];
 
       if (task) {
         const tname = task.context_label ? `${task.name} | ${task.context_label}` : task.name;
@@ -512,6 +552,9 @@ export function OverviewPage() {
         lines.push("Milestone");
         const msState = plan.node_allocations.milestones[msId];
         if (msState) lines.push(`Scheduled: ${msState.date}`);
+      } else if (hoverId === PLAN_START_ID) {
+        lines.push("Plan Start");
+        lines.push(`Date: ${plan.start_date}`);
       }
 
       if (lines.length > 0) {
@@ -740,13 +783,6 @@ export function OverviewPage() {
           plan={plan}
           sendRequest={sendRequest}
           onClose={() => setShowUsers(false)}
-        />
-      )}
-      {showSettings && plan && (
-        <PlanSettingsModal
-          plan={plan}
-          sendRequest={sendRequest}
-          onClose={() => setShowSettings(false)}
         />
       )}
       {showSearch && plan && (
