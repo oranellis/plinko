@@ -153,11 +153,25 @@ export type GanttItem =
     }
   | { type: "separator"; id: "__separator__"; row: number };
 
+export const PLAN_START_ID = "__plan_start__";
+
 /** Pack tasks and milestones into rows (greedy bin packing).
- *  Dropped tasks are packed separately below a separator row. */
+ *  Dropped tasks are packed separately below a separator row.
+ *  The plan start is always the first item (row 0). */
 export function packGanttRows(plan: Plan): GanttItem[] {
   type RawItem = Omit<Extract<GanttItem, { type: "task" | "milestone" }>, "row">;
-  const activeItems: RawItem[] = [];
+  // Plan start is a synthetic milestone row at the plan's start date.
+  const activeItems: RawItem[] = [
+    {
+      id: PLAN_START_ID,
+      type: "milestone",
+      name: "Plan Start",
+      contextLabel: null,
+      start: plan.start_date,
+      end: plan.start_date,
+      status: "Complete",
+    },
+  ];
   const droppedItems: RawItem[] = [];
 
   for (const [id, task] of Object.entries(plan.tasks)) {

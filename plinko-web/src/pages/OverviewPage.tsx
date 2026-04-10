@@ -9,6 +9,7 @@ import {
   formatDate,
   packGanttRows,
   parseDate,
+  PLAN_START_ID,
 } from "../utils/planUtils";
 import { TaskFormModal } from "../components/modals/TaskFormModal";
 import { MilestoneFormModal } from "../components/modals/MilestoneFormModal";
@@ -28,11 +29,6 @@ const HEADER_H = 56; // month (22) + day (34)
 const DAY_W_DEFAULT = 34;
 const MIN_DAY_W = 8;
 const MAX_DAY_W = 80;
-
-/** Sentinel ID used internally for the plan-start anchor node */
-const PLAN_START_ID = "__plan_start__";
-/** Vertical position of the plan-start marker (fixed, not scrolled vertically) */
-const PLAN_START_Y = HEADER_H + 14;
 
 export function OverviewPage() {
   const { plan, sendRequest, setToolbarActions, setToolbarRightActions } = usePlanContext();
@@ -291,10 +287,6 @@ export function OverviewPage() {
     // Pass 1: pre-compute day-center anchors for all non-separator, non-dropped items
     const droppedIds = new Set(items.filter((it) => it.type !== "separator" && it.status === "Dropped").map((it) => it.id));
 
-    // Plan-start anchor: fixed vertical position, scrolls horizontally with day 0
-    const planStartX = dayW / 2 - scrollX;
-    itemCenters.set(PLAN_START_ID, { xIn: planStartX, xOut: planStartX, y: PLAN_START_Y });
-
     for (const item of items) {
       if (item.type === "separator" || item.status === "Dropped") continue;
       const rowY = HEADER_H + item.row * ROW_H - scrollY;
@@ -400,6 +392,55 @@ export function OverviewPage() {
         ctx.textBaseline = "alphabetic";
 
         hitRectsRef.current.push({ id: item.id, x, y, w: barW, h: barH });
+      } else if (item.id === PLAN_START_ID) {
+        // Plan Start — purple diamond with special label
+        const cx = startOff * dayW - scrollX + dayW / 2;
+        const cy = rowY + ROW_H / 2;
+        const r = 9;
+        ctx.fillStyle = isHovered ? "#c4b5fd" : "#a78bfa";
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - r);
+        ctx.lineTo(cx + r, cy);
+        ctx.lineTo(cx, cy + r);
+        ctx.lineTo(cx - r, cy);
+        ctx.closePath();
+        ctx.fill();
+
+        const psBorderColor = isFlashing ? "#e53935"
+          : isTarget ? "#ffd600"
+          : isHovered ? "#1e88e5"
+          : isDepOf ? "#fc1ef1"
+          : isDependent ? "#07fcd7"
+          : null;
+        if (psBorderColor) {
+          ctx.strokeStyle = psBorderColor;
+          ctx.lineWidth = isFlashing ? 4 : isTarget ? 3 : isHovered ? 3.5 : 3;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - r);
+          ctx.lineTo(cx + r, cy);
+          ctx.lineTo(cx, cy + r);
+          ctx.lineTo(cx - r, cy);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.lineWidth = 1;
+        }
+
+        const nameX = cx + r + 6;
+        const nameClipEnd = Math.min((nextItemX.get(item.id) ?? w) - 4, w);
+        if (nameX < nameClipEnd) {
+          ctx.fillStyle = isHovered ? "#f5d040" : "#bbb";
+          ctx.font = "13px sans-serif";
+          ctx.textBaseline = "middle";
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(nameX, rowY, nameClipEnd - nameX, ROW_H);
+          ctx.clip();
+          ctx.fillText("Plan Start", nameX, cy);
+          ctx.restore();
+          ctx.textBaseline = "alphabetic";
+        }
+
+        hitRectsRef.current.push({ id: PLAN_START_ID, x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
       } else {
         // Milestone diamond — center on the start day column center
         const cx = startOff * dayW - scrollX + dayW / 2;
@@ -457,44 +498,6 @@ export function OverviewPage() {
 
         hitRectsRef.current.push({ id: item.id, x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
       }
-    }
-
-    // === PLAN START MARKER ===
-    {
-      const cx = planStartX;
-      const cy = PLAN_START_Y;
-      const r = 9;
-      const isPSHovered = hoverId === PLAN_START_ID;
-      const isPSDependent = hoveredDependents.has(PLAN_START_ID); // can't be a dependent since nothing depends on plan start
-      const isPSDepOf = hoveredDeps.has(PLAN_START_ID); // hovered item depends on plan start
-      ctx.fillStyle = isPSHovered ? "#c4b5fd" : "#a78bfa";
-      ctx.beginPath();
-      ctx.moveTo(cx, cy - r);
-      ctx.lineTo(cx + r, cy);
-      ctx.lineTo(cx, cy + r);
-      ctx.lineTo(cx - r, cy);
-      ctx.closePath();
-      ctx.fill();
-      const psBorderColor = isPSHovered ? "#1e88e5" : isPSDepOf ? "#fc1ef1" : isPSDependent ? "#07fcd7" : null;
-      if (psBorderColor) {
-        ctx.strokeStyle = psBorderColor;
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy - r);
-        ctx.lineTo(cx + r, cy);
-        ctx.lineTo(cx, cy + r);
-        ctx.lineTo(cx - r, cy);
-        ctx.closePath();
-        ctx.stroke();
-        ctx.lineWidth = 1;
-      }
-      const nameX = cx + r + 5;
-      ctx.fillStyle = isPSHovered ? "#f5d040" : "#bbb";
-      ctx.font = "13px sans-serif";
-      ctx.textBaseline = "middle";
-      ctx.fillText("Plan Start", nameX, cy);
-      ctx.textBaseline = "alphabetic";
-      hitRectsRef.current.push({ id: PLAN_START_ID, x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
     }
 
     // === HOVER INFO PANEL (bottom-left) ===

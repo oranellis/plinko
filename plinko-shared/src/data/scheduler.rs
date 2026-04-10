@@ -1004,6 +1004,28 @@ impl Plan {
     ///
     /// - PlanStart is always considered complete.
     /// - A task predecessor is complete if its status is Complete or Dropped.
+    /// Returns true if any direct dependency TASK has status InProgress.
+    /// Milestone predecessors with InProgress derived status are intentionally ignored.
+    fn milestone_derived_in_progress(&self, id: MilestoneId) -> bool {
+        let Some(milestone) = self.milestones.get(&id) else {
+            return false;
+        };
+        for dep in &milestone.dependencies {
+            if let NodeId::Task(tid) = dep.id {
+                let status = self
+                    .node_allocations
+                    .tasks
+                    .get(&tid)
+                    .map(|ts| ts.status)
+                    .unwrap_or(Status::NotStarted);
+                if status == Status::InProgress {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// - A milestone predecessor is complete if its own derived_status is Complete
     ///   (set earlier in this scheduling pass, since we run in topological order).
     fn milestone_derived_complete(&self, id: MilestoneId, state: &SchedulerState) -> bool {
@@ -1116,6 +1138,8 @@ impl Plan {
             let mut alloc = MilestoneAllocation::new(date);
             if self.milestone_derived_complete(id, state) {
                 alloc.set_derived_status(Status::Complete);
+            } else if self.milestone_derived_in_progress(id) {
+                alloc.set_derived_status(Status::InProgress);
             }
             alloc
         });
