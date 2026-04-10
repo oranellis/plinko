@@ -11,6 +11,7 @@ import {
 } from "../utils/planUtils";
 import { TaskFormModal } from "../components/modals/TaskFormModal";
 import { UsersModal } from "../components/modals/UsersModal";
+import { IconToday, IconUsers } from "../components/icons";
 import "./AllocationPage.css";
 
 const USER_PANEL_W = 220;
@@ -62,7 +63,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 export function AllocationPage() {
-  const { plan, sendRequest } = usePlanContext();
+  const { plan, sendRequest, setToolbarActions, setToolbarRightActions } = usePlanContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -86,6 +87,38 @@ export function AllocationPage() {
     });
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+
+  // Refs to avoid stale closures in toolbar action callbacks
+  const setShowUsersRef = useRef(setShowUsers);
+  const planRef = useRef(plan);
+  const scrollXRef = useRef(scrollX);
+  const sizeRef2 = useRef(size);
+  const dayWRef2 = useRef(dayW);
+  setShowUsersRef.current = setShowUsers;
+  planRef.current = plan;
+  scrollXRef.current = scrollX;
+  sizeRef2.current = size;
+  dayWRef2.current = dayW;
+
+  useEffect(() => {
+    setToolbarActions(
+      <button className="toolbar-btn" title="Jump to today" onClick={() => {
+        const p = planRef.current;
+        const sw = sizeRef2.current.w;
+        const dw = dayWRef2.current;
+        if (!p) return;
+        const today = formatDate(new Date());
+        const offset = daysBetween(p.start_date, today);
+        const tlW = sw - USER_PANEL_W - LABEL_COL_W;
+        setScrollX(Math.max(0, offset * dw - tlW / 2));
+      }}><IconToday size={24} /></button>
+    );
+    setToolbarRightActions(
+      <button className="toolbar-btn" title="Users" onClick={() => setShowUsersRef.current(true)}><IconUsers size={24} /></button>
+    );
+    return () => { setToolbarActions(null); setToolbarRightActions(null); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Centre today on mount / plan load
@@ -641,19 +674,6 @@ export function AllocationPage() {
 
   return (
     <div className="allocation-page" ref={containerRef}>
-      {/* Toolbar */}
-      <div className="allocation-toolbar">
-        <button className="overview-tool-btn" onClick={() => {
-          if (!plan) return;
-          const today = formatDate(new Date());
-          const offset = daysBetween(plan.start_date, today);
-          const tlW = size.w - USER_PANEL_W - LABEL_COL_W;
-          setScrollX(Math.max(0, offset * dayW - tlW / 2));
-        }}>📅 Today</button>
-        <span style={{ flex: 1 }} />
-        <button className="overview-tool-btn" onClick={() => setShowUsers(true)}>👤 Users</button>
-      </div>
-
       <canvas
         ref={canvasRef}
         width={size.w}

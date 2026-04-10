@@ -3,9 +3,28 @@ import { IconBack, IconSettings } from "./icons";
 import "./Toolbar.css";
 
 export function Toolbar() {
-  const { plan, status, page, setPage, toolbarActions, toolbarRightActions } = usePlanContext();
+  const { plan, status, page, setPage, previousPage, setPreviousPage, toolbarActions, toolbarRightActions } = usePlanContext();
 
   const isHome = page === "home";
+
+  const handleBack = () => {
+    if (page === "settings" && previousPage) {
+      setPage(previousPage);
+      setPreviousPage(null);
+    } else {
+      setPage("home");
+    }
+  };
+
+  const handleSettings = () => {
+    if (page === "settings") {
+      setPage(previousPage ?? "home");
+      setPreviousPage(null);
+    } else {
+      setPreviousPage(page);
+      setPage("settings");
+    }
+  };
 
   return (
     <div className="toolbar">
@@ -13,8 +32,8 @@ export function Toolbar() {
         {!isHome && (
           <button
             className="toolbar-back"
-            onClick={() => setPage("home")}
-            title="Home"
+            onClick={handleBack}
+            title="Back"
           >
             <IconBack size={15} />
           </button>
@@ -29,7 +48,7 @@ export function Toolbar() {
         <button
           className="toolbar-btn"
           title="Settings"
-          onClick={() => setPage(page === "settings" ? "home" : "settings")}
+          onClick={handleSettings}
           style={page === "settings" ? { color: "#a78bfa" } : undefined}
         >
           <IconSettings size={18} />
