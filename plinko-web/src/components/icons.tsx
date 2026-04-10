@@ -1,4 +1,5 @@
 /** Inline SVG icon components. All icons render at 16×16 by default. */
+import type React from "react";
 
 interface IconProps {
   size?: number;
@@ -144,6 +145,28 @@ export function IconPushMonday({ size = defaults.size, color = defaults.color }:
       <path d="M8 10V2" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
       <path d="M5 5L8 1.5L11 5" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M3 13H13" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Animated spinner — use with className that applies a spin CSS animation
+export function IconSpinner({ size = defaults.size, color = defaults.color, style }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ animation: "icon-spin 0.9s linear infinite", ...style }}
+    >
+      <circle cx="8" cy="8" r="5.5" stroke={color} strokeWidth="1.5" strokeOpacity="0.25" />
+      <path
+        d="M8 2.5A5.5 5.5 0 0 1 13.5 8"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

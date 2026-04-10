@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
-import { IconBack, IconPullMonday, IconPushMonday, IconSettings } from "./icons";
+import { IconBack, IconPullMonday, IconPushMonday, IconSettings, IconSpinner } from "./icons";
 import "./Toolbar.css";
 
 type MondayOp = "pull" | "push" | null;
@@ -13,7 +13,7 @@ export function Toolbar() {
   const [doneText, setDoneText] = useState<{ text: string; isError: boolean } | null>(null);
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track completion and errors, show brief done text then clear.
+  // Track completion and errors.
   useEffect(() => {
     if (monday.lastMessage) {
       setActiveOp(null);
@@ -62,13 +62,18 @@ export function Toolbar() {
     sendRequest({ MondayPush: { plan_id: plan.id } }).catch(() => setActiveOp(null));
   };
 
-  // Build the label shown inside the active button.
-  const progressLabel = (() => {
-    if (!monday.progress) return null;
-    const { done, total, message } = monday.progress;
-    const counter = total > 0 ? ` (${done}/${total})` : "";
-    return `${message}${counter}`;
+  // Label shown in the floating status bar below the toolbar.
+  const statusText = (() => {
+    if (activeOp && monday.progress) {
+      const { done, total, message } = monday.progress;
+      const counter = total > 0 ? ` (${done}/${total})` : "";
+      return `${message}${counter}`;
+    }
+    if (activeOp) return activeOp === "pull" ? "Fetching…" : "Preparing push…";
+    if (doneText) return doneText.text;
+    return null;
   })();
+  const statusIsError = !activeOp && !!doneText?.isError;
 
   return (
     <div className="toolbar">
@@ -91,44 +96,26 @@ export function Toolbar() {
         {toolbarRightActions}
         {hasMondayIntegration && (
           <div className="monday-btn-group">
-            {/* Pull button — expands when active */}
             <button
-              className={`toolbar-btn monday-op-btn${activeOp === "pull" ? " monday-op-btn--active" : ""}`}
+              className={`toolbar-btn${activeOp === "pull" ? " monday-op-btn--active" : ""}`}
               title="Pull from Monday"
               onClick={handlePull}
               disabled={!!activeOp}
             >
-              <IconPullMonday size={16} />
-              {activeOp === "pull" && (
-                <span className="monday-op-label">
-                  {progressLabel ?? "Fetching…"}
-                </span>
-              )}
+              {activeOp === "pull"
+                ? <IconSpinner size={16} color="#a0a8d0" />
+                : <IconPullMonday size={16} />}
             </button>
-            {/* Push button — expands when active */}
             <button
-              className={`toolbar-btn monday-op-btn${activeOp === "push" ? " monday-op-btn--active" : ""}`}
+              className={`toolbar-btn${activeOp === "push" ? " monday-op-btn--active" : ""}`}
               title="Push to Monday"
               onClick={handlePush}
               disabled={!!activeOp}
             >
-              <IconPushMonday size={16} />
-              {activeOp === "push" && (
-                <span className="monday-op-label">
-                  {progressLabel ?? "Preparing…"}
-                </span>
-              )}
+              {activeOp === "push"
+                ? <IconSpinner size={16} color="#a0a8d0" />
+                : <IconPushMonday size={16} />}
             </button>
-            {/* Completion / error chip */}
-            {doneText && !activeOp && (
-              <span
-                className={`monday-done-chip${doneText.isError ? " monday-done-chip--error" : ""}`}
-                onClick={() => setDoneText(null)}
-                title="Click to dismiss"
-              >
-                {doneText.text}
-              </span>
-            )}
           </div>
         )}
         <button
@@ -144,7 +131,18 @@ export function Toolbar() {
           title={status}
         />
       </div>
+      {/* Status label floats below the toolbar, right-aligned */}
+      {statusText && (
+        <div
+          className={`monday-status-bar${statusIsError ? " monday-status-bar--error" : ""}`}
+          onClick={!activeOp ? () => setDoneText(null) : undefined}
+          style={!activeOp ? { cursor: "pointer" } : undefined}
+        >
+          {statusText}
+        </div>
+      )}
     </div>
   );
 }
+
 

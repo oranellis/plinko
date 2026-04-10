@@ -94,64 +94,43 @@
   gap: 4px;
 }
 
-/* The pull/push buttons animate wider when their operation is active */
-.monday-op-btn {
-  gap: 6px;
-  transition: padding 0.15s ease, background 0.15s ease;
-  white-space: nowrap;
-  overflow: hidden;
-  max-width: 32px;
-  transition: max-width 0.2s ease, padding 0.15s ease, background 0.15s ease;
-}
-
+/* Visual indicator on the active button */
 .monday-op-btn--active {
-  max-width: 320px;
-  background: #2a2a2e;
+  background: #2a2a2e !important;
   border-color: #4a4a5a !important;
-  color: #a0a8d0;
-  cursor: default;
 }
 
-.monday-op-btn--active:hover {
-  background: #2a2a2e;
+/* Spin keyframe used by IconSpinner */
+@keyframes icon-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
-.monday-op-label {
+/* Status bar — floats below toolbar, right-aligned */
+.monday-status-bar {
+  position: absolute;
+  top: 100%;
+  right: 12px;
+  margin-top: 4px;
+  background: rgba(28, 28, 32, 0.95);
+  border: 1px solid #3a3a4a;
+  border-radius: 5px;
+  color: #b0b8d8;
   font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 280px;
-}
-
-/* Completion / error chip — appears after op finishes */
-.monday-done-chip {
-  font-size: 12px;
-  color: #8fc88f;
-  background: rgba(100, 180, 100, 0.1);
-  border: 1px solid rgba(100, 180, 100, 0.25);
-  border-radius: 4px;
-  padding: 3px 8px;
-  cursor: pointer;
+  padding: 5px 12px;
   white-space: nowrap;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  animation: chip-in 0.15s ease;
+  z-index: 200;
+  animation: status-bar-in 0.12s ease;
+  pointer-events: none;
 }
 
-.monday-done-chip--error {
+.monday-status-bar--error {
+  border-color: rgba(180, 60, 60, 0.5);
   color: #e07070;
-  background: rgba(180, 60, 60, 0.1);
-  border-color: rgba(180, 60, 60, 0.25);
+  pointer-events: all;
 }
 
-.monday-done-chip:hover {
-  opacity: 0.75;
-}
-
-@keyframes chip-in {
-  from { opacity: 0; transform: scale(0.92); }
-  to   { opacity: 1; transform: scale(1); }
+@keyframes status-bar-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
