@@ -6,13 +6,17 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { AllocationPage } from "./pages/AllocationPage";
 import { CalendarPage } from "./pages/CalendarPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { LoginPage } from "./pages/LoginPage";
 import "./App.css";
 
 function PageRouter() {
-  const { page, status } = usePlanContext();
+  const { page, status, auth } = usePlanContext();
 
   if (status === "connecting" || status === "handshaking") {
     return <StatusScreen message="Connecting to Plinko server…" />;
+  }
+  if (status === "authenticating" || auth.required) {
+    return <LoginPage />;
   }
   if (status === "disconnected") {
     return <StatusScreen message="Disconnected — reconnecting…" />;

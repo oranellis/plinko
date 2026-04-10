@@ -1,3 +1,4 @@
+mod auth;
 mod engine;
 mod monday;
 mod server;
@@ -7,6 +8,7 @@ mod ws_server;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use auth::AuthDb;
 use plinko_shared::data::{Plan, Storage};
 
 fn parse_port_arg() -> Option<u16> {
@@ -71,11 +73,33 @@ fn main() {
     let engine = Arc::new(Mutex::new(engine::PlanEngine::new(plan)));
     let storage = Arc::new(Mutex::new(storage));
 
+    // Initialise the auth database.
+    let auth_db_path = {
+        let s = storage.lock().unwrap();
+        AuthDb::default_path(s.plans_dir())
+    };
+    let auth_db = match AuthDb::open(&auth_db_path) {
+        Ok(db) => {
+            if let Err(e) = db.bootstrap_root() {
+                eprintln!("auth bootstrap error: {e}");
+            }
+            Arc::new(db)
+        }
+        Err(e) => {
+            eprintln!("auth db open error: {e} — auth disabled");
+            // Fall back to an in-memory DB so the server still starts.
+            let db = AuthDb::open(":memory:").expect("in-memory auth db failed");
+            let _ = db.bootstrap_root();
+            Arc::new(db)
+        }
+    };
+
     let ws_port = port + 1;
     let engine_ws = Arc::clone(&engine);
     let storage_ws = Arc::clone(&storage);
+    let auth_ws = Arc::clone(&auth_db);
     std::thread::spawn(move || {
-        ws_server::run_ws_server(engine_ws, storage_ws, ws_port);
+        ws_server::run_ws_server(engine_ws, storage_ws, auth_ws, ws_port);
     });
 
     // Serve the React app's built assets on port+2 if the dist directory exists.
@@ -99,5 +123,5 @@ fn main() {
         );
     }
 
-    server::run_server(engine, storage, port);
+    server::run_server(engine, storage, auth_db, port);
 }

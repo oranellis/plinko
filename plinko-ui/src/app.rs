@@ -741,7 +741,12 @@ impl ApplicationHandler for Application {
                 PlanResponse::MondayConfigLoaded(_)
                 | PlanResponse::MondayBoardInfo { .. }
                 | PlanResponse::MondayApiToken(_)
-                | PlanResponse::MondayConnected(_) => {}
+                | PlanResponse::MondayConnected(_)
+                // Auth responses — not used by the desktop UI.
+                | PlanResponse::AuthUsers(_)
+                | PlanResponse::UserLinks(_)
+                | PlanResponse::PasswordChanged
+                | PlanResponse::AuthUserCreated { .. } => {}
             }
         }
 

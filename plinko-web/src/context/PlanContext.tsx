@@ -1,6 +1,6 @@
 import React, { createContext, useContext } from "react";
 import type { Plan, PlanRequest, PlanResponse } from "../protocol";
-import { type ConnectionStatus, type MondayState, usePlan } from "../hooks/usePlan";
+import { type AuthState, type ConnectionStatus, type MondayState, usePlan } from "../hooks/usePlan";
 
 export type PageId =
   | "home"
@@ -14,8 +14,11 @@ interface PlanContextValue {
   plan: Plan | null;
   status: ConnectionStatus;
   monday: MondayState;
+  auth: AuthState;
   hasMondayIntegration: boolean;
   sendRequest: (req: PlanRequest) => Promise<PlanResponse>;
+  login: (email: string, password: string) => void;
+  logout: () => void;
   page: PageId;
   setPage: (p: PageId) => void;
   previousPage: PageId | null;

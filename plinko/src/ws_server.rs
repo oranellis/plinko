@@ -6,12 +6,18 @@ use tungstenite::accept;
 
 use plinko_shared::protocol::ServerMessage;
 
+use crate::auth::AuthDb;
 use crate::engine::PlanEngine;
 use crate::server::handle_protocol;
 
 use plinko_shared::data::Storage;
 
-pub fn run_ws_server(engine: Arc<Mutex<PlanEngine>>, storage: Arc<Mutex<Storage>>, port: u16) {
+pub fn run_ws_server(
+    engine: Arc<Mutex<PlanEngine>>,
+    storage: Arc<Mutex<Storage>>,
+    auth_db: Arc<AuthDb>,
+    port: u16,
+) {
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).expect("ws bind failed");
     eprintln!("plinko WebSocket server listening on 0.0.0.0:{port}");
     for stream in listener.incoming() {
@@ -23,8 +29,9 @@ pub fn run_ws_server(engine: Arc<Mutex<PlanEngine>>, storage: Arc<Mutex<Storage>
                     .unwrap_or_else(|_| "unknown".to_string());
                 let engine = Arc::clone(&engine);
                 let storage = Arc::clone(&storage);
+                let auth_db = Arc::clone(&auth_db);
                 std::thread::spawn(move || {
-                    handle_ws_connection(tcp, peer, engine, storage);
+                    handle_ws_connection(tcp, peer, engine, storage, auth_db);
                 });
             }
             Err(e) => eprintln!("[ws] accept error: {e}"),
@@ -37,6 +44,7 @@ fn handle_ws_connection(
     peer: String,
     engine: Arc<Mutex<PlanEngine>>,
     storage: Arc<Mutex<Storage>>,
+    auth_db: Arc<AuthDb>,
 ) {
     let mut ws = match accept(stream) {
         Ok(ws) => ws,
@@ -46,33 +54,10 @@ fn handle_ws_connection(
         }
     };
 
-    // Split send/recv over the WebSocket using interior mutability via a shared RefCell-like
-    // approach. Since tungstenite's `WebSocket<TcpStream>` is not `Send + Sync` we process
-    // everything on this thread. We use `std::sync::mpsc` to bridge between handle_protocol's
-    // closure callbacks and the actual WS write calls, flushing outbound messages inline.
     let (out_tx, out_rx) = std::sync::mpsc::channel::<ServerMessage>();
-
-    // Clone peer for send closure.
     let peer_send = peer.clone();
-
-    // `handle_protocol` expects:
-    //   send: FnMut(&ServerMessage) -> io::Result<()>
-    //   recv: FnMut(&mut String)    -> io::Result<bool>
-    //
-    // We proxy through the mpsc channel for sends and call ws.read() for receives.
-    // Because tungstenite owns the socket, we run a mini event loop here that
-    // interleaves reading from the socket and draining out_rx.
-    //
-    // The simplest approach: run handle_protocol on *this* thread with closures that
-    // operate on ws directly. The send closure queues to out_tx, and we flush before
-    // each recv. But closures can't both borrow `ws` mutably — so instead we use a
-    // thread to run handle_protocol and communicate back via channels.
-
     let (in_tx, in_rx) = std::sync::mpsc::channel::<String>();
 
-    // Spawn handle_protocol on a separate thread. It communicates via:
-    //   out_tx  — server → client messages to send
-    //   in_rx   — client → server lines received
     let out_tx_clone = out_tx.clone();
     let engine_clone = Arc::clone(&engine);
     let storage_clone = Arc::clone(&storage);
@@ -98,6 +83,7 @@ fn handle_ws_connection(
             },
             engine_clone,
             storage_clone,
+            auth_db,
         );
     });
 
@@ -110,27 +96,22 @@ fn handle_ws_connection(
                     let json = serde_json::to_string(&msg).unwrap();
                     if ws.send(WsMessage::Text(json.into())).is_err() {
                         eprintln!("[ws] {peer_send}: write error, closing");
-                        // Signal protocol thread that the connection is gone by dropping in_tx
-                        // (which was already moved; protocol thread will see Err on recv).
                         return;
                     }
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    // Protocol thread exited; close.
                     let _ = ws.close(None);
                     return;
                 }
             }
         }
 
-        // Check if protocol thread has exited.
         if protocol_thread.is_finished() {
             let _ = ws.close(None);
             return;
         }
 
-        // Read one WebSocket frame (blocking with a short timeout).
         ws.get_mut()
             .set_read_timeout(Some(std::time::Duration::from_millis(50)))
             .ok();
@@ -147,7 +128,7 @@ fn handle_ws_connection(
             Ok(WsMessage::Ping(data)) => {
                 let _ = ws.send(WsMessage::Pong(data));
             }
-            Ok(_) => {} // ignore binary / pong frames
+            Ok(_) => {}
             Err(tungstenite::Error::Io(e))
                 if e.kind() == std::io::ErrorKind::WouldBlock
                     || e.kind() == std::io::ErrorKind::TimedOut =>

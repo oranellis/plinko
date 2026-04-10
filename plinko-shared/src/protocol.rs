@@ -9,6 +9,24 @@ use crate::monday::{BoardColumn, MondayConfig, MondayUser};
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use uuid::Uuid;
+
+// ── Auth shared types ────────────────────────────────────────────────────────
+
+/// A login user record (no password hash).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AuthUser {
+    pub id: String,
+    pub email: String,
+    pub is_admin: bool,
+}
+
+/// Maps a login user UUID to a plan user UUID.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct UserLink {
+    pub login_user_id: Uuid,
+    pub plan_user_id: UserId,
+}
 
 /// Deserializes an `Option<Option<T>>` field so that an absent JSON field
 /// produces `None` (no-op / don't update) while an explicit JSON `null`
@@ -207,6 +225,37 @@ pub enum PlanRequest {
         plan_id: uuid::Uuid,
     },
     LoadMondayApiToken,
+    // Auth user management (admin-only except ChangeMyPassword/GetUserLinks/SetUserLinks)
+    GetAuthUsers,
+    CreateAuthUser {
+        email: String,
+        password: String,
+        is_admin: bool,
+    },
+    UpdateAuthUser {
+        user_id: String,
+        new_email: Option<String>,
+        new_is_admin: Option<bool>,
+    },
+    SetAuthUserPassword {
+        user_id: String,
+        new_password: String,
+    },
+    DeleteAuthUser {
+        user_id: String,
+    },
+    ChangeMyPassword {
+        old_password: String,
+        new_password: String,
+    },
+    // Per-plan login→plan-user links
+    GetUserLinks {
+        plan_id: uuid::Uuid,
+    },
+    SetUserLinks {
+        plan_id: uuid::Uuid,
+        links: Vec<UserLink>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -223,6 +272,13 @@ pub enum PlanResponse {
     },
     MondayApiToken(String),
     MondayConnected(String),
+    // Auth responses
+    AuthUsers(Vec<AuthUser>),
+    UserLinks(Vec<UserLink>),
+    PasswordChanged,
+    AuthUserCreated {
+        user_id: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -233,6 +289,8 @@ pub enum PlanError {
     Scheduler(SchedulerError),
     Dependency(DependencyError),
     Monday(String),
+    Unauthorized,
+    AuthError(String),
 }
 
 impl std::fmt::Display for PlanError {
@@ -249,6 +307,8 @@ impl std::fmt::Display for PlanError {
                 write!(f, "dependency target not found in plan")
             }
             PlanError::Monday(msg) => write!(f, "Monday.com error: {msg}"),
+            PlanError::Unauthorized => write!(f, "Unauthorized — admin access required"),
+            PlanError::AuthError(msg) => write!(f, "Auth error: {msg}"),
         }
     }
 }
@@ -285,6 +345,17 @@ pub enum ServerMessage {
     MondayError {
         message: String,
     },
+    // Auth
+    AuthRequired,
+    LoginSuccess {
+        session_token: String,
+        user_id: String,
+        email: String,
+        is_admin: bool,
+    },
+    LoginFailed {
+        message: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -292,6 +363,9 @@ pub enum ServerMessage {
 pub enum ClientMessage {
     Hello { version: String },
     Request { id: u64, request: PlanRequest },
+    Login { email: String, password: String },
+    Authenticate { session_token: String },
+    Logout,
 }
 
 /// Apply a task patch to the plan (used for dry-run validation in the UI and

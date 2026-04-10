@@ -1,6 +1,7 @@
 use crate::data::ids::UserId;
 use crate::data::plan::Plan;
 use crate::monday::MondayConfig;
+use crate::protocol::UserLink;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -261,6 +262,23 @@ impl Storage {
             Some(token.to_string())
         };
         self.save_config(&config);
+    }
+
+    pub fn load_user_links(&self, plan_id: Uuid) -> Vec<UserLink> {
+        let path = self.plan_dir(plan_id).join("user_links.json");
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save_user_links(&self, plan_id: Uuid, links: &[UserLink]) {
+        let dir = self.plan_dir(plan_id);
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("user_links.json");
+        if let Ok(data) = serde_json::to_string_pretty(links) {
+            let _ = std::fs::write(path, data);
+        }
     }
 }
 // }}}

@@ -6,9 +6,14 @@ import "./Toolbar.css";
 type MondayOp = "pull" | "push" | null;
 
 export function Toolbar() {
-  const { plan, status, page, setPage, previousPage, setPreviousPage, toolbarActions, toolbarRightActions, hasMondayIntegration, monday, sendRequest } = usePlanContext();
+  const { plan, status, auth, page, setPage, previousPage, setPreviousPage, toolbarActions, toolbarRightActions, hasMondayIntegration, monday, sendRequest } = usePlanContext();
 
   const isHome = page === "home";
+
+  // Don't render toolbar on login/connecting screens
+  if (status === "connecting" || status === "handshaking" || status === "authenticating" || auth.required) {
+    return null;
+  }
   const [activeOp, setActiveOp] = useState<MondayOp>(null);
   const [doneText, setDoneText] = useState<{ text: string; isError: boolean } | null>(null);
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

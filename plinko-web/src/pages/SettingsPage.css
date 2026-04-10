@@ -127,3 +127,42 @@
 .settings-page .form-row input[type="text"]:focus {
   border-color: #4a90d9;
 }
+
+.settings-description {
+  font-size: 13px;
+  color: #666;
+  margin: 0 0 10px;
+}
+
+.settings-select {
+  background: #1e1e1e;
+  border: 1px solid #3a3a3c;
+  border-radius: 4px;
+  color: #d4d4d4;
+  font-size: 12px;
+  padding: 4px 8px;
+  font-family: inherit;
+  outline: none;
+  min-width: 160px;
+}
+
+.settings-select:focus {
+  border-color: #4a90d9;
+}
+
+.settings-input {
+  background: #1e1e1e;
+  border: 1px solid #3a3a3c;
+  border-radius: 4px;
+  color: #d4d4d4;
+  font-size: 13px;
+  padding: 6px 10px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-input:focus {
+  border-color: #4a90d9;
+}

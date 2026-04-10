@@ -4,7 +4,7 @@ import { MondayModal } from "../components/modals/MondayModal";
 import { NewPlanModal } from "../components/modals/NewPlanModal";
 import { DatePicker } from "../components/modals/shared/DatePicker";
 import { nodeIdString } from "../utils/planUtils";
-import type { NodeId } from "../protocol";
+import type { AuthUser, NodeId, UserLink } from "../protocol";
 import "./SettingsPage.css";
 
 interface PlanEntry {
@@ -14,12 +14,27 @@ interface PlanEntry {
 }
 
 export function SettingsPage() {
-  const { plan, status, sendRequest } = usePlanContext();
+  const { plan, status, auth, sendRequest } = usePlanContext();
   const [plans, setPlans] = useState<PlanEntry[]>([]);
   const [showMonday, setShowMonday] = useState(false);
   const [showNewPlan, setShowNewPlan] = useState(false);
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Auth user management state
+  const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);
+  const [authUsersLoaded, setAuthUsersLoaded] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
+  const [createUserError, setCreateUserError] = useState<string | null>(null);
+  const [editPasswordId, setEditPasswordId] = useState<string | null>(null);
+  const [editPasswordValue, setEditPasswordValue] = useState("");
+  const [editPasswordError, setEditPasswordError] = useState<string | null>(null);
+
+  // User links state (login user → plan user)
+  const [userLinks, setUserLinks] = useState<UserLink[]>([]);
+  const [userLinksLoaded, setUserLinksLoaded] = useState(false);
 
   // Plan settings form state
   const [planName, setPlanName] = useState(plan?.name ?? "");
@@ -107,6 +122,89 @@ export function SettingsPage() {
   const handleDelete = async (planId: string) => {
     await sendRequest({ DeletePlan: { plan_id: planId } });
     setPlans((prev) => prev.filter((p) => p.id !== planId));
+  };
+
+  // Auth users
+  const fetchAuthUsers = useCallback(() => {
+    sendRequest("GetAuthUsers").then((resp) => {
+      if (typeof resp === "object" && resp !== null && "AuthUsers" in resp) {
+        setAuthUsers((resp as { AuthUsers: AuthUser[] }).AuthUsers);
+        setAuthUsersLoaded(true);
+      }
+    }).catch(console.error);
+  }, [sendRequest]);
+
+  useEffect(() => {
+    if (status !== "connected" || !auth.currentUser?.isAdmin) return;
+    fetchAuthUsers();
+  }, [status, auth.currentUser?.isAdmin, fetchAuthUsers]);
+
+  const handleCreateUser = async () => {
+    setCreateUserError(null);
+    try {
+      const resp = await sendRequest({ CreateAuthUser: { email: newUserEmail, password: newUserPassword, is_admin: newUserIsAdmin } });
+      if (typeof resp === "object" && resp !== null && "AuthUserCreated" in resp) {
+        setNewUserEmail("");
+        setNewUserPassword("");
+        setNewUserIsAdmin(false);
+        fetchAuthUsers();
+      } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
+        const err = resp as { Error: { message: string } };
+        setCreateUserError(err.Error.message);
+      }
+    } catch (e) {
+      setCreateUserError(String(e));
+    }
+  };
+
+  const handleToggleAdmin = async (userId: string, isAdmin: boolean) => {
+    await sendRequest({ UpdateAuthUser: { user_id: userId, is_admin: isAdmin } });
+    fetchAuthUsers();
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    await sendRequest({ DeleteAuthUser: { user_id: userId } });
+    fetchAuthUsers();
+  };
+
+  const handleSetPassword = async (userId: string) => {
+    setEditPasswordError(null);
+    try {
+      const resp = await sendRequest({ SetAuthUserPassword: { user_id: userId, new_password: editPasswordValue } });
+      if (typeof resp === "object" && resp !== null && "PasswordChanged" in resp) {
+        setEditPasswordId(null);
+        setEditPasswordValue("");
+      } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
+        const err = resp as { Error: { message: string } };
+        setEditPasswordError(err.Error.message);
+      }
+    } catch (e) {
+      setEditPasswordError(String(e));
+    }
+  };
+
+  // User links
+  const fetchUserLinks = useCallback(() => {
+    if (!plan) return;
+    sendRequest({ GetUserLinks: { plan_id: plan.id } }).then((resp) => {
+      if (typeof resp === "object" && resp !== null && "UserLinks" in resp) {
+        setUserLinks((resp as { UserLinks: UserLink[] }).UserLinks);
+        setUserLinksLoaded(true);
+      }
+    }).catch(console.error);
+  }, [sendRequest, plan]);
+
+  useEffect(() => {
+    if (status !== "connected" || !plan) return;
+    fetchUserLinks();
+  }, [status, plan?.id, fetchUserLinks]);
+
+  const handleSetUserLink = async (planUserId: string, loginUserId: string | null) => {
+    if (!plan) return;
+    const updated = userLinks.filter((l) => l.plan_user_id !== planUserId);
+    if (loginUserId) updated.push({ login_user_id: loginUserId, plan_user_id: planUserId });
+    setUserLinks(updated);
+    await sendRequest({ SetUserLinks: { plan_id: plan.id, links: updated } });
   };
 
   return (
@@ -242,6 +340,135 @@ export function SettingsPage() {
           Monday.com Integration
         </button>
       </section>
+
+      {/* User Links — link plan users to login accounts */}
+      {plan && userLinksLoaded && (
+        <section className="settings-section">
+          <h2 className="settings-heading">User Links</h2>
+          <p className="settings-description">Link plan team members to login accounts.</p>
+          {Object.values(plan.users).length === 0 ? (
+            <div className="settings-empty">No team members in this plan.</div>
+          ) : (
+            <div className="settings-plan-list">
+              {Object.values(plan.users).map((u) => {
+                const linked = userLinks.find((l) => l.plan_user_id === u.id);
+                return (
+                  <div key={u.id} className="settings-plan-row">
+                    <span className="settings-plan-name">{u.name}</span>
+                    <select
+                      className="settings-select"
+                      value={linked?.login_user_id ?? ""}
+                      onChange={(e) => handleSetUserLink(u.id, e.target.value || null)}
+                    >
+                      <option value="">— unlinked —</option>
+                      {authUsers.map((au) => (
+                        <option key={au.id} value={au.id}>{au.email}</option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Login Users — admin only */}
+      {auth.currentUser?.isAdmin && authUsersLoaded && (
+        <section className="settings-section">
+          <h2 className="settings-heading">Login Users</h2>
+
+          <div className="settings-plan-list">
+            {authUsers.map((u) => (
+              <div key={u.id} className="settings-plan-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span className="settings-plan-name" style={{ flex: 1 }}>{u.email}</span>
+                  {u.is_admin && <span className="home-user-badge">admin</span>}
+                  {u.id !== auth.currentUser?.userId && (
+                    <>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => handleToggleAdmin(u.id, !u.is_admin)}
+                      >
+                        {u.is_admin ? "Remove admin" : "Make admin"}
+                      </button>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => { setEditPasswordId(editPasswordId === u.id ? null : u.id); setEditPasswordValue(""); setEditPasswordError(null); }}
+                      >
+                        Set password
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => handleDeleteUser(u.id)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                  {u.id === auth.currentUser?.userId && (
+                    <span style={{ fontSize: 12, color: "#555" }}>(you)</span>
+                  )}
+                </div>
+                {editPasswordId === u.id && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      type="password"
+                      className="settings-input"
+                      placeholder="New password"
+                      value={editPasswordValue}
+                      onChange={(e) => setEditPasswordValue(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleSetPassword(u.id)}
+                      disabled={!editPasswordValue}
+                    >
+                      Save
+                    </button>
+                    {editPasswordError && <span style={{ color: "#e57373", fontSize: 12 }}>{editPasswordError}</span>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <h3 className="settings-subheading">Create New User</h3>
+          <div className="settings-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
+            <input
+              type="email"
+              className="settings-input"
+              placeholder="Email address"
+              value={newUserEmail}
+              onChange={(e) => setNewUserEmail(e.target.value)}
+            />
+            <input
+              type="password"
+              className="settings-input"
+              placeholder="Password"
+              value={newUserPassword}
+              onChange={(e) => setNewUserPassword(e.target.value)}
+            />
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#aaa", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={newUserIsAdmin}
+                onChange={(e) => setNewUserIsAdmin(e.target.checked)}
+              />
+              Administrator
+            </label>
+            {createUserError && <span style={{ color: "#e57373", fontSize: 12 }}>{createUserError}</span>}
+            <button
+              className="btn btn-primary"
+              onClick={handleCreateUser}
+              disabled={!newUserEmail || !newUserPassword}
+            >
+              Create User
+            </button>
+          </div>
+        </section>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use plinko_shared::data::{Plan, Storage};
 use plinko_shared::protocol::*;
 
+use crate::auth::{AuthDb, SessionInfo};
 use crate::engine::PlanEngine;
 use crate::monday::client::MondayClient;
 use crate::monday::{export, import};
@@ -17,12 +18,22 @@ enum InternalMsg {
     ImportDone { plan: Box<Plan>, message: String },
 }
 
-pub fn run_server(engine: Arc<Mutex<PlanEngine>>, storage: Arc<Mutex<Storage>>, port: u16) {
+pub fn run_server(
+    engine: Arc<Mutex<PlanEngine>>,
+    storage: Arc<Mutex<Storage>>,
+    auth_db: Arc<AuthDb>,
+    port: u16,
+) {
     let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("bind failed");
     eprintln!("plinko server listening on 127.0.0.1:{port}");
     for stream in listener.incoming() {
         match stream {
-            Ok(s) => handle_tcp_connection(s, Arc::clone(&engine), Arc::clone(&storage)),
+            Ok(s) => handle_tcp_connection(
+                s,
+                Arc::clone(&engine),
+                Arc::clone(&storage),
+                Arc::clone(&auth_db),
+            ),
             Err(e) => eprintln!("accept error: {e}"),
         }
     }
@@ -38,6 +49,7 @@ fn handle_tcp_connection(
     stream: TcpStream,
     engine: Arc<Mutex<PlanEngine>>,
     storage: Arc<Mutex<Storage>>,
+    auth_db: Arc<AuthDb>,
 ) {
     let peer = stream
         .peer_addr()
@@ -56,6 +68,7 @@ fn handle_tcp_connection(
         },
         engine,
         storage,
+        auth_db,
     );
 }
 
@@ -70,6 +83,7 @@ pub(crate) fn handle_protocol(
     mut recv: impl FnMut(&mut String) -> std::io::Result<bool>,
     engine: Arc<Mutex<PlanEngine>>,
     storage: Arc<Mutex<Storage>>,
+    auth_db: Arc<AuthDb>,
 ) {
     eprintln!("[connect] client connected from {peer}");
 
@@ -113,6 +127,76 @@ pub(crate) fn handle_protocol(
         });
         return;
     }
+
+    // ── Auth phase ─────────────────────────────────────────────────────────
+    // Send AuthRequired, then wait for Login or Authenticate message.
+    if send(&ServerMessage::AuthRequired).is_err() {
+        return;
+    }
+
+    let (session_token, session): (String, SessionInfo) = loop {
+        let mut line = String::new();
+        match recv(&mut line) {
+            Ok(false) | Err(_) => return,
+            Ok(true) => {}
+        }
+        let msg: ClientMessage = match serde_json::from_str(line.trim()) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[auth] {peer}: parse error: {e}");
+                continue;
+            }
+        };
+        match msg {
+            ClientMessage::Login { email, password } => {
+                match auth_db.login(&email, &password) {
+                    Ok((token, info)) => {
+                        let _ = send(&ServerMessage::LoginSuccess {
+                            session_token: token.clone(),
+                            user_id: info.user_id.clone(),
+                            email: info.email.clone(),
+                            is_admin: info.is_admin,
+                        });
+                        eprintln!("[auth] {peer}: login OK as {}", info.email);
+                        break (token, info);
+                    }
+                    Err(e) => {
+                        eprintln!("[auth] {peer}: login failed: {e}");
+                        let _ = send(&ServerMessage::LoginFailed {
+                            message: e.to_string(),
+                        });
+                        // Keep waiting for another attempt.
+                    }
+                }
+            }
+            ClientMessage::Authenticate { session_token } => {
+                match auth_db.authenticate_token(&session_token) {
+                    Ok(info) => {
+                        let _ = send(&ServerMessage::LoginSuccess {
+                            session_token: session_token.clone(),
+                            user_id: info.user_id.clone(),
+                            email: info.email.clone(),
+                            is_admin: info.is_admin,
+                        });
+                        eprintln!("[auth] {peer}: token auth OK as {}", info.email);
+                        break (session_token, info);
+                    }
+                    Err(e) => {
+                        eprintln!("[auth] {peer}: token auth failed: {e}");
+                        // Send AuthRequired again so the client shows the login form.
+                        let _ = send(&ServerMessage::LoginFailed {
+                            message: e.to_string(),
+                        });
+                        let _ = send(&ServerMessage::AuthRequired);
+                    }
+                }
+            }
+            _ => {
+                // Ignore non-auth messages while in auth phase.
+            }
+        }
+    };
+    // ── End auth phase ─────────────────────────────────────────────────────
 
     let (initial_plan, initial_plan_id) = {
         let eng = engine.lock().unwrap();
@@ -189,6 +273,15 @@ pub(crate) fn handle_protocol(
                 continue;
             }
         };
+        // Handle Logout and auth requests before the Request dispatch.
+        match &msg {
+            ClientMessage::Logout => {
+                let _ = auth_db.logout(&session_token);
+                eprintln!("[{peer}] logout ({})", session.email);
+                break;
+            }
+            _ => {}
+        }
         let ClientMessage::Request { id, request } = msg else {
             continue;
         };
@@ -586,6 +679,197 @@ pub(crate) fn handle_protocol(
             }
             continue;
         }
+
+        // ── Auth PlanRequest handlers ───────────────────────────────────────
+        if matches!(&request, PlanRequest::GetAuthUsers) {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            let users = auth_db.list_users().unwrap_or_default();
+            // Map auth::AuthUser to protocol::AuthUser
+            let proto_users: Vec<AuthUser> = users
+                .into_iter()
+                .map(|u| AuthUser {
+                    id: u.id,
+                    email: u.email,
+                    is_admin: u.is_admin,
+                })
+                .collect();
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::AuthUsers(proto_users),
+            });
+            continue;
+        }
+
+        if let PlanRequest::CreateAuthUser {
+            email,
+            password,
+            is_admin,
+        } = &request
+        {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.create_user(email, password, *is_admin) {
+                Ok(user_id) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::AuthUserCreated { user_id },
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::UpdateAuthUser {
+            user_id,
+            new_email,
+            new_is_admin,
+        } = &request
+        {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.update_user(user_id, new_email.as_deref(), *new_is_admin) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::SetAuthUserPassword {
+            user_id,
+            new_password,
+        } = &request
+        {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.set_password(user_id, new_password) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PasswordChanged,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::DeleteAuthUser { user_id } = &request {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            // Prevent self-deletion.
+            if *user_id == session.user_id {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::AuthError(
+                        "Cannot delete your own account".to_string(),
+                    )),
+                });
+                continue;
+            }
+            match auth_db.delete_user(user_id) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::ChangeMyPassword {
+            old_password,
+            new_password,
+        } = &request
+        {
+            match auth_db.change_own_password(&session.user_id, old_password, new_password) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PasswordChanged,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::GetUserLinks { plan_id } = &request {
+            let links = storage.lock().unwrap().load_user_links(*plan_id);
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::UserLinks(links),
+            });
+            continue;
+        }
+
+        if let PlanRequest::SetUserLinks { plan_id, links } = &request {
+            storage.lock().unwrap().save_user_links(*plan_id, links);
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanUpdated,
+            });
+            continue;
+        }
+        // ── End auth PlanRequest handlers ───────────────────────────────────
 
         let response = {
             let mut eng = engine.lock().unwrap();

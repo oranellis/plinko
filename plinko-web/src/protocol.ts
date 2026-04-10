@@ -272,6 +272,19 @@ export interface UserPatch {
   tags?: TagId[];
 }
 
+// ── Auth types ────────────────────────────────────────────────────────────────
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  is_admin: boolean;
+}
+
+export interface UserLink {
+  login_user_id: string;
+  plan_user_id: UserId;
+}
+
 // ── Protocol: PlanRequest ─────────────────────────────────────────────────────
 // Serde default enum encoding. Unit variants are bare strings;
 // tuple/struct variants are `{ "VariantName": payload }`.
@@ -318,18 +331,31 @@ export type PlanRequest =
   | { MondayPush: { plan_id: string } }
   | { SaveMondayConfig: { plan_id: string; config: MondayConfig; token: string } }
   | { LoadMondayConfig: { plan_id: string } }
-  | "LoadMondayApiToken";
+  | "LoadMondayApiToken"
+  // Auth
+  | "GetAuthUsers"
+  | { CreateAuthUser: { email: string; password: string; is_admin: boolean } }
+  | { UpdateAuthUser: { user_id: string; new_email?: string; new_is_admin?: boolean } }
+  | { SetAuthUserPassword: { user_id: string; new_password: string } }
+  | { DeleteAuthUser: { user_id: string } }
+  | { ChangeMyPassword: { old_password: string; new_password: string } }
+  | { GetUserLinks: { plan_id: string } }
+  | { SetUserLinks: { plan_id: string; links: UserLink[] } };
 
 // ── Protocol: PlanResponse ────────────────────────────────────────────────────
 
 export type PlanResponse =
   | "PlanUpdated"
+  | "PasswordChanged"
   | { Error: PlanError }
   | { PlanList: [string, string, string][] }
   | { MondayConfigLoaded: MondayConfig }
   | { MondayBoardInfo: { users: MondayUser[]; columns: BoardColumn[]; status_labels: string[] } }
   | { MondayApiToken: string }
-  | { MondayConnected: string };
+  | { MondayConnected: string }
+  | { AuthUsers: AuthUser[] }
+  | { UserLinks: UserLink[] }
+  | { AuthUserCreated: { user_id: string } };
 
 export type PlanError =
   | { TaskNotFound: TaskId }
@@ -337,7 +363,9 @@ export type PlanError =
   | { UserNotFound: UserId }
   | { Scheduler: string }
   | { Dependency: "Cycle" | "NotFound" }
-  | { Monday: string };
+  | { Monday: string }
+  | "Unauthorized"
+  | { AuthError: string };
 
 // ── Protocol: ServerMessage (`#[serde(tag = "type")]`) ───────────────────────
 
@@ -348,13 +376,19 @@ export type ServerMessage =
   | { type: "Response"; id: number; response: PlanResponse }
   | { type: "MondayProgress"; done: number; total: number; message: string }
   | { type: "MondayDone"; message: string }
-  | { type: "MondayError"; message: string };
+  | { type: "MondayError"; message: string }
+  | { type: "AuthRequired" }
+  | { type: "LoginSuccess"; session_token: string; user_id: string; email: string; is_admin: boolean }
+  | { type: "LoginFailed"; message: string };
 
 // ── Protocol: ClientMessage (`#[serde(tag = "type")]`) ───────────────────────
 
 export type ClientMessage =
   | { type: "Hello"; version: string }
-  | { type: "Request"; id: number; request: PlanRequest };
+  | { type: "Request"; id: number; request: PlanRequest }
+  | { type: "Login"; email: string; password: string }
+  | { type: "Authenticate"; session_token: string }
+  | { type: "Logout" };
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 

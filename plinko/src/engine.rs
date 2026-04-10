@@ -236,7 +236,15 @@ impl PlanEngine {
             | PlanRequest::MondayPush { .. }
             | PlanRequest::SaveMondayConfig { .. }
             | PlanRequest::LoadMondayConfig { .. }
-            | PlanRequest::LoadMondayApiToken => PlanResponse::PlanUpdated,
+            | PlanRequest::LoadMondayApiToken
+            | PlanRequest::GetAuthUsers
+            | PlanRequest::CreateAuthUser { .. }
+            | PlanRequest::UpdateAuthUser { .. }
+            | PlanRequest::SetAuthUserPassword { .. }
+            | PlanRequest::DeleteAuthUser { .. }
+            | PlanRequest::ChangeMyPassword { .. }
+            | PlanRequest::GetUserLinks { .. }
+            | PlanRequest::SetUserLinks { .. } => PlanResponse::PlanUpdated,
         }
     }
 }

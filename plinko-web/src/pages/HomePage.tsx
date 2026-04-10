@@ -20,7 +20,7 @@ const CARDS: NavCard[] = [
 ];
 
 export function HomePage() {
-  const { setPage } = usePlanContext();
+  const { setPage, auth, logout } = usePlanContext();
 
   return (
     <div className="home-page">
@@ -36,6 +36,16 @@ export function HomePage() {
           </button>
         ))}
       </div>
+
+      {auth.currentUser && (
+        <div className="home-user-bar">
+          <span className="home-user-email">{auth.currentUser.email}</span>
+          {auth.currentUser.isAdmin && (
+            <span className="home-user-badge">admin</span>
+          )}
+          <button className="home-user-logout" onClick={logout}>Sign out</button>
+        </div>
+      )}
     </div>
   );
 }
