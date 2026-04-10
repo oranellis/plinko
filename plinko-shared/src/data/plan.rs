@@ -611,6 +611,38 @@ impl Plan {
         Ok(())
     }
 
+    /// Validate that all worker slots in `workers` can be satisfied by users in this plan.
+    /// Returns an error if a placeholder slot has no eligible users, or a specific slot
+    /// references a user that does not exist in the plan.
+    pub fn validate_task_workers(
+        &self,
+        task_name: &str,
+        workers: &[WorkerSlot],
+    ) -> Result<(), SchedulerError> {
+        let users: Vec<_> = self.users_data.values().map(|ud| &ud.user).collect();
+        for slot in workers {
+            match slot {
+                WorkerSlot::Placeholder { required_tags, .. } => {
+                    if !users.iter().any(|u| slot.is_satisfied_by(u)) {
+                        return Err(SchedulerError::MissingTaskAffinity {
+                            task_name: task_name.to_string(),
+                            required_tags: required_tags.clone(),
+                        });
+                    }
+                }
+                WorkerSlot::Specific { user_id, .. } => {
+                    if !self.users_data.contains_key(user_id) {
+                        return Err(SchedulerError::SpecificWorkerNotFound {
+                            task_name: task_name.to_string(),
+                            user_id: *user_id,
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn check_all_nodes_connected(
         &self,
         dependents_map: &HashMap<NodeId, Vec<NodeId>>,

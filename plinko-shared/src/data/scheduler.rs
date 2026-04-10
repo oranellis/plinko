@@ -24,6 +24,10 @@ pub enum SchedulerError {
         task_name: String,
         required_tags: HashSet<TagId>,
     },
+    SpecificWorkerNotFound {
+        task_name: String,
+        user_id: UserId,
+    },
     NoPathsToNode(NodeId),
     DisconnectedNode(NodeId),
 }
@@ -37,13 +41,26 @@ impl fmt::Display for SchedulerError {
                 task_name,
                 required_tags,
             } => {
-                let mut tags: Vec<String> =
-                    required_tags.iter().map(|id| id.0.to_string()).collect();
-                tags.sort_unstable();
+                if required_tags.is_empty() {
+                    write!(
+                        f,
+                        "task \"{task_name}\" has placeholder workers but no users are in the plan"
+                    )
+                } else {
+                    let mut tags: Vec<String> =
+                        required_tags.iter().map(|id| id.0.to_string()).collect();
+                    tags.sort_unstable();
+                    write!(
+                        f,
+                        "task \"{task_name}\" has no users with the required tags: {}",
+                        tags.join(", ")
+                    )
+                }
+            }
+            SchedulerError::SpecificWorkerNotFound { task_name, user_id } => {
                 write!(
                     f,
-                    "task \"{task_name}\" is not satisfied, needs the following tags: {}",
-                    tags.join(", ")
+                    "task \"{task_name}\" references user {user_id:?} who is not in the plan"
                 )
             }
             SchedulerError::NoPathsToNode(node_id) => {
@@ -784,13 +801,14 @@ impl Plan {
 
     fn select_user_for_placeholder(
         &self,
+        task_name: &str,
         required_tags: &HashSet<TagId>,
         workload_days: f32,
         earliest_start: NaiveDate,
         max_per_day: Option<f32>,
         strict: bool,
         state: &SchedulerState,
-    ) -> UserId {
+    ) -> Result<UserId, SchedulerError> {
         let total_hours = workload_days * self.default_schedule.hours_per_workload_day();
         let mut best_user: Option<UserId> = None;
         let mut best_end = NaiveDate::MAX;
@@ -813,7 +831,10 @@ impl Plan {
             }
         }
 
-        best_user.expect("no eligible user for placeholder slot")
+        best_user.ok_or_else(|| SchedulerError::MissingTaskAffinity {
+            task_name: task_name.to_string(),
+            required_tags: required_tags.clone(),
+        })
     }
 
     fn insert_task(
@@ -897,13 +918,14 @@ impl Plan {
                     workload_days,
                 } => {
                     let uid = self.select_user_for_placeholder(
+                        &task.name,
                         required_tags,
                         *workload_days,
                         start_date,
                         daily_cap,
                         strict,
                         state,
-                    );
+                    )?;
                     (uid, *workload_days)
                 }
             };

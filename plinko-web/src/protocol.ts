@@ -357,15 +357,50 @@ export type PlanResponse =
   | { UserLinks: UserLink[] }
   | { AuthUserCreated: { user_id: string } };
 
+export type SchedulerError =
+  | "EmptyChain"
+  | { MissingTaskAffinity: { task_name: string; required_tags: string[] } }
+  | { SpecificWorkerNotFound: { task_name: string; user_id: string } }
+  | { NoPathsToNode: unknown }
+  | { DisconnectedNode: unknown };
+
 export type PlanError =
   | { TaskNotFound: TaskId }
   | { MilestoneNotFound: MilestoneId }
   | { UserNotFound: UserId }
-  | { Scheduler: string }
+  | { Scheduler: SchedulerError }
   | { Dependency: "Cycle" | "NotFound" }
   | { Monday: string }
   | "Unauthorized"
   | { AuthError: string };
+
+export function formatPlanError(err: PlanError): string {
+  if (typeof err === "string") return err; // "Unauthorized"
+  if ("TaskNotFound" in err) return "Task not found.";
+  if ("MilestoneNotFound" in err) return "Milestone not found.";
+  if ("UserNotFound" in err) return "User not found.";
+  if ("Dependency" in err)
+    return err.Dependency === "Cycle"
+      ? "Adding this dependency would create a cycle."
+      : "Dependency not found.";
+  if ("Monday" in err) return `Monday.com error: ${err.Monday}`;
+  if ("AuthError" in err) return err.AuthError;
+  if ("Scheduler" in err) {
+    const se = err.Scheduler;
+    if (se === "EmptyChain") return "Scheduler error: empty node chain.";
+    if (typeof se === "object" && "MissingTaskAffinity" in se) {
+      const { task_name, required_tags } = se.MissingTaskAffinity;
+      if (required_tags.length === 0)
+        return `Cannot create task "${task_name}": no users exist in this plan. Add a user first.`;
+      return `Cannot create task "${task_name}": no user has all required tags (${required_tags.join(", ")}).`;
+    }
+    if (typeof se === "object" && "SpecificWorkerNotFound" in se) {
+      return `Cannot create task "${se.SpecificWorkerNotFound.task_name}": a selected worker is not in this plan.`;
+    }
+    return `Scheduler error: ${JSON.stringify(se)}`;
+  }
+  return JSON.stringify(err);
+}
 
 // ── Protocol: ServerMessage (`#[serde(tag = "type")]`) ───────────────────────
 

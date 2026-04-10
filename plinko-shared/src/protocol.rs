@@ -384,6 +384,12 @@ pub fn apply_task_patch(plan: &mut Plan, id: TaskId, patch: TaskPatch) -> Result
             }
         }
     }
+    // Validate new workers (if any) before mutating the task.
+    if let Some(ref workers) = patch.workers {
+        let task_name = plan.tasks[&id].name.clone();
+        plan.validate_task_workers(&task_name, workers)
+            .map_err(PlanError::Scheduler)?;
+    }
     let task = plan.tasks.get_mut(&id).unwrap();
     if let Some(v) = patch.name {
         task.name = v;

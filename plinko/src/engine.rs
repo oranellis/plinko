@@ -92,6 +92,9 @@ impl PlanEngine {
                 }
             }
             PlanRequest::CreateTask(task) => {
+                if let Err(e) = self.plan.validate_task_workers(&task.name, &task.workers) {
+                    return PlanResponse::Error(PlanError::Scheduler(e));
+                }
                 self.plan.add_task(task);
                 let _ = self.plan.compute_time_optimised_plan();
                 PlanResponse::PlanUpdated

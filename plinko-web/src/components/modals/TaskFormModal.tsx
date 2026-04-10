@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
 import type { DateConstraint, Dependency, Milestone, NodeId, Plan, PlanRequest, PlanResponse, Status, Task, TaskId, TaskPatch, WorkerSlot } from "../../protocol";
+import { formatPlanError } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
 import { WorkerEditor } from "./shared/WorkerEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
@@ -97,7 +98,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
         };
         const resp = await sendRequest({ UpdateTask: [task.id, patch] });
         if (typeof resp === "object" && "Error" in resp) {
-          setError(JSON.stringify(resp.Error));
+          setError(formatPlanError(resp.Error));
           return;
         }
       } else {
@@ -116,7 +117,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
           },
         });
         if (typeof resp === "object" && "Error" in resp) {
-          setError(JSON.stringify(resp.Error));
+          setError(formatPlanError(resp.Error));
           return;
         }
       }
