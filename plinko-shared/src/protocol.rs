@@ -313,7 +313,7 @@ impl std::fmt::Display for PlanError {
     }
 }
 
-pub const VERSION: &str = "0.1";
+pub const VERSION: &str = "0.2.0";
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type")]

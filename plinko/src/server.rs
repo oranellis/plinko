@@ -1,5 +1,3 @@
-use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
 use plinko_shared::data::{Plan, Storage};
@@ -18,61 +16,7 @@ enum InternalMsg {
     ImportDone { plan: Box<Plan>, message: String },
 }
 
-pub fn run_server(
-    engine: Arc<Mutex<PlanEngine>>,
-    storage: Arc<Mutex<Storage>>,
-    auth_db: Arc<AuthDb>,
-    port: u16,
-) {
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("bind failed");
-    eprintln!("plinko server listening on 127.0.0.1:{port}");
-    for stream in listener.incoming() {
-        match stream {
-            Ok(s) => handle_tcp_connection(
-                s,
-                Arc::clone(&engine),
-                Arc::clone(&storage),
-                Arc::clone(&auth_db),
-            ),
-            Err(e) => eprintln!("accept error: {e}"),
-        }
-    }
-}
-
-pub(crate) fn send_line(writer: &mut impl Write, msg: &ServerMessage) -> std::io::Result<()> {
-    let mut line = serde_json::to_string(msg).unwrap();
-    line.push('\n');
-    writer.write_all(line.as_bytes())
-}
-
-fn handle_tcp_connection(
-    stream: TcpStream,
-    engine: Arc<Mutex<PlanEngine>>,
-    storage: Arc<Mutex<Storage>>,
-    auth_db: Arc<AuthDb>,
-) {
-    let peer = stream
-        .peer_addr()
-        .map(|a| a.to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
-
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
-    let mut writer = stream;
-
-    handle_protocol(
-        peer,
-        move |msg| send_line(&mut writer, msg),
-        move |line| {
-            line.clear();
-            reader.read_line(line).map(|n| n > 0)
-        },
-        engine,
-        storage,
-        auth_db,
-    );
-}
-
-/// Core protocol handler — shared by TCP and WebSocket connections.
+/// Core protocol handler shared by WebSocket connections.
 ///
 /// `send`: writes a `ServerMessage` to the client.
 /// `recv`: reads the next message text into the provided `String`; returns
@@ -136,9 +80,17 @@ pub(crate) fn handle_protocol(
 
     let (session_token, session): (String, SessionInfo) = loop {
         let mut line = String::new();
-        match recv(&mut line) {
-            Ok(false) | Err(_) => return,
-            Ok(true) => {}
+        // WouldBlock means "no data yet" (WS uses a 50 ms recv timeout) — loop.
+        loop {
+            match recv(&mut line) {
+                Ok(true) => break,
+                Ok(false) => return,
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    line.clear();
+                    continue;
+                }
+                Err(_) => return,
+            }
         }
         let msg: ClientMessage = match serde_json::from_str(line.trim()) {
             Ok(m) => m,

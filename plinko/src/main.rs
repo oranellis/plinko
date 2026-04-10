@@ -67,7 +67,7 @@ fn main() {
         std::env::var("PLINKO_PORT")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(7891)
+            .unwrap_or(7892)
     });
 
     let engine = Arc::new(Mutex::new(engine::PlanEngine::new(plan)));
@@ -94,16 +94,8 @@ fn main() {
         }
     };
 
-    let ws_port = port + 1;
-    let engine_ws = Arc::clone(&engine);
-    let storage_ws = Arc::clone(&storage);
-    let auth_ws = Arc::clone(&auth_db);
-    std::thread::spawn(move || {
-        ws_server::run_ws_server(engine_ws, storage_ws, auth_ws, ws_port);
-    });
-
-    // Serve the React app's built assets on port+2 if the dist directory exists.
-    let static_port = port + 2;
+    // Serve the React app's built assets on port+1 if the dist directory exists.
+    let static_port = port + 1;
     let dist_dir: PathBuf = std::env::var("PLINKO_WEB_DIST")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
@@ -123,5 +115,6 @@ fn main() {
         );
     }
 
-    server::run_server(engine, storage, auth_db, port);
+    // The WebSocket server runs on `port` (default 7892) and blocks here.
+    ws_server::run_ws_server(engine, storage, auth_db, port);
 }

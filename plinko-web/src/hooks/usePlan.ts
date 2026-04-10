@@ -28,7 +28,7 @@ export interface UsePlanResult {
   logout: () => void;
 }
 
-const WS_PORT = 7892; // TCP port + 1
+const WS_PORT = 7892; // default WebSocket port
 const SESSION_TOKEN_KEY = "plinko_session_token";
 
 export function usePlan(): UsePlanResult {
