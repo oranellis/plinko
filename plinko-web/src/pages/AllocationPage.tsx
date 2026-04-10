@@ -75,6 +75,7 @@ export function AllocationPage() {
   const [size, setSize] = useState({ w: 900, h: 600 });
   const [editTaskId, setEditTaskId] = useState<TaskId | null>(null);
   const [showUsers, setShowUsers] = useState(false);
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
   const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0 });
 
@@ -448,6 +449,12 @@ export function AllocationPage() {
       ctx.fillStyle = i % 2 === 0 ? "#252526" : "#222224";
       ctx.fillRect(labelX, rowTop, LABEL_COL_W, ROW_H);
 
+      // Hover highlight in label column
+      if (id === hoveredTaskId) {
+        ctx.fillStyle = "rgba(255,255,255,0.05)";
+        ctx.fillRect(labelX, rowTop, LABEL_COL_W, ROW_H);
+      }
+
       const label = displayName(task.name, task.context_label);
       ctx.save();
       ctx.beginPath();
@@ -500,6 +507,12 @@ export function AllocationPage() {
       // Row background alternating
       ctx.fillStyle = i % 2 === 0 ? "#1e1e1e" : "#202022";
       ctx.fillRect(tlX, rowTop, tlW + scrollX, ROW_H);
+
+      // Hover highlight
+      if (id === hoveredTaskId) {
+        ctx.fillStyle = "rgba(255,255,255,0.05)";
+        ctx.fillRect(tlX, rowTop, tlW + scrollX, ROW_H);
+      }
 
       // Today column highlight (consistent with header)
       const todayRX = tlX + todayOffset * dayW - scrollX;
@@ -593,19 +606,20 @@ export function AllocationPage() {
       ctx.stroke();
     }
 
-    // Today line
-    const todayLineX = tlX + todayOffset * dayW - scrollX;
-    if (todayLineX >= tlX && todayLineX <= w) {
-      ctx.strokeStyle = "rgba(74,144,217,0.7)";
-      ctx.lineWidth = 2;
+    // Vertical day separators (same style as gantt)
+    ctx.strokeStyle = "#2a2a2c";
+    ctx.lineWidth = 0.5;
+    for (let d = firstDay; d <= lastDay; d++) {
+      const x = tlX + d * dayW - scrollX;
+      if (x < tlX || x > tlX + tlW) continue;
       ctx.beginPath();
-      ctx.moveTo(todayLineX, taskContentTop - taskScrollY);
-      ctx.lineTo(todayLineX, taskContentTop + userTasks.length * ROW_H - taskScrollY);
+      ctx.moveTo(x, taskContentTop);
+      ctx.lineTo(x, h);
       ctx.stroke();
     }
 
     ctx.restore();
-  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId]);
+  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId]);
 
   useEffect(() => { render(); }, [render]);
 
@@ -625,30 +639,47 @@ export function AllocationPage() {
       return;
     }
 
-    // Label column click
-    if (mx < USER_PANEL_W + LABEL_COL_W) {
+    // Label or timeline — click task row to edit
+    if (mx >= USER_PANEL_W) {
       for (const r of hitTaskRectsRef.current) {
         if (my >= r.y && my <= r.y + r.h) {
           setEditTaskId(r.id);
           return;
         }
       }
-      return;
     }
 
-    // Timeline drag
-    dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, scrollXStart: scrollX };
+    // Timeline drag (only if no task hit)
+    if (mx >= USER_PANEL_W + LABEL_COL_W) {
+      dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, scrollXStart: scrollX };
+    }
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
-    if (!dragRef.current.active) return;
-    const dx = e.clientX - dragRef.current.lastX;
-    dragRef.current.lastX = e.clientX;
-    setScrollX((sx) => Math.max(0, sx - dx));
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    // Update hover for task rows (label or timeline area)
+    if (mx >= USER_PANEL_W) {
+      let hit: string | null = null;
+      for (const r of hitTaskRectsRef.current) {
+        if (my >= r.y && my <= r.y + r.h) { hit = r.id; break; }
+      }
+      setHoveredTaskId(hit);
+    } else {
+      setHoveredTaskId(null);
+    }
+
+    if (dragRef.current.active) {
+      const dx = e.clientX - dragRef.current.lastX;
+      dragRef.current.lastX = e.clientX;
+      setScrollX((sx) => Math.max(0, sx - dx));
+    }
   };
 
   const onMouseUp = () => { dragRef.current.active = false; };
-  const onMouseLeave = () => { dragRef.current.active = false; };
+  const onMouseLeave = () => { dragRef.current.active = false; setHoveredTaskId(null); };
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -689,7 +720,7 @@ export function AllocationPage() {
         ref={canvasRef}
         width={size.w}
         height={size.h}
-        style={{ display: "block", cursor: dragRef.current.active ? "grabbing" : "default" }}
+        style={{ display: "block", cursor: dragRef.current.active ? "grabbing" : hoveredTaskId ? "pointer" : "default" }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
