@@ -15,7 +15,6 @@ import { IconToday, IconUsers } from "../components/icons";
 import "./AllocationPage.css";
 
 const USER_PANEL_W = 220;
-const LABEL_COL_W = 200;
 const ROW_H = 32;
 const HEADER_H = 44; // month row (20px) + day row (24px)
 const UTIL_ROW_H = 36; // utilisation row below date header
@@ -77,7 +76,8 @@ export function AllocationPage() {
   const [showUsers, setShowUsers] = useState(false);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
-  const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0 });
+  const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0, moved: false });
+  const pendingClickRef = useRef<string | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -111,7 +111,7 @@ export function AllocationPage() {
         if (!p) return;
         const today = formatDate(new Date());
         const offset = daysBetween(p.start_date, today);
-        const tlW = sw - USER_PANEL_W - LABEL_COL_W;
+        const tlW = sw - USER_PANEL_W;
         setScrollX(Math.max(0, offset * dw - tlW / 2));
       }}><IconToday size={24} /></button>
     );
@@ -127,7 +127,7 @@ export function AllocationPage() {
     if (!plan) return;
     const today = formatDate(new Date());
     const offset = daysBetween(plan.start_date, today);
-    const timelineW = size.w - USER_PANEL_W - LABEL_COL_W;
+    const timelineW = size.w - USER_PANEL_W;
     setScrollX(Math.max(0, offset * dayW - timelineW / 2));
   }, [plan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -209,7 +209,7 @@ export function AllocationPage() {
     const colorIndex = (id: string) => allTaskIds.indexOf(id);
 
     // ── TIMELINE SETUP ────────────────────────────────────────────────────
-    const tlX = USER_PANEL_W + LABEL_COL_W;
+    const tlX = USER_PANEL_W;
     const tlW = w - tlX;
     const taskContentTop = HEADER_H + UTIL_ROW_H;
 
@@ -430,62 +430,6 @@ export function AllocationPage() {
     ctx.lineTo(w, utilRowBottom);
     ctx.stroke();
 
-    // ── LABEL COLUMN ─────────────────────────────────────────────────────
-    const labelX = USER_PANEL_W;
-    ctx.fillStyle = "#252526";
-    ctx.fillRect(labelX, taskContentTop, LABEL_COL_W, h - taskContentTop);
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(labelX, taskContentTop, LABEL_COL_W, h - taskContentTop);
-    ctx.clip();
-    ctx.translate(0, -taskScrollY);
-
-    for (let i = 0; i < userTasks.length; i++) {
-      const [id, task] = userTasks[i];
-      const rowTop = taskContentTop + i * ROW_H;
-      if (rowTop + ROW_H + taskScrollY < taskContentTop || rowTop - taskScrollY > h) continue;
-
-      ctx.fillStyle = i % 2 === 0 ? "#252526" : "#222224";
-      ctx.fillRect(labelX, rowTop, LABEL_COL_W, ROW_H);
-
-      // Hover highlight in label column
-      if (id === hoveredTaskId) {
-        ctx.fillStyle = "rgba(255,255,255,0.05)";
-        ctx.fillRect(labelX, rowTop, LABEL_COL_W, ROW_H);
-      }
-
-      const label = displayName(task.name, task.context_label);
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(labelX + 8, rowTop, LABEL_COL_W - 16, ROW_H);
-      ctx.clip();
-      ctx.fillStyle = "#d4d4d4";
-      ctx.font = "12px sans-serif";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, labelX + 10, rowTop + ROW_H / 2);
-      ctx.textBaseline = "alphabetic";
-      ctx.restore();
-
-      ctx.strokeStyle = "#2a2a2c";
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(labelX, rowTop + ROW_H);
-      ctx.lineTo(labelX + LABEL_COL_W, rowTop + ROW_H);
-      ctx.stroke();
-
-      hitTaskRectsRef.current.push({ id, y: rowTop - taskScrollY, h: ROW_H });
-    }
-    ctx.restore();
-
-    // Label column right border
-    ctx.strokeStyle = "#3a3a3c";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(labelX + LABEL_COL_W, taskContentTop);
-    ctx.lineTo(labelX + LABEL_COL_W, h);
-    ctx.stroke();
-
     // ── TASK BARS ─────────────────────────────────────────────────────────
     if (tlW <= 0) return;
 
@@ -597,6 +541,25 @@ export function AllocationPage() {
         }
       }
 
+      // Floating task label — drawn over the timeline at the left edge
+      {
+        const label = displayName(task.name, task.context_label ?? null);
+        ctx.font = "13px sans-serif";
+        const tw = ctx.measureText(label).width;
+        const padX = 6, padY = 3;
+        const lx = tlX + 6;
+        const ly = rowTop + ROW_H / 2;
+        ctx.fillStyle = "rgba(40,40,40,0.75)";
+        roundRect(ctx, lx - padX, ly - 9 - padY, tw + padX * 2, 18 + padY * 2, 3);
+        ctx.fill();
+        ctx.fillStyle = id === hoveredTaskId ? "#f0f0f0" : "#c8c8c8";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, lx, ly);
+        ctx.textBaseline = "alphabetic";
+      }
+
+      hitTaskRectsRef.current.push({ id, y: rowTop - taskScrollY, h: ROW_H });
+
       // Row separator
       ctx.strokeStyle = "#2a2a2c";
       ctx.lineWidth = 0.5;
@@ -616,6 +579,80 @@ export function AllocationPage() {
       ctx.moveTo(x, taskContentTop);
       ctx.lineTo(x, h);
       ctx.stroke();
+    }
+
+    // === HOVER INFO PANEL (bottom-left) ===
+    if (hoveredTaskId && selectedUserId) {
+      const task = plan.tasks[hoveredTaskId as TaskId];
+      const state = plan.node_allocations.tasks[hoveredTaskId as TaskId];
+      if (task && state) {
+        const panelPad = 10;
+        const margin = 8;
+        const lineGap = 4;
+        const titleSize = 18;
+        const bodySize = 14;
+
+        const lines: string[] = [];
+        lines.push(displayName(task.name, task.context_label ?? null));
+        lines.push(`Status: ${state.status}`);
+        const schedStart = "Fixed" in state.allocation ? state.allocation.Fixed.start_date : state.allocation.Dynamic.scheduled_start_date;
+        lines.push(`Scheduled: ${schedStart}`);
+        const endDate = "Fixed" in state.allocation ? state.allocation.Fixed.end_date : state.allocation.Dynamic.scheduled_end_date;
+        lines.push(`Ends: ${endDate}`);
+        const workerNames = task.workers.flatMap((slot) => {
+          if ("Specific" in slot) {
+            const u = plan.users_data[slot.Specific.user_id];
+            return u ? [u.user.name] : [];
+          }
+          return ["(unassigned)"];
+        });
+        if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
+
+        ctx.save();
+        ctx.resetTransform();
+        const dpr = window.devicePixelRatio || 1;
+        ctx.scale(dpr, dpr);
+
+        ctx.font = `${titleSize}px sans-serif`;
+        const titleW = ctx.measureText(lines[0]).width;
+        ctx.font = `${bodySize}px sans-serif`;
+        const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
+        const panelW = Math.max(titleW, bodyMaxW) + panelPad * 2;
+        const panelH = panelPad * 2
+          + titleSize * 1.25
+          + (lines.length > 1 ? lineGap + (lines.length - 1) * (bodySize * 1.4) + (lines.length - 2) * lineGap : 0);
+
+        const px = margin;
+        const py = h - margin - panelH;
+
+        ctx.fillStyle = "rgba(0,0,0,0.19)";
+        roundRect(ctx, px + 2, py + 3, panelW, panelH, 6);
+        ctx.fill();
+
+        ctx.fillStyle = "rgba(30,30,30,0.86)";
+        roundRect(ctx, px, py, panelW, panelH, 6);
+        ctx.fill();
+
+        ctx.strokeStyle = "#4a4a4a";
+        ctx.lineWidth = 1;
+        roundRect(ctx, px, py, panelW, panelH, 6);
+        ctx.stroke();
+
+        ctx.font = `${titleSize}px sans-serif`;
+        ctx.fillStyle = "#d4d4d4";
+        ctx.textBaseline = "top";
+        ctx.fillText(lines[0], px + panelPad, py + panelPad);
+
+        ctx.font = `${bodySize}px sans-serif`;
+        ctx.fillStyle = "#8a8a8a";
+        const bodyStartY = py + panelPad + titleSize * 1.25 + lineGap;
+        for (let i = 0; i < lines.length - 1; i++) {
+          ctx.fillText(lines[i + 1], px + panelPad, bodyStartY + i * (bodySize * 1.4 + lineGap));
+        }
+
+        ctx.textBaseline = "alphabetic";
+        ctx.restore();
+      }
     }
 
     ctx.restore();
@@ -639,20 +676,17 @@ export function AllocationPage() {
       return;
     }
 
-    // Label or timeline — click task row to edit
-    if (mx >= USER_PANEL_W) {
-      for (const r of hitTaskRectsRef.current) {
-        if (my >= r.y && my <= r.y + r.h) {
-          setEditTaskId(r.id);
-          return;
-        }
+    // Record potential click target (resolved on mouseUp if no drag)
+    pendingClickRef.current = null;
+    for (const r of hitTaskRectsRef.current) {
+      if (my >= r.y && my <= r.y + r.h) {
+        pendingClickRef.current = r.id;
+        break;
       }
     }
 
-    // Timeline drag (only if no task hit)
-    if (mx >= USER_PANEL_W + LABEL_COL_W) {
-      dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, scrollXStart: scrollX };
-    }
+    // Start drag tracking
+    dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, scrollXStart: scrollX, moved: false };
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
@@ -660,7 +694,7 @@ export function AllocationPage() {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    // Update hover for task rows (label or timeline area)
+    // Update hover for task rows
     if (mx >= USER_PANEL_W) {
       let hit: string | null = null;
       for (const r of hitTaskRectsRef.current) {
@@ -673,13 +707,25 @@ export function AllocationPage() {
 
     if (dragRef.current.active) {
       const dx = e.clientX - dragRef.current.lastX;
+      const totalMove = Math.abs(e.clientX - dragRef.current.startX);
+      if (totalMove > 5) {
+        dragRef.current.moved = true;
+        pendingClickRef.current = null; // cancel click if dragged
+      }
       dragRef.current.lastX = e.clientX;
       setScrollX((sx) => Math.max(0, sx - dx));
     }
   };
 
-  const onMouseUp = () => { dragRef.current.active = false; };
-  const onMouseLeave = () => { dragRef.current.active = false; setHoveredTaskId(null); };
+  const onMouseUp = () => {
+    if (!dragRef.current.moved && pendingClickRef.current) {
+      setEditTaskId(pendingClickRef.current as TaskId);
+    }
+    dragRef.current.active = false;
+    dragRef.current.moved = false;
+    pendingClickRef.current = null;
+  };
+  const onMouseLeave = () => { dragRef.current.active = false; dragRef.current.moved = false; pendingClickRef.current = null; setHoveredTaskId(null); };
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -688,9 +734,6 @@ export function AllocationPage() {
     if (mx < USER_PANEL_W) {
       const maxU = Math.max(0, users.length * ROW_H - size.h);
       setUserScrollY((sy) => Math.max(0, Math.min(maxU, sy + e.deltaY)));
-    } else if (mx < USER_PANEL_W + LABEL_COL_W) {
-      const maxT = Math.max(0, userTasks.length * ROW_H - (size.h - HEADER_H - UTIL_ROW_H));
-      setTaskScrollY((sy) => Math.max(0, Math.min(maxT, sy + e.deltaY)));
     } else {
       if (e.shiftKey) {
         const factor = e.deltaY > 0 ? 0.9 : 1.1;
