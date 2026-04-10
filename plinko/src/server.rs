@@ -432,6 +432,13 @@ pub(crate) fn handle_protocol(
                 .unwrap_or_default();
             let token = storage.lock().unwrap().load_monday_api_token();
             let mut plan_clone = engine.lock().unwrap().plan().clone();
+            // For FullReimport: strip all previously-imported tasks and clear the
+            // item_node_map so import_from_monday treats every Monday item as new.
+            // Without clearing, import would find all items in `existing`, enter the
+            // (silent-fail) update path instead of the create path, and produce a plan
+            // with no Monday tasks while the old IDs remain in the map — causing each
+            // subsequent reimport to add another full set of duplicate tasks.
+            let mut import_config = config.clone();
             if is_reimport {
                 let mapped_node_ids: std::collections::HashSet<_> = config
                     .item_node_map
@@ -444,6 +451,7 @@ pub(crate) fn handle_protocol(
                 plan_clone.milestones.retain(|id, _| {
                     !mapped_node_ids.contains(&plinko_shared::data::ids::NodeId::Milestone(*id))
                 });
+                import_config.item_node_map.clear();
             }
             let tx = monday_tx.clone();
             let storage_clone = Arc::clone(&storage);
@@ -454,9 +462,9 @@ pub(crate) fn handle_protocol(
                     total: 0,
                     message: "Fetching data from Monday...".to_string(),
                 }));
-                match import::import_from_monday(&client, &config, plan_clone) {
+                match import::import_from_monday(&client, &import_config, plan_clone) {
                     Ok((new_plan, new_map, message)) => {
-                        let mut updated_config = config.clone();
+                        let mut updated_config = import_config.clone();
                         updated_config.item_node_map = new_map;
                         storage_clone
                             .lock()

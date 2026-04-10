@@ -130,19 +130,36 @@ export function MondayModal({ planId, onClose }: Props) {
     }
   };
 
+  const [syncOp, setSyncOp] = useState<"pull" | "reimport" | "push" | null>(null);
+
   const handlePull = async () => {
-    await handleSaveConfig();
-    await sendRequest({ MondayPull: { plan_id: planId } });
+    setSyncOp("pull");
+    try {
+      await handleSaveConfig();
+      await sendRequest({ MondayPull: { plan_id: planId } });
+    } finally {
+      setSyncOp(null);
+    }
   };
 
   const handleFullReimport = async () => {
-    await handleSaveConfig();
-    await sendRequest({ MondayFullReimport: { plan_id: planId } });
+    setSyncOp("reimport");
+    try {
+      await handleSaveConfig();
+      await sendRequest({ MondayFullReimport: { plan_id: planId } });
+    } finally {
+      setSyncOp(null);
+    }
   };
 
   const handlePush = async () => {
-    await handleSaveConfig();
-    await sendRequest({ MondayPush: { plan_id: planId } });
+    setSyncOp("push");
+    try {
+      await handleSaveConfig();
+      await sendRequest({ MondayPush: { plan_id: planId } });
+    } finally {
+      setSyncOp(null);
+    }
   };
 
   const planUsers = plan
@@ -345,25 +362,41 @@ export function MondayModal({ planId, onClose }: Props) {
         <section>
           <h3 style={sectionTitle}>Sync</h3>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-            <button className="btn btn-primary btn-sm" onClick={handlePull} disabled={progressing}>
-              {progressing ? "⏳ Working…" : "Pull from Monday"}
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={handlePull}
+              disabled={progressing || syncOp !== null}
+              style={{ opacity: syncOp !== null && syncOp !== "pull" ? 0.5 : 1 }}
+            >
+              {syncOp === "pull" ? "⏳ Pulling…" : "Pull from Monday"}
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={handleFullReimport} disabled={progressing}>
-              Full Re-import
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleFullReimport}
+              disabled={progressing || syncOp !== null}
+              style={{ opacity: syncOp !== null && syncOp !== "reimport" ? 0.5 : 1 }}
+            >
+              {syncOp === "reimport" ? "⏳ Re-importing…" : "Full Re-import"}
             </button>
-            <button className="btn btn-secondary btn-sm" onClick={handlePush} disabled={progressing}>
-              Push dates to Monday
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handlePush}
+              disabled={progressing || syncOp !== null}
+              style={{ opacity: syncOp !== null && syncOp !== "push" ? 0.5 : 1 }}
+            >
+              {syncOp === "push" ? "⏳ Pushing…" : "Push dates to Monday"}
             </button>
           </div>
-          {progressing && monday.progress && (
+          {(progressing || syncOp !== null) && monday.progress && (
             <div style={{ fontSize: 12, color: "#4a90d9" }}>
-              ⏳ {monday.progress.message} ({monday.progress.done}/{monday.progress.total})
+              ⏳ {monday.progress.message}
+              {monday.progress.total > 0 && ` (${monday.progress.done}/${monday.progress.total})`}
             </div>
           )}
-          {monday.lastMessage && !progressing && (
+          {monday.lastMessage && syncOp === null && (
             <div style={{ fontSize: 12, color: "#4caf50" }}>✓ {monday.lastMessage}</div>
           )}
-          {monday.lastError && (
+          {monday.lastError && syncOp === null && (
             <div style={{ fontSize: 12, color: "#e57373" }}>✗ {monday.lastError}</div>
           )}
         </section>
