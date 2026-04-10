@@ -12,8 +12,8 @@ use crate::server::handle_protocol;
 use plinko_shared::data::Storage;
 
 pub fn run_ws_server(engine: Arc<Mutex<PlanEngine>>, storage: Arc<Mutex<Storage>>, port: u16) {
-    let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("ws bind failed");
-    eprintln!("plinko WebSocket server listening on 127.0.0.1:{port}");
+    let listener = TcpListener::bind(format!("0.0.0.0:{port}")).expect("ws bind failed");
+    eprintln!("plinko WebSocket server listening on 0.0.0.0:{port}");
     for stream in listener.incoming() {
         match stream {
             Ok(tcp) => {

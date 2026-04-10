@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/ws': {
-        target: 'ws://127.0.0.1:7892',
+        target: 'ws://0.0.0.0:7892',
         ws: true,
         rewrite: (path) => path.replace(/^\/ws/, ''),
       },

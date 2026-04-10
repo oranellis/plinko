@@ -4,14 +4,14 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 
 pub fn run_static_server(dist_dir: PathBuf, port: u16) {
-    let listener = match TcpListener::bind(format!("127.0.0.1:{port}")) {
+    let listener = match TcpListener::bind(format!("0.0.0.0:{port}")) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("static server: bind failed on port {port}: {e}");
             return;
         }
     };
-    eprintln!("plinko static server listening on http://127.0.0.1:{port}");
+    eprintln!("plinko static server listening on http://0.0.0.0:{port}");
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
