@@ -13,14 +13,12 @@ import {
 } from "../utils/planUtils";
 import { TaskFormModal } from "../components/modals/TaskFormModal";
 import { MilestoneFormModal } from "../components/modals/MilestoneFormModal";
-import { UsersModal } from "../components/modals/UsersModal";
 import { SearchModal } from "../components/modals/SearchModal";
 import {
   IconAddMilestone,
   IconAddTask,
   IconSearch,
   IconToday,
-  IconUsers,
 } from "../components/icons";
 import "./OverviewPage.css";
 
@@ -44,7 +42,6 @@ export function OverviewPage() {
   // Modals
   const [editTaskId, setEditTaskId] = useState<TaskId | null | "new">(null);
   const [editMsId, setEditMsId] = useState<MilestoneId | null | "new">(null);
-  const [showUsers, setShowUsers] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
   // Hover / flash
@@ -58,7 +55,6 @@ export function OverviewPage() {
   // Register toolbar action buttons; need refs to avoid stale closures
   const setEditTaskIdRef = useRef(setEditTaskId);
   const setEditMsIdRef = useRef(setEditMsId);
-  const setShowUsersRef = useRef(setShowUsers);
   const setShowSearchRef = useRef(setShowSearch);
   const planRef = useRef(plan);
   const scrollXRef = useRef(scrollX);
@@ -66,7 +62,6 @@ export function OverviewPage() {
   const dayWRef = useRef(dayW);
   setEditTaskIdRef.current = setEditTaskId;
   setEditMsIdRef.current = setEditMsId;
-  setShowUsersRef.current = setShowUsers;
   setShowSearchRef.current = setShowSearch;
   planRef.current = plan;
   scrollXRef.current = scrollX;
@@ -88,11 +83,7 @@ export function OverviewPage() {
         <button className="toolbar-btn" title="Search" onClick={() => setShowSearchRef.current(true)}><IconSearch size={24} /></button>
       </>
     );
-    setToolbarRightActions(
-      <>
-        <button className="toolbar-btn" title="Users" onClick={() => setShowUsersRef.current(true)}><IconUsers size={24} /></button>
-      </>
-    );
+    setToolbarRightActions(null);
     return () => { setToolbarActions(null); setToolbarRightActions(null); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -777,13 +768,6 @@ export function OverviewPage() {
           plan={plan}
           sendRequest={sendRequest}
           onClose={() => setEditMsId(null)}
-        />
-      )}
-      {showUsers && plan && (
-        <UsersModal
-          plan={plan}
-          sendRequest={sendRequest}
-          onClose={() => setShowUsers(false)}
         />
       )}
       {showSearch && plan && (

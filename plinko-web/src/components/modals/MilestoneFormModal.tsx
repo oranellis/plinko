@@ -61,13 +61,16 @@ export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Pr
     try {
       const newMsId = milestone?.id ?? uuidv4();
       const newNodeId: NodeId = { Milestone: newMsId as MilestoneId };
+      // Ensure there's always at least PlanStart as a dependency.
+      const effectiveDeps: typeof dependencies =
+        dependencies.length === 0 ? [{ id: "PlanStart", lag_days: 0 }] : dependencies;
 
       if (milestone) {
         const patch: MilestonePatch = {
           name: name.trim(),
           description,
           constraint,
-          dependencies,
+          dependencies: effectiveDeps,
         };
         const resp = await sendRequest({ UpdateMilestone: [milestone.id, patch] });
         if (typeof resp === "object" && "Error" in resp) {
@@ -81,7 +84,7 @@ export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Pr
             name: name.trim(),
             description,
             constraint,
-            dependencies,
+            dependencies: effectiveDeps,
             context_label: null,
           },
         });

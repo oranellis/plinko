@@ -83,6 +83,9 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
       const actualStartVal = actualStart || null;
       const newTaskId = task?.id ?? uuidv4();
       const newNodeId: NodeId = { Task: newTaskId as TaskId };
+      // Ensure there's always at least PlanStart as a dependency.
+      const effectiveDeps: typeof dependencies =
+        dependencies.length === 0 ? [{ id: "PlanStart", lag_days: 0 }] : dependencies;
 
       if (task) {
         const patch: TaskPatch = {
@@ -93,7 +96,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
           constraint,
           duration_days_target: dur,
           workers,
-          dependencies,
+          dependencies: effectiveDeps,
           relaxed_mode: relaxed,
         };
         const resp = await sendRequest({ UpdateTask: [task.id, patch] });
@@ -110,7 +113,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
             constraint,
             duration_days_target: dur,
             workers,
-            dependencies,
+            dependencies: effectiveDeps,
             relaxed_mode: relaxed,
             actual_start: actualStartVal,
             context_label: null,

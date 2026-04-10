@@ -6,7 +6,7 @@ export type PageId =
   | "home"
   | "overview"
   | "allocation"
-  | "calendar"
+  | "resources"
   | "daily"
   | "settings";
 
@@ -19,6 +19,7 @@ interface PlanContextValue {
   sendRequest: (req: PlanRequest) => Promise<PlanResponse>;
   login: (email: string, password: string) => void;
   logout: () => void;
+  reconnect: () => void;
   page: PageId;
   setPage: (p: PageId) => void;
   previousPage: PageId | null;

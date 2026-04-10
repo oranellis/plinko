@@ -10,8 +10,7 @@ import {
   workerUserId,
 } from "../utils/planUtils";
 import { TaskFormModal } from "../components/modals/TaskFormModal";
-import { UsersModal } from "../components/modals/UsersModal";
-import { IconToday, IconUsers } from "../components/icons";
+import { IconToday } from "../components/icons";
 import "./AllocationPage.css";
 
 const USER_PANEL_W = 220;
@@ -73,7 +72,7 @@ export function AllocationPage() {
   const [dayW, setDayW] = useState(DAY_W_DEFAULT);
   const [size, setSize] = useState({ w: 900, h: 600 });
   const [editTaskId, setEditTaskId] = useState<TaskId | null>(null);
-  const [showUsers, setShowUsers] = useState(false);
+  const [showUsers, setShowUsers] = useState(false); // kept for ref compatibility
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
   const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0, moved: false });
@@ -115,9 +114,7 @@ export function AllocationPage() {
         setScrollX(Math.max(0, offset * dw - tlW / 2));
       }}><IconToday size={24} /></button>
     );
-    setToolbarRightActions(
-      <button className="toolbar-btn" title="Users" onClick={() => setShowUsersRef.current(true)}><IconUsers size={24} /></button>
-    );
+    setToolbarRightActions(null);
     return () => { setToolbarActions(null); setToolbarRightActions(null); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -789,9 +786,7 @@ export function AllocationPage() {
           onClose={() => setEditTaskId(null)}
         />
       )}
-      {showUsers && plan && (
-        <UsersModal plan={plan} sendRequest={sendRequest} onClose={() => setShowUsers(false)} />
-      )}
+      {showUsers && plan && null /* users managed via Resources page */}
     </div>
   );
 }

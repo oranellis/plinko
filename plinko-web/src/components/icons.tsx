@@ -52,18 +52,35 @@ export function IconCalendar({ size = defaults.size, color = defaults.color }: I
 }
 
 export function IconSettings({ size = defaults.size, color = defaults.color }: IconProps) {
+  // Proper cogwheel: 8-tooth gear built with two overlapping rounded rects rotated + a circle cutout
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="8" cy="8" r="2.3" stroke={color} strokeWidth="1.4" />
       <path
-        d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
-        stroke={color} strokeWidth="1.4" strokeLinecap="round"
+        d="M6.5 1.5h3l.5 1.8a5 5 0 0 1 1.2.7l1.8-.6 1.5 2.6-1.4 1.2a5 5 0 0 1 0 1.6l1.4 1.2-1.5 2.6-1.8-.6a5 5 0 0 1-1.2.7l-.5 1.8h-3l-.5-1.8A5 5 0 0 1 4.8 12l-1.8.6L1.5 10l1.4-1.2a5 5 0 0 1 0-1.6L1.5 6l1.5-2.6 1.8.6A5 5 0 0 1 6 3.3Z"
+        stroke={color}
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+        fill="none"
       />
+      <circle cx="8" cy="8" r="2.1" stroke={color} strokeWidth="1.3" />
     </svg>
   );
 }
 
-export function IconUsers({ size = defaults.size, color = defaults.color }: IconProps) {
+export function IconResources({ size = defaults.size, color = defaults.color }: IconProps) {
+  // Person silhouette (left) + horizontal bars (right) representing team resources
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="4.5" cy="4.5" r="2" stroke={color} strokeWidth="1.3" />
+      <path d="M1 13c0-2 1.6-3.5 3.5-3.5S8 11 8 13" stroke={color} strokeWidth="1.3" strokeLinecap="round" />
+      <line x1="10" y1="5" x2="15" y2="5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="10" y1="8" x2="15" y2="8" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <line x1="10" y1="11" x2="15" y2="11" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="6" cy="5.5" r="2.3" stroke={color} strokeWidth="1.3" />

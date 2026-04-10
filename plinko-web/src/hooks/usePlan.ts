@@ -26,6 +26,7 @@ export interface UsePlanResult {
   sendRequest: (request: PlanRequest) => Promise<PlanResponse>;
   login: (email: string, password: string) => void;
   logout: () => void;
+  reconnect: () => void;
 }
 
 const WS_PORT = 7892; // default WebSocket port
@@ -52,6 +53,8 @@ export function usePlan(): UsePlanResult {
   const pendingRef = useRef<
     Map<number, { resolve: (r: PlanResponse) => void; reject: (e: Error) => void }>
   >(new Map());
+  // connectRef holds the connect function so reconnect() can call it externally.
+  const connectRef = useRef<(() => void) | null>(null);
 
   // Send a raw ClientMessage immediately (fire-and-forget).
   const sendRaw = useCallback((msg: ClientMessage) => {
@@ -90,7 +93,6 @@ export function usePlan(): UsePlanResult {
 
   useEffect(() => {
     let ws: WebSocket;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let alive = true;
 
     function connect() {
@@ -212,16 +214,17 @@ export function usePlan(): UsePlanResult {
 
         if (alive) {
           setStatus("disconnected");
-          reconnectTimer = setTimeout(connect, 2000);
+          // No auto-reconnect — user must click the reconnect button.
         }
       };
     }
 
+    connectRef.current = connect;
     connect();
 
     return () => {
       alive = false;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
+      connectRef.current = null;
       const currentWs = wsRef.current;
       wsRef.current = null;
       currentWs?.close();
@@ -229,5 +232,15 @@ export function usePlan(): UsePlanResult {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { plan, status, monday, auth, hasMondayIntegration, sendRequest, login, logout };
+  const reconnect = useCallback(() => {
+    // Close existing socket if any, then reconnect.
+    const currentWs = wsRef.current;
+    if (currentWs) {
+      wsRef.current = null;
+      currentWs.close();
+    }
+    connectRef.current?.();
+  }, []);
+
+  return { plan, status, monday, auth, hasMondayIntegration, sendRequest, login, logout, reconnect };
 }

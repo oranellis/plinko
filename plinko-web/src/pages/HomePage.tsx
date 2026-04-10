@@ -3,7 +3,7 @@ import { type PageId, usePlanContext } from "../context/PlanContext";
 import {
   IconGantt,
   IconAllocation,
-  IconCalendar,
+  IconResources,
 } from "../components/icons";
 import "./HomePage.css";
 
@@ -16,7 +16,7 @@ interface NavCard {
 const CARDS: NavCard[] = [
   { id: "overview",   label: "Overview",   icon: <IconGantt size={36} /> },
   { id: "allocation", label: "Allocation", icon: <IconAllocation size={36} /> },
-  { id: "calendar",   label: "Calendar",   icon: <IconCalendar size={36} /> },
+  { id: "resources",  label: "Resources",  icon: <IconResources size={36} /> },
 ];
 
 export function HomePage() {
