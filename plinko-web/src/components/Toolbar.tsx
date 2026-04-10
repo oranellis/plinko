@@ -1,5 +1,5 @@
 import { usePlanContext } from "../context/PlanContext";
-import { IconBack } from "./icons";
+import { IconBack, IconSettings } from "./icons";
 import "./Toolbar.css";
 
 export function Toolbar() {
@@ -26,6 +26,14 @@ export function Toolbar() {
       </span>
       <div className="toolbar-right">
         {toolbarRightActions}
+        <button
+          className="toolbar-btn"
+          title="Settings"
+          onClick={() => setPage(page === "settings" ? "home" : "settings")}
+          style={page === "settings" ? { color: "#a78bfa" } : undefined}
+        >
+          <IconSettings size={18} />
+        </button>
         <span
           className={`toolbar-status toolbar-status--${status}`}
           title={status}
