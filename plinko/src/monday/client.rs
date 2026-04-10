@@ -135,12 +135,26 @@ impl MondayClient {
             .as_str()
             .unwrap_or("{}");
         let settings: Value = serde_json::from_str(settings_str).unwrap_or(Value::Null);
+
+        // Build the set of deactivated label indices so we can exclude them.
+        let deactivated: std::collections::HashSet<String> = settings["deactivated_labels"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut seen = std::collections::HashSet::new();
         let labels: Vec<String> = settings["labels"]
             .as_object()
             .map(|obj| {
-                obj.values()
-                    .filter_map(|v| v.as_str())
+                obj.iter()
+                    .filter(|(key, _)| !deactivated.contains(*key))
+                    .filter_map(|(_, v)| v.as_str())
                     .filter(|s| !s.is_empty())
+                    .filter(|s| seen.insert(s.to_string()))
                     .map(|s| s.to_string())
                     .collect()
             })
