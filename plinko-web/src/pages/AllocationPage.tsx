@@ -154,23 +154,6 @@ export function AllocationPage() {
         })
     : [];
 
-  // Per-user utilisation summary
-  const utilisation = (userId: UserId): number => {
-    if (!plan) return 0;
-    let total = 0, work = 0;
-    for (const [, state] of Object.entries(plan.node_allocations.tasks)) {
-      const alloc = "Fixed" in state.allocation ? state.allocation.Fixed : "Dynamic" in state.allocation ? state.allocation.Dynamic : null;
-      if (!alloc) continue;
-      for (const seg of alloc.time_allocation) {
-        if (seg.user === userId) {
-          work += seg.hours_worked;
-          total += 8; // assume 8h capacity per working day
-        }
-      }
-    }
-    return total > 0 ? work / total : 0;
-  };
-
   // When user selection changes, scroll task list to center on the task closest to starting today
   const sizeRef = useRef(size);
   const dayWRef = useRef(dayW);
@@ -247,10 +230,10 @@ export function AllocationPage() {
       ctx.fillStyle = isSelected ? "#2d4a6a" : (i % 2 === 0 ? "#252526" : "#222224");
       ctx.fillRect(0, y, USER_PANEL_W, ROW_H);
 
-      // Name (clipped)
+      // Name (full width)
       ctx.save();
       ctx.beginPath();
-      ctx.rect(10, y, USER_PANEL_W - 80, ROW_H);
+      ctx.rect(10, y, USER_PANEL_W - 16, ROW_H);
       ctx.clip();
       ctx.fillStyle = "#d4d4d4";
       ctx.font = "13px sans-serif";
@@ -258,26 +241,6 @@ export function AllocationPage() {
       ctx.fillText(u.name, 10, y + ROW_H / 2);
       ctx.textBaseline = "alphabetic";
       ctx.restore();
-
-      // Mini util bar
-      const util = utilisation(u.id);
-      const barW = 60;
-      const barX = USER_PANEL_W - barW - 8;
-      const barY = y + ROW_H / 2 - 4;
-      ctx.fillStyle = "#333";
-      ctx.fillRect(barX, barY, barW, 8);
-      ctx.fillStyle = utilColor(util);
-      ctx.fillRect(barX, barY, Math.min(barW, util * barW), 8);
-
-      // Pct label
-      const pct = `${Math.round(util * 100)}%`;
-      ctx.fillStyle = "#888";
-      ctx.font = "10px sans-serif";
-      ctx.textAlign = "right";
-      ctx.textBaseline = "middle";
-      ctx.fillText(pct, USER_PANEL_W - 8, barY + 4);
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
 
       // Separator
       ctx.strokeStyle = "#2a2a2c";
@@ -526,7 +489,7 @@ export function AllocationPage() {
     ctx.translate(0, -taskScrollY);
 
     for (let i = 0; i < userTasks.length; i++) {
-      const [id] = userTasks[i];
+      const [id, task] = userTasks[i];
       const state = plan.node_allocations.tasks[id as TaskId];
       if (!state) continue;
       const alloc = "Fixed" in state.allocation ? state.allocation.Fixed : state.allocation.Dynamic;
@@ -538,7 +501,15 @@ export function AllocationPage() {
       ctx.fillStyle = i % 2 === 0 ? "#1e1e1e" : "#202022";
       ctx.fillRect(tlX, rowTop, tlW + scrollX, ROW_H);
 
-      // Per-day bars
+      // Today column highlight (consistent with header)
+      const todayRX = tlX + todayOffset * dayW - scrollX;
+      if (todayRX >= tlX && todayRX < tlX + tlW) {
+        ctx.fillStyle = "rgba(64,91,200,0.15)";
+        ctx.fillRect(todayRX, rowTop, dayW, ROW_H);
+      }
+
+      // Per-day bars — track whether any non-zero segments were drawn
+      let anyBars = false;
       for (const seg of alloc.time_allocation) {
         if (seg.user !== selectedUserId) continue;
         const off = daysBetween(plan.start_date, seg.date);
@@ -553,6 +524,7 @@ export function AllocationPage() {
 
         ctx.fillStyle = barColor;
         ctx.fillRect(x + 1, by, bw, bh);
+        anyBars = true;
 
         // Hours label with semi-transparent backdrop
         const label = Number.isInteger(seg.hours_worked) ? `${seg.hours_worked}h` : `${seg.hours_worked.toFixed(1)}h`;
@@ -571,6 +543,45 @@ export function AllocationPage() {
         ctx.fillText(label, tx, ty + 0.5);
         ctx.textAlign = "left";
         ctx.textBaseline = "alphabetic";
+      }
+
+      // 0h span indicator — show the task's scheduled date range as a thin line
+      if (!anyBars) {
+        const startDate = "Fixed" in state.allocation
+          ? state.allocation.Fixed.start_date
+          : state.allocation.Dynamic.scheduled_start_date;
+        const durationDays = task.duration_days_target > 0 ? task.duration_days_target : 1;
+        if (startDate) {
+          const startOff = daysBetween(plan.start_date, startDate);
+          const spanX = tlX + startOff * dayW - scrollX;
+          const spanW = Math.max(dayW, durationDays * dayW);
+          const lineY = rowTop + ROW_H / 2;
+          ctx.strokeStyle = barColor + "60";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath();
+          ctx.moveTo(Math.max(tlX, spanX), lineY);
+          ctx.lineTo(Math.min(tlX + tlW + scrollX, spanX + spanW), lineY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Start/end date labels
+          const fmt = (d: string) => {
+            const dt = new Date(d + "T00:00:00");
+            return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+          };
+          const endDate = addDays(startDate, Math.ceil(durationDays));
+          ctx.font = "9px sans-serif";
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillStyle = barColor + "99";
+          const lx = Math.max(tlX + 4, spanX + 4);
+          const dateLabel = `${fmt(startDate)} – ${fmt(endDate)}`;
+          if (lx + 2 < tlX + tlW + scrollX) {
+            ctx.fillText(dateLabel, lx, lineY);
+          }
+          ctx.textBaseline = "alphabetic";
+        }
       }
 
       // Row separator
