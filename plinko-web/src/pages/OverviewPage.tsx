@@ -309,7 +309,6 @@ export function OverviewPage() {
     if (hoverId && itemCenters.has(hoverId) && !droppedIds.has(hoverId)) {
       const hc = itemCenters.get(hoverId)!;
       ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
 
       for (const depId of hoveredDeps) {
         if (droppedIds.has(depId)) continue;
@@ -333,7 +332,6 @@ export function OverviewPage() {
         ctx.stroke();
       }
 
-      ctx.setLineDash([]);
       ctx.lineWidth = 1;
     }
 
