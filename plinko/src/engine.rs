@@ -235,7 +235,8 @@ impl PlanEngine {
             | PlanRequest::MondayFullReimport { .. }
             | PlanRequest::MondayPush { .. }
             | PlanRequest::SaveMondayConfig { .. }
-            | PlanRequest::LoadMondayConfig { .. } => PlanResponse::PlanUpdated,
+            | PlanRequest::LoadMondayConfig { .. }
+            | PlanRequest::LoadMondayApiToken => PlanResponse::PlanUpdated,
         }
     }
 }

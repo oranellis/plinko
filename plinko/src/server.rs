@@ -315,14 +315,24 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::LoadMondayConfig { plan_id } = &request {
             let plan_id = *plan_id;
-            let config = storage
-                .lock()
-                .unwrap()
-                .load_monday_config(plan_id)
-                .unwrap_or_default();
+            let stor = storage.lock().unwrap();
+            let config = stor.load_monday_config(plan_id).unwrap_or_default();
             if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::MondayConfigLoaded(Box::new(config)),
+            })
+            .is_err()
+            {
+                break;
+            }
+            continue;
+        }
+
+        if let PlanRequest::LoadMondayApiToken = &request {
+            let token = storage.lock().unwrap().load_monday_api_token();
+            if send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::MondayApiToken(token),
             })
             .is_err()
             {
@@ -351,53 +361,41 @@ pub(crate) fn handle_protocol(
             continue;
         }
 
-        if let PlanRequest::MondayTestConnection { token, board_id } = request {
-            let tx = monday_tx.clone();
-            std::thread::spawn(move || {
-                let client = MondayClient::new(&token);
-                match client.test_connection() {
-                    Ok(name) => {
-                        let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayDone {
-                            message: format!("Connected as: {name}"),
-                        }));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(InternalMsg::Forward(ServerMessage::MondayError {
-                            message: e.to_string(),
-                        }));
-                    }
-                }
-                drop(board_id);
-            });
-            if send(&ServerMessage::Response {
-                id,
-                response: PlanResponse::PlanUpdated,
-            })
-            .is_err()
-            {
+        // MondayTestConnection runs synchronously so the response is sent directly.
+        if let PlanRequest::MondayTestConnection { token, board_id: _ } = request {
+            let client = MondayClient::new(&token);
+            let response = match client.test_connection() {
+                Ok(name) => PlanResponse::MondayConnected(format!("Connected as: {name}")),
+                Err(e) => PlanResponse::Error(PlanError::Monday(e.to_string())),
+            };
+            if send(&ServerMessage::Response { id, response }).is_err() {
                 break;
             }
             continue;
         }
 
+        // MondayFetchBoardInfo runs synchronously — spawning a background thread caused a
+        // deadlock because the server's recv() would block before the thread could put its
+        // response into the channel to be forwarded.
         if let PlanRequest::MondayFetchBoardInfo { token, board_id } = request {
-            let tx = monday_tx.clone();
-            std::thread::spawn(move || {
-                let client = MondayClient::new(&token);
-                let users = client.fetch_users().unwrap_or_default();
-                let columns = client.fetch_columns(&board_id).unwrap_or_default();
-                let status_labels = client
-                    .fetch_status_labels(&board_id, "")
-                    .unwrap_or_default();
-                let _ = tx.send(InternalMsg::Forward(ServerMessage::Response {
-                    id,
-                    response: PlanResponse::MondayBoardInfo {
-                        users,
-                        columns,
-                        status_labels,
-                    },
-                }));
-            });
+            let client = MondayClient::new(&token);
+            let users = client.fetch_users().unwrap_or_default();
+            let columns = client.fetch_columns(&board_id).unwrap_or_default();
+            let status_labels = client
+                .fetch_status_labels(&board_id, "")
+                .unwrap_or_default();
+            if send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::MondayBoardInfo {
+                    users,
+                    columns,
+                    status_labels,
+                },
+            })
+            .is_err()
+            {
+                break;
+            }
             continue;
         }
 

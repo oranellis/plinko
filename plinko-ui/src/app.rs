@@ -740,7 +740,8 @@ impl ApplicationHandler for Application {
                 // Monday responses are handled by the MondayWindow via shared state.
                 PlanResponse::MondayConfigLoaded(_)
                 | PlanResponse::MondayBoardInfo { .. }
-                | PlanResponse::MondayApiToken(_) => {}
+                | PlanResponse::MondayApiToken(_)
+                | PlanResponse::MondayConnected(_) => {}
             }
         }
 

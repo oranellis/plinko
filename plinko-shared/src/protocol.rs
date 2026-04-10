@@ -206,6 +206,7 @@ pub enum PlanRequest {
     LoadMondayConfig {
         plan_id: uuid::Uuid,
     },
+    LoadMondayApiToken,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -221,6 +222,7 @@ pub enum PlanResponse {
         status_labels: Vec<String>,
     },
     MondayApiToken(String),
+    MondayConnected(String),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -230,6 +232,7 @@ pub enum PlanError {
     UserNotFound(UserId),
     Scheduler(SchedulerError),
     Dependency(DependencyError),
+    Monday(String),
 }
 
 impl std::fmt::Display for PlanError {
@@ -245,6 +248,7 @@ impl std::fmt::Display for PlanError {
             PlanError::Dependency(DependencyError::NotFound) => {
                 write!(f, "dependency target not found in plan")
             }
+            PlanError::Monday(msg) => write!(f, "Monday.com error: {msg}"),
         }
     }
 }
