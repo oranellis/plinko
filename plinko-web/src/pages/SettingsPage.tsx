@@ -54,8 +54,8 @@ export function SettingsPage() {
 
   const nodeOptions: { key: string; label: string }[] = plan ? [
     { key: "plan_start", label: "Plan Start" },
-    ...Object.values(plan.tasks).map((t) => ({ key: `task:${t.id}`, label: t.name })),
-    ...Object.values(plan.milestones).map((m) => ({ key: `milestone:${m.id}`, label: m.name })),
+    ...Object.values(plan.tasks ?? {}).map((t) => ({ key: `task:${t.id}`, label: t.name })),
+    ...Object.values(plan.milestones ?? {}).map((m) => ({ key: `milestone:${m.id}`, label: m.name })),
   ].sort((a, b) => a.key === "plan_start" ? -1 : b.key === "plan_start" ? 1 : a.label.localeCompare(b.label)) : [];
 
   const resolveTarget = (key: string): NodeId => {
@@ -346,11 +346,11 @@ export function SettingsPage() {
         <section className="settings-section">
           <h2 className="settings-heading">User Links</h2>
           <p className="settings-description">Link plan team members to login accounts.</p>
-          {Object.values(plan.users).length === 0 ? (
+          {Object.values(plan.users ?? {}).length === 0 ? (
             <div className="settings-empty">No team members in this plan.</div>
           ) : (
             <div className="settings-plan-list">
-              {Object.values(plan.users).map((u) => {
+              {Object.values(plan.users ?? {}).map((u) => {
                 const linked = userLinks.find((l) => l.plan_user_id === u.id);
                 return (
                   <div key={u.id} className="settings-plan-row">

@@ -9,11 +9,7 @@ export function Toolbar() {
   const { plan, status, auth, page, setPage, previousPage, setPreviousPage, toolbarActions, toolbarRightActions, hasMondayIntegration, monday, sendRequest } = usePlanContext();
 
   const isHome = page === "home";
-
-  // Don't render toolbar on login/connecting screens
-  if (status === "connecting" || status === "handshaking" || status === "authenticating" || auth.required) {
-    return null;
-  }
+  // All hooks must come before any conditional return.
   const [activeOp, setActiveOp] = useState<MondayOp>(null);
   const [doneText, setDoneText] = useState<{ text: string; isError: boolean } | null>(null);
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,6 +29,11 @@ export function Toolbar() {
       doneTimerRef.current = setTimeout(() => setDoneText(null), 8000);
     }
   }, [monday.lastMessage, monday.lastError]);
+
+  // Don't render toolbar on login/connecting screens — after all hooks.
+  if (status === "connecting" || status === "handshaking" || status === "authenticating" || auth.required) {
+    return null;
+  }
 
   const handleBack = () => {
     if (page === "settings" && previousPage) {
