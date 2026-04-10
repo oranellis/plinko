@@ -56,7 +56,7 @@ export function usePlan(): UsePlanResult {
 
     function connect() {
       setStatus("connecting");
-      ws = new WebSocket(`ws://127.0.0.1:${WS_PORT}`);
+      ws = new WebSocket(`ws://${window.location.hostname}:${WS_PORT}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
