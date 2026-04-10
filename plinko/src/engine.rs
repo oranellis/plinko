@@ -1,4 +1,7 @@
 use plinko_shared::data::Plan;
+use plinko_shared::data::dependency::Dependency;
+use plinko_shared::data::ids::NodeId;
+use plinko_shared::data::scheduler::SchedulerError;
 use plinko_shared::protocol::{
     PlanError, PlanRequest, PlanResponse, apply_milestone_patch, apply_task_patch,
 };
@@ -91,9 +94,33 @@ impl PlanEngine {
                     PlanResponse::Error(PlanError::TaskNotFound(id))
                 }
             }
-            PlanRequest::CreateTask(task) => {
+            PlanRequest::CreateTask(mut task) => {
                 if let Err(e) = self.plan.validate_task_workers(&task.name, &task.workers) {
                     return PlanResponse::Error(PlanError::Scheduler(e));
+                }
+                // Ensure every dependency target exists in the plan.
+                for dep in &task.dependencies {
+                    match dep.id {
+                        NodeId::PlanStart => {}
+                        NodeId::Task(id) => {
+                            if !self.plan.tasks.contains_key(&id) {
+                                return PlanResponse::Error(PlanError::Scheduler(
+                                    SchedulerError::DisconnectedNode(NodeId::Task(id)),
+                                ));
+                            }
+                        }
+                        NodeId::Milestone(id) => {
+                            if !self.plan.milestones.contains_key(&id) {
+                                return PlanResponse::Error(PlanError::Scheduler(
+                                    SchedulerError::DisconnectedNode(NodeId::Milestone(id)),
+                                ));
+                            }
+                        }
+                    }
+                }
+                // Default to depending on PlanStart so the task is always connected.
+                if task.dependencies.is_empty() {
+                    task.dependencies.push(Dependency::new(NodeId::PlanStart));
                 }
                 self.plan.add_task(task);
                 let _ = self.plan.compute_time_optimised_plan();
@@ -109,7 +136,13 @@ impl PlanEngine {
                     Err(PlanError::TaskNotFound(id))
                 }
             }),
-            PlanRequest::CreateMilestone(milestone) => {
+            PlanRequest::CreateMilestone(mut milestone) => {
+                // Default to depending on PlanStart so the milestone is always connected.
+                if milestone.dependencies.is_empty() {
+                    milestone
+                        .dependencies
+                        .push(Dependency::new(NodeId::PlanStart));
+                }
                 self.plan.add_milestone(milestone);
                 let _ = self.plan.compute_time_optimised_plan();
                 PlanResponse::PlanUpdated

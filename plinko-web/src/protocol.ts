@@ -397,6 +397,9 @@ export function formatPlanError(err: PlanError): string {
     if (typeof se === "object" && "SpecificWorkerNotFound" in se) {
       return `Cannot create task "${se.SpecificWorkerNotFound.task_name}": a selected worker is not in this plan.`;
     }
+    if (typeof se === "object" && "DisconnectedNode" in se) {
+      return "One or more dependencies reference a node that doesn't exist in the plan.";
+    }
     return `Scheduler error: ${JSON.stringify(se)}`;
   }
   return JSON.stringify(err);
