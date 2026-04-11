@@ -912,11 +912,11 @@ impl Plan {
         // The effective task duration is shared by all workers: it must be at
         // least as long as the most-loaded worker requires to stay within their
         // daily hours, and at least the requested duration_days_target.
-        // Computing it once and applying it uniformly means lighter workers are
-        // spread over the full task span (e.g. Eve at 2 days of workload spreads
-        // to 4h/day over a 4-day task driven by Oran's 4 days of workload).
-        let effective_duration: Option<f32> = if task_duration > 0.0 && hours_per_day > EPSILON {
-            let max_min_days = workers
+        // For strict mode with multiple workers and no explicit duration, we still
+        // derive a shared span from max(workload_days) so lighter workers are
+        // spread evenly over the whole task rather than finishing early at full rate.
+        let effective_duration: Option<f32> = if hours_per_day > EPSILON {
+            let max_workload_days = workers
                 .iter()
                 .map(|slot| match slot {
                     WorkerSlot::Specific { workload_days, .. }
@@ -925,7 +925,17 @@ impl Plan {
                     }
                 })
                 .fold(1.0f32, f32::max);
-            Some(task_duration.ceil().max(max_min_days))
+
+            if task_duration > 0.0 {
+                // Explicit target: honour it but never exceed daily hours.
+                Some(task_duration.ceil().max(max_workload_days))
+            } else if strict && workers.len() > 1 {
+                // No target but multi-worker strict: derive from heaviest worker.
+                Some(max_workload_days)
+            } else {
+                // Single worker or relaxed with no target: fill at full daily rate.
+                None
+            }
         } else {
             None
         };
@@ -1509,6 +1519,92 @@ mod tests {
             dates_a[0], dates_b[0]
         );
         assert_eq!(end_a, end_b, "Both tasks should finish on the same day");
+    }
+
+    /// Strict task with two workers of different workloads (no explicit duration):
+    /// the lighter worker must be spread over the full span driven by the heavier
+    /// worker (4 days), not finish early at full rate.
+    ///
+    /// Setup: Alice 2 workload_days, Bob 4 workload_days, strict, duration=0.
+    /// Expected: task spans 4 working days; Alice works 4h/day, Bob 8h/day.
+    #[test]
+    fn strict_multi_worker_lighter_worker_spreads_over_full_duration() {
+        let plan_start = date(2026, 5, 4); // Monday
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays(); // 8h Mon-Fri
+
+        let alice = plan.add_user(User::new("Alice"));
+        let bob = plan.add_user(User::new("Bob"));
+        let dep_ps = Dependency::new(NodeId::PlanStart);
+
+        let mut task = Task::new("T", "");
+        task.add_specific_worker(alice, 2.0); // 16h total
+        task.add_specific_worker(bob, 4.0); // 32h total
+        task.duration_days_target = 0.0; // derive from workload
+        task.relaxed_mode = false; // strict: same days
+        task.dependencies.push(dep_ps);
+        let tid = plan.add_task(task);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        let alloc = &plan.node_allocations.tasks[&tid].allocation;
+        let TaskAllocation::Dynamic {
+            scheduled_start_date,
+            scheduled_end_date,
+            time_allocation,
+        } = alloc
+        else {
+            panic!("expected Dynamic allocation");
+        };
+
+        // Task should span exactly 4 working days (Mon–Thu).
+        let expected_start = date(2026, 5, 4);
+        let expected_end = date(2026, 5, 7);
+        assert_eq!(
+            *scheduled_start_date, expected_start,
+            "task should start Monday 4 May"
+        );
+        assert_eq!(
+            *scheduled_end_date, expected_end,
+            "task should end Thursday 7 May"
+        );
+
+        // Alice should have 4 segments (one per day, 4h each).
+        let alice_segs: Vec<_> = time_allocation.iter().filter(|s| s.user == alice).collect();
+        assert_eq!(
+            alice_segs.len(),
+            4,
+            "Alice should work on 4 days, not finish early"
+        );
+        for seg in &alice_segs {
+            assert!(
+                (seg.hours_worked - 4.0).abs() < 0.01,
+                "Alice should work 4h/day, got {}h on {}",
+                seg.hours_worked,
+                seg.date
+            );
+        }
+
+        // Bob should have 4 segments at 8h each.
+        let bob_segs: Vec<_> = time_allocation.iter().filter(|s| s.user == bob).collect();
+        assert_eq!(bob_segs.len(), 4, "Bob should work on 4 days");
+        for seg in &bob_segs {
+            assert!(
+                (seg.hours_worked - 8.0).abs() < 0.01,
+                "Bob should work 8h/day, got {}h on {}",
+                seg.hours_worked,
+                seg.date
+            );
+        }
+
+        // Both workers must share the same 4 days.
+        let alice_dates: std::collections::HashSet<_> = alice_segs.iter().map(|s| s.date).collect();
+        let bob_dates: std::collections::HashSet<_> = bob_segs.iter().map(|s| s.date).collect();
+        assert_eq!(
+            alice_dates, bob_dates,
+            "Alice and Bob must work on the same days"
+        );
     }
 
     /// Compact pass fills gaps caused by forward-propagation:
