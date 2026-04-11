@@ -133,9 +133,17 @@ export function ResourcesPage() {
     return <div className="resources-page resources-page--empty">No plan loaded</div>;
   }
 
-  const users = Object.values(plan.users_data)
-    .map((ud) => ud.user)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Users in display order (user_order from plan, fallback alpha sort)
+  const orderedUserIds: UserId[] = plan.user_order.length > 0
+    ? [...plan.user_order].filter((id) => id in plan.users_data)
+    : Object.values(plan.users_data).map((ud) => ud.user.id).sort((a, b) =>
+        (plan.users_data[a]?.user.name ?? "").localeCompare(plan.users_data[b]?.user.name ?? "")
+      );
+  // Also include any users not yet in user_order
+  for (const id of Object.keys(plan.users_data) as UserId[]) {
+    if (!orderedUserIds.includes(id)) orderedUserIds.push(id);
+  }
+  const users = orderedUserIds.map((id) => plan.users_data[id]?.user).filter(Boolean) as typeof plan.users_data[string]["user"][];
 
   // ── Derived schedule for left panel ──────────────────────────────────────
 
@@ -301,6 +309,12 @@ export function ResourcesPage() {
     startRef.setMonth(startRef.getMonth() + 1);
   }
 
+  // ── Drag state ────────────────────────────────────────────────────────────
+  const dragUser = useRef<{ id: UserId; fromIndex: number } | null>(null);
+  const [dragUserOver, setDragUserOver] = useState<number | null>(null);
+  const dragTag = useRef<{ id: TagId; fromIndex: number } | null>(null);
+  const [dragTagOver, setDragTagOver] = useState<number | null>(null);
+
   // ── Schedule section ──────────────────────────────────────────────────────
 
   const sched = baseSchedule();
@@ -335,12 +349,32 @@ export function ResourcesPage() {
               {users.length === 0 && (
                 <div className="resources-empty">No users yet</div>
               )}
-              {users.map((u) => (
+              {users.map((u, idx) => (
                 <div
                   key={u.id}
-                  className={`resources-user-item${selected === u.id ? " resources-user-item--selected" : ""}`}
+                  className={`resources-user-item${selected === u.id ? " resources-user-item--selected" : ""}${dragUserOver === idx ? " resources-drag-over" : ""}`}
                   onClick={() => selectItem(u.id, plan)}
+                  onDragOver={(e) => { e.preventDefault(); setDragUserOver(idx); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragUser.current && dragUser.current.fromIndex !== idx) {
+                      sendRequest({ MoveUser: [dragUser.current.id, idx] });
+                    }
+                    dragUser.current = null;
+                    setDragUserOver(null);
+                  }}
+                  onDragLeave={() => setDragUserOver(null)}
                 >
+                  <span
+                    className="resources-drag-handle"
+                    draggable
+                    onDragStart={(e) => {
+                      dragUser.current = { id: u.id, fromIndex: idx };
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragEnd={() => { dragUser.current = null; setDragUserOver(null); }}
+                    onClick={(e) => e.stopPropagation()}
+                  >⠿</span>
                   <span className="resources-user-name">{u.name}</span>
                   {u.tags.length > 0 && (
                     <span className="resources-user-tags">
@@ -432,8 +466,29 @@ export function ResourcesPage() {
               {plan.tags.map((tag, idx) => {
                 const editVal = renaming[tag.id] ?? tag.name;
                 return (
-                  <div key={tag.id} className="resources-user-item resources-tag-row-inline">
-                    <span className="resources-tag-num">{idx + 1}.</span>
+                  <div
+                    key={tag.id}
+                    className={`resources-user-item resources-tag-row-inline${dragTagOver === idx ? " resources-drag-over" : ""}`}
+                    onDragOver={(e) => { e.preventDefault(); setDragTagOver(idx); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragTag.current && dragTag.current.fromIndex !== idx) {
+                        sendRequest({ MoveTag: [dragTag.current.id, idx] });
+                      }
+                      dragTag.current = null;
+                      setDragTagOver(null);
+                    }}
+                    onDragLeave={() => setDragTagOver(null)}
+                  >
+                    <span
+                      className="resources-drag-handle"
+                      draggable
+                      onDragStart={(e) => {
+                        dragTag.current = { id: tag.id, fromIndex: idx };
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onDragEnd={() => { dragTag.current = null; setDragTagOver(null); }}
+                    >⠿</span>
                     <input
                       type="text"
                       className="resources-tag-input-inline"

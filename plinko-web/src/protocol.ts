@@ -184,6 +184,7 @@ export interface Plan {
   id: string; // Uuid
   name: string;
   users_data: Record<UserId, UserData>;
+  user_order: UserId[];
   tags: Tag[];
   tasks: Record<TaskId, Task>;
   milestones: Record<MilestoneId, Milestone>;
@@ -320,6 +321,7 @@ export type PlanRequest =
   | { RenameTag: [TagId, string] }
   | { DeleteTag: TagId }
   | { MoveTag: [TagId, number] }
+  | { MoveUser: [UserId, number] }
   | { UpdatePlanSettings: { name: string; start_date: IsoDate; scheduler_target: NodeId } }
   | { LoadPlan: { plan_id: string } }
   | { DeletePlan: { plan_id: string } }

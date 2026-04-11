@@ -27,6 +27,8 @@ pub struct Plan {
     pub name: String,
     pub users_data: HashMap<UserId, UserData>,
     #[serde(default)]
+    pub user_order: Vec<UserId>,
+    #[serde(default)]
     pub tags: Vec<Tag>,
     pub tasks: HashMap<TaskId, Task>,
     pub milestones: HashMap<MilestoneId, Milestone>,
@@ -46,6 +48,7 @@ impl Plan {
             id: Uuid::new_v4(),
             name: name.into(),
             users_data: HashMap::new(),
+            user_order: Vec::new(),
             tags: Vec::new(),
             tasks: HashMap::new(),
             milestones: HashMap::new(),
@@ -133,7 +136,51 @@ impl Plan {
     pub fn add_user(&mut self, user: User) -> UserId {
         let id = user.id;
         self.users_data.insert(id, UserData::new(user));
+        if !self.user_order.contains(&id) {
+            self.user_order.push(id);
+        }
         id
+    }
+
+    pub fn remove_user(&mut self, id: &UserId) -> bool {
+        self.user_order.retain(|u| u != id);
+        self.users_data.remove(id).is_some()
+    }
+
+    pub fn move_user(&mut self, id: &UserId, new_index: usize) -> bool {
+        // Ensure user_order is complete (handles legacy plans without it)
+        for uid in self.users_data.keys() {
+            if !self.user_order.contains(uid) {
+                self.user_order.push(*uid);
+            }
+        }
+        let pos = match self.user_order.iter().position(|u| u == id) {
+            Some(p) => p,
+            None => return false,
+        };
+        let uid = self.user_order.remove(pos);
+        let insert_at = new_index.min(self.user_order.len());
+        self.user_order.insert(insert_at, uid);
+        true
+    }
+
+    /// Returns users in display order (user_order, falling back to insertion order).
+    pub fn ordered_users(&self) -> Vec<&User> {
+        let mut seen = HashSet::new();
+        let mut result = Vec::with_capacity(self.users_data.len());
+        for id in &self.user_order {
+            if let Some(ud) = self.users_data.get(id) {
+                seen.insert(*id);
+                result.push(&ud.user);
+            }
+        }
+        // append any not yet in user_order
+        for (id, ud) in &self.users_data {
+            if !seen.contains(id) {
+                result.push(&ud.user);
+            }
+        }
+        result
     }
 
     // ── Tag registry ──────────────────────────────────────────────────────────

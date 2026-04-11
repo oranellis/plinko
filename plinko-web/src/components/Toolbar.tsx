@@ -31,7 +31,7 @@ export function Toolbar() {
   }, [monday.lastMessage, monday.lastError]);
 
   // Don't render toolbar on login/connecting screens — after all hooks.
-  if (status === "connecting" || status === "handshaking" || status === "authenticating" || auth.required) {
+  if (status === "connecting" || status === "handshaking" || status === "authenticating" || status === "disconnected" || status === "error" || auth.required) {
     return null;
   }
 

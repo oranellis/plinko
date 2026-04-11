@@ -177,7 +177,7 @@ impl PlanEngine {
                 Ok(())
             }),
             PlanRequest::DeleteUser(id) => self.apply_validated(|plan| {
-                if plan.users_data.remove(&id).is_some() {
+                if plan.remove_user(&id) {
                     plan.user_calendar_overrides.remove(&id);
                     plan.node_allocations.invalidate();
                     Ok(())
@@ -245,6 +245,10 @@ impl PlanEngine {
             }
             PlanRequest::MoveTag(id, new_index) => {
                 self.plan.move_tag(&id, new_index);
+                PlanResponse::PlanUpdated
+            }
+            PlanRequest::MoveUser(id, new_index) => {
+                self.plan.move_user(&id, new_index);
                 PlanResponse::PlanUpdated
             }
             PlanRequest::UpdatePlanSettings {

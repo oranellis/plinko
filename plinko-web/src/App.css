@@ -50,6 +50,13 @@ body {
   background: #1e1e1e;
 }
 
+.status-screen-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
 .status-screen.error {
   color: #e57373;
 }

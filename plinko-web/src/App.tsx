@@ -12,8 +12,15 @@ import "./App.css";
 function PageRouter() {
   const { page, status, auth, reconnect } = usePlanContext();
 
+  // While connecting/handshaking or auto-authenticating with a stored token
+  // (auth.required is false but we haven't received PlanState yet), show a
+  // blank screen to avoid the login-page flicker.
   if (status === "connecting" || status === "handshaking") {
-    return <StatusScreen message="Connecting to Plinko server…" />;
+    return <StatusScreen message="" />;
+  }
+  if (status === "authenticating" && !auth.required) {
+    // Auto-auth in progress — blank screen with subtle fade-in
+    return <StatusScreen message="" />;
   }
   if (status === "authenticating" || auth.required) {
     return <LoginPage />;
@@ -36,10 +43,10 @@ function PageRouter() {
   }
 }
 
-function StatusScreen({ message, error }: { message: string; error?: boolean }) {
+function StatusScreen({ message, error }: { message?: string; error?: boolean }) {
   return (
     <div className={`status-screen${error ? " error" : ""}`}>
-      <p>{message}</p>
+      {message && <p>{message}</p>}
     </div>
   );
 }
@@ -47,22 +54,12 @@ function StatusScreen({ message, error }: { message: string; error?: boolean }) 
 function DisconnectedScreen({ onReconnect }: { onReconnect: () => void }) {
   return (
     <div className="status-screen">
-      <p>Disconnected from server.</p>
-      <button
-        onClick={onReconnect}
-        style={{
-          marginTop: 16,
-          padding: "8px 20px",
-          background: "#6366f1",
-          color: "#fff",
-          border: "none",
-          borderRadius: 6,
-          fontSize: 14,
-          cursor: "pointer",
-        }}
-      >
-        Reconnect
-      </button>
+      <div className="status-screen-content">
+        <p>Disconnected from server.</p>
+        <button className="btn btn-primary" onClick={onReconnect} style={{ marginTop: 16 }}>
+          Reconnect
+        </button>
+      </div>
     </div>
   );
 }

@@ -204,6 +204,26 @@
   cursor: default;
 }
 
+.resources-drag-handle {
+  cursor: grab;
+  color: #555;
+  font-size: 1rem;
+  padding: 0 4px;
+  flex-shrink: 0;
+  user-select: none;
+  line-height: 1;
+}
+
+.resources-drag-handle:active {
+  cursor: grabbing;
+}
+
+.resources-drag-over {
+  outline: 2px solid #6366f1;
+  outline-offset: -2px;
+  background: rgba(99, 102, 241, 0.08);
+}
+
 .resources-tag-num {
   font-size: 0.75rem;
   color: #555;

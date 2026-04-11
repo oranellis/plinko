@@ -183,6 +183,7 @@ pub enum PlanRequest {
     RenameTag(TagId, String),
     DeleteTag(TagId),
     MoveTag(TagId, usize),
+    MoveUser(UserId, usize),
     UpdatePlanSettings {
         name: String,
         start_date: NaiveDate,
