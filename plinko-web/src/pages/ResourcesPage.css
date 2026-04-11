@@ -208,10 +208,15 @@
   cursor: grab;
   color: #555;
   font-size: 1rem;
-  padding: 0 4px;
+  /* Extend hitbox to left edge of the row */
+  margin-left: -12px;
+  padding: 0 8px 0 12px;
   flex-shrink: 0;
   user-select: none;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
 }
 
 .resources-drag-handle:active {
@@ -378,7 +383,7 @@
 }
 
 .resources-cal-label {
-  padding: 10px 16px 6px;
+  padding: 6px 16px 6px;
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -386,6 +391,18 @@
   color: #888;
   background: #1a1a1a;
   border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.resources-cal-today-btn {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  text-transform: none;
+  letter-spacing: 0;
   flex-shrink: 0;
 }
 

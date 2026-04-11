@@ -591,10 +591,24 @@ export function ResourcesPage() {
       {/* ── Right: Scrollable calendar ── */}
       <div className="resources-right">
         <div className="resources-cal-label">
-          {selected === "plan"
-            ? "Plan calendar overrides"
-            : `${plan.users_data[selected]?.user.name ?? ""} calendar overrides`}
-          {pendingCalCount > 0 && <span className="resources-cal-pending"> · {pendingCalCount} unsaved</span>}
+          <span>
+            {selected === "plan"
+              ? "Plan calendar overrides"
+              : `${plan.users_data[selected]?.user.name ?? ""} calendar overrides`}
+            {pendingCalCount > 0 && <span className="resources-cal-pending"> · {pendingCalCount} unsaved</span>}
+          </span>
+          <button
+            className="btn btn-secondary btn-sm resources-cal-today-btn"
+            onClick={() => {
+              if (todayMarkerRef.current && calScrollRef.current) {
+                const scroll = calScrollRef.current;
+                const top = todayMarkerRef.current.offsetTop - scroll.offsetTop;
+                scroll.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+              }
+            }}
+          >
+            Today
+          </button>
         </div>
 
         <div className="resources-calendar-scroll" ref={calScrollRef}>

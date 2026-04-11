@@ -346,11 +346,11 @@ export function SettingsPage() {
         <section className="settings-section">
           <h2 className="settings-heading">User Links</h2>
           <p className="settings-description">Link plan team members to login accounts.</p>
-          {Object.values(plan.users ?? {}).length === 0 ? (
+          {Object.values(plan.users_data ?? {}).length === 0 ? (
             <div className="settings-empty">No team members in this plan.</div>
           ) : (
             <div className="settings-plan-list">
-              {Object.values(plan.users ?? {}).map((u) => {
+              {Object.values(plan.users_data ?? {}).map(({ user: u }) => {
                 const linked = userLinks.find((l) => l.plan_user_id === u.id);
                 return (
                   <div key={u.id} className="settings-plan-row">
