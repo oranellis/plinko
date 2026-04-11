@@ -79,8 +79,7 @@ export function IconResources({ size = defaults.size, color = defaults.color }: 
     </svg>
   );
 }
-
-
+export function IconUsers({ size = defaults.size, color = defaults.color }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="6" cy="5.5" r="2.3" stroke={color} strokeWidth="1.3" />
