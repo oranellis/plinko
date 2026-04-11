@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
 import type { Plan, PlanRequest, PlanResponse, UserId, Weekday, WorkSchedule } from "../../protocol";
+import { filterNumericKey } from "../../utils/planUtils";
 
 const WEEKDAYS: Weekday[] = [
   "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
@@ -68,12 +69,17 @@ export function ScheduleModal({ userId, plan, sendRequest, onClose }: Props) {
           <div key={wd} style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ width: 100, fontSize: 13, color: "#d4d4d4" }}>{wd}</span>
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
               min={0}
               max={24}
               step={0.5}
               value={hours[wd] ?? "0"}
-              onChange={(e) => setHours((prev) => ({ ...prev, [wd]: e.target.value }))}
+              onKeyDown={filterNumericKey}
+              onChange={(e) => {
+                const s = e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
+                setHours((prev) => ({ ...prev, [wd]: s }));
+              }}
               style={{
                 width: 70,
                 background: "#1e1e1e",

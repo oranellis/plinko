@@ -249,3 +249,12 @@ export function packGanttRows(plan: Plan): GanttItem[] {
 
   return [...activeResult, separator, ...droppedResult];
 }
+
+/** Keyboard handler that restricts input to digits and a single decimal point. */
+export function filterNumericKey(e: React.KeyboardEvent<HTMLInputElement>) {
+  const allowed = /^[0-9.]$/.test(e.key);
+  const control = ["Backspace", "Delete", "ArrowLeft", "ArrowRight", "Tab", "Home", "End"].includes(e.key);
+  const isCtrl = e.ctrlKey || e.metaKey;
+  if (!allowed && !control && !isCtrl) e.preventDefault();
+  if (e.key === "." && (e.currentTarget.value.includes("."))) e.preventDefault();
+}

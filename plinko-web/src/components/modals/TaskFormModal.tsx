@@ -3,6 +3,7 @@ import { Modal } from "../Modal";
 import type { DateConstraint, Dependency, Milestone, NodeId, Plan, PlanRequest, PlanResponse, Status, Task, TaskId, TaskPatch, WorkerSlot } from "../../protocol";
 import { formatPlanError } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
+import { filterNumericKey } from "../../utils/planUtils";
 import { WorkerEditor } from "./shared/WorkerEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
 import { SegmentedControl } from "./shared/SegmentedControl";
@@ -231,11 +232,16 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
             Duration (days)
           </label>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
             min={0}
             step={0.5}
             value={durationDays}
-            onChange={(e) => setDurationDays(e.target.value)}
+            onKeyDown={filterNumericKey}
+            onChange={(e) => {
+              const s = e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
+              setDurationDays(s);
+            }}
             style={{
               background: "#1e1e1e",
               border: "1px solid #3a3a3c",

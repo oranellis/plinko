@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { usePlanContext } from "../context/PlanContext";
 import type { IsoDate, TagId, User, UserId, Weekday, WorkSchedule } from "../protocol";
-import { formatDate } from "../utils/planUtils";
+import { filterNumericKey, formatDate } from "../utils/planUtils";
 import "./ResourcesPage.css";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -358,25 +358,61 @@ export function ResourcesPage() {
               ))}
             </div>
 
+            {/* Add User button — just above schedule section */}
+            <button className="resources-add-bar" onClick={openCreate}>+ Add User</button>
+
             {/* Schedule editor for selected item */}
             <div className="resources-schedule-section">
               <div className="resources-section-header resources-section-header--sub">{schedLabel}</div>
-              <div className="resources-schedule-grid">
-                {WEEKDAYS.map((wd) => (
-                  <div key={wd} className="resources-schedule-row">
-                    <span className="resources-schedule-day">{wd.slice(0, 3)}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={24}
-                      step={0.5}
-                      className="resources-schedule-input"
-                      value={currentScheduleHours[wd] ?? "0"}
-                      onChange={(e) => handleScheduleChange(wd, e.target.value)}
-                    />
-                    <span className="resources-schedule-unit">h</span>
-                  </div>
-                ))}
+              <div className="resources-schedule-cols">
+                {/* Mon–Fri */}
+                <div className="resources-schedule-col">
+                  {WEEKDAYS.slice(0, 5).map((wd) => {
+                    const val = currentScheduleHours[wd] ?? "0";
+                    const over = parseFloat(val) > 24;
+                    return (
+                      <div key={wd} className="resources-schedule-row">
+                        <span className="resources-schedule-day">{wd.slice(0, 3)}</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className={`resources-schedule-input${over ? " resources-schedule-input--error" : ""}`}
+                          value={val}
+                          onKeyDown={filterNumericKey}
+                          onChange={(e) => {
+                            const s = e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
+                            handleScheduleChange(wd, s);
+                          }}
+                        />
+                        <span className="resources-schedule-unit">h</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Sat–Sun */}
+                <div className="resources-schedule-col">
+                  {WEEKDAYS.slice(5).map((wd) => {
+                    const val = currentScheduleHours[wd] ?? "0";
+                    const over = parseFloat(val) > 24;
+                    return (
+                      <div key={wd} className="resources-schedule-row">
+                        <span className="resources-schedule-day">{wd.slice(0, 3)}</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          className={`resources-schedule-input${over ? " resources-schedule-input--error" : ""}`}
+                          value={val}
+                          onKeyDown={filterNumericKey}
+                          onChange={(e) => {
+                            const s = e.target.value.replace(/[^0-9.]/g, "").replace(/(\..*)\./g, "$1");
+                            handleScheduleChange(wd, s);
+                          }}
+                        />
+                        <span className="resources-schedule-unit">h</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               <div className="resources-schedule-actions">
                 {selected !== "plan" && plan.users_data[selected]?.schedule !== null && (
@@ -386,36 +422,6 @@ export function ResourcesPage() {
                 )}
               </div>
             </div>
-
-            {/* ── Tags section ── */}
-            <div className="resources-section-header">Tags</div>
-            <div className="resources-tags-list">
-              {plan.tags.length === 0 && (
-                <div className="resources-empty">No tags yet</div>
-              )}
-              {plan.tags.map((tag, idx) => {
-                const editVal = renaming[tag.id] ?? tag.name;
-                return (
-                  <div key={tag.id} className="resources-user-item resources-tag-row-inline">
-                    <span className="resources-tag-num">{idx + 1}.</span>
-                    <input
-                      type="text"
-                      className="resources-tag-input-inline"
-                      value={editVal}
-                      onChange={(e) => setRenaming((r) => ({ ...r, [tag.id]: e.target.value }))}
-                      onBlur={() => handleRenameTag(tag.id)}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleRenameTag(tag.id); }}
-                    />
-                    <button className="resources-user-edit-btn resources-tag-delete" onClick={() => handleDeleteTag(tag.id)} title="Delete tag">
-                      ×
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Add User button — just below users list */}
-            <button className="resources-add-bar" onClick={openCreate}>+ Add User</button>
 
             {/* ── Tags section ── */}
             <div className="resources-section-header">Tags</div>
