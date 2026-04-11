@@ -538,8 +538,3 @@ function ScrollToToday({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 }
-
-
-// ── Calendar helpers ─────────────────────────────────────────────────────────
-
-const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
