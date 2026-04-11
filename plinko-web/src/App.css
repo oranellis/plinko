@@ -111,3 +111,27 @@ input[type=number] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* Remote update toast */
+.remote-update-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #2a2a3e;
+  color: #a0c4ff;
+  border: 1px solid #4a6fa5;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 9999;
+  pointer-events: none;
+  animation: remote-update-fade 3s ease forwards;
+}
+
+@keyframes remote-update-fade {
+  0% { opacity: 0; transform: translateY(8px); }
+  10% { opacity: 1; transform: translateY(0); }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}

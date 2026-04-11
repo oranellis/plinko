@@ -64,6 +64,16 @@ function DisconnectedScreen({ onReconnect }: { onReconnect: () => void }) {
   );
 }
 
+function RemoteUpdateToast() {
+  const { remoteUpdate } = usePlanContext();
+  if (!remoteUpdate) return null;
+  return (
+    <div className="remote-update-toast">
+      Plan updated by another user
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <PlanProvider>
@@ -72,6 +82,7 @@ export default function App() {
         <main className="page-area">
           <PageRouter />
         </main>
+        <RemoteUpdateToast />
       </div>
     </PlanProvider>
   );

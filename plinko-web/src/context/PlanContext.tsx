@@ -16,6 +16,7 @@ interface PlanContextValue {
   monday: MondayState;
   auth: AuthState;
   hasMondayIntegration: boolean;
+  remoteUpdate: boolean;
   sendRequest: (req: PlanRequest) => Promise<PlanResponse>;
   login: (email: string, password: string) => void;
   logout: () => void;

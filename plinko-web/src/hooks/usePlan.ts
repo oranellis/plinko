@@ -23,6 +23,7 @@ export interface UsePlanResult {
   monday: MondayState;
   auth: AuthState;
   hasMondayIntegration: boolean;
+  remoteUpdate: boolean;
   sendRequest: (request: PlanRequest) => Promise<PlanResponse>;
   login: (email: string, password: string) => void;
   logout: () => void;
@@ -55,6 +56,10 @@ export function usePlan(): UsePlanResult {
   >(new Map());
   // connectRef holds the connect function so reconnect() can call it externally.
   const connectRef = useRef<(() => void) | null>(null);
+  // Track whether a PlanState is expected from our own mutation (to distinguish remote updates).
+  const ownPlanStateCountRef = useRef<number>(0);
+  const [remoteUpdate, setRemoteUpdate] = useState(false);
+  const remoteUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Send a raw ClientMessage immediately (fire-and-forget).
   const sendRaw = useCallback((msg: ClientMessage) => {
@@ -163,12 +168,24 @@ export function usePlan(): UsePlanResult {
             setPlan(msg.plan);
             setHasMondayIntegration(msg.has_monday_integration);
             setStatus("connected");
+            if (ownPlanStateCountRef.current > 0) {
+              ownPlanStateCountRef.current--;
+            } else if (status === "connected") {
+              // Unsolicited PlanState from a remote session's mutation.
+              if (remoteUpdateTimerRef.current) clearTimeout(remoteUpdateTimerRef.current);
+              setRemoteUpdate(true);
+              remoteUpdateTimerRef.current = setTimeout(() => setRemoteUpdate(false), 3000);
+            }
             break;
 
           case "Response": {
             const pending = pendingRef.current.get(msg.id);
             if (pending) {
               pendingRef.current.delete(msg.id);
+              if (msg.response === "PlanUpdated") {
+                // The server will follow up with a PlanState; count it so we know it's our own.
+                ownPlanStateCountRef.current++;
+              }
               pending.resolve(msg.response);
             }
             break;
@@ -242,5 +259,5 @@ export function usePlan(): UsePlanResult {
     connectRef.current?.();
   }, []);
 
-  return { plan, status, monday, auth, hasMondayIntegration, sendRequest, login, logout, reconnect };
+  return { plan, status, monday, auth, hasMondayIntegration, remoteUpdate, sendRequest, login, logout, reconnect };
 }

@@ -1,4 +1,7 @@
+use std::collections::HashMap;
 use std::net::TcpListener;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 use tungstenite::Message as WsMessage;
@@ -12,12 +15,32 @@ use crate::server::handle_protocol;
 
 use plinko_shared::data::Storage;
 
+/// Registry of active sessions for broadcasting plan state updates.
+/// Maps session_id → mpsc::Sender so that any session can push unsolicited
+/// messages to any other session.
+pub type SessionRegistry = Arc<Mutex<HashMap<u64, Sender<ServerMessage>>>>;
+
+static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// RAII guard that removes a session from the registry when dropped.
+struct RegistryGuard {
+    session_id: u64,
+    registry: SessionRegistry,
+}
+
+impl Drop for RegistryGuard {
+    fn drop(&mut self) {
+        self.registry.lock().unwrap().remove(&self.session_id);
+    }
+}
+
 pub fn run_ws_server(
     engine: Arc<Mutex<PlanEngine>>,
     storage: Arc<Mutex<Storage>>,
     auth_db: Arc<AuthDb>,
     port: u16,
 ) {
+    let registry: SessionRegistry = Arc::new(Mutex::new(HashMap::new()));
     let listener = TcpListener::bind(format!("0.0.0.0:{port}")).expect("ws bind failed");
     eprintln!("plinko WebSocket server listening on 0.0.0.0:{port}");
     for stream in listener.incoming() {
@@ -30,8 +53,10 @@ pub fn run_ws_server(
                 let engine = Arc::clone(&engine);
                 let storage = Arc::clone(&storage);
                 let auth_db = Arc::clone(&auth_db);
+                let registry = Arc::clone(&registry);
+                let session_id = SESSION_COUNTER.fetch_add(1, Ordering::Relaxed);
                 std::thread::spawn(move || {
-                    handle_ws_connection(tcp, peer, engine, storage, auth_db);
+                    handle_ws_connection(tcp, peer, engine, storage, auth_db, session_id, registry);
                 });
             }
             Err(e) => eprintln!("[ws] accept error: {e}"),
@@ -45,6 +70,8 @@ fn handle_ws_connection(
     engine: Arc<Mutex<PlanEngine>>,
     storage: Arc<Mutex<Storage>>,
     auth_db: Arc<AuthDb>,
+    session_id: u64,
+    registry: SessionRegistry,
 ) {
     let mut ws = match accept(stream) {
         Ok(ws) => ws,
@@ -63,6 +90,15 @@ fn handle_ws_connection(
     let storage_clone = Arc::clone(&storage);
     let peer_clone = peer.clone();
 
+    // Register this session so other sessions can broadcast to us.
+    registry.lock().unwrap().insert(session_id, out_tx.clone());
+    // Automatically deregister when handle_ws_connection returns for any reason.
+    let _registry_guard = RegistryGuard {
+        session_id,
+        registry: Arc::clone(&registry),
+    };
+
+    let registry_clone = Arc::clone(&registry);
     let protocol_thread = std::thread::spawn(move || {
         handle_protocol(
             peer_clone,
@@ -84,6 +120,8 @@ fn handle_ws_connection(
             engine_clone,
             storage_clone,
             auth_db,
+            session_id,
+            registry_clone,
         );
     });
 

@@ -7,6 +7,7 @@ use crate::auth::{AuthDb, SessionInfo};
 use crate::engine::PlanEngine;
 use crate::monday::client::MondayClient;
 use crate::monday::{export, import};
+use crate::ws_server::SessionRegistry;
 
 /// Internal messages sent from background Monday threads back to the connection loop.
 enum InternalMsg {
@@ -14,6 +15,26 @@ enum InternalMsg {
     Forward(ServerMessage),
     /// A successfully imported plan — apply to engine and broadcast PlanState.
     ImportDone { plan: Box<Plan>, message: String },
+}
+
+/// Broadcast a `PlanState` message to all sessions in the registry *except* `my_id`.
+///
+/// Conflict policy: **last-writer-wins**. All plan mutations are serialised through
+/// `Arc<Mutex<PlanEngine>>`, so concurrent edits are applied in arrival order.  The
+/// full `PlanState` snapshot is sent after every mutation, ensuring every client
+/// converges to the same state.  No optimistic locking or operational transformation
+/// is applied — if two users edit the same field simultaneously, the last write wins.
+fn broadcast_plan_state(my_id: u64, registry: &SessionRegistry, plan: &Plan, has_monday: bool) {
+    let msg = ServerMessage::PlanState {
+        plan: Box::new(plan.clone()),
+        has_monday_integration: has_monday,
+    };
+    let reg = registry.lock().unwrap();
+    for (&id, sender) in reg.iter() {
+        if id != my_id {
+            let _ = sender.send(msg.clone());
+        }
+    }
 }
 
 /// Core protocol handler shared by WebSocket connections.
@@ -28,6 +49,8 @@ pub(crate) fn handle_protocol(
     engine: Arc<Mutex<PlanEngine>>,
     storage: Arc<Mutex<Storage>>,
     auth_db: Arc<AuthDb>,
+    session_id: u64,
+    registry: SessionRegistry,
 ) {
     eprintln!("[connect] client connected from {peer}");
 
@@ -205,9 +228,10 @@ pub(crate) fn handle_protocol(
                         .load_monday_config(incoming_plan_id)
                         .is_some();
                     let _ = send(&ServerMessage::PlanState {
-                        plan: Box::new(done_plan),
+                        plan: Box::new(done_plan.clone()),
                         has_monday_integration,
                     });
+                    broadcast_plan_state(session_id, &registry, &done_plan, has_monday_integration);
                 }
             }
         }
@@ -872,24 +896,26 @@ pub(crate) fn handle_protocol(
             break;
         }
         if plan_changed {
-            let changed_plan = {
+            let (changed_plan, has_monday_integration) = {
                 let eng = engine.lock().unwrap();
                 let _ = storage.lock().unwrap().save(eng.plan());
-                eng.plan().clone()
+                let plan = eng.plan().clone();
+                let has_monday = storage
+                    .lock()
+                    .unwrap()
+                    .load_monday_config(plan.id)
+                    .is_some();
+                (plan, has_monday)
             };
-            let has_monday_integration = storage
-                .lock()
-                .unwrap()
-                .load_monday_config(changed_plan.id)
-                .is_some();
             if send(&ServerMessage::PlanState {
-                plan: Box::new(changed_plan),
+                plan: Box::new(changed_plan.clone()),
                 has_monday_integration,
             })
             .is_err()
             {
                 break;
             }
+            broadcast_plan_state(session_id, &registry, &changed_plan, has_monday_integration);
         }
     }
     eprintln!("[disconnect] {peer}: disconnected (served {request_count} requests)");
