@@ -341,9 +341,11 @@ pub(crate) fn handle_protocol(
         }
 
         if matches!(&request, PlanRequest::ListPlans) {
-            let plan_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
+            let all_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
+            let visible_ids =
+                auth_db.filter_visible_plans(&session.user_id, session.is_admin, &all_ids);
             let mut list = Vec::new();
-            for pid in plan_ids {
+            for pid in visible_ids {
                 if let Some((name, last_saved)) = storage.lock().unwrap().plan_summary(pid) {
                     list.push((pid, name, last_saved));
                 }
@@ -361,10 +363,13 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::DeletePlan { plan_id } = &request {
             let plan_id = *plan_id;
+            let _ = auth_db.set_plan_visibility(plan_id, &[]); // clean up visibility
             let _ = storage.lock().unwrap().delete_plan(plan_id);
-            let plan_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
+            let all_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
+            let visible_ids =
+                auth_db.filter_visible_plans(&session.user_id, session.is_admin, &all_ids);
             let mut list = Vec::new();
-            for pid in plan_ids {
+            for pid in visible_ids {
                 if let Some((name, last_saved)) = storage.lock().unwrap().plan_summary(pid) {
                     list.push((pid, name, last_saved));
                 }
@@ -815,6 +820,41 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::SetUserLinks { plan_id, links } = &request {
             storage.lock().unwrap().save_user_links(*plan_id, links);
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanUpdated,
+            });
+            continue;
+        }
+
+        if let PlanRequest::GetPlanVisibility { plan_id } = &request {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            let user_ids = auth_db.get_plan_visibility(*plan_id).unwrap_or_default();
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanVisibility {
+                    plan_id: *plan_id,
+                    user_ids,
+                },
+            });
+            continue;
+        }
+
+        if let PlanRequest::SetPlanVisibility { plan_id, user_ids } = &request {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            let _ = auth_db.set_plan_visibility(*plan_id, user_ids);
             let _ = send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,

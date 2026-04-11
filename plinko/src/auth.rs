@@ -302,6 +302,83 @@ impl AuthDb {
         conn.execute("DELETE FROM users WHERE id = ?1", params![user_id])?;
         Ok(())
     }
+
+    // -------------------------------------------------------------------------
+    // Plan visibility
+    // -------------------------------------------------------------------------
+
+    /// Return the list of user IDs that have explicit access to `plan_id`.
+    /// An empty vec means the plan is visible to all authenticated users.
+    pub fn get_plan_visibility(&self, plan_id: Uuid) -> Result<Vec<String>, AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let pid = plan_id.to_string();
+        let mut stmt = conn.prepare("SELECT user_id FROM plan_visibility WHERE plan_id = ?1")?;
+        let ids = stmt
+            .query_map(params![pid], |r| r.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        Ok(ids)
+    }
+
+    /// Replace the visibility list for `plan_id`.
+    /// Pass an empty slice to make the plan visible to all authenticated users.
+    pub fn set_plan_visibility(&self, plan_id: Uuid, user_ids: &[String]) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let pid = plan_id.to_string();
+        conn.execute(
+            "DELETE FROM plan_visibility WHERE plan_id = ?1",
+            params![pid],
+        )?;
+        for uid in user_ids {
+            conn.execute(
+                "INSERT OR IGNORE INTO plan_visibility (plan_id, user_id) VALUES (?1, ?2)",
+                params![pid, uid],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Filter `plan_ids` to only those visible to the given user.
+    /// Admins always see all plans.
+    /// For non-admins: plans with no visibility entries are visible to all;
+    /// plans with entries are only visible to listed users.
+    pub fn filter_visible_plans(
+        &self,
+        user_id: &str,
+        is_admin: bool,
+        plan_ids: &[Uuid],
+    ) -> Vec<Uuid> {
+        if is_admin {
+            return plan_ids.to_vec();
+        }
+        let conn = self.inner.lock().unwrap();
+        plan_ids
+            .iter()
+            .copied()
+            .filter(|pid| {
+                let pid_str = pid.to_string();
+                // Count entries for this plan
+                let count: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM plan_visibility WHERE plan_id = ?1",
+                        params![pid_str],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(0);
+                if count == 0 {
+                    return true; // no restriction — visible to all
+                }
+                // Check if this user is in the list
+                let allowed: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM plan_visibility WHERE plan_id = ?1 AND user_id = ?2",
+                        params![pid_str, user_id],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(0);
+                allowed > 0
+            })
+            .collect()
+    }
 }
 
 fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -321,7 +398,12 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-        CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);",
+        CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+        CREATE TABLE IF NOT EXISTS plan_visibility (
+            plan_id  TEXT NOT NULL,
+            user_id  TEXT NOT NULL,
+            PRIMARY KEY (plan_id, user_id)
+        );",
     )
 }
 

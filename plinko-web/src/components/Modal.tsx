@@ -8,6 +8,12 @@ interface ModalProps {
   width?: number | string;
   /** When false, clicking backdrop does not close (default: true). */
   closeOnBackdrop?: boolean;
+  /**
+   * When provided, pressing Enter (while not focused in a textarea or
+   * contenteditable element) will call this handler — equivalent to clicking
+   * the primary save/confirm button.
+   */
+  onSave?: () => void;
 }
 
 export function Modal({
@@ -16,16 +22,30 @@ export function Modal({
   children,
   width = 520,
   closeOnBackdrop = true,
+  onSave,
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key === "Enter" && onSave) {
+        const active = document.activeElement;
+        const isMultiline =
+          active instanceof HTMLTextAreaElement ||
+          (active instanceof HTMLElement && active.isContentEditable);
+        if (!isMultiline) {
+          e.preventDefault();
+          onSave();
+        }
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [onClose, onSave]);
 
   return (
     <div

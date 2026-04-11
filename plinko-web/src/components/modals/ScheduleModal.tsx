@@ -63,7 +63,7 @@ export function ScheduleModal({ userId, plan, sendRequest, onClose }: Props) {
   };
 
   return (
-    <Modal title={title} onClose={onClose} width={360}>
+    <Modal title={title} onClose={onClose} width={360} onSave={handleSave}>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {WEEKDAYS.map((wd) => (
           <div key={wd} style={{ display: "flex", alignItems: "center", gap: 12 }}>

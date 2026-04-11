@@ -196,7 +196,7 @@ export function MondayModal({ planId, onClose }: Props) {
   const progressing = monday.progress !== null;
 
   return (
-    <Modal title="Monday.com Integration" onClose={onClose} width={520}>
+    <Modal title="Monday.com Integration" onClose={onClose} width={520} onSave={handleSaveConfig}>
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {/* Connection */}
         <section>

@@ -342,7 +342,9 @@ export type PlanRequest =
   | { DeleteAuthUser: { user_id: string } }
   | { ChangeMyPassword: { old_password: string; new_password: string } }
   | { GetUserLinks: { plan_id: string } }
-  | { SetUserLinks: { plan_id: string; links: UserLink[] } };
+  | { SetUserLinks: { plan_id: string; links: UserLink[] } }
+  | { GetPlanVisibility: { plan_id: string } }
+  | { SetPlanVisibility: { plan_id: string; user_ids: string[] } };
 
 // ── Protocol: PlanResponse ────────────────────────────────────────────────────
 
@@ -357,7 +359,8 @@ export type PlanResponse =
   | { MondayConnected: string }
   | { AuthUsers: AuthUser[] }
   | { UserLinks: UserLink[] }
-  | { AuthUserCreated: { user_id: string } };
+  | { AuthUserCreated: { user_id: string } }
+  | { PlanVisibility: { plan_id: string; user_ids: string[] } };
 
 export type SchedulerError =
   | "EmptyChain"

@@ -257,6 +257,15 @@ pub enum PlanRequest {
         plan_id: uuid::Uuid,
         links: Vec<UserLink>,
     },
+    // Plan visibility (admin sets which auth users can see each plan)
+    GetPlanVisibility {
+        plan_id: uuid::Uuid,
+    },
+    SetPlanVisibility {
+        plan_id: uuid::Uuid,
+        /// Empty = visible to all authenticated users.
+        user_ids: Vec<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -276,6 +285,11 @@ pub enum PlanResponse {
     // Auth responses
     AuthUsers(Vec<AuthUser>),
     UserLinks(Vec<UserLink>),
+    PlanVisibility {
+        plan_id: uuid::Uuid,
+        /// Empty = visible to all authenticated users.
+        user_ids: Vec<String>,
+    },
     PasswordChanged,
     AuthUserCreated {
         user_id: String,

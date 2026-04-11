@@ -155,6 +155,7 @@ export function MilestoneFormModal({ milestone, plan, sendRequest, onClose }: Pr
       title={milestone ? milestone.name : "New Milestone"}
       onClose={onClose}
       width={480}
+      onSave={handleSave}
     >
       {error && (
         <div style={{ color: "#e57373", fontSize: 13, marginBottom: 12 }}>{error}</div>

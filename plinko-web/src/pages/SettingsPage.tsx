@@ -36,6 +36,10 @@ export function SettingsPage() {
   const [userLinks, setUserLinks] = useState<UserLink[]>([]);
   const [userLinksLoaded, setUserLinksLoaded] = useState(false);
 
+  // Plan visibility state (admin only)
+  const [planVisibility, setPlanVisibility] = useState<Record<string, string[]>>({});
+  const [visibilityLoaded, setVisibilityLoaded] = useState(false);
+
   // Plan settings form state
   const [planName, setPlanName] = useState(plan?.name ?? "");
   const [planStartDate, setPlanStartDate] = useState(plan?.start_date ?? "");
@@ -207,6 +211,38 @@ export function SettingsPage() {
     await sendRequest({ SetUserLinks: { plan_id: plan.id, links: updated } });
   };
 
+  // Plan visibility
+  const fetchAllPlanVisibility = useCallback(async () => {
+    if (!auth.currentUser?.isAdmin) return;
+    const updated: Record<string, string[]> = {};
+    await Promise.all(
+      plans.map(async (p) => {
+        const resp = await sendRequest({ GetPlanVisibility: { plan_id: p.id } });
+        if (typeof resp === "object" && resp !== null && "PlanVisibility" in resp) {
+          updated[p.id] = (resp as { PlanVisibility: { plan_id: string; user_ids: string[] } }).PlanVisibility.user_ids;
+        } else {
+          updated[p.id] = [];
+        }
+      })
+    );
+    setPlanVisibility(updated);
+    setVisibilityLoaded(true);
+  }, [sendRequest, plans, auth.currentUser?.isAdmin]);
+
+  useEffect(() => {
+    if (status !== "connected" || !auth.currentUser?.isAdmin || plans.length === 0) return;
+    fetchAllPlanVisibility();
+  }, [status, auth.currentUser?.isAdmin, plans, fetchAllPlanVisibility]);
+
+  const handleTogglePlanVisibility = async (planId: string, userId: string) => {
+    const current = planVisibility[planId] ?? [];
+    const updated = current.includes(userId)
+      ? current.filter((id) => id !== userId)
+      : [...current, userId];
+    setPlanVisibility((prev) => ({ ...prev, [planId]: updated }));
+    await sendRequest({ SetPlanVisibility: { plan_id: planId, user_ids: updated } });
+  };
+
   return (
     <div className="settings-page">
       {showMonday && plan && (
@@ -365,6 +401,52 @@ export function SettingsPage() {
                         <option key={au.id} value={au.id}>{au.email}</option>
                       ))}
                     </select>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Plan Access — admin only */}
+      {auth.currentUser?.isAdmin && visibilityLoaded && authUsersLoaded && (
+        <section className="settings-section">
+          <h2 className="settings-heading">Plan Access</h2>
+          <p className="settings-description">
+            Control which login users can see each plan. If no users are selected, the plan is visible to everyone.
+          </p>
+          {plans.length === 0 ? (
+            <div className="settings-empty">No plans found.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {plans.map((p) => {
+                const visibleTo = planVisibility[p.id] ?? [];
+                const isPublic = visibleTo.length === 0;
+                return (
+                  <div key={p.id} style={{ background: "#1a1a2e", borderRadius: 8, padding: "12px 16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      <span style={{ fontWeight: 600, color: "#e0e0e0", flex: 1 }}>{p.name}</span>
+                      {isPublic && <span style={{ fontSize: 11, color: "#888", background: "#2a2a3e", borderRadius: 4, padding: "2px 8px" }}>visible to all</span>}
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {authUsers.filter((u) => !u.is_admin).map((u) => (
+                        <label
+                          key={u.id}
+                          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#ccc", cursor: "pointer" }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={visibleTo.includes(u.id)}
+                            onChange={() => handleTogglePlanVisibility(p.id, u.id)}
+                          />
+                          {u.email}
+                        </label>
+                      ))}
+                      {authUsers.filter((u) => !u.is_admin).length === 0 && (
+                        <span style={{ color: "#666", fontSize: 13 }}>No non-admin users.</span>
+                      )}
+                    </div>
                   </div>
                 );
               })}

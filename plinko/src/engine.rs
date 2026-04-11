@@ -284,7 +284,9 @@ impl PlanEngine {
             | PlanRequest::DeleteAuthUser { .. }
             | PlanRequest::ChangeMyPassword { .. }
             | PlanRequest::GetUserLinks { .. }
-            | PlanRequest::SetUserLinks { .. } => PlanResponse::PlanUpdated,
+            | PlanRequest::SetUserLinks { .. }
+            | PlanRequest::GetPlanVisibility { .. }
+            | PlanRequest::SetPlanVisibility { .. } => PlanResponse::PlanUpdated,
         }
     }
 }
