@@ -24,7 +24,7 @@ function daysInMonth(year: number, month: number): number {
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type LeftSelection = "plan" | UserId;
-type LeftView = "list" | "create" | { edit: UserId };
+type LeftView = "list" | "create-user" | "create-tag" | { edit: UserId };
 
 // ── ResourcesPage ────────────────────────────────────────────────────────────
 
@@ -32,20 +32,37 @@ export function ResourcesPage() {
   const { plan, sendRequest } = usePlanContext();
 
   // ── Left panel state ──
-  const [selected, setSelected] = useState<LeftSelection>("plan");
+  const [selected, setSelectedState] = useState<LeftSelection>("plan");
   const [leftView, setLeftView] = useState<LeftView>("list");
   const [userName, setUserName] = useState("");
   const [userTags, setUserTags] = useState<Set<TagId>>(new Set());
   const [userSaving, setUserSaving] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
 
-  // Tags
+  // Tags — renames are buffered, flushed on page exit
   const [newTagName, setNewTagName] = useState("");
+  const [tagSaving, setTagSaving] = useState(false);
   const [renaming, setRenaming] = useState<Record<TagId, string>>({});
+  const renamingRef = useRef<Record<TagId, string>>({});
+  useEffect(() => { renamingRef.current = renaming; }, [renaming]);
 
-  // Schedule (shared for plan and user)
-  const [scheduleHours, setScheduleHours] = useState<Partial<Record<Weekday, string>>>({});
-  const [scheduleSaving, setScheduleSaving] = useState(false);
+  // Schedule — edits are buffered, flushed on selection change or page exit
+  const [scheduleHours, setScheduleHoursState] = useState<Partial<Record<Weekday, string>>>({});
+  const scheduleHoursRef = useRef<Partial<Record<Weekday, string>>>({});
+  const scheduleEditedRef = useRef(false);
+  const setScheduleHours = (v: Partial<Record<Weekday, string>>) => {
+    setScheduleHoursState(v);
+    scheduleHoursRef.current = v;
+  };
+
+  // Calendar overrides — buffered locally, flushed on page exit
+  // key: `${selection}::${date}`, value: number (set) | null (clear)
+  const [localCalOverrides, setLocalCalOverridesState] = useState<Map<string, number | null>>(new Map());
+  const localCalOverridesRef = useRef<Map<string, number | null>>(new Map());
+  const setLocalCalOverrides = (m: Map<string, number | null>) => {
+    setLocalCalOverridesState(m);
+    localCalOverridesRef.current = m;
+  };
 
   // ── Calendar popup ──
   const [editPopup, setEditPopup] = useState<{ date: IsoDate; value: string } | null>(null);
@@ -53,6 +70,64 @@ export function ResourcesPage() {
   // Scrollable calendar ref — scroll to today on mount
   const calScrollRef = useRef<HTMLDivElement>(null);
   const todayMarkerRef = useRef<HTMLDivElement>(null);
+
+  // Keep sendRequest always current for cleanup closure
+  const sendRequestRef = useRef(sendRequest);
+  useEffect(() => { sendRequestRef.current = sendRequest; }, [sendRequest]);
+
+  // Keep selected in a ref for the cleanup closure
+  const selectedRef = useRef<LeftSelection>("plan");
+  selectedRef.current = selected;
+
+  // ── Flush helpers (used in unmount cleanup and selection change) ──────────
+
+  const flushSchedule = (sel: LeftSelection, hours: Partial<Record<Weekday, string>>) => {
+    if (Object.keys(hours).length === 0) return;
+    const schedule: WorkSchedule = {
+      days: Object.fromEntries(
+        WEEKDAYS.map((wd) => [wd, parseFloat(hours[wd] ?? "0") || 0])
+      ) as WorkSchedule["days"],
+    };
+    if (sel === "plan") sendRequestRef.current({ SetDefaultSchedule: schedule });
+    else sendRequestRef.current({ SetUserSchedule: [sel, schedule] });
+  };
+
+  // Flush all buffered mutations when the page unmounts
+  useEffect(() => {
+    return () => {
+      if (scheduleEditedRef.current) flushSchedule(selectedRef.current, scheduleHoursRef.current);
+      for (const [id, name] of Object.entries(renamingRef.current)) {
+        const trimmed = name.trim();
+        if (trimmed) sendRequestRef.current({ RenameTag: [id as TagId, trimmed] });
+      }
+      for (const [key, hours] of localCalOverridesRef.current.entries()) {
+        const sep = key.indexOf("::");
+        const sel = key.slice(0, sep) as LeftSelection;
+        const date = key.slice(sep + 2) as IsoDate;
+        if (hours === null) {
+          if (sel === "plan") sendRequestRef.current({ ClearCalendarOverride: date });
+          else sendRequestRef.current({ ClearUserCalendarOverride: [sel as UserId, date] });
+        } else {
+          if (sel === "plan") sendRequestRef.current({ SetCalendarOverride: [date, hours] });
+          else sendRequestRef.current({ SetUserCalendarOverride: [sel as UserId, date, hours] });
+        }
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Selection change — flush previous schedule, load new ─────────────────
+
+  const selectItem = (newSel: LeftSelection, currentPlan: typeof plan) => {
+    if (scheduleEditedRef.current) flushSchedule(selected, scheduleHoursRef.current);
+    scheduleEditedRef.current = false;
+    if (currentPlan) {
+      const sched = newSel === "plan"
+        ? currentPlan.default_schedule
+        : (currentPlan.users_data[newSel]?.schedule ?? currentPlan.default_schedule);
+      setScheduleHours(initScheduleHours(sched));
+    }
+    setSelectedState(newSel);
+  };
 
   if (!plan) {
     return <div className="resources-page resources-page--empty">No plan loaded</div>;
@@ -69,16 +144,13 @@ export function ResourcesPage() {
     return plan.users_data[selected]?.schedule ?? plan.default_schedule;
   };
 
-  // Reset schedule editor whenever selection changes
-  // (done via useEffect equivalent — we recalculate on demand when rendering)
-
   // ── User actions ──────────────────────────────────────────────────────────
 
   const openCreate = () => {
     setUserName("");
     setUserTags(new Set());
     setUserError(null);
-    setLeftView("create");
+    setLeftView("create-user");
   };
 
   const openEdit = (user: User) => {
@@ -94,11 +166,11 @@ export function ResourcesPage() {
     setUserError(null);
     try {
       const tags = [...userTags];
-      if (leftView === "create") {
+      if (leftView === "create-user") {
         const newId = uuidv4();
         const resp = await sendRequest({ CreateUser: { id: newId, name: userName.trim(), tags } });
         if (typeof resp === "object" && "Error" in resp) { setUserError(JSON.stringify(resp.Error)); return; }
-        setSelected(newId as UserId);
+        selectItem(newId as UserId, plan);
       } else if (typeof leftView === "object" && "edit" in leftView) {
         const resp = await sendRequest({ UpdateUser: [leftView.edit, { name: userName.trim(), tags }] });
         if (typeof resp === "object" && "Error" in resp) { setUserError(JSON.stringify(resp.Error)); return; }
@@ -113,7 +185,7 @@ export function ResourcesPage() {
 
   const handleDeleteUser = async (userId: UserId) => {
     await sendRequest({ DeleteUser: userId });
-    if (selected === userId) setSelected("plan");
+    if (selected === userId) selectItem("plan", plan);
     setLeftView("list");
   };
 
@@ -126,37 +198,22 @@ export function ResourcesPage() {
     });
   };
 
-  // ── Schedule actions ──────────────────────────────────────────────────────
+  // ── Schedule ──────────────────────────────────────────────────────────────
 
   const initScheduleHours = (s: WorkSchedule) =>
     Object.fromEntries(WEEKDAYS.map((wd) => [wd, String(s.days[wd] ?? 0)])) as Record<Weekday, string>;
 
-  const handleSaveSchedule = async () => {
-    setScheduleSaving(true);
-    try {
-      const schedule: WorkSchedule = {
-        days: Object.fromEntries(
-          WEEKDAYS.map((wd) => [wd, parseFloat(scheduleHours[wd] ?? "0") || 0])
-        ) as WorkSchedule["days"],
-      };
-      if (selected === "plan") {
-        await sendRequest({ SetDefaultSchedule: schedule });
-      } else {
-        await sendRequest({ SetUserSchedule: [selected, schedule] });
-      }
-    } finally {
-      setScheduleSaving(false);
-    }
+  const handleScheduleChange = (wd: Weekday, val: string) => {
+    setScheduleHours({ ...currentScheduleHours, [wd]: val });
+    scheduleEditedRef.current = true;
   };
 
+  // Reset to default is immediate (explicit user action, immediately shows server values)
   const handleResetSchedule = async () => {
     if (selected === "plan") return;
-    setScheduleSaving(true);
-    try {
-      await sendRequest({ ClearUserSchedule: selected });
-    } finally {
-      setScheduleSaving(false);
-    }
+    await sendRequest({ ClearUserSchedule: selected });
+    setScheduleHours(initScheduleHours(plan.default_schedule));
+    scheduleEditedRef.current = false;
   };
 
   // ── Tag actions ───────────────────────────────────────────────────────────
@@ -164,26 +221,36 @@ export function ResourcesPage() {
   const handleAddTag = async () => {
     const name = newTagName.trim();
     if (!name) return;
-    await sendRequest({ AddTag: name });
-    setNewTagName("");
-  };
-
-  const handleRenameTag = async (id: TagId) => {
-    const name = (renaming[id] ?? "").trim();
-    if (!name) return;
-    await sendRequest({ RenameTag: [id, name] });
-    setRenaming((r) => { const n = { ...r }; delete n[id]; return n; });
+    setTagSaving(true);
+    try {
+      await sendRequest({ AddTag: name });
+      setNewTagName("");
+      setLeftView("list");
+    } finally {
+      setTagSaving(false);
+    }
   };
 
   const handleDeleteTag = async (id: TagId) => {
+    // Remove any pending rename for this tag before deleting
+    setRenaming((r) => { const n = { ...r }; delete n[id]; return n; });
     await sendRequest({ DeleteTag: id });
   };
 
   // ── Calendar helpers ──────────────────────────────────────────────────────
 
-  const calOverrides = selected === "plan"
-    ? plan.calendar.entries
-    : (plan.user_calendar_overrides[selected]?.entries ?? {});
+  // Returns the effective override (local buffer → server state → undefined)
+  const getEffectiveOverride = (iso: IsoDate): number | undefined => {
+    const key = `${selected}::${iso}`;
+    if (localCalOverridesRef.current.has(key)) {
+      const v = localCalOverridesRef.current.get(key)!;
+      return v === null ? undefined : v;
+    }
+    const serverOverrides = selected === "plan"
+      ? plan.calendar.entries
+      : (plan.user_calendar_overrides[selected]?.entries ?? {});
+    return serverOverrides[iso];
+  };
 
   const calDefaultHours = (date: Date): number => {
     const wd = date.getDay();
@@ -195,32 +262,33 @@ export function ResourcesPage() {
   };
 
   const openCalEdit = (iso: IsoDate) => {
-    const current = calOverrides[iso] ?? null;
-    setEditPopup({ date: iso, value: current !== null ? String(current) : "" });
+    const current = getEffectiveOverride(iso);
+    setEditPopup({ date: iso, value: current !== undefined ? String(current) : "" });
   };
 
-  const commitEdit = async () => {
+  // Store in local buffer — flushed to server on page exit
+  const commitEdit = () => {
     if (!editPopup) return;
     const hours = parseFloat(editPopup.value);
     if (!isNaN(hours)) {
-      if (selected === "plan") {
-        await sendRequest({ SetCalendarOverride: [editPopup.date, hours] });
-      } else {
-        await sendRequest({ SetUserCalendarOverride: [selected, editPopup.date, hours] });
-      }
+      const key = `${selected}::${editPopup.date}`;
+      const next = new Map(localCalOverridesRef.current);
+      next.set(key, hours);
+      setLocalCalOverrides(next);
     }
     setEditPopup(null);
   };
 
-  const clearEdit = async () => {
+  const clearEdit = () => {
     if (!editPopup) return;
-    if (selected === "plan") {
-      await sendRequest({ ClearCalendarOverride: editPopup.date });
-    } else {
-      await sendRequest({ ClearUserCalendarOverride: [selected, editPopup.date] });
-    }
+    const key = `${selected}::${editPopup.date}`;
+    const next = new Map(localCalOverridesRef.current);
+    next.set(key, null);
+    setLocalCalOverrides(next);
     setEditPopup(null);
   };
+
+  const pendingCalCount = [...localCalOverridesRef.current.keys()].filter((k) => k.startsWith(`${selected}::`)).length;
 
   // ── Build months for the scrollable calendar ──────────────────────────────
 
@@ -259,7 +327,7 @@ export function ResourcesPage() {
               {/* Plan row */}
               <div
                 className={`resources-user-item${selected === "plan" ? " resources-user-item--selected" : ""}`}
-                onClick={() => setSelected("plan")}
+                onClick={() => selectItem("plan", plan)}
               >
                 <span className="resources-user-name" style={{ color: "#888", fontStyle: "italic" }}>Plan (everyone)</span>
               </div>
@@ -271,7 +339,7 @@ export function ResourcesPage() {
                 <div
                   key={u.id}
                   className={`resources-user-item${selected === u.id ? " resources-user-item--selected" : ""}`}
-                  onClick={() => setSelected(u.id)}
+                  onClick={() => selectItem(u.id, plan)}
                 >
                   <span className="resources-user-name">{u.name}</span>
                   {u.tags.length > 0 && (
@@ -304,7 +372,7 @@ export function ResourcesPage() {
                       step={0.5}
                       className="resources-schedule-input"
                       value={currentScheduleHours[wd] ?? "0"}
-                      onChange={(e) => setScheduleHours((prev) => ({ ...initScheduleHours(sched), ...prev, [wd]: e.target.value }))}
+                      onChange={(e) => handleScheduleChange(wd, e.target.value)}
                     />
                     <span className="resources-schedule-unit">h</span>
                   </div>
@@ -312,13 +380,10 @@ export function ResourcesPage() {
               </div>
               <div className="resources-schedule-actions">
                 {selected !== "plan" && plan.users_data[selected]?.schedule !== null && (
-                  <button className="btn btn-secondary btn-sm" onClick={handleResetSchedule} disabled={scheduleSaving}>
+                  <button className="btn btn-secondary btn-sm" onClick={handleResetSchedule}>
                     Reset to default
                   </button>
                 )}
-                <button className="btn btn-primary btn-sm" onClick={handleSaveSchedule} disabled={scheduleSaving}>
-                  {scheduleSaving ? "Saving…" : "Save schedule"}
-                </button>
               </div>
             </div>
 
@@ -348,26 +413,67 @@ export function ResourcesPage() {
                 );
               })}
             </div>
-            <div className="resources-tags-add-row">
-              <input
-                type="text"
-                className="resources-tag-input-inline resources-tags-add-input"
-                placeholder="New tag…"
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleAddTag(); }}
-              />
-              <button className="btn btn-primary btn-sm" onClick={handleAddTag} disabled={!newTagName.trim()}>Add</button>
-            </div>
 
+            {/* Add User button — just below users list */}
             <button className="resources-add-bar" onClick={openCreate}>+ Add User</button>
+
+            {/* ── Tags section ── */}
+            <div className="resources-section-header">Tags</div>
+            <div className="resources-tags-list">
+              {plan.tags.length === 0 && (
+                <div className="resources-empty">No tags yet</div>
+              )}
+              {plan.tags.map((tag, idx) => {
+                const editVal = renaming[tag.id] ?? tag.name;
+                return (
+                  <div key={tag.id} className="resources-user-item resources-tag-row-inline">
+                    <span className="resources-tag-num">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      className="resources-tag-input-inline"
+                      value={editVal}
+                      onChange={(e) => setRenaming((r) => ({ ...r, [tag.id]: e.target.value }))}
+                    />
+                    <button className="resources-user-edit-btn resources-tag-delete" onClick={() => handleDeleteTag(tag.id)} title="Delete tag">
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <button className="resources-add-bar" onClick={() => { setNewTagName(""); setLeftView("create-tag"); }}>+ Add Tag</button>
           </>
         )}
 
-        {(leftView === "create" || typeof leftView === "object") && (
+        {leftView === "create-tag" && (
+          <div className="resources-user-form">
+            <div className="resources-section-header">New Tag</div>
+            <label className="resources-form-label">Name</label>
+            <input
+              className="resources-form-input"
+              type="text"
+              value={newTagName}
+              autoFocus
+              onChange={(e) => setNewTagName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleAddTag(); if (e.key === "Escape") setLeftView("list"); }}
+            />
+            <div className="resources-form-actions">
+              <button className="btn btn-secondary btn-sm" onClick={() => setLeftView("list")}>Cancel</button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleAddTag}
+                disabled={tagSaving || !newTagName.trim()}
+              >
+                {tagSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {(leftView === "create-user" || typeof leftView === "object") && (
           <div className="resources-user-form">
             <div className="resources-section-header">
-              {leftView === "create" ? "New User" : "Edit User"}
+              {leftView === "create-user" ? "New User" : "Edit User"}
             </div>
             {userError && <div className="resources-form-error">{userError}</div>}
             <label className="resources-form-label">Name</label>
@@ -427,6 +533,7 @@ export function ResourcesPage() {
           {selected === "plan"
             ? "Plan calendar overrides"
             : `${plan.users_data[selected]?.user.name ?? ""} calendar overrides`}
+          {pendingCalCount > 0 && <span className="resources-cal-pending"> · {pendingCalCount} unsaved</span>}
         </div>
 
         <div className="resources-calendar-scroll" ref={calScrollRef}>
@@ -461,13 +568,14 @@ export function ResourcesPage() {
                   {cells.map((day, i) => {
                     if (day === null) return <div key={`pad-${i}`} className="resources-cal-cell resources-cal-cell--empty" />;
                     const iso = formatDate(new Date(year, month, day));
-                    const override = calOverrides[iso];
+                    const override = getEffectiveOverride(iso);
+                    const isPending = localCalOverrides.has(`${selected}::${iso}`);
                     const def = calDefaultHours(new Date(year, month, day));
                     const isToday = iso === todayIso;
                     return (
                       <div
                         key={iso}
-                        className={`resources-cal-cell resources-cal-cell--day${isToday ? " resources-cal-cell--today" : ""}${override !== undefined ? " resources-cal-cell--overridden" : ""}`}
+                        className={`resources-cal-cell resources-cal-cell--day${isToday ? " resources-cal-cell--today" : ""}${override !== undefined ? " resources-cal-cell--overridden" : ""}${isPending ? " resources-cal-cell--pending" : ""}`}
                         onClick={() => openCalEdit(iso)}
                       >
                         <span className="resources-cal-day-num">{day}</span>

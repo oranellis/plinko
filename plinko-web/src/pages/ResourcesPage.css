@@ -452,6 +452,17 @@
   background: #1e2840;
 }
 
+.resources-cal-cell--pending {
+  outline: 2px solid #c97c2a;
+  outline-offset: -2px;
+}
+
+.resources-cal-pending {
+  font-size: 11px;
+  color: #c97c2a;
+  font-style: italic;
+}
+
 .resources-cal-day-num {
   font-size: 0.78rem;
   color: #bbb;
