@@ -614,9 +614,10 @@ impl Plan {
                 // In strict mode only schedule on days where the user has at
                 // least cap hours of capacity remaining, so the task never
                 // spreads its daily block across a partially-full day.
-                // Use a small tolerance to avoid float rounding rejecting a day
-                // that is effectively full (e.g. 0.5+0.5 = 1.0 days).
-                let cap = max_per_day.unwrap_or(remaining);
+                // When no explicit cap is given, use the user's full daily hours
+                // so that a multi-day task doesn't attempt to fit all remaining
+                // work into one day (which is impossible and causes restart loops).
+                let cap = max_per_day.unwrap_or(avail_full);
                 if avail >= cap - EPSILON {
                     cap.min(remaining).min(avail)
                 } else {
@@ -678,6 +679,9 @@ impl Plan {
 
         while remaining.iter().any(|&r| r > EPSILON) && current <= limit {
             // Check that every worker with remaining hours can work on this day.
+            // When no daily_cap is set (duration derived from workload), the
+            // per-day expectation is the worker's full daily hours — not their
+            // total remaining (which would be impossible to satisfy in one day).
             let all_can_work = workers
                 .iter()
                 .enumerate()
@@ -685,7 +689,7 @@ impl Plan {
                     if remaining[i] <= EPSILON {
                         return true; // already done
                     }
-                    let cap = daily_cap.unwrap_or(remaining[i]);
+                    let cap = daily_cap.unwrap_or_else(|| self.hours_available(&uid, current));
                     let avail = self.hours_remaining(state, uid, current);
                     avail >= cap - EPSILON
                 });
@@ -696,7 +700,7 @@ impl Plan {
                         continue;
                     }
                     let avail = self.hours_remaining(state, uid, current);
-                    let cap = daily_cap.unwrap_or(remaining[i]);
+                    let cap = daily_cap.unwrap_or_else(|| self.hours_available(&uid, current));
                     let scheduled = cap.min(remaining[i]).min(avail);
                     if scheduled > EPSILON {
                         let entry = state
@@ -725,7 +729,7 @@ impl Plan {
                         if avail_full <= EPSILON {
                             return false; // calendar gap — not a block
                         }
-                        let cap = daily_cap.unwrap_or(remaining[i]);
+                        let cap = daily_cap.unwrap_or(avail_full);
                         let avail = self.hours_remaining(state, uid, current);
                         avail < cap - EPSILON
                     });
@@ -764,13 +768,17 @@ impl Plan {
         let limit = start_date + chrono::Duration::days(MAX_FILL_DAYS);
 
         while remaining > EPSILON && current <= limit {
+            let avail_full = self.hours_available(&user_id, current);
             let scheduled = if strict {
-                let cap = max_per_day.unwrap_or(remaining);
+                // Use daily hours as the cap when no explicit cap is set,
+                // matching the fill_slot behaviour (avoids infinite restart loops
+                // when total_hours spans multiple days).
+                let cap = max_per_day.unwrap_or(avail_full);
                 let avail = state
                     .capacity
                     .get(&(user_id, current))
                     .copied()
-                    .unwrap_or_else(|| self.hours_available(&user_id, current));
+                    .unwrap_or(avail_full);
                 if avail >= cap - EPSILON {
                     cap.min(remaining).min(avail)
                 } else {
@@ -885,6 +893,10 @@ impl Plan {
             _ => earliest,
         };
 
+        // Advance to the first working day on or after the computed start,
+        // so the task never visually begins on a weekend or calendar holiday.
+        let start_date = self.next_working_day_on_or_after(start_date);
+
         let mut time_allocation: Vec<WorkSegment> = Vec::new();
         let mut task_start: Option<NaiveDate> = None;
         let mut task_end: Option<NaiveDate> = None;
@@ -895,15 +907,21 @@ impl Plan {
 
         // Resolve all worker slots to (user_id, workload_days, daily_cap, total_hours).
         let mut resolved_workers: Vec<(UserId, f32, Option<f32>, f32)> = Vec::new();
+        let hours_per_day = self.default_schedule.hours_per_workload_day();
         for slot in &workers {
             let total_hours_for_slot = match slot {
                 WorkerSlot::Specific { workload_days, .. }
-                | WorkerSlot::Placeholder { workload_days, .. } => {
-                    workload_days * self.default_schedule.hours_per_workload_day()
-                }
+                | WorkerSlot::Placeholder { workload_days, .. } => workload_days * hours_per_day,
             };
-            let daily_cap = if task_duration > 0.0 {
-                Some(total_hours_for_slot / task_duration.ceil())
+            // When duration_days_target is set, spread each worker's hours evenly
+            // across at most that many days — but never ask a worker to do more
+            // hours in one day than they actually have available (e.g. if the
+            // target is 1 day but a worker has 4 days of workload, the effective
+            // duration is at least 4 days so the daily_cap stays ≤ hours_per_day).
+            let daily_cap = if task_duration > 0.0 && hours_per_day > EPSILON {
+                let min_days_needed = (total_hours_for_slot / hours_per_day).ceil().max(1.0);
+                let effective_duration = task_duration.ceil().max(min_days_needed);
+                Some(total_hours_for_slot / effective_duration)
             } else {
                 None
             };
