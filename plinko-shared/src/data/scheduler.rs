@@ -908,23 +908,36 @@ impl Plan {
         // Resolve all worker slots to (user_id, workload_days, daily_cap, total_hours).
         let mut resolved_workers: Vec<(UserId, f32, Option<f32>, f32)> = Vec::new();
         let hours_per_day = self.default_schedule.hours_per_workload_day();
+
+        // The effective task duration is shared by all workers: it must be at
+        // least as long as the most-loaded worker requires to stay within their
+        // daily hours, and at least the requested duration_days_target.
+        // Computing it once and applying it uniformly means lighter workers are
+        // spread over the full task span (e.g. Eve at 2 days of workload spreads
+        // to 4h/day over a 4-day task driven by Oran's 4 days of workload).
+        let effective_duration: Option<f32> = if task_duration > 0.0 && hours_per_day > EPSILON {
+            let max_min_days = workers
+                .iter()
+                .map(|slot| match slot {
+                    WorkerSlot::Specific { workload_days, .. }
+                    | WorkerSlot::Placeholder { workload_days, .. } => {
+                        workload_days.ceil().max(1.0)
+                    }
+                })
+                .fold(1.0f32, f32::max);
+            Some(task_duration.ceil().max(max_min_days))
+        } else {
+            None
+        };
+
         for slot in &workers {
             let total_hours_for_slot = match slot {
                 WorkerSlot::Specific { workload_days, .. }
                 | WorkerSlot::Placeholder { workload_days, .. } => workload_days * hours_per_day,
             };
-            // When duration_days_target is set, spread each worker's hours evenly
-            // across at most that many days — but never ask a worker to do more
-            // hours in one day than they actually have available (e.g. if the
-            // target is 1 day but a worker has 4 days of workload, the effective
-            // duration is at least 4 days so the daily_cap stays ≤ hours_per_day).
-            let daily_cap = if task_duration > 0.0 && hours_per_day > EPSILON {
-                let min_days_needed = (total_hours_for_slot / hours_per_day).ceil().max(1.0);
-                let effective_duration = task_duration.ceil().max(min_days_needed);
-                Some(total_hours_for_slot / effective_duration)
-            } else {
-                None
-            };
+            // Spread each worker evenly over the shared effective duration so
+            // all workers' workloads are distributed across the full task span.
+            let daily_cap = effective_duration.map(|d| total_hours_for_slot / d);
 
             let (user_id, workload_days) = match slot {
                 WorkerSlot::Specific {
