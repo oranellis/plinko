@@ -2,7 +2,7 @@
 FROM node:22-alpine AS frontend
 WORKDIR /build
 COPY plinko-web/package.json plinko-web/package-lock.json ./
-RUN npm ci --prefer-offline
+RUN npm install --prefer-offline
 COPY plinko-web/ ./
 RUN npm run build
 
