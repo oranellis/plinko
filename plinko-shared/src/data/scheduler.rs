@@ -807,6 +807,7 @@ impl Plan {
         last_date
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn select_user_for_placeholder(
         &self,
         task_name: &str,
@@ -1067,6 +1068,7 @@ impl Plan {
     ///
     /// - PlanStart is always considered complete.
     /// - A task predecessor is complete if its status is Complete or Dropped.
+    ///
     /// Returns true if any direct dependency TASK has status InProgress.
     /// Milestone predecessors with InProgress derived status are intentionally ignored.
     fn milestone_derived_in_progress(&self, id: MilestoneId) -> bool {

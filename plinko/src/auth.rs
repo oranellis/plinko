@@ -211,10 +211,10 @@ impl AuthDb {
             params![id, email, password_hash, is_admin],
         )
         .map_err(|e| {
-            if let rusqlite::Error::SqliteFailure(ref sql_err, _) = e {
-                if sql_err.code == rusqlite::ErrorCode::ConstraintViolation {
-                    return AuthError::UsernameTaken;
-                }
+            if let rusqlite::Error::SqliteFailure(ref sql_err, _) = e
+                && sql_err.code == rusqlite::ErrorCode::ConstraintViolation
+            {
+                return AuthError::UsernameTaken;
             }
             AuthError::Db(e)
         })?;
@@ -236,10 +236,10 @@ impl AuthDb {
                 params![email, user_id],
             )
             .map_err(|e| {
-                if let rusqlite::Error::SqliteFailure(ref sql_err, _) = e {
-                    if sql_err.code == rusqlite::ErrorCode::ConstraintViolation {
-                        return AuthError::UsernameTaken;
-                    }
+                if let rusqlite::Error::SqliteFailure(ref sql_err, _) = e
+                    && sql_err.code == rusqlite::ErrorCode::ConstraintViolation
+                {
+                    return AuthError::UsernameTaken;
                 }
                 AuthError::Db(e)
             })?;

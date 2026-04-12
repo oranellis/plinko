@@ -42,6 +42,7 @@ fn broadcast_plan_state(my_id: u64, registry: &SessionRegistry, plan: &Plan, has
 /// `send`: writes a `ServerMessage` to the client.
 /// `recv`: reads the next message text into the provided `String`; returns
 ///         `Ok(true)` if data was received, `Ok(false)` on clean EOF, `Err` on error.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn handle_protocol(
     peer: String,
     mut send: impl FnMut(&ServerMessage) -> std::io::Result<()>,
@@ -250,13 +251,10 @@ pub(crate) fn handle_protocol(
             }
         };
         // Handle Logout and auth requests before the Request dispatch.
-        match &msg {
-            ClientMessage::Logout => {
-                let _ = auth_db.logout(&session_token);
-                eprintln!("[{peer}] logout ({})", session.email);
-                break;
-            }
-            _ => {}
+        if let ClientMessage::Logout = &msg {
+            let _ = auth_db.logout(&session_token);
+            eprintln!("[{peer}] logout ({})", session.email);
+            break;
         }
         let ClientMessage::Request { id, request } = msg else {
             continue;

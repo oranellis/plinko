@@ -202,6 +202,13 @@ impl MondayClient {
         workload_col: &str,
         timeline_col: &str,
     ) -> Result<Vec<MondayItem>, MondayApiError> {
+        let cols = ColIds {
+            person: person_col,
+            status: status_col,
+            dep: dep_col,
+            workload: workload_col,
+            timeline: timeline_col,
+        };
         let col_ids =
             build_col_ids_list(&[person_col, status_col, dep_col, workload_col, timeline_col]);
 
@@ -250,17 +257,7 @@ impl MondayClient {
             let name = raw["name"].as_str().unwrap_or("").to_string();
             let group_title = raw["group"]["title"].as_str().map(|s| s.to_string());
             let cv = raw["column_values"].as_array().cloned().unwrap_or_default();
-            let mut item = parse_item(
-                item_id.clone(),
-                name.clone(),
-                None,
-                &cv,
-                person_col,
-                status_col,
-                dep_col,
-                workload_col,
-                timeline_col,
-            );
+            let mut item = parse_item(item_id.clone(), name.clone(), None, &cv, &cols);
             item.context_label = group_title;
             result.push(item);
 
@@ -269,17 +266,8 @@ impl MondayClient {
                     let sub_id = sub["id"].as_str().unwrap_or("").to_string();
                     let sub_name = sub["name"].as_str().unwrap_or("").to_string();
                     let sub_cv = sub["column_values"].as_array().cloned().unwrap_or_default();
-                    let mut sub_item = parse_item(
-                        sub_id,
-                        sub_name,
-                        Some(item_id.clone()),
-                        &sub_cv,
-                        person_col,
-                        status_col,
-                        dep_col,
-                        workload_col,
-                        timeline_col,
-                    );
+                    let mut sub_item =
+                        parse_item(sub_id, sub_name, Some(item_id.clone()), &sub_cv, &cols);
                     // For subitems the context label is the parent item's name.
                     sub_item.context_label = Some(name.clone());
                     result.push(sub_item);
@@ -560,16 +548,20 @@ fn build_col_ids_list(ids: &[&str]) -> String {
         .join(", ")
 }
 
+struct ColIds<'a> {
+    person: &'a str,
+    status: &'a str,
+    dep: &'a str,
+    workload: &'a str,
+    timeline: &'a str,
+}
+
 fn parse_item(
     id: String,
     name: String,
     parent_id: Option<String>,
     col_values: &[Value],
-    person_col: &str,
-    status_col: &str,
-    dep_col: &str,
-    workload_col: &str,
-    timeline_col: &str,
+    cols: &ColIds<'_>,
 ) -> MondayItem {
     let mut assigned_user_ids = Vec::new();
     let mut status_label = None;
@@ -581,7 +573,7 @@ fn parse_item(
 
     for cv in col_values {
         let col_id = cv["id"].as_str().unwrap_or("");
-        if col_id == person_col {
+        if col_id == cols.person {
             if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null"))
                 && let Some(persons) = v["personsAndTeams"].as_array()
             {
@@ -595,12 +587,12 @@ fn parse_item(
                     }
                 }
             }
-        } else if col_id == status_col {
+        } else if col_id == cols.status {
             let label = cv["text"].as_str().unwrap_or("").to_string();
             if !label.is_empty() {
                 status_label = Some(label);
             }
-        } else if col_id == dep_col {
+        } else if col_id == cols.dep {
             // Monday API v2: dependency columns return null for `value`.
             // Use the DependencyValue inline fragment `linked_items` field instead.
             if let Some(linked) = cv["linked_items"].as_array() {
@@ -610,11 +602,11 @@ fn parse_item(
                     }
                 }
             }
-        } else if col_id == workload_col {
+        } else if col_id == cols.workload {
             if let Some(text) = cv["text"].as_str() {
                 workload = text.parse::<f32>().ok();
             }
-        } else if col_id == timeline_col && !timeline_col.is_empty() {
+        } else if col_id == cols.timeline && !cols.timeline.is_empty() {
             // Parse from/to dates and milestone flag from the timeline column value.
             if let Ok(v) = serde_json::from_str::<Value>(cv["value"].as_str().unwrap_or("null")) {
                 if v["visualization_type"].as_str() == Some("milestone") {

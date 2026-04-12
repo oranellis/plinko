@@ -111,12 +111,12 @@ pub fn import_from_monday(
                         .insert(*task_id, (status, item.timeline_start, item.timeline_end));
                 }
                 NodeId::Milestone(ms_id) => {
-                    if let Some(ms) = plan.milestones.get_mut(ms_id) {
-                        if ms.name != item.name || ms.context_label != ctx {
-                            ms.name = item.name.clone();
-                            ms.context_label = ctx;
-                            changed = true;
-                        }
+                    if let Some(ms) = plan.milestones.get_mut(ms_id)
+                        && (ms.name != item.name || ms.context_label != ctx)
+                    {
+                        ms.name = item.name.clone();
+                        ms.context_label = ctx;
+                        changed = true;
                     }
                 }
                 NodeId::PlanStart => {}
