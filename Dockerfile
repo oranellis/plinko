@@ -17,6 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml Cargo.lock ./
 COPY plinko-shared/Cargo.toml plinko-shared/
 COPY plinko/Cargo.toml plinko/
+# Cargo requires src targets to exist when parsing manifests.
+RUN mkdir -p plinko-shared/src plinko/src && \
+    touch plinko-shared/src/lib.rs && \
+    echo 'fn main() {}' > plinko/src/main.rs
 RUN cargo fetch --locked
 # Build with full source.
 COPY plinko-shared/ plinko-shared/
