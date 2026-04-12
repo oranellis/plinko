@@ -201,7 +201,7 @@ export function SettingsPage() {
   useEffect(() => {
     if (status !== "connected" || !plan) return;
     fetchUserLinks();
-  }, [status, plan?.id, fetchUserLinks]);
+  }, [status, plan, fetchUserLinks]);
 
   const handleSetUserLink = async (planUserId: string, loginUserId: string | null) => {
     if (!plan) return;

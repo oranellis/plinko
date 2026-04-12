@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
 import type { MilestoneId, TaskId } from "../protocol";
 import {
@@ -108,7 +108,7 @@ export function OverviewPage() {
     setScrollY(0);
   }, [plan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const items = plan ? packGanttRows(plan) : [];
+  const items = useMemo(() => plan ? packGanttRows(plan) : [], [plan]);
 
   // Scroll limits
   const maxRows = items.length > 0 ? Math.max(...items.map((i) => i.row)) + 1 : 1;

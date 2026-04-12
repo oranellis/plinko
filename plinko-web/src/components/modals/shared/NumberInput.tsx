@@ -17,12 +17,14 @@ export function NumberInput({ value, onChange, max, style, ...props }: Props) {
   const [str, setStr] = useState(() => value === 0 ? "" : String(value));
   const lastExternal = useRef(value);
 
+  // Sync string representation when external value changes (intentional derived-state pattern).
   useEffect(() => {
     if (value !== lastExternal.current) {
       lastExternal.current = value;
       const current = parseFloat(str);
       const currentNum = isNaN(current) ? 0 : current;
       if (currentNum !== value) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setStr(value === 0 ? "" : String(value));
       }
     }

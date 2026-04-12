@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AuthUser, ClientMessage, Plan, PlanRequest, PlanResponse, ServerMessage } from "../protocol";
+import type { ClientMessage, Plan, PlanRequest, PlanResponse, ServerMessage } from "../protocol";
 import { PROTOCOL_VERSION } from "../protocol";
 
 export type ConnectionStatus = "connecting" | "handshaking" | "authenticating" | "connected" | "disconnected" | "error";
@@ -36,6 +36,12 @@ const SESSION_TOKEN_KEY = "plinko_session_token";
 export function usePlan(): UsePlanResult {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  // statusRef keeps the current status accessible inside stale WebSocket closures.
+  const statusRef = useRef<ConnectionStatus>("connecting");
+  const setStatusSynced = useCallback((s: ConnectionStatus) => {
+    statusRef.current = s;
+    setStatus(s);
+  }, []);
   const [hasMondayIntegration, setHasMondayIntegration] = useState(false);
   const [monday, setMonday] = useState<MondayState>({
     progress: null,
@@ -60,6 +66,8 @@ export function usePlan(): UsePlanResult {
   const ownPlanStateCountRef = useRef<number>(0);
   const [remoteUpdate, setRemoteUpdate] = useState(false);
   const remoteUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // statusRef keeps the current status accessible inside stale WebSocket closures.
+  const statusRef = useRef<ConnectionStatus>("connecting");
 
   // Send a raw ClientMessage immediately (fire-and-forget).
   const sendRaw = useCallback((msg: ClientMessage) => {
@@ -93,20 +101,20 @@ export function usePlan(): UsePlanResult {
     localStorage.removeItem(SESSION_TOKEN_KEY);
     setAuth({ required: true, currentUser: null, sessionToken: null, loginError: null });
     setPlan(null);
-    setStatus("authenticating");
-  }, [sendRaw]);
+    setStatusSynced("authenticating");
+  }, [sendRaw, setStatusSynced]);
 
   useEffect(() => {
     let ws: WebSocket;
     let alive = true;
 
     function connect() {
-      setStatus("connecting");
+      setStatusSynced("connecting");
       ws = new WebSocket(`ws://${window.location.hostname}:${WS_PORT}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        setStatus("handshaking");
+        setStatusSynced("handshaking");
         const hello: ClientMessage = { type: "Hello", version: PROTOCOL_VERSION };
         ws.send(JSON.stringify(hello));
       };
@@ -126,12 +134,12 @@ export function usePlan(): UsePlanResult {
 
           case "VersionError":
             console.error(`[ws] version mismatch: server expects ${msg.expected}, we sent ${msg.got}`);
-            setStatus("error");
+            setStatusSynced("error");
             ws.close();
             break;
 
-          case "AuthRequired":
-            setStatus("authenticating");
+          case "AuthRequired": {
+            setStatusSynced("authenticating");
             // Try to resume with a stored token first.
             const stored = localStorage.getItem(SESSION_TOKEN_KEY);
             if (stored) {
@@ -140,6 +148,7 @@ export function usePlan(): UsePlanResult {
               setAuth((prev) => ({ ...prev, required: true }));
             }
             break;
+          }
 
           case "LoginSuccess":
             localStorage.setItem(SESSION_TOKEN_KEY, msg.session_token);
@@ -167,10 +176,10 @@ export function usePlan(): UsePlanResult {
           case "PlanState":
             setPlan(msg.plan);
             setHasMondayIntegration(msg.has_monday_integration);
-            setStatus("connected");
+            setStatusSynced("connected");
             if (ownPlanStateCountRef.current > 0) {
               ownPlanStateCountRef.current--;
-            } else if (status === "connected") {
+            } else if (statusRef.current === "connected") {
               // Unsolicited PlanState from a remote session's mutation.
               if (remoteUpdateTimerRef.current) clearTimeout(remoteUpdateTimerRef.current);
               setRemoteUpdate(true);
@@ -230,7 +239,7 @@ export function usePlan(): UsePlanResult {
         pendingRef.current.clear();
 
         if (alive) {
-          setStatus("disconnected");
+          setStatusSynced("disconnected");
           // No auto-reconnect — user must click the reconnect button.
         }
       };
@@ -245,7 +254,7 @@ export function usePlan(): UsePlanResult {
       const currentWs = wsRef.current;
       wsRef.current = null;
       currentWs?.close();
-      setStatus("connecting");
+      setStatusSynced("connecting");
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

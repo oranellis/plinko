@@ -92,6 +92,7 @@ export function DependencyEditor({
   // and open it in a layout effect once the ref exists.
   const pendingOpenRef = useRef<number | null>(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally runs every render to detect when the btn ref is ready
   useLayoutEffect(() => {
     if (pendingOpenRef.current !== null) {
       const idx = pendingOpenRef.current;

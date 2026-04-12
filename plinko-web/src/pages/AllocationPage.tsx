@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
 import type { TaskId, UserId } from "../protocol";
 import {
@@ -128,29 +128,35 @@ export function AllocationPage() {
     setScrollX(Math.max(0, offset * dayW - timelineW / 2));
   }, [plan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const users = plan
-    ? Object.values(plan.users_data)
-        .map((ud) => ud.user)
-        .sort((a, b) => a.name.localeCompare(b.name))
-    : [];
+  const users = useMemo(
+    () => plan
+      ? Object.values(plan.users_data)
+          .map((ud) => ud.user)
+          .sort((a, b) => a.name.localeCompare(b.name))
+      : [],
+    [plan],
+  );
 
   // Tasks for selected user: exclude Complete/Dropped, sort by start date
-  const userTasks: [string, NonNullable<typeof plan>["tasks"][string]][] = selectedUserId && plan
-    ? Object.entries(plan.tasks)
-        .filter(([id, t]) => {
-          // Must be assigned to this user
-          if (!t.workers.some((w) => workerUserId(w) === selectedUserId)) return false;
-          // Exclude complete and dropped
-          const state = plan.node_allocations.tasks[id as TaskId];
-          if (state?.status === "Complete" || state?.status === "Dropped") return false;
-          return true;
-        })
-        .sort(([idA], [idB]) => {
-          const sa = allocStartDate(plan, idA) ?? "";
-          const sb = allocStartDate(plan, idB) ?? "";
-          return sa.localeCompare(sb);
-        })
-    : [];
+  const userTasks: [string, NonNullable<typeof plan>["tasks"][string]][] = useMemo(
+    () => selectedUserId && plan
+      ? Object.entries(plan.tasks)
+          .filter(([id, t]) => {
+            // Must be assigned to this user
+            if (!t.workers.some((w) => workerUserId(w) === selectedUserId)) return false;
+            // Exclude complete and dropped
+            const state = plan.node_allocations.tasks[id as TaskId];
+            if (state?.status === "Complete" || state?.status === "Dropped") return false;
+            return true;
+          })
+          .sort(([idA], [idB]) => {
+            const sa = allocStartDate(plan, idA) ?? "";
+            const sb = allocStartDate(plan, idB) ?? "";
+            return sa.localeCompare(sb);
+          })
+      : [],
+    [plan, selectedUserId],
+  );
 
   // When user selection changes, scroll task list to center on the task closest to starting today
   const sizeRef = useRef(size);

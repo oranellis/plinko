@@ -47,6 +47,7 @@ export function PlanProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function usePlanContext(): PlanContextValue {
   const ctx = useContext(PlanContext);
   if (!ctx) throw new Error("usePlanContext must be used within PlanProvider");

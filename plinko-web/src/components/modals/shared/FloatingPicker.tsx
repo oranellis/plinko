@@ -36,6 +36,7 @@ export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder
     const spaceBelow = window.innerHeight - rect.bottom;
     const dropH = Math.min(options.length * 28 + 36, 220);
     const top = spaceBelow >= dropH ? rect.bottom + 2 : rect.top - dropH - 2;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPos({ top, left: rect.left, width: rect.width });
   }, [anchor, options.length]);
 

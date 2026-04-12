@@ -14,9 +14,10 @@ export function Toolbar() {
   const [doneText, setDoneText] = useState<{ text: string; isError: boolean } | null>(null);
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Track completion and errors.
+  // Track completion and errors — setState in effect is intentional here (timer-based auto-clear).
   useEffect(() => {
     if (monday.lastMessage) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveOp(null);
       setDoneText({ text: monday.lastMessage, isError: false });
       if (doneTimerRef.current) clearTimeout(doneTimerRef.current);

@@ -6,7 +6,7 @@
  * - "+" button below to add a new worker
  * - Picker dropdowns float above the modal via FloatingPicker portal
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { Plan, TagId, WorkerSlot } from "../../../protocol";
 import { FloatingPicker } from "./FloatingPicker";
 import { NumberInput } from "./NumberInput";
@@ -33,7 +33,7 @@ function slotWorkload(w: WorkerSlot): number {
 
 export function WorkerEditor({ workers, plan, onChange }: Props) {
   const [openPickerIdx, setOpenPickerIdx] = useState<number | null>(null);
-  const btnRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [pickerAnchor, setPickerAnchor] = useState<HTMLButtonElement | null>(null);
 
   const users = Object.values(plan.users_data)
     .map((ud) => ud.user)
@@ -183,8 +183,15 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
 
                   {/* User/tag selector */}
                   <button
-                    ref={(el) => { btnRefs.current[idx] = el; }}
-                    onClick={() => setOpenPickerIdx(pickerOpen ? null : idx)}
+                    onClick={(e) => {
+                      if (pickerOpen) {
+                        setOpenPickerIdx(null);
+                        setPickerAnchor(null);
+                      } else {
+                        setOpenPickerIdx(idx);
+                        setPickerAnchor(e.currentTarget);
+                      }
+                    }}
                     style={{
                       flex: 1,
                       display: "flex",
@@ -255,7 +262,7 @@ export function WorkerEditor({ workers, plan, onChange }: Props) {
                   {/* Floating picker for this row */}
                   {pickerOpen && (
                     <FloatingPicker
-                      anchor={btnRefs.current[idx]}
+                      anchor={pickerAnchor}
                       options={opts}
                       onSelect={(key) => {
                         if (type === "Specific") selectUser(idx, key);

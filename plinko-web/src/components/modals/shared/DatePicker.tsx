@@ -53,9 +53,14 @@ export function DatePicker({ value, onChange, disabled = false, placeholder = "S
   const [viewY, setViewY] = useState(parsed?.y ?? todayParsed.y);
   const [viewM, setViewM] = useState(parsed?.m ?? todayParsed.m);
 
-  // Update view when value changes externally
+  // Update view when value changes externally — viewY/viewM can't be pure derived state
+  // because the user can also scroll months independently.
   useEffect(() => {
-    if (parsed) { setViewY(parsed.y); setViewM(parsed.m); }
+    if (parsed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setViewY(parsed.y);
+      setViewM(parsed.m);
+    }
   }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [pos, setPos] = useState({ top: 0, left: 0 });

@@ -31,6 +31,12 @@ type LeftView = "list" | "create-user" | "create-tag" | { edit: UserId };
 export function ResourcesPage() {
   const { plan, sendRequest } = usePlanContext();
 
+  // ── Drag state (must be declared before any early return) ─────────────────
+  const dragUser = useRef<{ id: UserId; fromIndex: number } | null>(null);
+  const [dragUserOver, setDragUserOver] = useState<number | null>(null);
+  const dragTag = useRef<{ id: TagId; fromIndex: number } | null>(null);
+  const [dragTagOver, setDragTagOver] = useState<number | null>(null);
+
   // ── Left panel state ──
   const [selected, setSelectedState] = useState<LeftSelection>("plan");
   const [leftView, setLeftView] = useState<LeftView>("list");
@@ -113,7 +119,7 @@ export function ResourcesPage() {
         }
       }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); 
 
   // ── Selection change — flush previous schedule, load new ─────────────────
 
@@ -308,12 +314,6 @@ export function ResourcesPage() {
     months.push({ year: startRef.getFullYear(), month: startRef.getMonth() });
     startRef.setMonth(startRef.getMonth() + 1);
   }
-
-  // ── Drag state ────────────────────────────────────────────────────────────
-  const dragUser = useRef<{ id: UserId; fromIndex: number } | null>(null);
-  const [dragUserOver, setDragUserOver] = useState<number | null>(null);
-  const dragTag = useRef<{ id: TagId; fromIndex: number } | null>(null);
-  const [dragTagOver, setDragTagOver] = useState<number | null>(null);
 
   // ── Schedule section ──────────────────────────────────────────────────────
 
