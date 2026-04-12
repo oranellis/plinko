@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
 import { IconBack, IconPullMonday, IconPushMonday, IconSettings, IconSpinner } from "./icons";
 import "./Toolbar.css";

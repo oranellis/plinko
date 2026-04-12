@@ -4,7 +4,8 @@ import { MondayModal } from "../components/modals/MondayModal";
 import { NewPlanModal } from "../components/modals/NewPlanModal";
 import { DatePicker } from "../components/modals/shared/DatePicker";
 import { nodeIdString } from "../utils/planUtils";
-import type { AuthUser, NodeId, UserLink } from "../protocol";
+import type { AuthUser, NodeId, PlanError, UserLink } from "../protocol";
+import { formatPlanError } from "../protocol";
 import "./SettingsPage.css";
 
 interface PlanEntry {
@@ -153,8 +154,8 @@ export function SettingsPage() {
         setNewUserIsAdmin(false);
         fetchAuthUsers();
       } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
-        const err = resp as { Error: { message: string } };
-        setCreateUserError(err.Error.message);
+        const err = resp as { Error: PlanError };
+        setCreateUserError(formatPlanError(err.Error));
       }
     } catch (e) {
       setCreateUserError(String(e));
@@ -162,7 +163,7 @@ export function SettingsPage() {
   };
 
   const handleToggleAdmin = async (userId: string, isAdmin: boolean) => {
-    await sendRequest({ UpdateAuthUser: { user_id: userId, is_admin: isAdmin } });
+    await sendRequest({ UpdateAuthUser: { user_id: userId, new_is_admin: isAdmin } });
     fetchAuthUsers();
   };
 
@@ -179,8 +180,8 @@ export function SettingsPage() {
         setEditPasswordId(null);
         setEditPasswordValue("");
       } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
-        const err = resp as { Error: { message: string } };
-        setEditPasswordError(err.Error.message);
+        const err = resp as { Error: PlanError };
+        setEditPasswordError(formatPlanError(err.Error));
       }
     } catch (e) {
       setEditPasswordError(String(e));
