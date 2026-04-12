@@ -9,7 +9,6 @@ export default defineConfig({
       '/ws': {
         target: 'ws://0.0.0.0:7892',
         ws: true,
-        rewrite: (path) => path.replace(/^\/ws/, ''),
       },
     },
   },

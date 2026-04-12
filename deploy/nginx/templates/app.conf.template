@@ -1,0 +1,107 @@
+# nginx/templates/app.conf.template
+# Processed at container start by the official nginx image entrypoint (envsubst).
+# Only $DOMAIN is substituted; nginx runtime variables like $host are preserved.
+
+upstream plinko_ws {
+    server plinko:7892;
+    keepalive 64;
+}
+
+upstream plinko_static {
+    server plinko:7893;
+    keepalive 16;
+}
+
+# ── HTTP: redirect to HTTPS and serve ACME challenges ─────────────────────────
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    # ACME challenge directory for Let's Encrypt certificate issuance/renewal.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ── HTTPS: main application server ────────────────────────────────────────────
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+
+    # ── TLS configuration (Mozilla Modern profile) ────────────────────────────
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+
+    ssl_session_timeout  1d;
+    ssl_session_cache    shared:MozSSL:10m;
+    ssl_session_tickets  off;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+
+    # OCSP stapling reduces TLS handshake latency.
+    ssl_stapling        on;
+    ssl_stapling_verify on;
+    resolver            1.1.1.1 8.8.8.8 valid=300s;
+    resolver_timeout    5s;
+
+    # ── Security headers ──────────────────────────────────────────────────────
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Frame-Options            "DENY"                  always;
+    add_header X-Content-Type-Options     "nosniff"               always;
+    add_header Referrer-Policy            "strict-origin"         always;
+    add_header Permissions-Policy         "geolocation=(), camera=(), microphone=()" always;
+    # Content-Security-Policy: tighten once deployment is stable.
+    # add_header Content-Security-Policy "default-src 'self'; ..." always;
+
+    # ── Rate limiting ─────────────────────────────────────────────────────────
+    # Defined at the http level in nginx.conf; applied here per-location.
+    # limit_req zone=api burst=20 nodelay;
+
+    # ── WebSocket proxy (/ws) ─────────────────────────────────────────────────
+    location /ws {
+        proxy_pass         http://plinko_ws;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       $host;
+        proxy_set_header   X-Real-IP  $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # Keep long-lived WebSocket connections alive.
+        proxy_read_timeout  3600s;
+        proxy_send_timeout  3600s;
+        proxy_connect_timeout 10s;
+
+        # Limit initial WS upgrade payload to 64 KB.
+        client_max_body_size 64k;
+    }
+
+    # ── Static file proxy (everything else) ───────────────────────────────────
+    location / {
+        proxy_pass         http://plinko_static;
+        proxy_http_version 1.1;
+        proxy_set_header   Host             $host;
+        proxy_set_header   X-Real-IP        $remote_addr;
+        proxy_set_header   X-Forwarded-For  $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout    30s;
+
+        # Cache built JS/CSS assets (they have content-hashed filenames from Vite).
+        location ~* \.(js|css|woff2?|svg|png|ico)$ {
+            proxy_pass http://plinko_static;
+            proxy_cache_valid 200 7d;
+            add_header Cache-Control "public, max-age=604800, immutable";
+        }
+    }
+}

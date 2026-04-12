@@ -1,0 +1,61 @@
+services:
+  plinko:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: plinko:latest
+    restart: unless-stopped
+    environment:
+      - PLINKO_PORT=7892
+      - PLINKO_WEB_DIST=/app/dist
+      - XDG_DATA_HOME=/data
+    volumes:
+      - plinko-data:/data
+    expose:
+      - "7892"   # WebSocket  — internal only, proxied by nginx
+      - "7893"   # Static server — internal only, proxied by nginx
+    healthcheck:
+      # TCP probe: succeeds once the WebSocket port accepts connections.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/7892 && echo ok >&3"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Only $DOMAIN is substituted; nginx variables ($host etc.) are preserved.
+      - NGINX_ENVSUBST_TEMPLATE_VARS=DOMAIN
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./certs:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    depends_on:
+      plinko:
+        condition: service_healthy
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - ./certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    # Attempt renewal every 12 h; Let's Encrypt only renews within 30 days of expiry.
+    entrypoint: >
+      /bin/sh -c "trap exit TERM;
+      while :; do
+        certbot renew --webroot --webroot-path=/var/www/certbot --quiet;
+        sleep 12h & wait $${!};
+      done"
+
+volumes:
+  plinko-data:
+    driver: local
+  certbot-www:
+    driver: local

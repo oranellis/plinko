@@ -30,7 +30,6 @@ export interface UsePlanResult {
   reconnect: () => void;
 }
 
-const WS_PORT = 7892; // default WebSocket port
 const SESSION_TOKEN_KEY = "plinko_session_token";
 
 export function usePlan(): UsePlanResult {
@@ -66,8 +65,6 @@ export function usePlan(): UsePlanResult {
   const ownPlanStateCountRef = useRef<number>(0);
   const [remoteUpdate, setRemoteUpdate] = useState(false);
   const remoteUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // statusRef keeps the current status accessible inside stale WebSocket closures.
-  const statusRef = useRef<ConnectionStatus>("connecting");
 
   // Send a raw ClientMessage immediately (fire-and-forget).
   const sendRaw = useCallback((msg: ClientMessage) => {
@@ -110,7 +107,8 @@ export function usePlan(): UsePlanResult {
 
     function connect() {
       setStatusSynced("connecting");
-      ws = new WebSocket(`ws://${window.location.hostname}:${WS_PORT}`);
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
       wsRef.current = ws;
 
       ws.onopen = () => {

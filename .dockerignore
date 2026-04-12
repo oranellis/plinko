@@ -1,0 +1,6 @@
+.git
+target
+plinko-web/node_modules
+plinko-web/dist
+*.md
+deploy/certs
