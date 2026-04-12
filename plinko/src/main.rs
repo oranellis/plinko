@@ -5,6 +5,7 @@ mod server;
 mod static_server;
 mod ws_server;
 
+use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -78,6 +79,10 @@ fn main() {
         let s = storage.lock().unwrap();
         AuthDb::default_path(s.plans_dir())
     };
+    // Ensure the parent directory exists (storage only creates it on first save).
+    if let Some(parent) = auth_db_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
     let auth_db = match AuthDb::open(&auth_db_path) {
         Ok(db) => {
             if let Err(e) = db.bootstrap_root() {

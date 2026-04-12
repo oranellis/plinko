@@ -15,11 +15,11 @@ services:
       - "7892"   # WebSocket  — internal only, proxied by nginx
       - "7893"   # Static server — internal only, proxied by nginx
     healthcheck:
-      # TCP probe: succeeds once the WebSocket port accepts connections.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/7892 && echo ok >&3"]
+      # bash's /dev/tcp probe — succeeds once the WebSocket port accepts connections.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/7892"]
       interval: 15s
       timeout: 5s
-      start_period: 10s
+      start_period: 15s
       retries: 3
 
   nginx:
