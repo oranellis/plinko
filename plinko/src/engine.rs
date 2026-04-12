@@ -1,6 +1,6 @@
 use plinko_shared::data::Plan;
 use plinko_shared::data::dependency::Dependency;
-use plinko_shared::data::ids::NodeId;
+use plinko_shared::data::ids::{NodeId, TaskId};
 use plinko_shared::data::scheduler::SchedulerError;
 use plinko_shared::protocol::{
     PlanError, PlanRequest, PlanResponse, apply_milestone_patch, apply_task_patch,
@@ -43,57 +43,30 @@ impl PlanEngine {
         }
     }
 
+    fn apply_task_status<F>(&mut self, id: TaskId, f: F) -> PlanResponse
+    where
+        F: FnOnce(&mut Plan, TaskId),
+    {
+        if self.plan.tasks.contains_key(&id) {
+            f(&mut self.plan, id);
+            let _ = self.plan.compute_time_optimised_plan();
+            PlanResponse::PlanUpdated
+        } else {
+            PlanResponse::Error(PlanError::TaskNotFound(id))
+        }
+    }
+
     pub fn apply_request(&mut self, request: PlanRequest) -> PlanResponse {
         match request {
             PlanRequest::RunScheduler => match self.plan.compute_time_optimised_plan() {
                 Ok(()) => PlanResponse::PlanUpdated,
                 Err(e) => PlanResponse::Error(PlanError::Scheduler(e)),
             },
-            PlanRequest::StartTask(id) => {
-                if self.plan.tasks.contains_key(&id) {
-                    self.plan.start_task(id);
-                    let _ = self.plan.compute_time_optimised_plan();
-                    PlanResponse::PlanUpdated
-                } else {
-                    PlanResponse::Error(PlanError::TaskNotFound(id))
-                }
-            }
-            PlanRequest::PauseTask(id) => {
-                if self.plan.tasks.contains_key(&id) {
-                    self.plan.pause_task(id);
-                    let _ = self.plan.compute_time_optimised_plan();
-                    PlanResponse::PlanUpdated
-                } else {
-                    PlanResponse::Error(PlanError::TaskNotFound(id))
-                }
-            }
-            PlanRequest::ResumeTask(id) => {
-                if self.plan.tasks.contains_key(&id) {
-                    self.plan.resume_task(id);
-                    let _ = self.plan.compute_time_optimised_plan();
-                    PlanResponse::PlanUpdated
-                } else {
-                    PlanResponse::Error(PlanError::TaskNotFound(id))
-                }
-            }
-            PlanRequest::CompleteTask(id) => {
-                if self.plan.tasks.contains_key(&id) {
-                    self.plan.complete_task(id);
-                    let _ = self.plan.compute_time_optimised_plan();
-                    PlanResponse::PlanUpdated
-                } else {
-                    PlanResponse::Error(PlanError::TaskNotFound(id))
-                }
-            }
-            PlanRequest::DropTask(id) => {
-                if self.plan.tasks.contains_key(&id) {
-                    self.plan.drop_task(id);
-                    let _ = self.plan.compute_time_optimised_plan();
-                    PlanResponse::PlanUpdated
-                } else {
-                    PlanResponse::Error(PlanError::TaskNotFound(id))
-                }
-            }
+            PlanRequest::StartTask(id) => self.apply_task_status(id, Plan::start_task),
+            PlanRequest::PauseTask(id) => self.apply_task_status(id, Plan::pause_task),
+            PlanRequest::ResumeTask(id) => self.apply_task_status(id, Plan::resume_task),
+            PlanRequest::CompleteTask(id) => self.apply_task_status(id, Plan::complete_task),
+            PlanRequest::DropTask(id) => self.apply_task_status(id, Plan::drop_task),
             PlanRequest::CreateTask(mut task) => {
                 if let Err(e) = self.plan.validate_task_workers(&task.name, &task.workers) {
                     return PlanResponse::Error(PlanError::Scheduler(e));

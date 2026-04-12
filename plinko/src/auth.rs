@@ -10,8 +10,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-const BCRYPT_COST: u32 = DEFAULT_COST; // 12
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthUser {
     pub id: String,
@@ -89,7 +87,7 @@ impl AuthDb {
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |r| r.get(0))?;
         if count == 0 {
             let id = Uuid::new_v4().to_string();
-            let password_hash = hash("root", BCRYPT_COST).expect("bcrypt hash failed");
+            let password_hash = hash("root", DEFAULT_COST).expect("bcrypt hash failed");
             conn.execute(
                 "INSERT INTO users (id, username, password_hash, is_admin) VALUES (?1, ?2, ?3, 1)",
                 params![id, "root@localhost", password_hash],
@@ -204,7 +202,7 @@ impl AuthDb {
     ) -> Result<String, AuthError> {
         validate_email(email)?;
         let id = Uuid::new_v4().to_string();
-        let password_hash = hash(password, BCRYPT_COST).expect("bcrypt hash failed");
+        let password_hash = hash(password, DEFAULT_COST).expect("bcrypt hash failed");
         let conn = self.inner.lock().unwrap();
         conn.execute(
             "INSERT INTO users (id, username, password_hash, is_admin) VALUES (?1, ?2, ?3, ?4)",
@@ -255,7 +253,7 @@ impl AuthDb {
 
     /// Set a user's password (admin override — no old password needed).
     pub fn set_password(&self, user_id: &str, new_password: &str) -> Result<(), AuthError> {
-        let hash_new = hash(new_password, BCRYPT_COST).expect("bcrypt hash failed");
+        let hash_new = hash(new_password, DEFAULT_COST).expect("bcrypt hash failed");
         let conn = self.inner.lock().unwrap();
         conn.execute(
             "UPDATE users SET password_hash = ?1 WHERE id = ?2",
@@ -286,7 +284,7 @@ impl AuthDb {
         if !verify(old_password, &stored_hash).unwrap_or(false) {
             return Err(AuthError::WrongPassword);
         }
-        let hash_new = hash(new_password, BCRYPT_COST).expect("bcrypt hash failed");
+        let hash_new = hash(new_password, DEFAULT_COST).expect("bcrypt hash failed");
         let conn = self.inner.lock().unwrap();
         conn.execute(
             "UPDATE users SET password_hash = ?1 WHERE id = ?2",

@@ -607,23 +607,6 @@ impl Plan {
 
     // ── Scheduler helpers ─────────────────────────────────────────────────────
 
-    /// Resolve the start date of any dependency.
-    pub fn start_of(&self, dep: NodeId) -> Option<NaiveDate> {
-        match dep {
-            NodeId::PlanStart => Some(self.start_date),
-            NodeId::Task(id) => self
-                .node_allocations
-                .tasks
-                .get(&id)
-                .map(|ts| ts.allocation.start_date()),
-            NodeId::Milestone(id) => self
-                .node_allocations
-                .milestones
-                .get(&id)
-                .map(|ma| ma.date()),
-        }
-    }
-
     pub fn get_dependencies(&self, node_id: &NodeId) -> &[Dependency] {
         match node_id {
             NodeId::Task(task_id) => self
