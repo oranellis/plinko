@@ -1992,4 +1992,136 @@ mod tests {
             "C should start Tue (day after A) when B is dropped, got {c_start}"
         );
     }
+
+    /// Calendar override setting 0 hours on a day must block that day from being
+    /// allocated even if the user's schedule would normally allow it.
+    #[test]
+    fn calendar_override_blocks_capacity() {
+        // Plan starts Mon 2026-05-04. User has default 8h weekdays.
+        // Override Wed 2026-05-06 to 0h — it should be skipped.
+        let plan_start = date(2026, 5, 4); // Monday
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays();
+
+        // Block Wednesday.
+        plan.calendar.set(date(2026, 5, 6), 0.0);
+
+        let uid = plan.add_user(User::new("Alice"));
+
+        // Task: 3 workload-days at 8h/day → needs Mon, Tue, Thu (skipping Wed).
+        let mut t = Task::new("T", "");
+        t.add_specific_worker(uid, 3.0);
+        t.dependencies.push(Dependency::new(NodeId::PlanStart));
+        let t_id = plan.add_task(t);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        let (dates, end) = segs_end(&plan, t_id);
+        assert_eq!(dates.len(), 3, "Should allocate 3 segments (Mon, Tue, Thu)");
+        assert!(
+            !dates.contains(&date(2026, 5, 6)),
+            "Wed should be skipped due to 0h override"
+        );
+        assert_eq!(end, date(2026, 5, 7), "Task should end Thursday 2026-05-07");
+    }
+
+    /// Negative lag (lead time / overlap) allows a dependent task to start before
+    /// its predecessor finishes. With lag_days = -2, the dependent should begin two
+    /// working days before the predecessor's end (i.e. `pred_end + lag + 1 = pred_end - 1`).
+    #[test]
+    fn negative_lag_allows_early_start() {
+        // A: 3 workload-days (Mon–Wed)
+        // B depends on A with lag = -2 → earliest_start = pred_end + (-2) + 1 = Wed - 1 = Tue
+        let plan_start = date(2026, 5, 4); // Monday
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays();
+
+        // Use two separate users so capacity doesn't interfere.
+        let alice = plan.add_user(User::new("Alice"));
+        let bob = plan.add_user(User::new("Bob"));
+
+        let mut a = Task::new("A", "");
+        a.add_specific_worker(alice, 3.0);
+        a.duration_days_target = 3.0;
+        a.dependencies.push(Dependency::new(NodeId::PlanStart));
+        let a_id = plan.add_task(a);
+
+        let mut dep_b = Dependency::new(NodeId::Task(a_id));
+        dep_b.lag_days = -2.0;
+
+        let mut b = Task::new("B", "");
+        b.add_specific_worker(bob, 1.0);
+        b.dependencies.push(dep_b);
+        let b_id = plan.add_task(b);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        // A occupies Mon–Wed. With lag=-2, B's earliest start = Wed + (-2) + 1 = Tue.
+        let (b_dates, _) = segs_end(&plan, b_id);
+        let (_, a_end) = segs_end(&plan, a_id);
+        assert_eq!(a_end, date(2026, 5, 6), "A should end Wednesday");
+        assert!(!b_dates.is_empty(), "B should be scheduled");
+        assert!(
+            b_dates[0] < a_end,
+            "B should start before A ends due to negative lag; A ends {a_end}, B starts {}",
+            b_dates[0]
+        );
+    }
+
+    /// A placeholder worker slot picks the user who finishes earliest.
+    /// With two users of different availability, the one who can complete
+    /// the task sooner should be selected.
+    #[test]
+    fn placeholder_picks_earliest_finishing_user() {
+        // Mon 2026-05-04. Alice works Mon–Fri (8h/day). Bob only works Wed–Fri.
+        // Placeholder task: 2 workload-days at 8h/day.
+        // Alice can finish by Tue; Bob can finish by Thu. → Alice should be chosen.
+        let plan_start = date(2026, 5, 4); // Monday
+        let mut plan = Plan::new("test");
+        plan.start_date = plan_start;
+        plan.default_schedule = WorkSchedule::weekdays(); // Alice inherits this
+
+        let alice = plan.add_user(User::new("Alice"));
+
+        let bob = plan.add_user(User::new("Bob"));
+        // Bob only works Wed–Fri (0h Mon, 0h Tue).
+        let bob_sched = WorkSchedule::weekdays()
+            .with_day(crate::data::schedule::Weekday::Monday, 0.0)
+            .with_day(crate::data::schedule::Weekday::Tuesday, 0.0);
+        plan.set_user_schedule(bob, bob_sched);
+
+        // Placeholder slot: no required tags, 2 workload-days.
+        let mut t = Task::new("T", "");
+        t.workers.push(crate::data::WorkerSlot::Placeholder {
+            workload_days: 2.0,
+            required_tags: Default::default(),
+        });
+        t.dependencies.push(Dependency::new(NodeId::PlanStart));
+        let t_id = plan.add_task(t);
+
+        plan.compute_time_optimised_plan().unwrap();
+
+        // Check which user got assigned by looking at work segments.
+        let alloc = &plan.node_allocations.tasks[&t_id].allocation;
+        let assigned_users: std::collections::HashSet<_> = match alloc {
+            crate::data::allocation::TaskAllocation::Dynamic {
+                time_allocation, ..
+            }
+            | crate::data::allocation::TaskAllocation::Fixed {
+                time_allocation, ..
+            } => time_allocation.iter().map(|s| s.user).collect(),
+        };
+        assert_eq!(
+            assigned_users.len(),
+            1,
+            "Exactly one user should be assigned"
+        );
+        assert!(
+            assigned_users.contains(&alice),
+            "Alice should be chosen (finishes Tue) over Bob (finishes Thu)"
+        );
+        let _ = bob;
+    }
 }
