@@ -61,7 +61,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 export function AllocationPage() {
-  const { plan, sendRequest, setToolbarActions, setToolbarRightActions } = usePlanContext();
+  const { plan, sendRequest, hasMondayIntegration, setToolbarActions, setToolbarRightActions } = usePlanContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +74,29 @@ export function AllocationPage() {
   const [editTaskId, setEditTaskId] = useState<TaskId | null>(null);
   const [showUsers, setShowUsers] = useState(false); // kept for ref compatibility
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+
+  // Monday-linked node IDs (set of raw task UUID strings)
+  const [mondayLinkedIds, setMondayLinkedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!hasMondayIntegration || !plan) return;
+    sendRequest({ LoadMondayConfig: { plan_id: plan.id } }).then((res) => {
+      if ("MondayConfigLoaded" in res) {
+        const ids = new Set(
+          res.MondayConfigLoaded.item_node_map
+            .map((m) => {
+              const nid = m.plinko_node_id;
+              if (nid === "PlanStart") return null;
+              if (typeof nid === "object" && "Task" in nid) return nid.Task;
+              if (typeof nid === "object" && "Milestone" in nid) return nid.Milestone;
+              return null;
+            })
+            .filter((id): id is string => id !== null)
+        );
+        setMondayLinkedIds(ids);
+      }
+    }).catch(() => { /* ignore config load errors silently */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMondayIntegration, plan?.id]);
 
   const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0, moved: false });
   const pendingClickRef = useRef<string | null>(null);
@@ -621,6 +644,7 @@ export function AllocationPage() {
           return ["(unassigned)"];
         });
         if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
+        if (mondayLinkedIds.has(hoveredTaskId)) lines.push("Linked to Monday ✓");
 
         ctx.save();
         ctx.resetTransform();
@@ -670,7 +694,7 @@ export function AllocationPage() {
     }
 
     ctx.restore();
-  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId]);
+  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId, mondayLinkedIds]);
 
   useEffect(() => { render(); }, [render]);
 

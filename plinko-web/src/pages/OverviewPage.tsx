@@ -29,7 +29,7 @@ const MIN_DAY_W = 8;
 const MAX_DAY_W = 80;
 
 export function OverviewPage() {
-  const { plan, sendRequest, setToolbarActions, setToolbarRightActions } = usePlanContext();
+  const { plan, sendRequest, hasMondayIntegration, setToolbarActions, setToolbarRightActions } = usePlanContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -47,6 +47,29 @@ export function OverviewPage() {
   // Hover / flash
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
+
+  // Monday-linked node IDs (set of raw task/milestone UUID strings)
+  const [mondayLinkedIds, setMondayLinkedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!hasMondayIntegration || !plan) return;
+    sendRequest({ LoadMondayConfig: { plan_id: plan.id } }).then((res) => {
+      if ("MondayConfigLoaded" in res) {
+        const ids = new Set(
+          res.MondayConfigLoaded.item_node_map
+            .map((m) => {
+              const nid = m.plinko_node_id;
+              if (nid === "PlanStart") return null;
+              if (typeof nid === "object" && "Task" in nid) return nid.Task;
+              if (typeof nid === "object" && "Milestone" in nid) return nid.Milestone;
+              return null;
+            })
+            .filter((id): id is string => id !== null)
+        );
+        setMondayLinkedIds(ids);
+      }
+    }).catch(() => { /* ignore config load errors silently */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasMondayIntegration, plan?.id]);
 
   // Drag momentum
   const dragRef = useRef({ active: false, startX: 0, startY: 0, velX: 0, velY: 0, lastX: 0, lastY: 0, lastT: 0 });
@@ -538,12 +561,14 @@ export function OverviewPage() {
           }
         });
         if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
+        if (mondayLinkedIds.has(hoverId)) lines.push("Linked to Monday ✓");
       } else if (ms) {
         const mname = ms.context_label ? `${ms.name} | ${ms.context_label}` : ms.name;
         lines.push(mname);
         lines.push("Milestone");
         const msState = plan.node_allocations.milestones[msId];
         if (msState) lines.push(`Scheduled: ${msState.date}`);
+        if (mondayLinkedIds.has(hoverId)) lines.push("Linked to Monday ✓");
       } else if (hoverId === PLAN_START_ID) {
         lines.push("Plan Start");
         lines.push(`Date: ${plan.start_date}`);
@@ -603,7 +628,7 @@ export function OverviewPage() {
     }
 
     ctx.restore();
-  }, [plan, items, size, scrollX, scrollY, dayW, hoverId, flashId]);
+  }, [plan, items, size, scrollX, scrollY, dayW, hoverId, flashId, mondayLinkedIds]);
 
   useEffect(() => { render(); }, [render]);
 
