@@ -65,6 +65,8 @@ export function usePlan(): UsePlanResult {
   const ownPlanStateCountRef = useRef<number>(0);
   const [remoteUpdate, setRemoteUpdate] = useState(false);
   const remoteUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Timeout for detecting a stuck connection (no server response during handshake/auth).
+  const connectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Send a raw ClientMessage immediately (fire-and-forget).
   const sendRaw = useCallback((msg: ClientMessage) => {
@@ -105,11 +107,28 @@ export function usePlan(): UsePlanResult {
     let ws: WebSocket;
     let alive = true;
 
+    function clearConnectionTimeout() {
+      if (connectionTimeoutRef.current !== null) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+    }
+
     function connect() {
       setStatusSynced("connecting");
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
       wsRef.current = ws;
+
+      // If we are stuck in connecting or handshaking for 15 s, close and fall
+      // through to the disconnected screen so the user can retry.
+      clearConnectionTimeout();
+      connectionTimeoutRef.current = setTimeout(() => {
+        if (statusRef.current === "connecting" || statusRef.current === "handshaking") {
+          console.warn("[ws] connection timed out after 15 s — closing");
+          ws.close();
+        }
+      }, 15_000);
 
       ws.onopen = () => {
         setStatusSynced("handshaking");
@@ -132,11 +151,14 @@ export function usePlan(): UsePlanResult {
 
           case "VersionError":
             console.error(`[ws] version mismatch: server expects ${msg.expected}, we sent ${msg.got}`);
+            clearConnectionTimeout();
             setStatusSynced("error");
             ws.close();
             break;
 
           case "AuthRequired": {
+            // We have successfully passed the connecting/handshaking phase.
+            clearConnectionTimeout();
             setStatusSynced("authenticating");
             // Try to resume with a stored token first.
             const stored = localStorage.getItem(SESSION_TOKEN_KEY);
@@ -235,13 +257,20 @@ export function usePlan(): UsePlanResult {
       };
 
       ws.onclose = () => {
-        if (wsRef.current === ws) wsRef.current = null;
+        // Only update global state if this is the currently active WebSocket.
+        // If reconnect() already created a new socket, the old socket's close
+        // event must not stomp the new connection's "connecting" status.
+        const isCurrent = wsRef.current === ws;
+        if (isCurrent) {
+          wsRef.current = null;
+          clearConnectionTimeout();
+        }
         for (const { reject } of pendingRef.current.values()) {
           reject(new Error("WebSocket closed"));
         }
         pendingRef.current.clear();
 
-        if (alive) {
+        if (alive && isCurrent) {
           setStatusSynced("disconnected");
           // No auto-reconnect — user must click the reconnect button.
         }
@@ -253,6 +282,7 @@ export function usePlan(): UsePlanResult {
 
     return () => {
       alive = false;
+      clearConnectionTimeout();
       connectRef.current = null;
       const currentWs = wsRef.current;
       wsRef.current = null;

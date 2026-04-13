@@ -8,20 +8,15 @@ import { ResourcesPage } from "./pages/ResourcesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
 import plinkoLogo from "./assets/plinko_logo.svg";
+import { useEffect, useState } from "react";
+import type { ConnectionStatus } from "./hooks/usePlan";
 import "./App.css";
 
 function PageRouter() {
   const { page, status, auth, logout, reconnect, plan, setPage } = usePlanContext();
 
-  // While connecting/handshaking or auto-authenticating with a stored token
-  // (auth.required is false but we haven't received PlanState yet), show a
-  // blank screen to avoid the login-page flicker.
-  if (status === "connecting" || status === "handshaking") {
-    return <StatusScreen message="" />;
-  }
-  if (status === "authenticating" && !auth.required) {
-    // Auto-auth in progress — blank screen with subtle fade-in
-    return <StatusScreen message="" />;
+  if (status === "connecting" || status === "handshaking" || (status === "authenticating" && !auth.required)) {
+    return <ConnectingScreen status={status} reconnect={reconnect} />;
   }
   if (status === "authenticating" || auth.required) {
     return <LoginPage />;
@@ -73,6 +68,52 @@ function StatusScreen({ message, error }: { message?: string; error?: boolean })
   return (
     <div className={`status-screen${error ? " error" : ""}`}>
       {message && <p>{message}</p>}
+    </div>
+  );
+}
+
+function ConnectingScreen({ status, reconnect }: { status: ConnectionStatus; reconnect: () => void }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  // Timer starts when the component mounts (i.e. when the connecting phase
+  // begins) and persists across connecting → handshaking → authenticating
+  // transitions because the component is never unmounted between them.
+  useEffect(() => {
+    const id = setInterval(() => setElapsed((s) => s + 1), 1_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const wsUrl = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
+
+  let heading = "Connecting to server\u2026";
+  if (status === "handshaking") heading = "Verifying server version\u2026";
+  if (status === "authenticating") heading = "Signing in\u2026";
+
+  const slow = elapsed >= 8;
+  const verySlot = elapsed >= 15;
+
+  return (
+    <div className="status-screen connecting-screen">
+      <div className="status-screen-content">
+        <div className="connecting-spinner" />
+        <p className="connecting-heading">{heading}</p>
+        <p className="connecting-detail">
+          {verySlot
+            ? "Unable to reach the server. Check that it is running and try again."
+            : slow
+            ? "This is taking longer than expected\u2026"
+            : wsUrl}
+        </p>
+        {elapsed >= 10 && (
+          <button
+            className="btn btn-secondary"
+            onClick={() => { setElapsed(0); reconnect(); }}
+            style={{ marginTop: 20 }}
+          >
+            Reconnect
+          </button>
+        )}
+      </div>
     </div>
   );
 }
