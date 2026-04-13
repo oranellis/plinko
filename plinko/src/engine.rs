@@ -259,7 +259,9 @@ impl PlanEngine {
             | PlanRequest::GetUserLinks { .. }
             | PlanRequest::SetUserLinks { .. }
             | PlanRequest::GetPlanVisibility { .. }
-            | PlanRequest::SetPlanVisibility { .. } => PlanResponse::PlanUpdated,
+            | PlanRequest::SetPlanVisibility { .. }
+            | PlanRequest::ListPlanVersions { .. }
+            | PlanRequest::RestorePlanVersion { .. } => PlanResponse::PlanUpdated,
         }
     }
 }

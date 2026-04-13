@@ -1,4 +1,3 @@
-use crate::data::ids::UserId;
 use crate::data::plan::Plan;
 use crate::monday::MondayConfig;
 use crate::protocol::UserLink;
@@ -22,6 +21,7 @@ pub enum StorageError {
     NoVersions,
     Io(std::io::Error),
     Json(serde_json::Error),
+    MsgPack(Box<dyn std::error::Error + Send + Sync>),
 }
 
 // ── Implementation ──────────────────────────────────────────────────────────── {{{
@@ -32,6 +32,7 @@ impl fmt::Display for StorageError {
             Self::NoVersions => write!(f, "no saved versions found for this plan"),
             Self::Io(e) => write!(f, "I/O error: {e}"),
             Self::Json(e) => write!(f, "JSON error: {e}"),
+            Self::MsgPack(e) => write!(f, "MessagePack error: {e}"),
         }
     }
 }
@@ -66,7 +67,6 @@ impl From<serde_json::Error> for StorageError {
 
 #[derive(Serialize, Deserialize, Default)]
 struct AppConfig {
-    current_user_id: Option<Uuid>,
     monday_api_token: Option<String>,
 }
 
@@ -107,8 +107,10 @@ impl Storage {
     pub fn save(&self, plan: &Plan) -> Result<PathBuf, StorageError> {
         let dir = self.plan_dir(plan.id);
         fs::create_dir_all(&dir)?;
-        let path = dir.join(format!("{}.json", Self::version_stamp()));
-        fs::write(&path, serde_json::to_string_pretty(plan)?)?;
+        let path = dir.join(format!("{}.msgpack", Self::version_stamp()));
+        let bytes =
+            rmp_serde::to_vec_named(plan).map_err(|e| StorageError::MsgPack(Box::new(e)))?;
+        fs::write(&path, bytes)?;
         Ok(path)
     }
 
@@ -119,9 +121,9 @@ impl Storage {
     }
 
     pub fn load_version(&self, plan_id: Uuid, version: &str) -> Result<Plan, StorageError> {
-        let path = self.plan_dir(plan_id).join(format!("{version}.json"));
-        let json = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&json)?)
+        let path = self.plan_dir(plan_id).join(format!("{version}.msgpack"));
+        let bytes = fs::read(path)?;
+        rmp_serde::from_slice(&bytes).map_err(|e| StorageError::MsgPack(Box::new(e)))
     }
 
     pub fn list_plans(&self) -> Result<Vec<Uuid>, StorageError> {
@@ -157,8 +159,8 @@ impl Storage {
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.ends_with(".json") && entry.file_type()?.is_file() {
-                let stem = name.trim_end_matches(".json");
+            if name.ends_with(".msgpack") && entry.file_type()?.is_file() {
+                let stem = name.trim_end_matches(".msgpack");
                 // Only include timestamped snapshots (YYYY-MM-DDTHH-MM-SS).
                 // This excludes monday.json and any other metadata files that
                 // share the plan directory.
@@ -215,16 +217,6 @@ impl Storage {
         if let Ok(json) = serde_json::to_string_pretty(config) {
             let _ = fs::write(path, json);
         }
-    }
-
-    pub fn load_current_user_id(&self) -> Option<UserId> {
-        self.load_config().current_user_id.map(UserId)
-    }
-
-    pub fn save_current_user_id(&self, user_id: Option<UserId>) {
-        let mut config = self.load_config();
-        config.current_user_id = user_id.map(|u| u.0);
-        self.save_config(&config);
     }
 
     pub fn plan_summary(&self, plan_id: Uuid) -> Option<(String, String)> {

@@ -377,6 +377,39 @@ impl AuthDb {
             })
             .collect()
     }
+    // -------------------------------------------------------------------------
+    // User preferences
+    // -------------------------------------------------------------------------
+
+    /// Get the last active plan ID for a user, if any.
+    pub fn get_user_last_plan(&self, user_id: &str) -> Option<Uuid> {
+        let conn = self.inner.lock().unwrap();
+        conn.query_row(
+            "SELECT last_plan_id FROM user_prefs WHERE user_id = ?1",
+            params![user_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .flatten()
+        .and_then(|s| Uuid::parse_str(&s).ok())
+    }
+
+    /// Persist the last active plan ID for a user.
+    pub fn set_user_last_plan(
+        &self,
+        user_id: &str,
+        plan_id: Option<Uuid>,
+    ) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let plan_id_str = plan_id.map(|u| u.to_string());
+        conn.execute(
+            "INSERT OR REPLACE INTO user_prefs (user_id, last_plan_id) VALUES (?1, ?2)",
+            params![user_id, plan_id_str],
+        )?;
+        Ok(())
+    }
 }
 
 fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -401,6 +434,10 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
             plan_id  TEXT NOT NULL,
             user_id  TEXT NOT NULL,
             PRIMARY KEY (plan_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS user_prefs (
+            user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            last_plan_id TEXT
         );",
     )
 }

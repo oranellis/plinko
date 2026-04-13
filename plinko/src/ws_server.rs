@@ -35,7 +35,7 @@ impl Drop for RegistryGuard {
 }
 
 pub fn run_ws_server(
-    engine: Arc<Mutex<PlanEngine>>,
+    engine: Arc<Mutex<Option<PlanEngine>>>,
     storage: Arc<Mutex<Storage>>,
     auth_db: Arc<AuthDb>,
     port: u16,
@@ -67,7 +67,7 @@ pub fn run_ws_server(
 fn handle_ws_connection(
     stream: std::net::TcpStream,
     peer: String,
-    engine: Arc<Mutex<PlanEngine>>,
+    engine: Arc<Mutex<Option<PlanEngine>>>,
     storage: Arc<Mutex<Storage>>,
     auth_db: Arc<AuthDb>,
     session_id: u64,

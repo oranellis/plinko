@@ -47,7 +47,7 @@ pub(crate) fn handle_protocol(
     peer: String,
     mut send: impl FnMut(&ServerMessage) -> std::io::Result<()>,
     mut recv: impl FnMut(&mut String) -> std::io::Result<bool>,
-    engine: Arc<Mutex<PlanEngine>>,
+    engine: Arc<Mutex<Option<PlanEngine>>>,
     storage: Arc<Mutex<Storage>>,
     auth_db: Arc<AuthDb>,
     session_id: u64,
@@ -127,11 +127,15 @@ pub(crate) fn handle_protocol(
             ClientMessage::Login { email, password } => {
                 match auth_db.login(&email, &password) {
                     Ok((token, info)) => {
+                        let prefs = UserPrefs {
+                            last_plan_id: auth_db.get_user_last_plan(&info.user_id),
+                        };
                         let _ = send(&ServerMessage::LoginSuccess {
                             session_token: token.clone(),
                             user_id: info.user_id.clone(),
                             email: info.email.clone(),
                             is_admin: info.is_admin,
+                            user_prefs: prefs,
                         });
                         eprintln!("[auth] {peer}: login OK as {}", info.email);
                         break (token, info);
@@ -148,11 +152,15 @@ pub(crate) fn handle_protocol(
             ClientMessage::Authenticate { session_token } => {
                 match auth_db.authenticate_token(&session_token) {
                     Ok(info) => {
+                        let prefs = UserPrefs {
+                            last_plan_id: auth_db.get_user_last_plan(&info.user_id),
+                        };
                         let _ = send(&ServerMessage::LoginSuccess {
                             session_token: session_token.clone(),
                             user_id: info.user_id.clone(),
                             email: info.email.clone(),
                             is_admin: info.is_admin,
+                            user_prefs: prefs,
                         });
                         eprintln!("[auth] {peer}: token auth OK as {}", info.email);
                         break (session_token, info);
@@ -174,30 +182,65 @@ pub(crate) fn handle_protocol(
     };
     // ── End auth phase ─────────────────────────────────────────────────────
 
-    let (initial_plan, initial_plan_id) = {
-        let eng = engine.lock().unwrap();
-        eprintln!(
-            "[connect] {peer}: handshake OK (version {VERSION}), sending plan \"{}\"",
-            eng.plan().name
-        );
-        let p = eng.plan().clone();
-        let id = p.id;
-        (p, id)
+    // Determine the initial state to send. If no plan is active, try to auto-load
+    // from the user's last-plan preference. Hold the engine lock throughout so two
+    // concurrent connections don't both trigger an auto-load.
+    let initial_plan_info: Option<(Plan, bool)> = {
+        let mut eng_guard = engine.lock().unwrap();
+        if eng_guard.is_none() {
+            // Try to auto-load the user's last active plan.
+            if let Some(plan_id) = auth_db.get_user_last_plan(&session.user_id) {
+                let all_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
+                let visible =
+                    auth_db.filter_visible_plans(&session.user_id, session.is_admin, &all_ids);
+                if visible.contains(&plan_id) {
+                    match storage.lock().unwrap().load_latest(plan_id) {
+                        Ok(plan) => {
+                            let new_eng = PlanEngine::new(plan);
+                            let _ = storage.lock().unwrap().save(new_eng.plan());
+                            *eng_guard = Some(new_eng);
+                        }
+                        Err(e) => eprintln!("[connect] {peer}: auto-load failed: {e}"),
+                    }
+                }
+            }
+        }
+        if let Some(eng) = eng_guard.as_ref() {
+            let plan = eng.plan().clone();
+            let plan_id = plan.id;
+            let has_monday = storage
+                .lock()
+                .unwrap()
+                .load_monday_config(plan_id)
+                .is_some();
+            Some((plan, has_monday))
+        } else {
+            None
+        }
     };
-    {
-        let has_monday_integration = storage
-            .lock()
-            .unwrap()
-            .load_monday_config(initial_plan_id)
-            .is_some();
-        if send(&ServerMessage::PlanState {
-            plan: Box::new(initial_plan),
-            has_monday_integration,
-        })
-        .is_err()
-        {
-            eprintln!("[connect] {peer}: failed to send initial PlanState");
-            return;
+
+    match initial_plan_info {
+        Some((plan, has_monday)) => {
+            eprintln!(
+                "[connect] {peer}: handshake OK (version {VERSION}), sending plan \"{}\"",
+                plan.name
+            );
+            if send(&ServerMessage::PlanState {
+                plan: Box::new(plan),
+                has_monday_integration: has_monday,
+            })
+            .is_err()
+            {
+                eprintln!("[connect] {peer}: failed to send initial PlanState");
+                return;
+            }
+        }
+        None => {
+            eprintln!("[connect] {peer}: handshake OK (version {VERSION}), no active plan");
+            if send(&ServerMessage::NoPlanActive).is_err() {
+                eprintln!("[connect] {peer}: failed to send NoPlanActive");
+                return;
+            }
         }
     }
 
@@ -218,21 +261,28 @@ pub(crate) fn handle_protocol(
                     let incoming_plan_id = plan.id;
                     {
                         let mut eng = engine.lock().unwrap();
-                        *eng = PlanEngine::new(*plan);
-                        let _ = storage.lock().unwrap().save(eng.plan());
+                        *eng = Some(PlanEngine::new(*plan));
+                        let _ = storage.lock().unwrap().save(eng.as_ref().unwrap().plan());
                     }
                     let _ = send(&ServerMessage::MondayDone { message });
-                    let done_plan = engine.lock().unwrap().plan().clone();
-                    let has_monday_integration = storage
-                        .lock()
-                        .unwrap()
-                        .load_monday_config(incoming_plan_id)
-                        .is_some();
-                    let _ = send(&ServerMessage::PlanState {
-                        plan: Box::new(done_plan.clone()),
-                        has_monday_integration,
-                    });
-                    broadcast_plan_state(session_id, &registry, &done_plan, has_monday_integration);
+                    let done_plan = engine.lock().unwrap().as_ref().map(|e| e.plan().clone());
+                    if let Some(done_plan) = done_plan {
+                        let has_monday_integration = storage
+                            .lock()
+                            .unwrap()
+                            .load_monday_config(incoming_plan_id)
+                            .is_some();
+                        let _ = send(&ServerMessage::PlanState {
+                            plan: Box::new(done_plan.clone()),
+                            has_monday_integration,
+                        });
+                        broadcast_plan_state(
+                            session_id,
+                            &registry,
+                            &done_plan,
+                            has_monday_integration,
+                        );
+                    }
                 }
             }
         }
@@ -264,8 +314,10 @@ pub(crate) fn handle_protocol(
         if matches!(&request, PlanRequest::SavePlan) {
             eprintln!("[{peer}] SavePlan");
             let eng = engine.lock().unwrap();
-            if let Err(e) = storage.lock().unwrap().save(eng.plan()) {
-                eprintln!("[{peer}] save error: {e}");
+            if let Some(eng) = eng.as_ref() {
+                if let Err(e) = storage.lock().unwrap().save(eng.plan()) {
+                    eprintln!("[{peer}] save error: {e}");
+                }
             }
             if send(&ServerMessage::Response {
                 id,
@@ -282,8 +334,9 @@ pub(crate) fn handle_protocol(
             let new_plan = plinko_shared::data::Plan::new("New Plan");
             let new_plan_clone = {
                 let mut eng = engine.lock().unwrap();
-                *eng = PlanEngine::new(new_plan);
-                let _ = storage.lock().unwrap().save(eng.plan());
+                *eng = Some(PlanEngine::new(new_plan));
+                let eng_ref = eng.as_ref().unwrap();
+                let _ = storage.lock().unwrap().save(eng_ref.plan());
                 if send(&ServerMessage::Response {
                     id,
                     response: PlanResponse::PlanUpdated,
@@ -292,37 +345,41 @@ pub(crate) fn handle_protocol(
                 {
                     break;
                 }
-                eng.plan().clone()
+                eng_ref.plan().clone()
             };
+            let _ = auth_db.set_user_last_plan(&session.user_id, Some(new_plan_clone.id));
             let has_monday_integration = storage
                 .lock()
                 .unwrap()
                 .load_monday_config(new_plan_clone.id)
                 .is_some();
             if send(&ServerMessage::PlanState {
-                plan: Box::new(new_plan_clone),
+                plan: Box::new(new_plan_clone.clone()),
                 has_monday_integration,
             })
             .is_err()
             {
                 break;
             }
+            broadcast_plan_state(
+                session_id,
+                &registry,
+                &new_plan_clone,
+                has_monday_integration,
+            );
             continue;
         }
 
         if let PlanRequest::LoadPlan { plan_id } = &request {
             let plan_id = *plan_id;
-            // Bind the result before matching so the MutexGuard is dropped immediately
-            // (match scrutinee temporaries live for the entire match block; holding the
-            // storage lock across the match would self-deadlock when line 223 tries to
-            // re-acquire it).
             let load_result = storage.lock().unwrap().load_latest(plan_id);
             match load_result {
                 Ok(plan) => {
                     let loaded_plan_clone = {
                         let mut eng = engine.lock().unwrap();
-                        *eng = PlanEngine::new(plan);
-                        let _ = storage.lock().unwrap().save(eng.plan());
+                        *eng = Some(PlanEngine::new(plan));
+                        let eng_ref = eng.as_ref().unwrap();
+                        let _ = storage.lock().unwrap().save(eng_ref.plan());
                         if send(&ServerMessage::Response {
                             id,
                             response: PlanResponse::PlanUpdated,
@@ -331,27 +388,35 @@ pub(crate) fn handle_protocol(
                         {
                             break;
                         }
-                        eng.plan().clone()
+                        eng_ref.plan().clone()
                     };
+                    let _ =
+                        auth_db.set_user_last_plan(&session.user_id, Some(loaded_plan_clone.id));
                     let has_monday_integration = storage
                         .lock()
                         .unwrap()
                         .load_monday_config(loaded_plan_clone.id)
                         .is_some();
                     if send(&ServerMessage::PlanState {
-                        plan: Box::new(loaded_plan_clone),
+                        plan: Box::new(loaded_plan_clone.clone()),
                         has_monday_integration,
                     })
                     .is_err()
                     {
                         break;
                     }
+                    broadcast_plan_state(
+                        session_id,
+                        &registry,
+                        &loaded_plan_clone,
+                        has_monday_integration,
+                    );
                 }
                 Err(e) => {
                     eprintln!("[{peer}] load error: {e}");
                     if send(&ServerMessage::Response {
                         id,
-                        response: PlanResponse::PlanUpdated,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
                     })
                     .is_err()
                     {
@@ -407,9 +472,9 @@ pub(crate) fn handle_protocol(
             continue;
         }
 
-        if let PlanRequest::SetCurrentUser(uid) = &request {
-            let uid = *uid;
-            storage.lock().unwrap().save_current_user_id(uid);
+        if let PlanRequest::SetCurrentUser(_) = &request {
+            // Current plan user preference is stored per auth user in user_prefs (auth.db).
+            // This request is handled after user-prefs support is added; acknowledge it.
             if send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,
@@ -535,23 +600,25 @@ pub(crate) fn handle_protocol(
         {
             let plan_id = *plan_id;
             let is_reimport = matches!(request, PlanRequest::MondayFullReimport { .. });
+            let plan_clone_opt = {
+                let eng_guard = engine.lock().unwrap();
+                eng_guard.as_ref().map(|e| e.plan().clone())
+            };
+            let Some(mut plan_clone) = plan_clone_opt else {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::NoPlanActive),
+                });
+                continue;
+            };
             let config = storage
                 .lock()
                 .unwrap()
                 .load_monday_config(plan_id)
                 .unwrap_or_default();
             let token = storage.lock().unwrap().load_monday_api_token();
-            let mut plan_clone = engine.lock().unwrap().plan().clone();
-            // For FullReimport: strip all previously-imported tasks and clear the
-            // item_node_map so import_from_monday treats every Monday item as new.
-            // Without clearing, import would find all items in `existing`, enter the
-            // (silent-fail) update path instead of the create path, and produce a plan
-            // with no Monday tasks while the old IDs remain in the map — causing each
-            // subsequent reimport to add another full set of duplicate tasks.
             let mut import_config = config.clone();
             if is_reimport {
-                // Clear everything so we start completely fresh — the whole
-                // point of Full Re-import is a clean slate, not a partial diff.
                 plan_clone.tasks.clear();
                 plan_clone.milestones.clear();
                 import_config.item_node_map.clear();
@@ -600,13 +667,23 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::MondayPush { plan_id } = &request {
             let plan_id = *plan_id;
+            let plan_snapshot_opt = {
+                let eng_guard = engine.lock().unwrap();
+                eng_guard.as_ref().map(|e| e.plan().clone())
+            };
+            let Some(plan_snapshot) = plan_snapshot_opt else {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::NoPlanActive),
+                });
+                continue;
+            };
             let config = storage
                 .lock()
                 .unwrap()
                 .load_monday_config(plan_id)
                 .unwrap_or_default();
             let token = storage.lock().unwrap().load_monday_api_token();
-            let plan_snapshot = engine.lock().unwrap().plan().clone();
             let item_node_map = config.item_node_map.clone();
             let tx = monday_tx.clone();
             let storage_clone = Arc::clone(&storage);
@@ -883,37 +960,124 @@ pub(crate) fn handle_protocol(
             });
             continue;
         }
+
+        // ── Version history ────────────────────────────────────────────────
+        if let PlanRequest::ListPlanVersions { plan_id } = &request {
+            let versions = storage
+                .lock()
+                .unwrap()
+                .list_versions(*plan_id)
+                .unwrap_or_default();
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanVersionList(versions),
+            });
+            continue;
+        }
+
+        if let PlanRequest::RestorePlanVersion { plan_id, version } = &request {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            let plan_id = *plan_id;
+            let version = version.clone();
+            // Save current plan as a new snapshot so the restore can be undone.
+            {
+                let eng_guard = engine.lock().unwrap();
+                if let Some(eng) = eng_guard.as_ref() {
+                    let _ = storage.lock().unwrap().save(eng.plan());
+                }
+            }
+            let load_result = storage.lock().unwrap().load_version(plan_id, &version);
+            match load_result {
+                Ok(restored_plan) => {
+                    let restored_clone = {
+                        let mut eng_guard = engine.lock().unwrap();
+                        *eng_guard = Some(PlanEngine::new(restored_plan));
+                        let eng_ref = eng_guard.as_ref().unwrap();
+                        let _ = storage.lock().unwrap().save(eng_ref.plan());
+                        eng_ref.plan().clone()
+                    };
+                    let has_monday = storage
+                        .lock()
+                        .unwrap()
+                        .load_monday_config(restored_clone.id)
+                        .is_some();
+                    if send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    })
+                    .is_err()
+                    {
+                        break;
+                    }
+                    if send(&ServerMessage::PlanState {
+                        plan: Box::new(restored_clone.clone()),
+                        has_monday_integration: has_monday,
+                    })
+                    .is_err()
+                    {
+                        break;
+                    }
+                    broadcast_plan_state(session_id, &registry, &restored_clone, has_monday);
+                }
+                Err(e) => {
+                    eprintln!("[{peer}] restore error: {e}");
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(format!(
+                            "Failed to restore version: {e}"
+                        ))),
+                    });
+                }
+            }
+            continue;
+        }
         // ── End auth PlanRequest handlers ───────────────────────────────────
 
         let response = {
-            let mut eng = engine.lock().unwrap();
-            eng.apply_request(request)
+            let mut eng_guard = engine.lock().unwrap();
+            if let Some(eng) = eng_guard.as_mut() {
+                eng.apply_request(request)
+            } else {
+                PlanResponse::Error(PlanError::NoPlanActive)
+            }
         };
         let plan_changed = matches!(response, PlanResponse::PlanUpdated);
         if send(&ServerMessage::Response { id, response }).is_err() {
             break;
         }
         if plan_changed {
-            let (changed_plan, has_monday_integration) = {
-                let eng = engine.lock().unwrap();
-                let _ = storage.lock().unwrap().save(eng.plan());
-                let plan = eng.plan().clone();
-                let has_monday = storage
-                    .lock()
-                    .unwrap()
-                    .load_monday_config(plan.id)
-                    .is_some();
-                (plan, has_monday)
+            let changed = {
+                let eng_guard = engine.lock().unwrap();
+                if let Some(eng) = eng_guard.as_ref() {
+                    let _ = storage.lock().unwrap().save(eng.plan());
+                    let plan = eng.plan().clone();
+                    let has_monday = storage
+                        .lock()
+                        .unwrap()
+                        .load_monday_config(plan.id)
+                        .is_some();
+                    Some((plan, has_monday))
+                } else {
+                    None
+                }
             };
-            if send(&ServerMessage::PlanState {
-                plan: Box::new(changed_plan.clone()),
-                has_monday_integration,
-            })
-            .is_err()
-            {
-                break;
+            if let Some((changed_plan, has_monday_integration)) = changed {
+                if send(&ServerMessage::PlanState {
+                    plan: Box::new(changed_plan.clone()),
+                    has_monday_integration,
+                })
+                .is_err()
+                {
+                    break;
+                }
+                broadcast_plan_state(session_id, &registry, &changed_plan, has_monday_integration);
             }
-            broadcast_plan_state(session_id, &registry, &changed_plan, has_monday_integration);
         }
     }
     eprintln!("[disconnect] {peer}: disconnected (served {request_count} requests)");

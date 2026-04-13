@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use auth::AuthDb;
-use plinko_shared::data::{Plan, Storage};
+use plinko_shared::data::Storage;
 
 fn parse_port_arg() -> Option<u16> {
     let args: Vec<String> = std::env::args().collect();
@@ -35,35 +35,6 @@ fn main() {
         }
     };
 
-    let plan = {
-        let ids = storage.list_plans().unwrap_or_default();
-        let mut best: Option<(String, uuid::Uuid)> = None;
-        for id in ids {
-            if let Ok(versions) = storage.list_versions(id)
-                && let Some(latest) = versions.last()
-                && best.as_ref().is_none_or(|(b, _)| latest > b)
-            {
-                best = Some((latest.clone(), id));
-            }
-        }
-        if let Some((_, id)) = best {
-            storage.load_latest(id).unwrap_or_else(|e| {
-                eprintln!("load error: {e}, creating new plan");
-                Plan::new("My Plan")
-            })
-        } else {
-            Plan::new("My Plan")
-        }
-    };
-
-    let plan = if !plan.node_allocations.has_schedule() {
-        let mut engine = engine::PlanEngine::new(plan);
-        let _ = engine.apply_request(plinko_shared::protocol::PlanRequest::RunScheduler);
-        engine.into_plan()
-    } else {
-        plan
-    };
-
     let port: u16 = parse_port_arg().unwrap_or_else(|| {
         std::env::var("PLINKO_PORT")
             .ok()
@@ -71,7 +42,8 @@ fn main() {
             .unwrap_or(7892)
     });
 
-    let engine = Arc::new(Mutex::new(engine::PlanEngine::new(plan)));
+    // Start with no active plan — each session auto-loads from user prefs on connect.
+    let engine: Arc<Mutex<Option<engine::PlanEngine>>> = Arc::new(Mutex::new(None));
     let storage = Arc::new(Mutex::new(storage));
 
     // Initialise the auth database.

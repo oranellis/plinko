@@ -199,6 +199,13 @@ pub enum PlanRequest {
     },
     ListPlans,
     SetCurrentUser(Option<UserId>),
+    ListPlanVersions {
+        plan_id: uuid::Uuid,
+    },
+    RestorePlanVersion {
+        plan_id: uuid::Uuid,
+        version: String,
+    },
     // Monday.com integration (handled server-side)
     MondayTestConnection {
         token: String,
@@ -294,6 +301,7 @@ pub enum PlanResponse {
     AuthUserCreated {
         user_id: String,
     },
+    PlanVersionList(Vec<String>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -306,6 +314,7 @@ pub enum PlanError {
     Monday(String),
     Unauthorized,
     AuthError(String),
+    NoPlanActive,
 }
 
 impl std::fmt::Display for PlanError {
@@ -324,11 +333,20 @@ impl std::fmt::Display for PlanError {
             PlanError::Monday(msg) => write!(f, "Monday.com error: {msg}"),
             PlanError::Unauthorized => write!(f, "Unauthorized — admin access required"),
             PlanError::AuthError(msg) => write!(f, "Auth error: {msg}"),
+            PlanError::NoPlanActive => {
+                write!(f, "No plan active — load or create a plan first")
+            }
         }
     }
 }
 
-pub const VERSION: &str = "0.2.0";
+pub const VERSION: &str = "0.3.0";
+
+/// Per-user server-side preferences.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct UserPrefs {
+    pub last_plan_id: Option<uuid::Uuid>,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type")]
@@ -344,6 +362,7 @@ pub enum ServerMessage {
         plan: Box<Plan>,
         has_monday_integration: bool,
     },
+    NoPlanActive,
     Response {
         id: u64,
         response: PlanResponse,
@@ -367,6 +386,7 @@ pub enum ServerMessage {
         user_id: String,
         email: String,
         is_admin: bool,
+        user_prefs: UserPrefs,
     },
     LoginFailed {
         message: String,
