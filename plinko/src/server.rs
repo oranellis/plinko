@@ -183,27 +183,41 @@ pub(crate) fn handle_protocol(
     // ── End auth phase ─────────────────────────────────────────────────────
 
     // Determine the initial state to send. If no plan is active, try to auto-load
-    // from the user's last-plan preference. Hold the engine lock throughout so two
-    // concurrent connections don't both trigger an auto-load.
-    let initial_plan_info: Option<(Plan, bool)> = {
-        let mut eng_guard = engine.lock().unwrap();
-        if eng_guard.is_none() {
-            // Try to auto-load the user's last active plan.
+    // from the user's last-plan preference.
+    //
+    // All disk I/O is done *before* acquiring the engine lock so the lock is held
+    // only for the brief check-and-set, preventing concurrent connections from
+    // blocking each other for the duration of file reads.
+    let auto_load_candidate: Option<Plan> =
+        if engine.lock().unwrap_or_else(|e| e.into_inner()).is_none() {
             if let Some(plan_id) = auth_db.get_user_last_plan(&session.user_id) {
                 let all_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
                 let visible =
                     auth_db.filter_visible_plans(&session.user_id, session.is_admin, &all_ids);
                 if visible.contains(&plan_id) {
+                    eprintln!("[connect] {peer}: auto-loading plan {plan_id}");
                     match storage.lock().unwrap().load_latest(plan_id) {
-                        Ok(plan) => {
-                            let new_eng = PlanEngine::new(plan);
-                            let _ = storage.lock().unwrap().save(new_eng.plan());
-                            *eng_guard = Some(new_eng);
+                        Ok(plan) => Some(plan),
+                        Err(e) => {
+                            eprintln!("[connect] {peer}: auto-load failed: {e}");
+                            None
                         }
-                        Err(e) => eprintln!("[connect] {peer}: auto-load failed: {e}"),
                     }
+                } else {
+                    None
                 }
+            } else {
+                None
             }
+        } else {
+            None
+        };
+
+    let initial_plan_info: Option<(Plan, bool)> = {
+        let mut eng_guard = engine.lock().unwrap_or_else(|e| e.into_inner());
+        // If the engine is still empty and we pre-loaded a plan, set it now.
+        if eng_guard.is_none() && let Some(plan) = auto_load_candidate {
+            *eng_guard = Some(PlanEngine::new(plan));
         }
         if let Some(eng) = eng_guard.as_ref() {
             let plan = eng.plan().clone();
