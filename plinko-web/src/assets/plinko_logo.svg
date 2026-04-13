@@ -1,192 +1,58 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
    width="400"
+   height="400"
    viewBox="0 0 400 400"
    role="img"
    version="1.1"
-   id="svg15"
-   sodipodi:docname="plinko_logo.svg"
-   height="400"
-   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg"
-   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-   xmlns:cc="http://creativecommons.org/ns#"
-   xmlns:dc="http://purl.org/dc/elements/1.1/">
-  <sodipodi:namedview
-     id="namedview15"
-     pagecolor="#505050"
-     bordercolor="#ffffff"
-     borderopacity="1"
-     inkscape:showpageshadow="0"
-     inkscape:pageopacity="0"
-     inkscape:pagecheckerboard="1"
-     inkscape:deskcolor="#505050"
-     showgrid="false"
-     inkscape:zoom="1.7588235"
-     inkscape:cx="218.04348"
-     inkscape:cy="209.79933"
-     inkscape:window-width="1920"
-     inkscape:window-height="1080"
-     inkscape:window-x="0"
-     inkscape:window-y="0"
-     inkscape:window-maximized="1"
-     inkscape:current-layer="svg15" />
-  <title
-     id="title1">Plinko board — 3-2-3 rows with ball between pegs 1 and 2</title>
-  <desc
-     id="desc1">A minimal plinko board with three rows of flat gray pegs in a 3-2-3 pattern and a shiny ball between the first and second peg of the top row.</desc>
-  <defs
-     id="defs6">
-    <radialGradient
-       id="ball-shine"
-       cx="270.35001"
-       cy="138.8"
-       r="18.6"
-       fx="270.35001"
-       fy="138.8"
-       gradientUnits="userSpaceOnUse"
-       gradientTransform="matrix(2,0,0,2,-250.55183,-152.3913)">
-      <stop
-         offset="0%"
-         stop-color="#ffffff"
-         stop-opacity="0.95"
-         id="stop1" />
-      <stop
-         offset="30%"
-         stop-color="#a8d8ff"
-         stop-opacity="0.9"
-         id="stop2" />
-      <stop
-         offset="70%"
-         stop-color="#3080d0"
-         stop-opacity="1"
-         id="stop3" />
-      <stop
-         offset="100%"
-         stop-color="#0a3060"
-         stop-opacity="1"
-         id="stop4" />
+   xmlns="http://www.w3.org/2000/svg">
+  <title>Plinko board — 3-2-3 rows with shiny pegs</title>
+  <desc>A minimal plinko board with three rows of shiny pegs in a 3-2-3 pattern.</desc>
+  <defs>
+    <radialGradient id="peg-shine" cx="35%" cy="28%" r="65%" fx="35%" fy="28%">
+      <stop offset="0%"   stop-color="#e8ddd8" stop-opacity="1"/>
+      <stop offset="35%"  stop-color="#b8a8a0" stop-opacity="1"/>
+      <stop offset="75%"  stop-color="#7a6a64" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#4a3a36" stop-opacity="1"/>
     </radialGradient>
-    <radialGradient
-       id="ball-reflect"
-       cx="278"
-       cy="151.60001"
-       r="9"
-       fx="278"
-       fy="151.60001"
-       gradientUnits="userSpaceOnUse"
-       gradientTransform="matrix(2,0,0,2,-250.55183,-152.3913)">
-      <stop
-         offset="0%"
-         stop-color="#6ab4ff"
-         stop-opacity="0.5"
-         id="stop5" />
-      <stop
-         offset="100%"
-         stop-color="#6ab4ff"
-         stop-opacity="0"
-         id="stop6" />
+    <radialGradient id="peg-reflect" cx="62%" cy="70%" r="28%" fx="62%" fy="70%">
+      <stop offset="0%"   stop-color="#c8b8b0" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#c8b8b0" stop-opacity="0"/>
     </radialGradient>
   </defs>
-  <!-- Row 1 pegs (y=80) -->
-  <circle
-     cx="70"
-     cy="70"
-     fill="#9a9a9a"
-     style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:#9e8d86;stroke:none;stroke-width:1.50001px;stroke-linecap:butt;stroke-linejoin:miter;fill-opacity:1"
-     id="circle6"
-     r="18" />
-  <circle
-     cx="200.00005"
-     cy="70"
-     r="18"
-     fill="#9a9a9a"
-     style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:#9e8d86;stroke:none;stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;fill-opacity:1"
-     id="circle7" />
-  <circle
-     cx="330.00006"
-     cy="70"
-     r="18"
-     fill="#9a9a9a"
-     style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:#9e8d86;stroke:none;stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;fill-opacity:1"
-     id="circle8" />
-  <!-- Row 2 pegs (y=210) -->
-  <circle
-     cx="135.00005"
-     cy="200"
-     r="18"
-     fill="#9a9a9a"
-     style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:#9e8d86;stroke:none;stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;fill-opacity:1"
-     id="circle9" />
-  <circle
-     cx="265.00006"
-     cy="200"
-     r="18"
-     fill="#9a9a9a"
-     style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:#9e8d86;stroke:none;stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;fill-opacity:1"
-     id="circle10" />
-  <!-- Row 3 pegs (y=340) -->
-  <circle
-     cx="70.000046"
-     cy="330"
-     r="18"
-     fill="#9a9a9a"
-     style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:#9e8d86;stroke:none;stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;fill-opacity:1"
-     id="circle11" />
-  <circle
-     cx="200.00005"
-     cy="330"
-     r="18"
-     fill="#9a9a9a"
-     style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:#9e8d86;stroke:none;stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;fill-opacity:1"
-     id="circle12" />
-  <circle
-     cx="330.00006"
-     cy="330"
-     r="18"
-     fill="#9a9a9a"
-     style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:#9e8d86;stroke:none;stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;fill-opacity:1"
-     id="circle13" />
-  <!-- Shiny ball — horizontally between peg 1 (x=210) and peg 2 (x=340), midpoint x=275 -->
-  <g
-     id="g15"
-     transform="translate(-138.44815,-1.6086884)">
-    <circle
-       cx="299.44815"
-       cy="137.60869"
-       r="30"
-       fill="url(#ball-shine)"
-       stroke="#2060a0"
-       stroke-width="1"
-       style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:url(#ball-shine);stroke:#2060a0;stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter"
-       id="circle14" />
-    <circle
-       cx="299.44815"
-       cy="137.60869"
-       r="30"
-       fill="url(#ball-reflect)"
-       style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:1;fill:url(#ball-reflect);stroke:none;stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter"
-       id="circle15" />
-    <ellipse
-       cx="292.44815"
-       cy="129.60869"
-       rx="10"
-       ry="7"
-       fill="white"
-       opacity="0.75"
-       style="color:#fbfbfe;font-weight:400;font-size:16px;font-family:sans-serif, 'Anthropic Sans', '-apple-system', BlinkMacSystemFont, 'Segoe UI';dominant-baseline:auto;text-anchor:start;opacity:0.75;fill:#ffffff;stroke:none;stroke-width:2px;stroke-linecap:butt;stroke-linejoin:miter"
-       id="ellipse15" />
-  </g>
-  <metadata
-     id="metadata15">
-    <rdf:RDF>
-      <cc:Work
-         rdf:about="">
-        <dc:title>Plinko board — 3-2-3 rows with ball between pegs 1 and 2</dc:title>
-      </cc:Work>
-    </rdf:RDF>
-  </metadata>
+
+  <!-- Row 1 pegs (y=70) -->
+  <ellipse cx="70"  cy="70" rx="48" ry="48" fill="url(#peg-shine)"/>
+  <ellipse cx="70"  cy="70" rx="48" ry="48" fill="url(#peg-reflect)"/>
+  <ellipse cx="70"  cy="55" rx="16" ry="9"  fill="white" opacity="0.22"/>
+
+  <ellipse cx="200" cy="70" rx="48" ry="48" fill="url(#peg-shine)"/>
+  <ellipse cx="200" cy="70" rx="48" ry="48" fill="url(#peg-reflect)"/>
+  <ellipse cx="200" cy="55" rx="16" ry="9"  fill="white" opacity="0.22"/>
+
+  <ellipse cx="330" cy="70" rx="48" ry="48" fill="url(#peg-shine)"/>
+  <ellipse cx="330" cy="70" rx="48" ry="48" fill="url(#peg-reflect)"/>
+  <ellipse cx="330" cy="55" rx="16" ry="9"  fill="white" opacity="0.22"/>
+
+  <!-- Row 2 pegs (y=200) -->
+  <ellipse cx="135" cy="200" rx="48" ry="48" fill="url(#peg-shine)"/>
+  <ellipse cx="135" cy="200" rx="48" ry="48" fill="url(#peg-reflect)"/>
+  <ellipse cx="135" cy="185" rx="16" ry="9"  fill="white" opacity="0.22"/>
+
+  <ellipse cx="265" cy="200" rx="48" ry="48" fill="url(#peg-shine)"/>
+  <ellipse cx="265" cy="200" rx="48" ry="48" fill="url(#peg-reflect)"/>
+  <ellipse cx="265" cy="185" rx="16" ry="9"  fill="white" opacity="0.22"/>
+
+  <!-- Row 3 pegs (y=330) -->
+  <ellipse cx="70"  cy="330" rx="48" ry="48" fill="url(#peg-shine)"/>
+  <ellipse cx="70"  cy="330" rx="48" ry="48" fill="url(#peg-reflect)"/>
+  <ellipse cx="70"  cy="315" rx="16" ry="9"  fill="white" opacity="0.22"/>
+
+  <ellipse cx="200" cy="330" rx="48" ry="48" fill="url(#peg-shine)"/>
+  <ellipse cx="200" cy="330" rx="48" ry="48" fill="url(#peg-reflect)"/>
+  <ellipse cx="200" cy="315" rx="16" ry="9"  fill="white" opacity="0.22"/>
+
+  <ellipse cx="330" cy="330" rx="48" ry="48" fill="url(#peg-shine)"/>
+  <ellipse cx="330" cy="330" rx="48" ry="48" fill="url(#peg-reflect)"/>
+  <ellipse cx="330" cy="315" rx="16" ry="9"  fill="white" opacity="0.22"/>
 </svg>

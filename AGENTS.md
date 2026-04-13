@@ -20,7 +20,7 @@ cargo test                      # run all tests
 cargo test <filter>             # run a single test, e.g. `cargo test strict_multi_worker`
 ```
 
-**Mandatory after every code change**: run `cargo fmt` (whole workspace), then `cargo clippy`. All clippy warnings must be resolved before committing.
+**Mandatory after every code change**: run `cargo fmt` (whole workspace), then `cargo clippy`. All clippy warnings must be resolved before committing. If any Rust source files are changed (including `Cargo.toml` dependency changes), always stage and commit `Cargo.lock` in the same commit.
 
 ### Frontend (run from `plinko-web/`)
 
