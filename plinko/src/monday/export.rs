@@ -92,6 +92,18 @@ fn compute_push_diff(
         &timeline_col,
     )?;
 
+    // When using subitems, the effective board ID for mutations is different from
+    // the main board. Fetch it once here so we can use it as a fallback for map
+    // entries whose board_id field is empty (saved before this field was introduced).
+    let subitems_board_id: Option<String> = if config.use_subitems {
+        client
+            .fetch_subitem_board_id(&config.board_id)
+            .ok()
+            .filter(|s| !s.is_empty())
+    } else {
+        None
+    };
+
     let monday_map: HashMap<&str, &plinko_shared::monday::MondayItem> =
         monday_items.iter().map(|i| (i.id.as_str(), i)).collect();
 
@@ -265,10 +277,12 @@ fn compute_push_diff(
 
     for mapping in &working_map {
         let monday_item_id = &mapping.monday_item_id;
-        let board_id = if mapping.board_id.is_empty() {
-            &config.board_id
+        let board_id = if !mapping.board_id.is_empty() {
+            mapping.board_id.as_str()
+        } else if let Some(ref sub_bid) = subitems_board_id {
+            sub_bid.as_str()
         } else {
-            &mapping.board_id
+            config.board_id.as_str()
         };
         let current = monday_map.get(monday_item_id.as_str());
 
@@ -345,7 +359,7 @@ fn compute_push_diff(
             });
             if needs_update {
                 ops.push(PushOp {
-                    board_id: board_id.clone(),
+                    board_id: board_id.to_owned(),
                     item_id: monday_item_id.clone(),
                     kind: PushKind::Timeline {
                         from,
@@ -372,7 +386,7 @@ fn compute_push_diff(
                     current.is_none_or(|item| item.status_label.as_deref() != Some(label));
                 if needs_update {
                     ops.push(PushOp {
-                        board_id: board_id.clone(),
+                        board_id: board_id.to_owned(),
                         item_id: monday_item_id.clone(),
                         kind: PushKind::Status {
                             label: label.to_string(),
@@ -398,7 +412,7 @@ fn compute_push_diff(
             });
             if needs_update {
                 ops.push(PushOp {
-                    board_id: board_id.clone(),
+                    board_id: board_id.to_owned(),
                     item_id: monday_item_id.clone(),
                     kind: PushKind::Deps {
                         dep_ids: plinko_dep_ids,
@@ -421,7 +435,7 @@ fn compute_push_diff(
             });
             if needs_update {
                 ops.push(PushOp {
-                    board_id: board_id.clone(),
+                    board_id: board_id.to_owned(),
                     item_id: monday_item_id.clone(),
                     kind: PushKind::Person {
                         monday_user_ids: plinko_user_ids,
@@ -440,7 +454,7 @@ fn compute_push_diff(
             let needs_update = current.is_none_or(|item| item.name.trim() != name.trim());
             if needs_update {
                 ops.push(PushOp {
-                    board_id: board_id.clone(),
+                    board_id: board_id.to_owned(),
                     item_id: monday_item_id.clone(),
                     kind: PushKind::Name {
                         name: name.to_string(),
@@ -460,7 +474,7 @@ fn compute_push_diff(
             });
             if needs_update {
                 ops.push(PushOp {
-                    board_id: board_id.clone(),
+                    board_id: board_id.to_owned(),
                     item_id: monday_item_id.clone(),
                     kind: PushKind::Workload { value: plinko_wl },
                 });

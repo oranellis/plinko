@@ -166,10 +166,12 @@ impl MondayClient {
     ///
     /// Returns an empty string if the board has no items or no subitems.
     pub fn fetch_subitem_board_id(&self, board_id: &str) -> Result<String, MondayApiError> {
+        // Scan up to 50 items to find one that actually has subitems — the first
+        // item on the board may be a placeholder with no subitems attached.
         let query = format!(
             r#"query {{
                 boards(ids: [{board_id}]) {{
-                    items_page(limit: 1) {{
+                    items_page(limit: 50) {{
                         items {{
                             subitems {{ board {{ id }} }}
                         }}
@@ -178,11 +180,20 @@ impl MondayClient {
             }}"#
         );
         let resp = self.graphql(&query)?;
-        let id = resp["data"]["boards"][0]["items_page"]["items"][0]["subitems"][0]["board"]["id"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-        Ok(id)
+        if let Some(items) = resp["data"]["boards"][0]["items_page"]["items"].as_array() {
+            for item in items {
+                if let Some(subitems) = item["subitems"].as_array()
+                    && let Some(first) = subitems.first()
+                    && let Some(id) = first["board"]["id"].as_str()
+                    && !id.is_empty()
+                {
+                    return Ok(id.to_string());
+                }
+            }
+        }
+        Err(MondayApiError(
+            "no subitems found on board — cannot determine subitems board ID".to_string(),
+        ))
     }
 
     /// Fetch all items and subitems from a board.
