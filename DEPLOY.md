@@ -71,10 +71,18 @@ sudo ./deploy/setup.sh --domain plinko.example.com --email admin@example.com --s
 
 ### Updating to a new version
 
-The systemd service automatically pulls the latest image on each restart:
+Use the `deploy/update.sh` script for a verbose, verified update:
 
 ```bash
-sudo systemctl restart plinko
+sudo ./deploy/update.sh
+```
+
+The script pulls the latest image, gracefully stops the service, restarts it with
+the new image, waits for the health check, and confirms HTTPS is responding.
+
+To update to a specific image tag:
+```bash
+sudo ./deploy/update.sh --image ghcr.io/oranellis/plinko:v1.2.3
 ```
 
 ### Manual management (without systemd)
