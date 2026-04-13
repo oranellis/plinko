@@ -19,10 +19,6 @@ impl PlanEngine {
         &self.plan
     }
 
-    pub fn into_plan(self) -> Plan {
-        self.plan
-    }
-
     fn apply_validated<F>(&mut self, f: F) -> PlanResponse
     where
         F: FnOnce(&mut Plan) -> Result<(), PlanError>,

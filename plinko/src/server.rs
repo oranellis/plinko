@@ -314,10 +314,10 @@ pub(crate) fn handle_protocol(
         if matches!(&request, PlanRequest::SavePlan) {
             eprintln!("[{peer}] SavePlan");
             let eng = engine.lock().unwrap();
-            if let Some(eng) = eng.as_ref() {
-                if let Err(e) = storage.lock().unwrap().save(eng.plan()) {
-                    eprintln!("[{peer}] save error: {e}");
-                }
+            if let Some(eng) = eng.as_ref()
+                && let Err(e) = storage.lock().unwrap().save(eng.plan())
+            {
+                eprintln!("[{peer}] save error: {e}");
             }
             if send(&ServerMessage::Response {
                 id,
