@@ -243,6 +243,7 @@ impl PlanEngine {
             | PlanRequest::MondayPull { .. }
             | PlanRequest::MondayFullReimport { .. }
             | PlanRequest::MondayPush { .. }
+            | PlanRequest::MondayPushPreview { .. }
             | PlanRequest::SaveMondayConfig { .. }
             | PlanRequest::LoadMondayConfig { .. }
             | PlanRequest::LoadMondayApiToken

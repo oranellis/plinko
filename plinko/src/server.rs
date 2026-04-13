@@ -216,7 +216,9 @@ pub(crate) fn handle_protocol(
     let initial_plan_info: Option<(Plan, bool)> = {
         let mut eng_guard = engine.lock().unwrap_or_else(|e| e.into_inner());
         // If the engine is still empty and we pre-loaded a plan, set it now.
-        if eng_guard.is_none() && let Some(plan) = auto_load_candidate {
+        if eng_guard.is_none()
+            && let Some(plan) = auto_load_candidate
+        {
             *eng_guard = Some(PlanEngine::new(plan));
         }
         if let Some(eng) = eng_guard.as_ref() {
@@ -674,6 +676,42 @@ pub(crate) fn handle_protocol(
             })
             .is_err()
             {
+                break;
+            }
+            continue;
+        }
+
+        if let PlanRequest::MondayPushPreview { plan_id } = &request {
+            let plan_id = *plan_id;
+            let plan_snapshot_opt = {
+                let eng_guard = engine.lock().unwrap();
+                eng_guard.as_ref().map(|e| e.plan().clone())
+            };
+            let Some(plan_snapshot) = plan_snapshot_opt else {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::NoPlanActive),
+                });
+                continue;
+            };
+            let config = storage
+                .lock()
+                .unwrap()
+                .load_monday_config(plan_id)
+                .unwrap_or_default();
+            let token = storage.lock().unwrap().load_monday_api_token();
+            let item_node_map = config.item_node_map.clone();
+            let client = MondayClient::new(&token);
+            let response =
+                match export::preview_push_counts(&client, &config, &plan_snapshot, &item_node_map)
+                {
+                    Ok((op_count, new_item_count)) => PlanResponse::MondayPushPreview {
+                        op_count,
+                        new_item_count,
+                    },
+                    Err(e) => PlanResponse::Error(PlanError::Monday(e.to_string())),
+                };
+            if send(&ServerMessage::Response { id, response }).is_err() {
                 break;
             }
             continue;

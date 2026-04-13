@@ -38,6 +38,7 @@ export function MondayModal({ planId, onClose }: Props) {
   const [fetchStatus, setFetchStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [fetchMsg, setFetchMsg] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pushConfirm, setPushConfirm] = useState<{ op_count: number; new_item_count: number } | null>(null);
 
   // Load existing config AND api token on mount
   useEffect(() => {
@@ -163,6 +164,25 @@ export function MondayModal({ planId, onClose }: Props) {
     setSyncOp("push");
     try {
       await handleSaveConfig();
+      const preview = await sendRequest({ MondayPushPreview: { plan_id: planId } });
+      if (typeof preview === "object" && "MondayPushPreview" in preview) {
+        const { op_count, new_item_count } = preview.MondayPushPreview;
+        if (op_count > 10 || new_item_count > 0) {
+          setSyncOp(null);
+          setPushConfirm({ op_count, new_item_count });
+          return;
+        }
+      }
+      await sendRequest({ MondayPush: { plan_id: planId } });
+    } catch {
+      setSyncOp(null);
+    }
+  };
+
+  const handleConfirmedPush = async () => {
+    setPushConfirm(null);
+    setSyncOp("push");
+    try {
       await sendRequest({ MondayPush: { plan_id: planId } });
     } catch {
       setSyncOp(null);
@@ -194,6 +214,25 @@ export function MondayModal({ planId, onClose }: Props) {
   };
 
   const progressing = monday.progress !== null;
+
+  if (pushConfirm) {
+    const { op_count, new_item_count } = pushConfirm;
+    return (
+      <Modal title="Confirm Monday Push" onClose={() => setPushConfirm(null)} width={400}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <p style={{ margin: 0, lineHeight: 1.5 }}>
+            This push will make <strong>{op_count} field update{op_count !== 1 ? "s" : ""}</strong>
+            {new_item_count > 0 && <> and create <strong>{new_item_count} new item{new_item_count !== 1 ? "s" : ""}</strong></>} on Monday.com.
+            Are you sure you want to proceed?
+          </p>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button className="btn-secondary" onClick={() => setPushConfirm(null)}>Cancel</button>
+            <button className="btn-primary" onClick={handleConfirmedPush}>Push to Monday</button>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal title="Monday.com Integration" onClose={onClose} width={520} onSave={handleSaveConfig}>

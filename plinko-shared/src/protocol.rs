@@ -224,6 +224,11 @@ pub enum PlanRequest {
     MondayPush {
         plan_id: uuid::Uuid,
     },
+    /// Compute what a push would change without executing it.
+    /// Returns `PlanResponse::MondayPushPreview` with op and new-item counts.
+    MondayPushPreview {
+        plan_id: uuid::Uuid,
+    },
     SaveMondayConfig {
         plan_id: uuid::Uuid,
         config: Box<MondayConfig>,
@@ -289,6 +294,12 @@ pub enum PlanResponse {
     },
     MondayApiToken(String),
     MondayConnected(String),
+    /// Result of `MondayPushPreview`: number of field-level update ops and
+    /// number of new items that would be created on Monday.
+    MondayPushPreview {
+        op_count: usize,
+        new_item_count: usize,
+    },
     // Auth responses
     AuthUsers(Vec<AuthUser>),
     UserLinks(Vec<UserLink>),
@@ -340,7 +351,7 @@ impl std::fmt::Display for PlanError {
     }
 }
 
-pub const VERSION: &str = "0.3.9";
+pub const VERSION: &str = "0.3.10";
 
 /// Per-user server-side preferences.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

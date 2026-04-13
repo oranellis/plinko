@@ -331,6 +331,7 @@ export type PlanRequest =
   | { MondayPull: { plan_id: string } }
   | { MondayFullReimport: { plan_id: string } }
   | { MondayPush: { plan_id: string } }
+  | { MondayPushPreview: { plan_id: string } }
   | { SaveMondayConfig: { plan_id: string; config: MondayConfig; token: string } }
   | { LoadMondayConfig: { plan_id: string } }
   | "LoadMondayApiToken"
@@ -359,6 +360,7 @@ export type PlanResponse =
   | { MondayBoardInfo: { users: MondayUser[]; columns: BoardColumn[]; status_labels: string[] } }
   | { MondayApiToken: string }
   | { MondayConnected: string }
+  | { MondayPushPreview: { op_count: number; new_item_count: number } }
   | { AuthUsers: AuthUser[] }
   | { UserLinks: UserLink[] }
   | { AuthUserCreated: { user_id: string } }
@@ -444,4 +446,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.3.9";
+export const PROTOCOL_VERSION = "0.3.10";

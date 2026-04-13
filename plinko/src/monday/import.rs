@@ -125,16 +125,34 @@ pub fn import_from_monday(
                 updated += 1;
             }
         } else {
+            // Before creating a new node, check if an unmapped plan task/milestone
+            // already exists matching the Monday item (prevents duplicates on re-pull).
+            let already_mapped: std::collections::HashSet<NodeId> =
+                id_map.values().copied().collect();
+
             let node_id = if item.is_milestone {
                 // Don't import dropped milestones.
                 if resolve_status(item, config) == Status::Dropped {
                     continue;
                 }
-                let mut ms = Milestone::new(&item.name, "");
-                ms.context_label = ctx;
-                let ms_id = ms.id;
-                plan.add_milestone(ms);
-                NodeId::Milestone(ms_id)
+                // Reuse existing unmapped milestone with the same name if found.
+                if let Some(ms_id) = plan
+                    .milestones
+                    .iter()
+                    .find(|(mid, m)| {
+                        !already_mapped.contains(&NodeId::Milestone(**mid))
+                            && m.name.trim() == item.name.trim()
+                    })
+                    .map(|(mid, _)| *mid)
+                {
+                    NodeId::Milestone(ms_id)
+                } else {
+                    let mut ms = Milestone::new(&item.name, "");
+                    ms.context_label = ctx;
+                    let ms_id = ms.id;
+                    plan.add_milestone(ms);
+                    NodeId::Milestone(ms_id)
+                }
             } else {
                 // Skip tasks with no person assigned and no workload — they're empty placeholders.
                 let has_person = !item.assigned_user_ids.is_empty();
@@ -142,13 +160,28 @@ pub fn import_from_monday(
                 if !has_person && !has_workload {
                     continue;
                 }
-                let mut task = build_task(item, config);
-                task.context_label = ctx;
-                let task_id = task.id;
-                let status = resolve_status(item, config);
-                task_statuses.insert(task_id, (status, item.timeline_start, item.timeline_end));
-                plan.add_task(task);
-                NodeId::Task(task_id)
+                // Reuse an existing unmapped task that matches by name, workers, and workload.
+                if let Some(task_id) = plan
+                    .tasks
+                    .iter()
+                    .find(|(tid, t)| {
+                        !already_mapped.contains(&NodeId::Task(**tid))
+                            && task_matches_item(t, item, config)
+                    })
+                    .map(|(tid, _)| *tid)
+                {
+                    let status = resolve_status(item, config);
+                    task_statuses.insert(task_id, (status, item.timeline_start, item.timeline_end));
+                    NodeId::Task(task_id)
+                } else {
+                    let mut task = build_task(item, config);
+                    task.context_label = ctx;
+                    let task_id = task.id;
+                    let status = resolve_status(item, config);
+                    task_statuses.insert(task_id, (status, item.timeline_start, item.timeline_end));
+                    plan.add_task(task);
+                    NodeId::Task(task_id)
+                }
             };
             id_map.insert(item.id.clone(), node_id);
             created += 1;
@@ -406,4 +439,38 @@ fn resolve_status(item: &MondayItem, config: &MondayConfig) -> Status {
         .find(|m| &m.monday_label == label)
         .map(|m| m.plinko_status)
         .unwrap_or(Status::NotStarted)
+}
+
+/// Returns `true` if an existing plan task matches a Monday item closely enough
+/// to be treated as the same task for deduplication purposes.
+///
+/// Requires matching name, assigned workers (by plinko UserId), and total
+/// workload (within 0.5 days tolerance).
+fn task_matches_item(
+    task: &plinko_shared::data::task::Task,
+    item: &MondayItem,
+    config: &MondayConfig,
+) -> bool {
+    if task.name.trim() != item.name.trim() {
+        return false;
+    }
+
+    // Compare assigned plinko user IDs (as sorted sets).
+    let mut monday_users: Vec<_> = build_worker_ids(item, config);
+    monday_users.sort();
+    let mut plan_users: Vec<_> = task.assigned_users().collect();
+    plan_users.sort();
+    if monday_users != plan_users {
+        return false;
+    }
+
+    // Compare total workload (days), with 0.5-day tolerance.
+    let raw_workload = item.workload.unwrap_or(1.0);
+    let monday_days = if config.workload_in_hours {
+        raw_workload / 8.0
+    } else {
+        raw_workload
+    };
+    let plan_days: f32 = task.workers.iter().map(|w| w.workload_days()).sum();
+    (monday_days - plan_days).abs() < 0.5
 }

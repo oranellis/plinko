@@ -47,31 +47,33 @@ enum PushKind {
     },
 }
 
-/// Diff-based export: fetch current Monday state, compute what actually changed,
-/// then push only those updates. Also creates items on Monday for any plinko
-/// tasks/milestones that have no existing Monday mapping.
-///
-/// `on_progress` is called with `(done, total, message)` as work proceeds.
-///
-/// Returns the human-readable status message and the fully-updated item→node map
-/// (existing + newly-created entries). Callers should persist this map.
-pub fn export_to_monday_diff(
+/// Intermediate result of the diff-compute phases (1, 1b, 2).
+struct DiffResult {
+    ops: Vec<PushOp>,
+    working_map: Vec<ItemNodeMapping>,
+    skipped: usize,
+    new_item_count: usize,
+    timeline_col: String,
+    status_col: String,
+    dep_col: String,
+    person_col: String,
+    workload_col: String,
+}
+
+/// Fetch the current Monday board state, create items for unmapped plinko nodes,
+/// and compute the set of field-level update operations — without executing them.
+fn compute_push_diff(
     client: &MondayClient,
     config: &MondayConfig,
     plan: &Plan,
     item_node_map: &[ItemNodeMapping],
-    on_progress: impl Fn(usize, usize, &str),
-) -> Result<(String, Vec<ItemNodeMapping>), MondayApiError> {
-    let set_status = |msg: &str| {
-        eprintln!("[push] {msg}");
-        on_progress(0, 0, msg);
-    };
-
-    let timeline_col = &config.column_map.timeline_column_id;
-    let status_col = &config.column_map.status_column_id;
-    let dep_col = &config.column_map.dependency_column_id;
-    let person_col = &config.column_map.person_column_id;
-    let workload_col = &config.column_map.workload_column_id;
+    on_status: impl Fn(&str),
+) -> Result<DiffResult, MondayApiError> {
+    let timeline_col = config.column_map.timeline_column_id.clone();
+    let status_col = config.column_map.status_column_id.clone();
+    let dep_col = config.column_map.dependency_column_id.clone();
+    let person_col = config.column_map.person_column_id.clone();
+    let workload_col = config.column_map.workload_column_id.clone();
 
     if timeline_col.is_empty() {
         return Err(MondayApiError(
@@ -80,14 +82,14 @@ pub fn export_to_monday_diff(
     }
 
     // ── Phase 1: fetch current Monday state ───────────────────────────────────
-    set_status("Fetching current Monday board state...");
+    on_status("Fetching current Monday board state...");
     let monday_items = client.fetch_items(
         &config.board_id,
-        person_col,
-        status_col,
-        dep_col,
-        workload_col,
-        timeline_col,
+        &person_col,
+        &status_col,
+        &dep_col,
+        &workload_col,
+        &timeline_col,
     )?;
 
     let monday_map: HashMap<&str, &plinko_shared::monday::MondayItem> =
@@ -151,7 +153,7 @@ pub fn export_to_monday_diff(
     // ── Phase 1b: create Monday items for unmapped plinko nodes ───────────────
     // Build a mutable copy of the map so we can extend it with new entries.
     let mut working_map: Vec<ItemNodeMapping> = item_node_map.to_vec();
-    let mut created_count = 0usize;
+    let mut new_item_count = 0usize;
 
     // Collect all plinko node IDs that have no Monday mapping yet.
     let mapped_nodes: std::collections::HashSet<NodeId> =
@@ -169,7 +171,7 @@ pub fn export_to_monday_diff(
         .collect();
 
     if !unmapped_tasks.is_empty() || !unmapped_milestones.is_empty() {
-        set_status(&format!(
+        on_status(&format!(
             "Creating {} new item(s) on Monday...",
             unmapped_tasks.len() + unmapped_milestones.len()
         ));
@@ -220,7 +222,7 @@ pub fn export_to_monday_diff(
                 plinko_node_id: NodeId::Task(**task_id),
                 board_id,
             });
-            created_count += 1;
+            new_item_count += 1;
         }
 
         // Create unmapped milestones (always as top-level items).
@@ -236,7 +238,7 @@ pub fn export_to_monday_diff(
                 plinko_node_id: NodeId::Milestone(**ms_id),
                 board_id: config.board_id.clone(),
             });
-            created_count += 1;
+            new_item_count += 1;
         }
     }
 
@@ -257,7 +259,7 @@ pub fn export_to_monday_diff(
     };
 
     // ── Phase 2: compute diff ─────────────────────────────────────────────────
-    set_status("Computing changes...");
+    on_status("Computing changes...");
     let mut ops: Vec<PushOp> = Vec::new();
     let mut skipped = 0usize;
 
@@ -466,6 +468,64 @@ pub fn export_to_monday_diff(
         }
     }
 
+    Ok(DiffResult {
+        ops,
+        working_map,
+        skipped,
+        new_item_count,
+        timeline_col,
+        status_col,
+        dep_col,
+        person_col,
+        workload_col,
+    })
+}
+
+/// Preview how many updates a push would generate, without executing anything.
+///
+/// Returns `(op_count, new_item_count)`.
+pub fn preview_push_counts(
+    client: &MondayClient,
+    config: &MondayConfig,
+    plan: &Plan,
+    item_node_map: &[ItemNodeMapping],
+) -> Result<(usize, usize), MondayApiError> {
+    let result = compute_push_diff(client, config, plan, item_node_map, |msg| {
+        eprintln!("[preview] {msg}");
+    })?;
+    Ok((result.ops.len(), result.new_item_count))
+}
+
+/// Diff-based export: fetch current Monday state, compute what actually changed,
+/// then push only those updates. Also creates items on Monday for any plinko
+/// tasks/milestones that have no existing Monday mapping.
+///
+/// `on_progress` is called with `(done, total, message)` as work proceeds.
+///
+/// Returns the human-readable status message and the fully-updated item→node map
+/// (existing + newly-created entries). Callers should persist this map.
+pub fn export_to_monday_diff(
+    client: &MondayClient,
+    config: &MondayConfig,
+    plan: &Plan,
+    item_node_map: &[ItemNodeMapping],
+    on_progress: impl Fn(usize, usize, &str),
+) -> Result<(String, Vec<ItemNodeMapping>), MondayApiError> {
+    let DiffResult {
+        ops,
+        working_map,
+        skipped,
+        new_item_count: created_count,
+        timeline_col,
+        status_col,
+        dep_col,
+        person_col,
+        workload_col,
+    } = compute_push_diff(client, config, plan, item_node_map, |msg| {
+        eprintln!("[push] {msg}");
+        on_progress(0, 0, msg);
+    })?;
+
     // ── Phase 3: execute ops with progress tracking ───────────────────────────
     let total = ops.len();
     eprintln!("[push] Phase 3: {total} ops to execute ({skipped} items skipped)");
@@ -479,11 +539,14 @@ pub fn export_to_monday_diff(
         } else {
             format!("Nothing to update ({skipped} items skipped — already up to date).")
         };
-        set_status(&msg);
+        eprintln!("[push] {msg}");
+        on_progress(0, 0, &msg);
         return Ok((msg, working_map));
     }
 
-    set_status(&format!("Pushing {total} update(s) to Monday..."));
+    let status_msg = format!("Pushing {total} update(s) to Monday...");
+    eprintln!("[push] {status_msg}");
+    on_progress(0, 0, &status_msg);
 
     let mut updated = 0usize;
     let mut failed = 0usize;
@@ -511,24 +574,24 @@ pub fn export_to_monday_diff(
             } => client.update_timeline(
                 &op.board_id,
                 &op.item_id,
-                timeline_col,
+                &timeline_col,
                 &from,
                 &to,
                 is_milestone,
             ),
             PushKind::Status { label } => {
-                client.update_status(&op.board_id, &op.item_id, status_col, &label)
+                client.update_status(&op.board_id, &op.item_id, &status_col, &label)
             }
             PushKind::Deps { dep_ids } => {
                 let dep_refs: Vec<&str> = dep_ids.iter().map(|s| s.as_str()).collect();
-                client.update_dependencies(&op.board_id, &op.item_id, dep_col, &dep_refs)
+                client.update_dependencies(&op.board_id, &op.item_id, &dep_col, &dep_refs)
             }
             PushKind::Person { monday_user_ids } => {
                 let refs: Vec<&str> = monday_user_ids.iter().map(|s| s.as_str()).collect();
-                client.update_person(&op.board_id, &op.item_id, person_col, &refs)
+                client.update_person(&op.board_id, &op.item_id, &person_col, &refs)
             }
             PushKind::Workload { value } => {
-                client.update_workload(&op.board_id, &op.item_id, workload_col, value)
+                client.update_workload(&op.board_id, &op.item_id, &workload_col, value)
             }
             PushKind::Name { name } => client.rename_item(&op.board_id, &op.item_id, &name),
         };
