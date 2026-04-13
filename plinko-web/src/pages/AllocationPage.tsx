@@ -631,7 +631,8 @@ export function AllocationPage() {
 
         const lines: string[] = [];
         lines.push(displayName(task.name, task.context_label ?? null));
-        lines.push(`Status: ${state.status}`);
+        const mondaySuffix = mondayLinkedIds.has(hoveredTaskId) ? " (Linked to Monday ✓)" : "";
+        lines.push(`Status: ${state.status}${mondaySuffix}`);
         const schedStart = "Fixed" in state.allocation ? state.allocation.Fixed.start_date : state.allocation.Dynamic.scheduled_start_date;
         lines.push(`Scheduled: ${schedStart}`);
         const endDate = "Fixed" in state.allocation ? state.allocation.Fixed.end_date : state.allocation.Dynamic.scheduled_end_date;
@@ -644,7 +645,6 @@ export function AllocationPage() {
           return ["(unassigned)"];
         });
         if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
-        if (mondayLinkedIds.has(hoveredTaskId)) lines.push("Linked to Monday ✓");
 
         ctx.save();
         ctx.resetTransform();

@@ -47,6 +47,7 @@ export function OverviewPage() {
   // Hover / flash
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
+  const [flashAlpha, setFlashAlpha] = useState(1.0);
 
   // Monday-linked node IDs (set of raw task/milestone UUID strings)
   const [mondayLinkedIds, setMondayLinkedIds] = useState<Set<string>>(new Set());
@@ -132,6 +133,26 @@ export function OverviewPage() {
   }, [plan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const items = useMemo(() => plan ? packGanttRows(plan) : [], [plan]);
+
+  // Nodes with no forward dependents (nothing depends on them)
+  const leafNodeIds = useMemo((): Set<string> => {
+    if (!plan) return new Set();
+    const nonLeaves = new Set<string>();
+    const markNonLeaf = (nid: unknown) => {
+      if (typeof nid === "object" && nid !== null) {
+        if ("Task" in (nid as object)) nonLeaves.add((nid as { Task: string }).Task);
+        else if ("Milestone" in (nid as object)) nonLeaves.add((nid as { Milestone: string }).Milestone);
+      }
+    };
+    for (const task of Object.values(plan.tasks)) {
+      for (const dep of task.dependencies) markNonLeaf(dep.id);
+    }
+    for (const ms of Object.values(plan.milestones)) {
+      for (const dep of ms.dependencies) markNonLeaf(dep.id);
+    }
+    const allIds = new Set<string>([...Object.keys(plan.tasks), ...Object.keys(plan.milestones)]);
+    return new Set([...allIds].filter(id => !nonLeaves.has(id)));
+  }, [plan]);
 
   // Scroll limits
   const maxRows = items.length > 0 ? Math.max(...items.map((i) => i.row)) + 1 : 1;
@@ -376,8 +397,23 @@ export function OverviewPage() {
         roundRect(ctx, x, y, barW, barH, 6);
         ctx.fill();
 
+        // Leaf node indicator — blue gradient on right edge
+        if (leafNodeIds.has(item.id)) {
+          const gradW = Math.min(28, barW);
+          const grad = ctx.createLinearGradient(x + barW - gradW, 0, x + barW, 0);
+          grad.addColorStop(0, "rgba(30, 136, 229, 0)");
+          grad.addColorStop(1, "rgba(30, 136, 229, 0.65)");
+          ctx.fillStyle = grad;
+          ctx.save();
+          ctx.beginPath();
+          roundRect(ctx, x, y, barW, barH, 6);
+          ctx.clip();
+          ctx.fillRect(x + barW - gradW, y, gradW, barH);
+          ctx.restore();
+        }
+
         // Border: coloured for dep relationships, gold for target, red flash
-        const borderColor = isFlashing ? "#e53935"
+        const borderColor = isFlashing ? `rgba(229, 57, 53, ${flashAlpha})`
           : isTarget ? "#ffd600"
           : isHovered ? "#1e88e5"
           : isDepOf ? "#fc1ef1"
@@ -420,7 +456,7 @@ export function OverviewPage() {
         ctx.closePath();
         ctx.fill();
 
-        const psBorderColor = isFlashing ? "#e53935"
+        const psBorderColor = isFlashing ? `rgba(229, 57, 53, ${flashAlpha})`
           : isTarget ? "#ffd600"
           : isHovered ? "#1e88e5"
           : isDepOf ? "#fc1ef1"
@@ -473,8 +509,27 @@ export function OverviewPage() {
         ctx.closePath();
         ctx.fill();
 
+        // Leaf node indicator — blue gradient on right edge of diamond
+        if (leafNodeIds.has(item.id)) {
+          const gradW = Math.min(28, r * 2);
+          const grad = ctx.createLinearGradient(cx + r - gradW, 0, cx + r, 0);
+          grad.addColorStop(0, "rgba(30, 136, 229, 0)");
+          grad.addColorStop(1, "rgba(30, 136, 229, 0.65)");
+          ctx.fillStyle = grad;
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(cx, cy - r);
+          ctx.lineTo(cx + r, cy);
+          ctx.lineTo(cx, cy + r);
+          ctx.lineTo(cx - r, cy);
+          ctx.closePath();
+          ctx.clip();
+          ctx.fillRect(cx + r - gradW, cy - r, gradW, r * 2);
+          ctx.restore();
+        }
+
         // Border
-        const borderColor = isFlashing ? "#e53935"
+        const borderColor = isFlashing ? `rgba(229, 57, 53, ${flashAlpha})`
           : isTarget ? "#ffd600"
           : isHovered ? "#1e88e5"
           : isDepOf ? "#fc1ef1"
@@ -534,7 +589,8 @@ export function OverviewPage() {
         lines.push(tname);
         const taskState = plan.node_allocations.tasks[taskId];
         const status = taskState?.status ?? "Unknown";
-        lines.push(`Status: ${status}`);
+        const mondaySuffix = mondayLinkedIds.has(hoverId) ? " (Linked to Monday ✓)" : "";
+        lines.push(`Status: ${status}${mondaySuffix}`);
         if (task.actual_start) {
           lines.push(`Started: ${task.actual_start}`);
         } else if (taskState) {
@@ -561,14 +617,13 @@ export function OverviewPage() {
           }
         });
         if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
-        if (mondayLinkedIds.has(hoverId)) lines.push("Linked to Monday ✓");
       } else if (ms) {
         const mname = ms.context_label ? `${ms.name} | ${ms.context_label}` : ms.name;
         lines.push(mname);
-        lines.push("Milestone");
+        const mondaySuffix = mondayLinkedIds.has(hoverId) ? " (Linked to Monday ✓)" : "";
+        lines.push(`Milestone${mondaySuffix}`);
         const msState = plan.node_allocations.milestones[msId];
         if (msState) lines.push(`Scheduled: ${msState.date}`);
-        if (mondayLinkedIds.has(hoverId)) lines.push("Linked to Monday ✓");
       } else if (hoverId === PLAN_START_ID) {
         lines.push("Plan Start");
         lines.push(`Date: ${plan.start_date}`);
@@ -628,7 +683,7 @@ export function OverviewPage() {
     }
 
     ctx.restore();
-  }, [plan, items, size, scrollX, scrollY, dayW, hoverId, flashId, mondayLinkedIds]);
+  }, [plan, items, size, scrollX, scrollY, dayW, hoverId, flashId, flashAlpha, leafNodeIds, mondayLinkedIds]);
 
   useEffect(() => { render(); }, [render]);
 
@@ -737,13 +792,31 @@ export function OverviewPage() {
     // Center task horizontally (task start at screen center) and vertically (row center at screen center)
     setScrollX(Math.max(-size.w / 2, Math.min(maxScrollX, offset * dayW - size.w / 2)));
     setScrollY(Math.max(0, Math.min(maxScrollY, item.row * ROW_H + ROW_H / 2 - (size.h - HEADER_H) / 2)));
-    // 3 flashes over 3 seconds (on 500ms, off 500ms × 3)
+    // 3 flashes (on 500ms / off 500ms × 3) then fade out
+    setFlashAlpha(1.0);
     setFlashId(id);
     let count = 0;
     const flash = () => {
       count++;
-      setFlashId(count % 2 === 0 ? id : null);
-      if (count < 6) setTimeout(flash, 500);
+      if (count < 5) {
+        setFlashId(count % 2 === 0 ? id : null);
+        setTimeout(flash, 500);
+      } else {
+        // Final: fade the last ON state from alpha 1 → 0
+        setFlashAlpha(1.0);
+        const startTime = performance.now();
+        const doFade = (now: number) => {
+          const elapsed = now - startTime;
+          const alpha = Math.max(0, 1.0 - elapsed / 700);
+          setFlashAlpha(alpha);
+          if (alpha > 0) {
+            requestAnimationFrame(doFade);
+          } else {
+            setFlashId(null);
+          }
+        };
+        requestAnimationFrame(doFade);
+      }
     };
     setTimeout(flash, 500);
   };
