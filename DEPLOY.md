@@ -33,77 +33,57 @@ Neither plinko port is exposed to the host — only nginx ports are.
 Every push to `main` automatically builds and publishes `ghcr.io/oranellis/plinko:latest` via
 GitHub Actions. No build toolchain is needed on the server — just Docker.
 
+### One-Script Setup
+
+The `deploy/setup.sh` script handles everything: Docker installation, TLS certificate
+acquisition, application startup, and systemd service registration.
+
+```bash
+# Clone the repo (just the deploy scripts are needed on the server)
+git clone https://github.com/oranellis/plinko.git
+cd plinko
+
+# Run the setup script as root
+sudo ./deploy/setup.sh --domain plinko.example.com --email admin@example.com
+```
+
+The script:
+1. **Validates upfront** — checks root, DNS resolution, port availability, internet access, and file structure before touching anything. Reports all issues at once with actionable fixes.
+2. **Installs Docker** — if not already present, installs via the official Ubuntu apt repository.
+3. **Pulls the image** — `ghcr.io/oranellis/plinko:latest`
+4. **Obtains a TLS certificate** — runs certbot via Docker to get a Let's Encrypt certificate for your domain.
+5. **Creates a systemd service** — registers `plinko.service` so the stack starts automatically on boot and restarts on failure.
+6. **Starts the application** — via `systemctl start plinko`
+7. **Verifies health** — waits for the container health check, then confirms HTTPS is responding.
+
+Use `--staging` to avoid Let's Encrypt rate limits while testing:
+
+```bash
+sudo ./deploy/setup.sh --domain plinko.example.com --email admin@example.com --staging
+# Once confirmed working, re-run without --staging to get a real certificate
+```
+
 ### Prerequisites
 
-- A server with Docker ≥ 24 and Docker Compose v2 (`docker compose`)
-- A domain pointed at the server's public IP (A record for `plinko.example.com`)
+- Ubuntu server (20.04 or later) with a public IP
+- A domain pointed at the server (A record for `plinko.example.com`)
 - Ports 80 and 443 open in the firewall
 
-### 1. Clone the repository (deploy config only needed)
+### Updating to a new version
+
+The systemd service automatically pulls the latest image on each restart:
 
 ```bash
-git clone git@github.com:oranellis/plinko.git
-cd plinko
+sudo systemctl restart plinko
 ```
 
-### 2. Pull the image
+### Manual management (without systemd)
+
+If you prefer to manage the stack yourself:
 
 ```bash
 docker pull ghcr.io/oranellis/plinko:latest
-```
-
-> The image is public — no authentication required to pull.
-
-### 3. Obtain a TLS certificate
-
-```bash
-DOMAIN=plinko.example.com \
-EMAIL=admin@example.com \
-  ./deploy/scripts/init-letsencrypt.sh
-```
-
-This:
-1. Creates a temporary self-signed cert so nginx can start
-2. Starts nginx to serve the ACME HTTP-01 challenge
-3. Runs certbot to obtain a real cert from Let's Encrypt
-4. Reloads nginx with the real certificate
-
-Use `STAGING=1` to avoid rate limits while testing:
-
-```bash
-DOMAIN=plinko.example.com EMAIL=admin@example.com STAGING=1 \
-  ./deploy/scripts/init-letsencrypt.sh
-```
-
-### 4. Start the stack
-
-```bash
-DOMAIN=plinko.example.com \
-  docker compose -f deploy/docker-compose.yml up -d
-```
-
-### 5. Change the default admin password
-
-On first run, a default account is created:
-
-| Field    | Value                |
-|----------|----------------------|
-| Email    | `root@plinko.local`  |
-| Password | `root`               |
-
-**Change this immediately** via Settings → Change Password.
-
----
-
-## Updating to a new version
-
-```bash
-# Pull the latest image
-docker pull ghcr.io/oranellis/plinko:latest
-
-# Restart only the plinko container (data volume is preserved)
-DOMAIN=plinko.example.com \
-  docker compose -f deploy/docker-compose.yml up -d --no-deps plinko
+DOMAIN=plinko.example.com docker compose -f deploy/docker-compose.yml up -d
 ```
 
 ---
