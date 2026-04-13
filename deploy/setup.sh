@@ -312,27 +312,21 @@ if [[ $_needs_cert -eq 1 ]]; then
         sleep 2
     done
 
+    # nginx now holds the bootstrap cert open by file descriptor.
+    # Remove the live directory so certbot's new_lineage() can create it fresh
+    # when storing the real certificate — Linux keeps the files accessible to
+    # nginx via fd even after the directory entry is deleted from disk.
+    rm -rf "$CERT_DIR"
+
     # Request the real certificate
     STAGING_FLAG=""
     [[ $STAGING -eq 1 ]] && STAGING_FLAG="--staging"
-
-    # Diagnostic: show certbot's view of the certs directory before running
-    info "--- certbot pre-run diagnostics ---"
-    info "certs/live/ contents:"
-    ls -la "$SCRIPT_DIR/certs/live/" 2>/dev/null || echo "    (directory does not exist)"
-    info "certs/archive/ contents:"
-    ls -la "$SCRIPT_DIR/certs/archive/" 2>/dev/null || echo "    (directory does not exist)"
-    info "certs/renewal/ contents:"
-    ls -la "$SCRIPT_DIR/certs/renewal/" 2>/dev/null || echo "    (directory does not exist)"
-    info "certbot-www/ contents:"
-    find "$CERTBOT_WWW" 2>/dev/null || echo "    (empty or missing)"
-    info "--- end diagnostics ---"
 
     # Mount a persistent log dir so we can read it after the container exits.
     CERTBOT_LOGS="$SCRIPT_DIR/certbot-logs"
     mkdir -p "$CERTBOT_LOGS"
 
-    info "Running certbot (verbose)..."
+    info "Running certbot..."
     if ! docker run --rm \
         -v "$SCRIPT_DIR/certs:/etc/letsencrypt" \
         -v "$CERTBOT_WWW:/var/www/certbot" \
@@ -340,14 +334,12 @@ if [[ $_needs_cert -eq 1 ]]; then
         certbot/certbot:latest certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
-        --force-renewal \
         $STAGING_FLAG \
         --email "$EMAIL" \
         --agree-tos \
         --no-eff-email \
         -d "$DOMAIN" \
-        --non-interactive \
-        -v; then
+        --non-interactive; then
         echo ""
         echo -e "${RED}${BOLD}certbot failed to obtain a certificate.${RESET}" >&2
         echo -e "  Common causes and fixes:" >&2
