@@ -40,7 +40,7 @@ services:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - ./certs:/etc/letsencrypt:ro
-      - certbot-www:/var/www/certbot:ro
+      - ./certbot-www:/var/www/certbot:ro
     depends_on:
       plinko:
         condition: service_healthy
@@ -50,7 +50,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./certs:/etc/letsencrypt
-      - certbot-www:/var/www/certbot
+      - ./certbot-www:/var/www/certbot
     # Attempt renewal every 12 h; Let's Encrypt only renews within 30 days of expiry.
     entrypoint: >
       /bin/sh -c "trap exit TERM;
@@ -61,6 +61,4 @@ services:
 
 volumes:
   plinko-data:
-    driver: local
-  certbot-www:
     driver: local
