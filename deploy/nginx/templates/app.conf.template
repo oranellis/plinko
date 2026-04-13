@@ -48,8 +48,13 @@ server {
     ssl_prefer_server_ciphers off;
 
     # OCSP stapling reduces TLS handshake latency.
+    # ssl_trusted_certificate provides the CA chain used to verify OCSP responses.
+    # For Let's Encrypt: chain.pem contains the intermediate CA cert.
+    # For self-signed (localhost): chain.pem is the cert itself (no OCSP responder
+    # exists, so nginx silently skips stapling after finding the issuer cert).
     ssl_stapling        on;
     ssl_stapling_verify on;
+    ssl_trusted_certificate /etc/letsencrypt/live/${DOMAIN}/chain.pem;
     resolver            1.1.1.1 8.8.8.8 valid=300s;
     resolver_timeout    5s;
 
