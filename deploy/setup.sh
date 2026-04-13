@@ -261,16 +261,13 @@ if [[ -f "$CERT_FILE" ]]; then
         info "Skipping certificate issuance."
     elif [[ $DAYS_LEFT -le 0 ]]; then
         warn "Existing certificate has expired. Re-issuing..."
-        rm -rf "$CERT_DIR"
         _needs_cert=1
     elif [[ $DAYS_LEFT -le 30 ]]; then
         warn "Certificate expires in ${DAYS_LEFT} days. Re-issuing..."
-        rm -rf "$CERT_DIR"
         _needs_cert=1
     else
         # Present but not from LE (self-signed / staging)
         warn "Existing certificate is not from Let's Encrypt. Replacing with real certificate..."
-        rm -rf "$CERT_DIR"
         _needs_cert=1
     fi
 else
@@ -281,6 +278,12 @@ fi
 if [[ $_needs_cert -eq 1 ]]; then
     info "Obtaining Let's Encrypt certificate for: $DOMAIN"
     [[ $STAGING -eq 1 ]] && warn "Using Let's Encrypt STAGING environment"
+
+    # Remove stale certbot state for this domain so certbot starts fresh.
+    # We remove the live dir and renewal config but preserve accounts/ so we
+    # don't unnecessarily re-register with Let's Encrypt on every run.
+    rm -rf "$CERT_DIR"
+    rm -f  "$SCRIPT_DIR/certs/renewal/$DOMAIN.conf"
 
     # Create required directories
     mkdir -p "$CERT_DIR" "$CERTBOT_WWW/.well-known/acme-challenge"
@@ -320,6 +323,7 @@ if [[ $_needs_cert -eq 1 ]]; then
         certbot/certbot:latest certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
+        --force-renewal \
         $STAGING_FLAG \
         --email "$EMAIL" \
         --agree-tos \
