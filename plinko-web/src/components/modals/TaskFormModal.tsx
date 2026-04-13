@@ -59,6 +59,12 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
   );
   const [constraint, setConstraint] = useState<DateConstraint | null>(task?.constraint ?? null);
   const [actualStart, setActualStart] = useState(task?.actual_start ?? "");
+  const [actualEnd, setActualEnd] = useState<string>(() => {
+    if (!task) return "";
+    const alloc = plan.node_allocations.tasks[task.id]?.allocation;
+    if (alloc && "Fixed" in alloc) return alloc.Fixed.corrected_end_date ?? "";
+    return "";
+  });
   const [workers, setWorkers] = useState<WorkerSlot[]>(task?.workers ?? []);
   const [dependencies, setDependencies] = useState<Dependency[]>(task?.dependencies ?? []);
   const [dependents, setDependents] = useState<Dependency[]>(() => buildInitialDependents(task, plan));
@@ -82,6 +88,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
     try {
       const dur = parseFloat(durationDays) || 0;
       const actualStartVal = actualStart || null;
+      const actualEndVal = actualEnd || null;
       const newTaskId = task?.id ?? uuidv4();
       const newNodeId: NodeId = { Task: newTaskId as TaskId };
       // Ensure there's always at least PlanStart as a dependency.
@@ -94,6 +101,7 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
           description,
           status,
           actual_start_date: actualStartVal,
+          actual_end_date: actualEndVal,
           constraint,
           duration_days_target: dur,
           workers,
@@ -221,7 +229,18 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
         <SegmentedControl
           options={STATUSES.map((s) => STATUS_LABELS[s])}
           selected={STATUSES.indexOf(status)}
-          onChange={(i) => setStatus(STATUSES[i])}
+          onChange={(i) => {
+            const newStatus = STATUSES[i];
+            setStatus(newStatus);
+            // Auto-set actual end to today when completing/dropping, if not already set
+            if ((newStatus === "Complete" || newStatus === "Dropped") && !actualEnd) {
+              setActualEnd(new Date().toISOString().slice(0, 10));
+            }
+            // Clear actual end if status moves back to a non-terminal state
+            if (newStatus !== "Complete" && newStatus !== "Dropped") {
+              setActualEnd("");
+            }
+          }}
         />
       </div>
 
@@ -303,8 +322,8 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
                 Actual End
               </label>
               <DatePicker
-                value={""}
-                onChange={() => {}}
+                value={actualEnd}
+                onChange={setActualEnd}
                 disabled={endDisabled}
               />
             </div>
