@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
+import plinkoLogo from "../assets/plinko_logo.svg";
 import "./LoginPage.css";
 
 export function LoginPage() {
@@ -20,11 +21,7 @@ export function LoginPage() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-logo">
-          <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="20" cy="20" r="18" stroke="currentColor" strokeWidth="2" />
-            <circle cx="20" cy="14" r="4" fill="currentColor" />
-            <path d="M12 32c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          </svg>
+          <img src={plinkoLogo} alt="Plinko logo" />
         </div>
 
         <h1 className="login-title">Plinko</h1>

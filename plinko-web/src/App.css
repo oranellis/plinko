@@ -70,13 +70,76 @@ body {
 }
 
 .no-plan-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   text-align: center;
-  color: #888;
-  font-size: 1rem;
 }
 
-.no-plan-content p {
-  margin: 8px 0;
+.no-plan-logo {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  margin-bottom: 4px;
+}
+
+.no-plan-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #e8e8e8;
+  letter-spacing: -0.3px;
+  margin: 0;
+}
+
+.no-plan-hint {
+  font-size: 14px;
+  color: #666;
+  margin: 0 0 4px;
+}
+
+.no-plan-user-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #2a2a2a;
+  width: 100%;
+  justify-content: center;
+}
+
+.no-plan-user-email {
+  font-size: 13px;
+  color: #888;
+}
+
+.no-plan-user-badge {
+  font-size: 11px;
+  background: #2a3a5a;
+  color: #6aa3e8;
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.no-plan-logout {
+  background: none;
+  border: 1px solid #3a3a3c;
+  border-radius: 4px;
+  color: #888;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 3px 10px;
+  font-family: inherit;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.no-plan-logout:hover {
+  color: #d4d4d4;
+  border-color: #666;
 }
 
 /* ── Shared button classes (used in modals / pages) ─────────────────────── */

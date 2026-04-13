@@ -7,10 +7,11 @@ import { AllocationPage } from "./pages/AllocationPage";
 import { ResourcesPage } from "./pages/ResourcesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
+import plinkoLogo from "./assets/plinko_logo.svg";
 import "./App.css";
 
 function PageRouter() {
-  const { page, status, auth, reconnect, plan, setPage } = usePlanContext();
+  const { page, status, auth, logout, reconnect, plan, setPage } = usePlanContext();
 
   // While connecting/handshaking or auto-authenticating with a stored token
   // (auth.required is false but we haven't received PlanState yet), show a
@@ -37,13 +38,21 @@ function PageRouter() {
     return (
       <div className="no-plan-screen">
         <div className="no-plan-content">
-          <p>No plan active.</p>
-          <p>
-            <button className="btn btn-primary" onClick={() => setPage("settings")}>
-              Open Settings
-            </button>{" "}
-            to create or load a plan.
-          </p>
+          <img src={plinkoLogo} alt="Plinko logo" className="no-plan-logo" />
+          <h1 className="no-plan-title">Plinko</h1>
+          <p className="no-plan-hint">No plan active.</p>
+          <button className="btn btn-primary" onClick={() => setPage("settings")}>
+            Open Settings
+          </button>
+          {auth.currentUser && (
+            <div className="no-plan-user-bar">
+              <span className="no-plan-user-email">{auth.currentUser.email}</span>
+              {auth.currentUser.isAdmin && (
+                <span className="no-plan-user-badge">admin</span>
+              )}
+              <button className="no-plan-logout" onClick={logout}>Sign out</button>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -19,10 +19,15 @@
 }
 
 .login-logo {
-  color: #4a9eff;
-  width: 48px;
-  height: 48px;
+  width: 80px;
+  height: 80px;
   margin-bottom: 4px;
+}
+
+.login-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .login-title {
