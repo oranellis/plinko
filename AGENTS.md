@@ -167,7 +167,7 @@ usePlan (WebSocket) → PlanContext → usePlanContext() in each page/component
 
 ### Storage
 
-- Plans saved as versioned JSON: `$XDG_DATA_HOME/<binary>/plans/<plan-uuid>/YYYY-MM-DDTHH-MM-SS.json`.
+- Plans saved as versioned **MessagePack** snapshots: `$XDG_DATA_HOME/<binary>/plans/<plan-uuid>/YYYY-MM-DDTHH-MM-SS.msgpack`.
 - Auth DB: `$XDG_DATA_HOME/<binary>/auth.db` (SQLite).
 - `Storage::from_user_data_dir()` for production; `Storage::from_path(tmp)` in tests.
 
@@ -180,3 +180,57 @@ usePlan (WebSocket) → PlanContext → usePlanContext() in each page/component
   ```
   Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
   ```
+
+---
+
+## Versioning
+
+Plinko uses **semantic versioning** (`MAJOR.MINOR.PATCH`). One version number covers the Rust binary, the React bundle, and the WebSocket protocol — they are always deployed together.
+
+### Bump rules
+
+| Change | Bump |
+|---|---|
+| Breaking wire protocol or storage format change | MAJOR |
+| New user-visible feature | MINOR |
+| Bug fix, refactor, or **any AI-driven change session** | PATCH |
+
+### The four canonical locations — all must always match
+
+| File | What to edit |
+|---|---|
+| `Cargo.toml` (workspace root) | `version = "X.Y.Z"` under `[workspace.package]` |
+| `plinko-web/package.json` | `"version": "X.Y.Z"` |
+| `plinko-shared/src/protocol.rs` | `pub const VERSION: &str = "X.Y.Z";` |
+| `plinko-web/src/protocol.ts` | `export const PROTOCOL_VERSION = "X.Y.Z";` |
+
+`plinko/Cargo.toml` and `plinko-shared/Cargo.toml` use `version.workspace = true` and inherit automatically — do not edit them.
+
+### Helper script
+
+```bash
+./scripts/bump-version.sh 0.4.0
+```
+
+Updates all four files atomically and prints the next steps (check → commit → tag).
+
+### Rules for AI sessions
+
+**Every AI work session that makes code or config changes must bump the patch version as part of its final commit.** This ensures deployed versions are always distinguishable and stale browser clients reconnect cleanly after an upgrade.
+
+Procedure at the end of each session:
+1. Run `./scripts/bump-version.sh <current+1-patch>` (e.g. `0.3.0` → `0.3.1`)
+2. Run `cargo check` to verify the workspace still compiles
+3. Stage the four version files and commit: `chore: bump version to X.Y.Z`
+4. Do **not** create a git tag — tags mark human-approved releases
+
+If a session introduces a new user-visible feature, bump MINOR instead of PATCH (e.g. `0.3.0` → `0.4.0`). If a session changes the wire protocol or storage format incompatibly, bump MAJOR.
+
+### Git tags (human-only)
+
+Tags mark releases and are created by the repository owner, not AI:
+
+```bash
+git tag v0.4.0
+git push origin v0.4.0
+```
