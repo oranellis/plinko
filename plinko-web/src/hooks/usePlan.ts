@@ -98,10 +98,16 @@ export function usePlan(): UsePlanResult {
   const logout = useCallback(() => {
     sendRaw({ type: "Logout" });
     localStorage.removeItem(SESSION_TOKEN_KEY);
-    setAuth({ required: true, currentUser: null, sessionToken: null, loginError: null });
-    setPlan(null);
-    setStatusSynced("authenticating");
-  }, [sendRaw, setStatusSynced]);
+    // The server closes the connection after processing Logout. We proactively
+    // close and reconnect so the client immediately starts a fresh auth session
+    // rather than transitioning to the "disconnected" screen.
+    const currentWs = wsRef.current;
+    if (currentWs) {
+      wsRef.current = null;
+      currentWs.close();
+    }
+    connectRef.current?.();
+  }, [sendRaw]);
 
   useEffect(() => {
     let ws: WebSocket;
@@ -193,19 +199,24 @@ export function usePlan(): UsePlanResult {
             }));
             break;
 
-          case "PlanState":
+          case "PlanState": {
+            // Capture status *before* transitioning so we can tell whether this
+            // PlanState is the initial one (arriving during auth/handshake) or an
+            // unsolicited push from a remote session while already connected.
+            const wasConnected = statusRef.current === "connected";
             setPlan(msg.plan);
             setHasMondayIntegration(msg.has_monday_integration);
             setStatusSynced("connected");
             if (ownPlanStateCountRef.current > 0) {
               ownPlanStateCountRef.current--;
-            } else if (statusRef.current === "connected") {
+            } else if (wasConnected) {
               // Unsolicited PlanState from a remote session's mutation.
               if (remoteUpdateTimerRef.current) clearTimeout(remoteUpdateTimerRef.current);
               setRemoteUpdate(true);
               remoteUpdateTimerRef.current = setTimeout(() => setRemoteUpdate(false), 3000);
             }
             break;
+          }
 
           case "NoPlanActive":
             setPlan(null);
