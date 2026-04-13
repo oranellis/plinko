@@ -15,6 +15,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(dirname "$SCRIPT_DIR")"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 SERVICE_NAME="plinko"
 
@@ -83,6 +84,15 @@ if [[ ! -f "$COMPOSE_FILE" ]]; then
          Fix: Run this script from within the cloned plinko repository.")
 fi
 
+# 4. Git must be available and repo must have a remote
+if ! command -v git &>/dev/null; then
+    ERRORS+=("git is not installed.
+         Fix: Install git:  apt-get install -y git")
+elif ! git -C "$REPO_DIR" rev-parse --git-dir &>/dev/null; then
+    ERRORS+=("$REPO_DIR is not a git repository.
+         Fix: Clone the repository first.")
+fi
+
 # Bail on critical failures before further checks
 if [[ ${#ERRORS[@]} -gt 0 ]]; then
     echo ""
@@ -137,6 +147,24 @@ if [[ -z "$DOMAIN" ]]; then
 fi
 
 success "All preflight checks passed"
+
+# ── Pull latest code ──────────────────────────────────────────────────────────
+step "Pulling Latest Code"
+
+info "Updating repository in $REPO_DIR ..."
+GIT_OUTPUT=$(git -C "$REPO_DIR" pull --ff-only 2>&1) || {
+    echo ""
+    echo -e "${RED}${BOLD}git pull failed.${RESET}" >&2
+    echo -e "  The repository could not be fast-forwarded. If you have local changes:" >&2
+    echo -e "    git -C $REPO_DIR stash && sudo $0 $*" >&2
+    exit 1
+}
+echo "$GIT_OUTPUT" | sed 's/^/  /'
+if echo "$GIT_OUTPUT" | grep -q "Already up to date"; then
+    success "Repository is already up to date"
+else
+    success "Repository updated"
+fi
 
 # ── Pull latest image ─────────────────────────────────────────────────────────
 step "Pulling Latest Image"
