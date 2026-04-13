@@ -316,10 +316,27 @@ if [[ $_needs_cert -eq 1 ]]; then
     STAGING_FLAG=""
     [[ $STAGING -eq 1 ]] && STAGING_FLAG="--staging"
 
-    info "Running certbot..."
+    # Diagnostic: show certbot's view of the certs directory before running
+    info "--- certbot pre-run diagnostics ---"
+    info "certs/live/ contents:"
+    ls -la "$SCRIPT_DIR/certs/live/" 2>/dev/null || echo "    (directory does not exist)"
+    info "certs/archive/ contents:"
+    ls -la "$SCRIPT_DIR/certs/archive/" 2>/dev/null || echo "    (directory does not exist)"
+    info "certs/renewal/ contents:"
+    ls -la "$SCRIPT_DIR/certs/renewal/" 2>/dev/null || echo "    (directory does not exist)"
+    info "certbot-www/ contents:"
+    find "$CERTBOT_WWW" 2>/dev/null || echo "    (empty or missing)"
+    info "--- end diagnostics ---"
+
+    # Mount a persistent log dir so we can read it after the container exits.
+    CERTBOT_LOGS="$SCRIPT_DIR/certbot-logs"
+    mkdir -p "$CERTBOT_LOGS"
+
+    info "Running certbot (verbose)..."
     if ! docker run --rm \
         -v "$SCRIPT_DIR/certs:/etc/letsencrypt" \
         -v "$CERTBOT_WWW:/var/www/certbot" \
+        -v "$CERTBOT_LOGS:/var/log/letsencrypt" \
         certbot/certbot:latest certonly \
         --webroot \
         --webroot-path=/var/www/certbot \
@@ -329,14 +346,24 @@ if [[ $_needs_cert -eq 1 ]]; then
         --agree-tos \
         --no-eff-email \
         -d "$DOMAIN" \
-        --non-interactive; then
+        --non-interactive \
+        -v; then
         echo ""
         echo -e "${RED}${BOLD}certbot failed to obtain a certificate.${RESET}" >&2
         echo -e "  Common causes and fixes:" >&2
         echo -e "    • DNS not propagated yet: verify with:  dig +short $DOMAIN A" >&2
         echo -e "    • Port 80 blocked by firewall: ensure TCP/80 is open inbound" >&2
         echo -e "    • Let's Encrypt rate limit: re-run with --staging to test, then retry later" >&2
-        echo -e "  See certbot output above for the specific error." >&2
+        # Print the full certbot log
+        CERTBOT_LOG_FILE=$(ls -t "$CERTBOT_LOGS"/*.log 2>/dev/null | head -1 || echo "")
+        if [[ -n "$CERTBOT_LOG_FILE" ]]; then
+            echo ""
+            echo -e "${YELLOW}${BOLD}--- certbot debug log ($CERTBOT_LOG_FILE) ---${RESET}" >&2
+            cat "$CERTBOT_LOG_FILE" >&2
+            echo -e "${YELLOW}${BOLD}--- end certbot log ---${RESET}" >&2
+        else
+            echo -e "  (No certbot log found at $CERTBOT_LOGS)" >&2
+        fi
         # Stop nginx before exiting
         DOMAIN="$DOMAIN" PLINKO_IMAGE="$IMAGE" \
             docker compose -f "$COMPOSE_FILE" down --timeout 10 2>/dev/null || true
