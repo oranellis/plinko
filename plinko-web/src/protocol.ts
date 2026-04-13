@@ -344,7 +344,9 @@ export type PlanRequest =
   | { GetUserLinks: { plan_id: string } }
   | { SetUserLinks: { plan_id: string; links: UserLink[] } }
   | { GetPlanVisibility: { plan_id: string } }
-  | { SetPlanVisibility: { plan_id: string; user_ids: string[] } };
+  | { SetPlanVisibility: { plan_id: string; user_ids: string[] } }
+  | { ListPlanVersions: { plan_id: string } }
+  | { RestorePlanVersion: { plan_id: string; version: string } };
 
 // ── Protocol: PlanResponse ────────────────────────────────────────────────────
 
@@ -360,7 +362,8 @@ export type PlanResponse =
   | { AuthUsers: AuthUser[] }
   | { UserLinks: UserLink[] }
   | { AuthUserCreated: { user_id: string } }
-  | { PlanVisibility: { plan_id: string; user_ids: string[] } };
+  | { PlanVisibility: { plan_id: string; user_ids: string[] } }
+  | { PlanVersionList: string[] };
 
 export type SchedulerError =
   | "EmptyChain"
@@ -377,10 +380,11 @@ export type PlanError =
   | { Dependency: "Cycle" | "NotFound" }
   | { Monday: string }
   | "Unauthorized"
-  | { AuthError: string };
+  | { AuthError: string }
+  | "NoPlanActive";
 
 export function formatPlanError(err: PlanError): string {
-  if (typeof err === "string") return err; // "Unauthorized"
+  if (typeof err === "string") return err; // "Unauthorized", "NoPlanActive"
   if ("TaskNotFound" in err) return "Task not found.";
   if ("MilestoneNotFound" in err) return "Milestone not found.";
   if ("UserNotFound" in err) return "User not found.";
@@ -410,18 +414,23 @@ export function formatPlanError(err: PlanError): string {
   return JSON.stringify(err);
 }
 
+export interface UserPrefs {
+  last_plan_id: string | null;
+}
+
 // ── Protocol: ServerMessage (`#[serde(tag = "type")]`) ───────────────────────
 
 export type ServerMessage =
   | { type: "Hello"; version: string }
   | { type: "VersionError"; expected: string; got: string }
   | { type: "PlanState"; plan: Plan; has_monday_integration: boolean }
+  | { type: "NoPlanActive" }
   | { type: "Response"; id: number; response: PlanResponse }
   | { type: "MondayProgress"; done: number; total: number; message: string }
   | { type: "MondayDone"; message: string }
   | { type: "MondayError"; message: string }
   | { type: "AuthRequired" }
-  | { type: "LoginSuccess"; session_token: string; user_id: string; email: string; is_admin: boolean }
+  | { type: "LoginSuccess"; session_token: string; user_id: string; email: string; is_admin: boolean; user_prefs: UserPrefs }
   | { type: "LoginFailed"; message: string };
 
 // ── Protocol: ClientMessage (`#[serde(tag = "type")]`) ───────────────────────
@@ -435,4 +444,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.2.0";
+export const PROTOCOL_VERSION = "0.3.0";

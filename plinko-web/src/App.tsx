@@ -10,7 +10,7 @@ import { LoginPage } from "./pages/LoginPage";
 import "./App.css";
 
 function PageRouter() {
-  const { page, status, auth, reconnect } = usePlanContext();
+  const { page, status, auth, reconnect, plan, setPage } = usePlanContext();
 
   // While connecting/handshaking or auto-authenticating with a stored token
   // (auth.required is false but we haven't received PlanState yet), show a
@@ -30,6 +30,23 @@ function PageRouter() {
   }
   if (status === "error") {
     return <StatusScreen message="Protocol error — check server version." error />;
+  }
+
+  // No active plan — only settings is accessible.
+  if (plan === null && page !== "settings") {
+    return (
+      <div className="no-plan-screen">
+        <div className="no-plan-content">
+          <p>No plan active.</p>
+          <p>
+            <button className="btn btn-primary" onClick={() => setPage("settings")}>
+              Open Settings
+            </button>{" "}
+            to create or load a plan.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   switch (page) {

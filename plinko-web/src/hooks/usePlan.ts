@@ -185,6 +185,11 @@ export function usePlan(): UsePlanResult {
             }
             break;
 
+          case "NoPlanActive":
+            setPlan(null);
+            setStatusSynced("connected");
+            break;
+
           case "Response": {
             const pending = pendingRef.current.get(msg.id);
             if (pending) {

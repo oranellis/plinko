@@ -41,6 +41,12 @@ export function SettingsPage() {
   const [planVisibility, setPlanVisibility] = useState<Record<string, string[]>>({});
   const [visibilityLoaded, setVisibilityLoaded] = useState(false);
 
+  // Version history state (admin only)
+  const [showVersionModal, setShowVersionModal] = useState(false);
+  const [versionList, setVersionList] = useState<string[]>([]);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [versionRestoring, setVersionRestoring] = useState<string | null>(null);
+
   // Plan settings form state
   const [planName, setPlanName] = useState(plan?.name ?? "");
   const [planStartDate, setPlanStartDate] = useState(plan?.start_date ?? "");
@@ -244,6 +250,37 @@ export function SettingsPage() {
     await sendRequest({ SetPlanVisibility: { plan_id: planId, user_ids: updated } });
   };
 
+  const handleOpenVersionHistory = async () => {
+    if (!plan) return;
+    setVersionLoading(true);
+    setShowVersionModal(true);
+    try {
+      const resp = await sendRequest({ ListPlanVersions: { plan_id: plan.id } });
+      if (typeof resp === "object" && resp !== null && "PlanVersionList" in resp) {
+        setVersionList((resp as { PlanVersionList: string[] }).PlanVersionList.reverse());
+      }
+    } finally {
+      setVersionLoading(false);
+    }
+  };
+
+  const handleRestoreVersion = async (version: string) => {
+    if (!plan) return;
+    if (!confirm(`Restore version "${version}"? The current state will be saved first as a safety snapshot.`)) return;
+    setVersionRestoring(version);
+    try {
+      await sendRequest({ RestorePlanVersion: { plan_id: plan.id, version } });
+      setShowVersionModal(false);
+    } finally {
+      setVersionRestoring(null);
+    }
+  };
+
+  const formatVersion = (v: string) => {
+    // "2026-04-10T09-30-05" → "2026-04-10 09:30:05"
+    return v.replace("T", " ").replace(/-(\d{2})-(\d{2})$/, ":$1:$2");
+  };
+
   return (
     <div className="settings-page">
       {showMonday && plan && (
@@ -254,6 +291,41 @@ export function SettingsPage() {
           onClose={() => setShowNewPlan(false)}
           sendRequest={sendRequest}
         />
+      )}
+
+      {/* Version history modal */}
+      {showVersionModal && (
+        <div className="modal-overlay" onClick={() => setShowVersionModal(false)}>
+          <div className="modal" style={{ minWidth: 360, maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Version History</h3>
+              <button className="modal-close" onClick={() => setShowVersionModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {versionLoading ? (
+                <div style={{ color: "#888", textAlign: "center", padding: 16 }}>Loading versions…</div>
+              ) : versionList.length === 0 ? (
+                <div style={{ color: "#888", textAlign: "center", padding: 16 }}>No saved versions found.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 360, overflowY: "auto" }}>
+                  {versionList.map((v) => (
+                    <div key={v} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "#1a1a2e", borderRadius: 6 }}>
+                      <span style={{ fontFamily: "monospace", fontSize: 13, color: "#ccc" }}>{formatVersion(v)}</span>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ fontSize: 12, padding: "4px 12px" }}
+                        disabled={versionRestoring === v}
+                        onClick={() => handleRestoreVersion(v)}
+                      >
+                        {versionRestoring === v ? "Restoring…" : "Restore"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {plan && (
@@ -550,6 +622,19 @@ export function SettingsPage() {
               Create User
             </button>
           </div>
+        </section>
+      )}
+
+      {/* Version History — admin only, requires active plan */}
+      {auth.currentUser?.isAdmin && plan && (
+        <section className="settings-section">
+          <h2 className="settings-heading">Version History</h2>
+          <p className="settings-description">
+            Restore a previous saved version of the current plan. The current state is automatically saved before any restore.
+          </p>
+          <button className="btn btn-secondary" onClick={handleOpenVersionHistory}>
+            Browse Versions…
+          </button>
         </section>
       )}
     </div>
