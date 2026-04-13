@@ -80,7 +80,7 @@ export function AllocationPage() {
   useEffect(() => {
     if (!hasMondayIntegration || !plan) return;
     sendRequest({ LoadMondayConfig: { plan_id: plan.id } }).then((res) => {
-      if ("MondayConfigLoaded" in res) {
+      if (typeof res === "object" && res !== null && "MondayConfigLoaded" in res) {
         const ids = new Set(
           res.MondayConfigLoaded.item_node_map
             .map((m) => {
