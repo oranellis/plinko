@@ -63,9 +63,17 @@ pub fn import_from_monday(
         .collect();
 
     // Build a lookup from Monday item ID → existing plinko node ID.
+    // Only include entries whose referenced node actually exists in the current plan;
+    // stale entries (e.g. from a previous import whose plan was later restored) are
+    // dropped so those items fall through to the create/dedup path and get re-linked.
     let existing: HashMap<String, NodeId> = config
         .item_node_map
         .iter()
+        .filter(|m| match m.plinko_node_id {
+            NodeId::Task(tid) => plan.tasks.contains_key(&tid),
+            NodeId::Milestone(mid) => plan.milestones.contains_key(&mid),
+            NodeId::PlanStart => true,
+        })
         .map(|m| (m.monday_item_id.clone(), m.plinko_node_id))
         .collect();
 
