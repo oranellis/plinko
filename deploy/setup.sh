@@ -403,7 +403,7 @@ Environment="DOMAIN=${DOMAIN}"
 Environment="PLINKO_IMAGE=${IMAGE}"
 
 # Pull latest image before starting (ensures updates are applied on restart)
-ExecStartPre=/usr/bin/docker compose -f ${COMPOSE_FILE} pull --quiet --no-deps plinko
+ExecStartPre=/usr/bin/docker compose -f ${COMPOSE_FILE} pull --quiet plinko
 
 # Run in the foreground so systemd tracks the process and captures logs
 ExecStart=/usr/bin/docker compose -f ${COMPOSE_FILE} up --remove-orphans
