@@ -160,10 +160,16 @@ for port in 80 443; do
     fi
 done
 
-# 7. Internet access — must reach ghcr.io to pull the image
-if ! curl -sf --max-time 10 -o /dev/null https://ghcr.io/v2/ 2>/dev/null; then
-    ERRORS+=("Cannot reach ghcr.io. Internet access is required to pull the Docker image.
-         Fix: Check firewall rules / outbound HTTPS:  curl -v https://ghcr.io/v2/")
+# 7. Internet access — must reach ghcr.io to pull the image.
+# ghcr.io always returns HTTP 401 for unauthenticated requests; that is correct
+# behaviour and means the host is reachable. Only flag an error for connection
+# failures (curl exit codes 6/7/28 etc.) — not for HTTP 4xx responses.
+GHCR_HTTP=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" https://ghcr.io/v2/ 2>/dev/null || echo "000")
+if [[ "$GHCR_HTTP" == "000" ]]; then
+    ERRORS+=("Cannot reach ghcr.io (connection failed). Outbound HTTPS is required to pull the Docker image.
+         Fix: Check firewall / outbound rules:  curl -v https://ghcr.io/v2/")
+else
+    success "Network: ghcr.io is reachable (HTTP $GHCR_HTTP)"
 fi
 
 # ── Report all preflight errors ───────────────────────────────────────────────
@@ -225,8 +231,9 @@ info "Pulling $IMAGE ..."
 if ! docker pull "$IMAGE"; then
     echo ""
     echo -e "${RED}${BOLD}Failed to pull Docker image: $IMAGE${RESET}" >&2
-    echo -e "  Fix: Verify the image name and that it is publicly accessible." >&2
-    echo -e "       If using a private image, run: docker login ghcr.io" >&2
+    echo -e "  If the image is private, authenticate first with your classic PAT:" >&2
+    echo -e "    echo \"\$CR_PAT\" | docker login ghcr.io -u GITHUB_USERNAME --password-stdin" >&2
+    echo -e "  Then re-run this script." >&2
     exit 1
 fi
 success "Image ready: $IMAGE"
