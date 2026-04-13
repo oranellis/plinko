@@ -1,9 +1,12 @@
 services:
   plinko:
+    # Use the pre-built image from ghcr.io by default.
+    # Override with PLINKO_IMAGE to use a locally-built image:
+    #   PLINKO_IMAGE=plinko:latest docker compose ...
+    image: ${PLINKO_IMAGE:-ghcr.io/oranellis/plinko:latest}
     build:
       context: ..
       dockerfile: Dockerfile
-    image: plinko:latest
     restart: unless-stopped
     environment:
       - PLINKO_PORT=7892
