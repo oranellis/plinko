@@ -284,19 +284,11 @@ pub fn import_from_monday(
         let start_date = tl_start.unwrap_or(plan_start);
         match status {
             Status::NotStarted => {
-                // For newly-imported tasks, set duration from Monday's timeline so a
-                // timeline change (e.g. 8 days → 4 days) is reflected on first import.
-                // For pre-existing plinko tasks the duration is the authoritative value —
-                // push/pull round-trips must not clobber it (calendar overrides cause the
+                // duration_days_target is set once by build_task() for new tasks and is
+                // never overwritten from Monday's timeline here. Pre-existing plinko tasks
+                // keep their plinko-side duration as the authoritative value so that
+                // push/pull round-trips cannot inflate it (calendar 0h overrides cause the
                 // pushed timeline span to exceed the task's actual working-day duration).
-                if has_timeline && new_task_ids.contains(task_id) {
-                    let wd = timeline_working_days(*tl_start, *tl_end);
-                    if wd > 0.0
-                        && let Some(task) = plan.tasks.get_mut(task_id)
-                    {
-                        task.duration_days_target = wd;
-                    }
-                }
             }
             Status::InProgress => {
                 // Set actual_start from timeline then start the task.
@@ -325,12 +317,16 @@ pub fn import_from_monday(
             Status::Dropped => {
                 // Set actual_start so start_task creates a Fixed allocation before we drop.
                 // Without this, drop_task leaves the Dynamic allocation with the 1970 sentinel.
+                // For new tasks only: apply the timeline calendar span as the visual width.
+                // Pre-existing tasks keep their plinko duration (Fixed allocation start/end
+                // already determines the rendered bar width for dropped tasks).
                 if let Some(task) = plan.tasks.get_mut(task_id) {
                     task.actual_start = Some(start_date);
-                    // Apply timeline span so the dropped bar shows its real calendar width.
-                    if let Some(end) = tl_end {
-                        let span = (*end - start_date).num_days().max(0) as f32 + 1.0;
-                        task.duration_days_target = span;
+                    if new_task_ids.contains(task_id) {
+                        if let Some(end) = tl_end {
+                            let span = (*end - start_date).num_days().max(0) as f32 + 1.0;
+                            task.duration_days_target = span;
+                        }
                     }
                 }
                 plan.start_task(*task_id);
