@@ -87,7 +87,11 @@
   transition: color 0.12s, border-color 0.12s;
 }
 
-.home-user-logout:hover {
-  color: #888;
-  border-color: #555;
+.home-version {
+  position: absolute;
+  bottom: 20px;
+  left: 24px;
+  font-size: 12px;
+  color: #444;
+  pointer-events: none;
 }

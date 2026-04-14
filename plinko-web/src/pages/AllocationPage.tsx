@@ -18,6 +18,38 @@ const ROW_H = 32;
 const HEADER_H = 44; // month row (20px) + day row (24px)
 const UTIL_ROW_H = 36; // utilisation row below date header
 const DAY_W_DEFAULT = 28;
+
+// Shared Monday logo image (loaded once at module init)
+const _mondayLogoImg = new Image();
+_mondayLogoImg.src = "/monday_icon.svg";
+const MONDAY_LOGO_ASPECT = 110 / 43.261905;
+
+function drawMondayMark(ctx: CanvasRenderingContext2D, rightX: number, centerY: number, size: number): void {
+  ctx.save();
+  const logoH = size * 1.1;
+  const logoW = logoH * MONDAY_LOGO_ASPECT;
+  ctx.font = `bold ${size}px sans-serif`;
+  const tickW = ctx.measureText("✓").width;
+  const tickGap = size * 0.2;
+  const logoLeft = rightX - tickW - tickGap - logoW;
+  if (_mondayLogoImg.complete && _mondayLogoImg.naturalWidth > 0) {
+    ctx.drawImage(_mondayLogoImg, logoLeft, centerY - logoH / 2, logoW, logoH);
+  } else {
+    const r = size * 0.27;
+    const ds = r * 2.6;
+    ["#FF3D57", "#FFCB00", "#4EADFD"].forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(logoLeft + r + i * ds, centerY, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  ctx.fillStyle = "#00C875";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillText("✓", rightX, centerY);
+  ctx.restore();
+}
 const MIN_DAY_W = 8;
 const MAX_DAY_W = 80;
 
@@ -688,8 +720,8 @@ export function AllocationPage() {
 
           const lines: string[] = [];
           lines.push(displayName(task.name, task.context_label ?? null));
-          const mondaySuffix = mondayLinkedIds.has(rawId) ? " (Linked to Monday ✓)" : "";
-          lines.push(`Status: ${state.status}${mondaySuffix}`);
+          const isMonday = mondayLinkedIds.has(rawId);
+          lines.push(`Status: ${state.status}`);
           const schedStart = "Fixed" in state.allocation ? state.allocation.Fixed.start_date : state.allocation.Dynamic.scheduled_start_date;
           lines.push(`Scheduled: ${schedStart}`);
           const endDate = "Fixed" in state.allocation ? state.allocation.Fixed.end_date : state.allocation.Dynamic.scheduled_end_date;
@@ -707,7 +739,11 @@ export function AllocationPage() {
           ctx.font = `${titleSize}px sans-serif`;
           const titleW = ctx.measureText(lines[0]).width;
           ctx.font = `${bodySize}px sans-serif`;
-          const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
+          const mondayExtraW = isMonday ? bodySize * (1.1 * MONDAY_LOGO_ASPECT + 0.6 + 0.75) + bodySize * 0.5 : 0;
+          let bodyMaxW = 0;
+          for (let i = 0; i < lines.length - 1; i++) {
+            bodyMaxW = Math.max(bodyMaxW, ctx.measureText(lines[i + 1]).width + (isMonday && i === 0 ? mondayExtraW : 0));
+          }
           const panelW = Math.max(titleW, bodyMaxW) + panelPad * 2;
           const panelH = panelPad * 2
             + titleSize * 1.25
@@ -739,6 +775,11 @@ export function AllocationPage() {
           const bodyStartY = py + panelPad + titleSize * 1.25 + lineGap;
           for (let i = 0; i < lines.length - 1; i++) {
             ctx.fillText(lines[i + 1], px + panelPad, bodyStartY + i * (bodySize * 1.4 + lineGap));
+          }
+          if (isMonday) {
+            const markRightX = px + panelW - panelPad;
+            const markCenterY = bodyStartY + bodySize * 0.55;
+            drawMondayMark(ctx, markRightX, markCenterY, bodySize);
           }
           ctx.textBaseline = "alphabetic";
         }

@@ -5,6 +5,7 @@ import {
   IconAllocation,
   IconResources,
 } from "../components/icons";
+import { PROTOCOL_VERSION } from "../protocol";
 import "./HomePage.css";
 
 interface NavCard {
@@ -46,6 +47,7 @@ export function HomePage() {
           <button className="home-user-logout" onClick={logout}>Sign out</button>
         </div>
       )}
+      <span className="home-version">v{PROTOCOL_VERSION}</span>
     </div>
   );
 }

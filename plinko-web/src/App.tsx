@@ -8,6 +8,7 @@ import { ResourcesPage } from "./pages/ResourcesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
 import plinkoLogo from "./assets/plinko_logo.svg";
+import { PROTOCOL_VERSION } from "./protocol";
 import { useEffect, useState } from "react";
 import type { ConnectionStatus } from "./hooks/usePlan";
 import "./App.css";
@@ -114,6 +115,7 @@ function ConnectingScreen({ status, reconnect }: { status: ConnectionStatus; rec
           </button>
         )}
       </div>
+      <span className="status-version">v{PROTOCOL_VERSION}</span>
     </div>
   );
 }
@@ -127,6 +129,7 @@ function DisconnectedScreen({ onReconnect }: { onReconnect: () => void }) {
           Reconnect
         </button>
       </div>
+      <span className="status-version">v{PROTOCOL_VERSION}</span>
     </div>
   );
 }

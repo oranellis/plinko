@@ -28,6 +28,39 @@ const DAY_W_DEFAULT = 34;
 const MIN_DAY_W = 8;
 const MAX_DAY_W = 80;
 
+const _mondayLogoImg = new Image();
+_mondayLogoImg.src = "/monday_icon.svg";
+// SVG viewBox is 110 × 43.26; use that ratio for canvas rendering
+const MONDAY_LOGO_ASPECT = 110 / 43.261905;
+
+function drawMondayMark(ctx: CanvasRenderingContext2D, rightX: number, centerY: number, size: number): void {
+  ctx.save();
+  const logoH = size * 1.1;
+  const logoW = logoH * MONDAY_LOGO_ASPECT;
+  ctx.font = `bold ${size}px sans-serif`;
+  const tickW = ctx.measureText("✓").width;
+  const tickGap = size * 0.2;
+  const logoLeft = rightX - tickW - tickGap - logoW;
+  if (_mondayLogoImg.complete && _mondayLogoImg.naturalWidth > 0) {
+    ctx.drawImage(_mondayLogoImg, logoLeft, centerY - logoH / 2, logoW, logoH);
+  } else {
+    // Fallback: 3 coloured circles
+    const r = size * 0.27;
+    const ds = r * 2.6;
+    ["#FF3D57", "#FFCB00", "#4EADFD"].forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(logoLeft + r + i * ds, centerY, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+  ctx.fillStyle = "#00C875";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.fillText("✓", rightX, centerY);
+  ctx.restore();
+}
+
 export function OverviewPage() {
   const { plan, sendRequest, hasMondayIntegration, setToolbarActions, setToolbarRightActions } = usePlanContext();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -96,11 +129,12 @@ export function OverviewPage() {
     setToolbarActions(
       <>
         <button className="toolbar-btn" title="Jump to today" onClick={() => {
-          const p = planRef.current; const sw = sizeRef.current.w; const dw = dayWRef.current;
+          const p = planRef.current; const sw = sizeRef.current.w;
           if (!p) return;
           const today = formatDate(new Date());
           const offset = daysBetween(p.start_date, today);
-          setScrollX(Math.max(-sw / 2, offset * dw - sw / 2));
+          setScrollX(Math.max(-sw / 2, offset * DAY_W_DEFAULT - sw / 2));
+          setDayW(DAY_W_DEFAULT);
         }}><IconToday size={24} /></button>
         <button className="toolbar-btn" title="Add task" onClick={() => setEditTaskIdRef.current("new")}><IconAddTask size={24} /></button>
         <button className="toolbar-btn" title="Add milestone" onClick={() => setEditMsIdRef.current("new")}><IconAddMilestone size={24} /></button>
@@ -253,7 +287,7 @@ export function OverviewPage() {
       ctx.fillStyle = d === todayOffset ? "#4a90d9" : (isWeekend ? "#555" : "#aaa");
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(String(dayNum), x + dayW / 2, 39);
+      if (dayW >= 18) ctx.fillText(String(dayNum), x + dayW / 2, 39);
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
 
@@ -677,8 +711,7 @@ export function OverviewPage() {
           lines.push(tname);
           const taskState = plan.node_allocations.tasks[taskId];
           const status = taskState?.status ?? "Unknown";
-          const mondaySuffix = mondayLinkedIds.has(hoverId) ? " (Linked to Monday ✓)" : "";
-          lines.push(`Status: ${status}${mondaySuffix}`);
+          lines.push(`Status: ${status}`);
           if (task.actual_start) {
             lines.push(`Started: ${task.actual_start}`);
           } else if (taskState) {
@@ -707,8 +740,7 @@ export function OverviewPage() {
         } else if (ms) {
           const mname = ms.context_label ? `${ms.name} | ${ms.context_label}` : ms.name;
           lines.push(mname);
-          const mondaySuffix = mondayLinkedIds.has(hoverId) ? " (Linked to Monday ✓)" : "";
-          lines.push(`Milestone${mondaySuffix}`);
+          lines.push("Milestone");
           const msState = plan.node_allocations.milestones[msId];
           if (msState) lines.push(`Scheduled: ${msState.date}`);
           if (constraintViolations.has(hoverId)) lines.push("⚠ Constraint violated");
@@ -718,10 +750,18 @@ export function OverviewPage() {
         }
 
         if (lines.length > 0) {
+          const isMonday = (task || ms) && mondayLinkedIds.has(hoverId);
+          // Extra width reserved for the Monday logo + tick on the status/milestone line
+          const mondayExtraW = isMonday ? bodySize * (1.1 * MONDAY_LOGO_ASPECT + 0.6 + 0.75) + bodySize * 0.5 : 0;
+
           ctx.font = `${titleSize}px sans-serif`;
           const titleW = ctx.measureText(lines[0]).width;
           ctx.font = `${bodySize}px sans-serif`;
-          const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
+          let bodyMaxW = 0;
+          for (let i = 0; i < lines.length - 1; i++) {
+            const lw = ctx.measureText(lines[i + 1]).width + (isMonday && i === 0 ? mondayExtraW : 0);
+            bodyMaxW = Math.max(bodyMaxW, lw);
+          }
           const panelW = Math.max(titleW, bodyMaxW) + panelPad * 2;
           const panelH = panelPad * 2
             + (titleSize * 1.25)
@@ -753,6 +793,11 @@ export function OverviewPage() {
           const bodyStartY = py + panelPad + titleSize * 1.25 + lineGap;
           for (let i = 0; i < lines.length - 1; i++) {
             ctx.fillText(lines[i + 1], px + panelPad, bodyStartY + i * (bodySize * 1.4 + lineGap));
+          }
+          if (isMonday) {
+            const markRightX = px + panelW - panelPad;
+            const markCenterY = bodyStartY + bodySize * 0.55;
+            drawMondayMark(ctx, markRightX, markCenterY, bodySize);
           }
           ctx.textBaseline = "alphabetic";
         }
