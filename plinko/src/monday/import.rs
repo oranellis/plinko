@@ -84,6 +84,11 @@ pub fn import_from_monday(
     let mut task_statuses: HashMap<TaskId, (Status, Option<NaiveDate>, Option<NaiveDate>)> =
         HashMap::new();
 
+    // Track task IDs that were newly created during this import (not pre-existing in the plan).
+    // Only new tasks have their duration_days_target overwritten from Monday's timeline;
+    // pre-existing tasks keep their plinko-side duration as the authoritative value.
+    let mut new_task_ids: std::collections::HashSet<TaskId> = std::collections::HashSet::new();
+
     let mut created = 0usize;
     let mut updated = 0usize;
 
@@ -185,6 +190,7 @@ pub fn import_from_monday(
                     let mut task = build_task(item, config);
                     task.context_label = ctx;
                     let task_id = task.id;
+                    new_task_ids.insert(task_id); // track as newly created
                     let status = resolve_status(item, config);
                     task_statuses.insert(task_id, (status, item.timeline_start, item.timeline_end));
                     plan.add_task(task);
@@ -255,18 +261,22 @@ pub fn import_from_monday(
         // start with a 1-day duration so they don't show the 1970 sentinel.
         // For incomplete tasks (NotStarted/InProgress/OnHold) without a timeline:
         // derive a sensible duration estimate: ceil(2 * total_workload / #workers).
-        if !has_timeline && let Some(task) = plan.tasks.get_mut(task_id) {
-            match status {
-                Status::Complete | Status::Dropped => {
-                    // No timeline available — use a 1-day placeholder so we
-                    // don't show the 1970 sentinel.
-                    task.duration_days_target = 1.0;
-                }
-                Status::NotStarted | Status::InProgress | Status::OnHold => {
-                    let total_workload: f32 = task.workers.iter().map(|w| w.workload_days()).sum();
-                    let num_workers = task.workers.len().max(1) as f32;
-                    task.duration_days_target =
-                        (2.0 * total_workload / num_workers).ceil().max(1.0);
+        // Only applies to newly-created tasks; pre-existing tasks keep their plinko duration.
+        if !has_timeline && new_task_ids.contains(task_id) {
+            if let Some(task) = plan.tasks.get_mut(task_id) {
+                match status {
+                    Status::Complete | Status::Dropped => {
+                        // No timeline available — use a 1-day placeholder so we
+                        // don't show the 1970 sentinel.
+                        task.duration_days_target = 1.0;
+                    }
+                    Status::NotStarted | Status::InProgress | Status::OnHold => {
+                        let total_workload: f32 =
+                            task.workers.iter().map(|w| w.workload_days()).sum();
+                        let num_workers = task.workers.len().max(1) as f32;
+                        task.duration_days_target =
+                            (2.0 * total_workload / num_workers).ceil().max(1.0);
+                    }
                 }
             }
         }
@@ -274,9 +284,12 @@ pub fn import_from_monday(
         let start_date = tl_start.unwrap_or(plan_start);
         match status {
             Status::NotStarted => {
-                // Overwrite duration from Monday's timeline so a timeline change
-                // (e.g. 8 days → 4 days) is reflected on re-import.
-                if has_timeline {
+                // For newly-imported tasks, set duration from Monday's timeline so a
+                // timeline change (e.g. 8 days → 4 days) is reflected on first import.
+                // For pre-existing plinko tasks the duration is the authoritative value —
+                // push/pull round-trips must not clobber it (calendar overrides cause the
+                // pushed timeline span to exceed the task's actual working-day duration).
+                if has_timeline && new_task_ids.contains(task_id) {
                     let wd = timeline_working_days(*tl_start, *tl_end);
                     if wd > 0.0
                         && let Some(task) = plan.tasks.get_mut(task_id)
