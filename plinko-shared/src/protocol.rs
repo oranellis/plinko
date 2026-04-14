@@ -351,7 +351,7 @@ impl std::fmt::Display for PlanError {
     }
 }
 
-pub const VERSION: &str = "0.3.14";
+pub const VERSION: &str = "0.3.15";
 
 /// Per-user server-side preferences.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
-import type { TaskId, UserId } from "../protocol";
+import type { ConstraintViolation, TaskId, UserId } from "../protocol";
 import {
   addDays,
   daysBetween,
@@ -97,6 +97,17 @@ export function AllocationPage() {
     }).catch(() => { /* ignore config load errors silently */ });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMondayIntegration, plan?.id]);
+
+  // Map from raw UUID string → ConstraintViolation for nodes with violated constraints
+  const constraintViolations = useMemo((): Map<string, ConstraintViolation> => {
+    if (!plan) return new Map();
+    const result = new Map<string, ConstraintViolation>();
+    for (const [key, v] of Object.entries(plan.node_allocations.constraint_violations)) {
+      if (key.startsWith("task:")) result.set(key.slice(5), v);
+      else if (key.startsWith("milestone:")) result.set(key.slice(10), v);
+    }
+    return result;
+  }, [plan]);
 
   const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0, moved: false });
   const pendingClickRef = useRef<string | null>(null);
@@ -205,6 +216,7 @@ export function AllocationPage() {
 
   const hitUserRectsRef = useRef<{ id: string; y: number; h: number }[]>([]);
   const hitTaskRectsRef = useRef<{ id: string; y: number; h: number }[]>([]);
+  const hitViolationRectsRef = useRef<{ id: string; x: number; y: number; r: number }[]>([]);
 
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -221,6 +233,7 @@ export function AllocationPage() {
     ctx.scale(dpr, dpr);
     hitUserRectsRef.current = [];
     hitTaskRectsRef.current = [];
+    hitViolationRectsRef.current = [];
 
     ctx.fillStyle = "#1e1e1e";
     ctx.fillRect(0, 0, w, h);
@@ -620,8 +633,9 @@ export function AllocationPage() {
 
     // === HOVER INFO PANEL (bottom-left) ===
     if (hoveredTaskId && selectedUserId) {
-      const task = plan.tasks[hoveredTaskId as TaskId];
-      const state = plan.node_allocations.tasks[hoveredTaskId as TaskId];
+      const rawId = hoveredTaskId.startsWith("!:") ? hoveredTaskId.slice(2) : hoveredTaskId;
+      const task = plan.tasks[rawId as TaskId];
+      const state = plan.node_allocations.tasks[rawId as TaskId];
       if (task && state) {
         const panelPad = 10;
         const margin = 8;
@@ -629,22 +643,31 @@ export function AllocationPage() {
         const titleSize = 18;
         const bodySize = 14;
 
+        const violation = constraintViolations.get(rawId);
+        const isViolationHover = hoveredTaskId.startsWith("!:");
         const lines: string[] = [];
         lines.push(displayName(task.name, task.context_label ?? null));
-        const mondaySuffix = mondayLinkedIds.has(hoveredTaskId) ? " (Linked to Monday ✓)" : "";
-        lines.push(`Status: ${state.status}${mondaySuffix}`);
-        const schedStart = "Fixed" in state.allocation ? state.allocation.Fixed.start_date : state.allocation.Dynamic.scheduled_start_date;
-        lines.push(`Scheduled: ${schedStart}`);
-        const endDate = "Fixed" in state.allocation ? state.allocation.Fixed.end_date : state.allocation.Dynamic.scheduled_end_date;
-        lines.push(`Ends: ${endDate}`);
-        const workerNames = task.workers.flatMap((slot) => {
-          if ("Specific" in slot) {
-            const u = plan.users_data[slot.Specific.user_id];
-            return u ? [u.user.name] : [];
-          }
-          return ["(unassigned)"];
-        });
-        if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
+        if (isViolationHover && violation) {
+          lines.push(`⚠ Constraint violated (${violation.kind})`);
+          lines.push(`Required: ${violation.required_date}`);
+          lines.push(`Scheduled: ${violation.scheduled_date}`);
+        } else {
+          const mondaySuffix = mondayLinkedIds.has(rawId) ? " (Linked to Monday ✓)" : "";
+          lines.push(`Status: ${state.status}${mondaySuffix}`);
+          const schedStart = "Fixed" in state.allocation ? state.allocation.Fixed.start_date : state.allocation.Dynamic.scheduled_start_date;
+          lines.push(`Scheduled: ${schedStart}`);
+          const endDate = "Fixed" in state.allocation ? state.allocation.Fixed.end_date : state.allocation.Dynamic.scheduled_end_date;
+          lines.push(`Ends: ${endDate}`);
+          const workerNames = task.workers.flatMap((slot) => {
+            if ("Specific" in slot) {
+              const u = plan.users_data[slot.Specific.user_id];
+              return u ? [u.user.name] : [];
+            }
+            return ["(unassigned)"];
+          });
+          if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
+          if (violation) lines.push("⚠ Constraint violated");
+        }
 
         ctx.save();
         ctx.resetTransform();
@@ -693,8 +716,33 @@ export function AllocationPage() {
       }
     }
 
+    // ── CONSTRAINT VIOLATION INDICATORS ──────────────────────────────────
+    // Drawn outside the clip region so they're always visible at the right edge
+    const excR = 9;
+    const excX = w - excR - 6;
+    for (let i = 0; i < userTasks.length; i++) {
+      const [id] = userTasks[i];
+      const violation = constraintViolations.get(id);
+      if (!violation) continue;
+      const rowCanvasY = taskContentTop + i * ROW_H - taskScrollY;
+      if (rowCanvasY + ROW_H < taskContentTop || rowCanvasY > h) continue; // off-screen
+      const excY = rowCanvasY + ROW_H / 2;
+      ctx.fillStyle = "#e65100";
+      ctx.beginPath();
+      ctx.arc(excX, excY, excR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "white";
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("!", excX, excY + 0.5);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      hitViolationRectsRef.current.push({ id, x: excX - excR, y: rowCanvasY, r: excR * 2 });
+    }
+
     ctx.restore();
-  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId, mondayLinkedIds]);
+  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId, mondayLinkedIds, constraintViolations]);
 
   useEffect(() => { render(); }, [render]);
 
@@ -732,11 +780,18 @@ export function AllocationPage() {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    // Update hover for task rows
+    // Update hover — check violation indicators first, then task rows
     if (mx >= USER_PANEL_W) {
       let hit: string | null = null;
-      for (const r of hitTaskRectsRef.current) {
-        if (my >= r.y && my <= r.y + r.h) { hit = r.id; break; }
+      for (const r of hitViolationRectsRef.current) {
+        if (mx >= r.x && mx <= r.x + r.r && my >= r.y && my <= r.y + ROW_H) {
+          hit = `!:${r.id}`; break;
+        }
+      }
+      if (!hit) {
+        for (const r of hitTaskRectsRef.current) {
+          if (my >= r.y && my <= r.y + r.h) { hit = r.id; break; }
+        }
       }
       setHoveredTaskId(hit);
     } else {
@@ -756,8 +811,9 @@ export function AllocationPage() {
   };
 
   const onMouseUp = () => {
-    if (!dragRef.current.moved && pendingClickRef.current) {
-      setEditTaskId(pendingClickRef.current as TaskId);
+    const pending = pendingClickRef.current;
+    if (!dragRef.current.moved && pending && !pending.startsWith("!:")) {
+      setEditTaskId(pending as TaskId);
     }
     dragRef.current.active = false;
     dragRef.current.moved = false;

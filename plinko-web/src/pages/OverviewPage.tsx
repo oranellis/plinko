@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
-import type { MilestoneId, TaskId } from "../protocol";
+import type { ConstraintViolation, MilestoneId, TaskId } from "../protocol";
 import {
   STATUS_COLORS,
   addDays,
@@ -154,6 +154,17 @@ export function OverviewPage() {
     return new Set([...allIds].filter(id => !nonLeaves.has(id)));
   }, [plan]);
 
+  // Map from raw UUID string → ConstraintViolation for nodes with violated constraints
+  const constraintViolations = useMemo((): Map<string, ConstraintViolation> => {
+    if (!plan) return new Map();
+    const result = new Map<string, ConstraintViolation>();
+    for (const [key, v] of Object.entries(plan.node_allocations.constraint_violations)) {
+      if (key.startsWith("task:")) result.set(key.slice(5), v);
+      else if (key.startsWith("milestone:")) result.set(key.slice(10), v);
+    }
+    return result;
+  }, [plan]);
+
   // Scroll limits
   const maxRows = items.length > 0 ? Math.max(...items.map((i) => i.row)) + 1 : 1;
   const maxScrollY = Math.max(0, maxRows * ROW_H - (size.h - HEADER_H));
@@ -166,6 +177,7 @@ export function OverviewPage() {
 
   // Hit-test refs (populated during render)
   const hitRectsRef = useRef<{ id: string; x: number; y: number; w: number; h: number }[]>([]);
+  const mousePosRef = useRef({ x: 0, y: 0 });
 
   // Canvas render
   const render = useCallback(() => {
@@ -442,6 +454,26 @@ export function OverviewPage() {
         ctx.textBaseline = "alphabetic";
 
         hitRectsRef.current.push({ id: item.id, x, y, w: barW, h: barH });
+
+        // Constraint violation indicator — orange "!" circle to the right of the bar
+        const violation = constraintViolations.get(item.id);
+        if (violation) {
+          const excR = 9;
+          const excX = x + barW + excR + 4;
+          const excY = y + barH / 2;
+          ctx.fillStyle = "#e65100";
+          ctx.beginPath();
+          ctx.arc(excX, excY, excR, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "white";
+          ctx.font = "bold 13px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("!", excX, excY + 0.5);
+          ctx.textAlign = "left";
+          ctx.textBaseline = "alphabetic";
+          hitRectsRef.current.push({ id: `!:${item.id}`, x: excX - excR, y: excY - excR, w: excR * 2, h: excR * 2 });
+        }
       } else if (item.id === PLAN_START_ID) {
         // Plan Start — purple diamond with special label
         const cx = startOff * dayW - scrollX + dayW / 2;
@@ -566,6 +598,26 @@ export function OverviewPage() {
         }
 
         hitRectsRef.current.push({ id: item.id, x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
+
+        // Constraint violation indicator — orange "!" circle to the right of the diamond
+        const msViolation = constraintViolations.get(item.id);
+        if (msViolation) {
+          const excR = 9;
+          const excX = cx + r + excR + 4;
+          const excY = cy;
+          ctx.fillStyle = "#e65100";
+          ctx.beginPath();
+          ctx.arc(excX, excY, excR, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "white";
+          ctx.font = "bold 13px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("!", excX, excY + 0.5);
+          ctx.textAlign = "left";
+          ctx.textBaseline = "alphabetic";
+          hitRectsRef.current.push({ id: `!:${item.id}`, x: excX - excR, y: excY - excR, w: excR * 2, h: excR * 2 });
+        }
       }
     }
 
@@ -579,12 +631,27 @@ export function OverviewPage() {
 
       // Build lines
       const lines: string[] = [];
-      const taskId = hoverId as import("../protocol").TaskId;
-      const msId = hoverId as import("../protocol").MilestoneId;
-      const task = hoverId === PLAN_START_ID ? null : plan.tasks[taskId];
-      const ms = hoverId === PLAN_START_ID ? null : plan.milestones[msId];
+      const isViolationHover = hoverId.startsWith("!:");
+      const rawId = isViolationHover ? hoverId.slice(2) : hoverId;
+      const taskId = rawId as import("../protocol").TaskId;
+      const msId = rawId as import("../protocol").MilestoneId;
+      const task = rawId === PLAN_START_ID ? null : plan.tasks[taskId];
+      const ms = rawId === PLAN_START_ID ? null : plan.milestones[msId];
 
-      if (task) {
+      if (isViolationHover) {
+        // Constraint violation tooltip
+        const v = constraintViolations.get(rawId);
+        if (v) {
+          const nodeName = task?.name ?? ms?.name ?? v.node_name;
+          lines.push(nodeName);
+          const kindLabel = v.kind === "Fixed" ? "Fixed date violated"
+            : v.kind === "Latest" ? "Latest date exceeded"
+            : "Earliest date not met";
+          lines.push(`⚠ ${kindLabel}`);
+          lines.push(`Required: ${v.required_date}`);
+          lines.push(`Scheduled: ${v.scheduled_date}`);
+        }
+      } else if (task) {
         const tname = task.context_label ? `${task.name} | ${task.context_label}` : task.name;
         lines.push(tname);
         const taskState = plan.node_allocations.tasks[taskId];
@@ -617,6 +684,7 @@ export function OverviewPage() {
           }
         });
         if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
+        if (constraintViolations.has(hoverId)) lines.push("⚠ Constraint violated");
       } else if (ms) {
         const mname = ms.context_label ? `${ms.name} | ${ms.context_label}` : ms.name;
         lines.push(mname);
@@ -624,7 +692,8 @@ export function OverviewPage() {
         lines.push(`Milestone${mondaySuffix}`);
         const msState = plan.node_allocations.milestones[msId];
         if (msState) lines.push(`Scheduled: ${msState.date}`);
-      } else if (hoverId === PLAN_START_ID) {
+        if (constraintViolations.has(hoverId)) lines.push("⚠ Constraint violated");
+      } else if (rawId === PLAN_START_ID) {
         lines.push("Plan Start");
         lines.push(`Date: ${plan.start_date}`);
       }
@@ -683,7 +752,7 @@ export function OverviewPage() {
     }
 
     ctx.restore();
-  }, [plan, items, size, scrollX, scrollY, dayW, hoverId, flashId, flashAlpha, leafNodeIds, mondayLinkedIds]);
+  }, [plan, items, size, scrollX, scrollY, dayW, hoverId, flashId, flashAlpha, leafNodeIds, mondayLinkedIds, constraintViolations]);
 
   useEffect(() => { render(); }, [render]);
 
@@ -699,6 +768,7 @@ export function OverviewPage() {
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
+    mousePosRef.current = { x: mx, y: my };
     const hit = hitTest(mx, my);
     setHoverId(hit);
 
@@ -730,10 +800,10 @@ export function OverviewPage() {
     const dx = Math.abs(e.clientX - d.startX);
     const dy = Math.abs(e.clientY - d.startY);
     if (dx < 4 && dy < 4) {
-      // Click — open modal
+      // Click — open modal (ignore clicks on the constraint violation indicator)
       const rect = canvasRef.current!.getBoundingClientRect();
       const id = hitTest(e.clientX - rect.left, e.clientY - rect.top);
-      if (id && plan) {
+      if (id && plan && !id.startsWith("!:")) {
         if (plan.tasks[id as TaskId]) setEditTaskId(id as TaskId);
         else if (plan.milestones[id as MilestoneId]) setEditMsId(id as MilestoneId);
       }
