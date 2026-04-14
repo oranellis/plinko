@@ -111,6 +111,7 @@ export function AllocationPage() {
 
   const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0, moved: false });
   const pendingClickRef = useRef<string | null>(null);
+  const mousePosRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     const el = containerRef.current;
@@ -631,27 +632,62 @@ export function AllocationPage() {
       ctx.stroke();
     }
 
-    // === HOVER INFO PANEL (bottom-left) ===
+    // === HOVER INFO PANEL ===
     if (hoveredTaskId && selectedUserId) {
-      const rawId = hoveredTaskId.startsWith("!:") ? hoveredTaskId.slice(2) : hoveredTaskId;
+      const isViolationHover = hoveredTaskId.startsWith("!:");
+      const rawId = isViolationHover ? hoveredTaskId.slice(2) : hoveredTaskId;
       const task = plan.tasks[rawId as TaskId];
       const state = plan.node_allocations.tasks[rawId as TaskId];
       if (task && state) {
-        const panelPad = 10;
-        const margin = 8;
-        const lineGap = 4;
-        const titleSize = 18;
-        const bodySize = 14;
-
         const violation = constraintViolations.get(rawId);
-        const isViolationHover = hoveredTaskId.startsWith("!:");
-        const lines: string[] = [];
-        lines.push(displayName(task.name, task.context_label ?? null));
+        const dpr = window.devicePixelRatio || 1;
+        ctx.save();
+        ctx.resetTransform();
+        ctx.scale(dpr, dpr);
+
         if (isViolationHover && violation) {
-          lines.push(`⚠ Constraint violated (${violation.kind})`);
-          lines.push(`Required: ${violation.required_date}`);
-          lines.push(`Scheduled: ${violation.scheduled_date}`);
+          // Compact floating tooltip near cursor, orange border
+          const kindLabel = violation.kind === "Fixed" ? "Fixed date violated"
+            : violation.kind === "Latest" ? "Latest date exceeded"
+            : "Earliest date not met";
+          const lines = [kindLabel, `Required: ${violation.required_date}`, `Scheduled: ${violation.scheduled_date}`];
+          const pad = 7;
+          const lineH = 17;
+          ctx.font = "12px sans-serif";
+          const panelW = lines.reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0) + pad * 2;
+          const panelH = lines.length * lineH + pad * 2 - 3;
+          const mxPos = mousePosRef.current.x;
+          const myPos = mousePosRef.current.y;
+          let px = mxPos - panelW - 14;
+          let py = myPos - panelH / 2;
+          if (px < USER_PANEL_W + 4) px = mxPos + 14;
+          if (py < 4) py = 4;
+          if (py + panelH > h - 4) py = h - 4 - panelH;
+
+          ctx.fillStyle = "rgba(18,18,18,0.95)";
+          roundRect(ctx, px, py, panelW, panelH, 4);
+          ctx.fill();
+          ctx.strokeStyle = "#e65100";
+          ctx.lineWidth = 1.5;
+          roundRect(ctx, px, py, panelW, panelH, 4);
+          ctx.stroke();
+
+          ctx.fillStyle = "#e8a87c";
+          ctx.textBaseline = "top";
+          for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], px + pad, py + pad + i * lineH);
+          }
+          ctx.textBaseline = "alphabetic";
         } else {
+          // Standard bottom-left info panel
+          const panelPad = 10;
+          const margin = 8;
+          const lineGap = 4;
+          const titleSize = 18;
+          const bodySize = 14;
+
+          const lines: string[] = [];
+          lines.push(displayName(task.name, task.context_label ?? null));
           const mondaySuffix = mondayLinkedIds.has(rawId) ? " (Linked to Monday ✓)" : "";
           lines.push(`Status: ${state.status}${mondaySuffix}`);
           const schedStart = "Fixed" in state.allocation ? state.allocation.Fixed.start_date : state.allocation.Dynamic.scheduled_start_date;
@@ -667,59 +703,53 @@ export function AllocationPage() {
           });
           if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
           if (violation) lines.push("⚠ Constraint violated");
+
+          ctx.font = `${titleSize}px sans-serif`;
+          const titleW = ctx.measureText(lines[0]).width;
+          ctx.font = `${bodySize}px sans-serif`;
+          const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
+          const panelW = Math.max(titleW, bodyMaxW) + panelPad * 2;
+          const panelH = panelPad * 2
+            + titleSize * 1.25
+            + (lines.length > 1 ? lineGap + (lines.length - 1) * (bodySize * 1.4) + (lines.length - 2) * lineGap : 0);
+
+          const px = USER_PANEL_W + margin;
+          const py = h - margin - panelH;
+
+          ctx.fillStyle = "rgba(0,0,0,0.19)";
+          roundRect(ctx, px + 2, py + 3, panelW, panelH, 6);
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(30,30,30,0.86)";
+          roundRect(ctx, px, py, panelW, panelH, 6);
+          ctx.fill();
+
+          ctx.strokeStyle = "#4a4a4a";
+          ctx.lineWidth = 1;
+          roundRect(ctx, px, py, panelW, panelH, 6);
+          ctx.stroke();
+
+          ctx.font = `${titleSize}px sans-serif`;
+          ctx.fillStyle = "#d4d4d4";
+          ctx.textBaseline = "top";
+          ctx.fillText(lines[0], px + panelPad, py + panelPad);
+
+          ctx.font = `${bodySize}px sans-serif`;
+          ctx.fillStyle = "#8a8a8a";
+          const bodyStartY = py + panelPad + titleSize * 1.25 + lineGap;
+          for (let i = 0; i < lines.length - 1; i++) {
+            ctx.fillText(lines[i + 1], px + panelPad, bodyStartY + i * (bodySize * 1.4 + lineGap));
+          }
+          ctx.textBaseline = "alphabetic";
         }
 
-        ctx.save();
-        ctx.resetTransform();
-        const dpr = window.devicePixelRatio || 1;
-        ctx.scale(dpr, dpr);
-
-        ctx.font = `${titleSize}px sans-serif`;
-        const titleW = ctx.measureText(lines[0]).width;
-        ctx.font = `${bodySize}px sans-serif`;
-        const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
-        const panelW = Math.max(titleW, bodyMaxW) + panelPad * 2;
-        const panelH = panelPad * 2
-          + titleSize * 1.25
-          + (lines.length > 1 ? lineGap + (lines.length - 1) * (bodySize * 1.4) + (lines.length - 2) * lineGap : 0);
-
-        const px = USER_PANEL_W + margin;
-        const py = h - margin - panelH;
-
-        ctx.fillStyle = "rgba(0,0,0,0.19)";
-        roundRect(ctx, px + 2, py + 3, panelW, panelH, 6);
-        ctx.fill();
-
-        ctx.fillStyle = "rgba(30,30,30,0.86)";
-        roundRect(ctx, px, py, panelW, panelH, 6);
-        ctx.fill();
-
-        ctx.strokeStyle = "#4a4a4a";
-        ctx.lineWidth = 1;
-        roundRect(ctx, px, py, panelW, panelH, 6);
-        ctx.stroke();
-
-        ctx.font = `${titleSize}px sans-serif`;
-        ctx.fillStyle = "#d4d4d4";
-        ctx.textBaseline = "top";
-        ctx.fillText(lines[0], px + panelPad, py + panelPad);
-
-        ctx.font = `${bodySize}px sans-serif`;
-        ctx.fillStyle = "#8a8a8a";
-        const bodyStartY = py + panelPad + titleSize * 1.25 + lineGap;
-        for (let i = 0; i < lines.length - 1; i++) {
-          ctx.fillText(lines[i + 1], px + panelPad, bodyStartY + i * (bodySize * 1.4 + lineGap));
-        }
-
-        ctx.textBaseline = "alphabetic";
         ctx.restore();
       }
     }
 
     // ── CONSTRAINT VIOLATION INDICATORS ──────────────────────────────────
     // Drawn outside the clip region so they're always visible at the right edge
-    const excR = 9;
-    const excX = w - excR - 6;
+    const excX = w - 12;
     for (let i = 0; i < userTasks.length; i++) {
       const [id] = userTasks[i];
       const violation = constraintViolations.get(id);
@@ -728,17 +758,13 @@ export function AllocationPage() {
       if (rowCanvasY + ROW_H < taskContentTop || rowCanvasY > h) continue; // off-screen
       const excY = rowCanvasY + ROW_H / 2;
       ctx.fillStyle = "#e65100";
-      ctx.beginPath();
-      ctx.arc(excX, excY, excR, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "white";
-      ctx.font = "bold 13px sans-serif";
+      ctx.font = "bold 16px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("!", excX, excY + 0.5);
+      ctx.fillText("!", excX, excY);
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
-      hitViolationRectsRef.current.push({ id, x: excX - excR, y: rowCanvasY, r: excR * 2 });
+      hitViolationRectsRef.current.push({ id, x: excX - 8, y: rowCanvasY, r: 16 });
     }
 
     ctx.restore();
@@ -779,6 +805,7 @@ export function AllocationPage() {
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
+    mousePosRef.current = { x: mx, y: my };
 
     // Update hover — check violation indicators first, then task rows
     if (mx >= USER_PANEL_W) {

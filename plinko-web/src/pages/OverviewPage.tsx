@@ -455,24 +455,19 @@ export function OverviewPage() {
 
         hitRectsRef.current.push({ id: item.id, x, y, w: barW, h: barH });
 
-        // Constraint violation indicator — orange "!" circle to the right of the bar
+        // Constraint violation indicator — orange bold "!" to the right of the bar
         const violation = constraintViolations.get(item.id);
         if (violation) {
-          const excR = 9;
-          const excX = x + barW + excR + 4;
+          const excX = x + barW + 10;
           const excY = y + barH / 2;
           ctx.fillStyle = "#e65100";
-          ctx.beginPath();
-          ctx.arc(excX, excY, excR, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "white";
-          ctx.font = "bold 13px sans-serif";
+          ctx.font = "bold 16px sans-serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText("!", excX, excY + 0.5);
+          ctx.fillText("!", excX, excY);
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
-          hitRectsRef.current.push({ id: `!:${item.id}`, x: excX - excR, y: excY - excR, w: excR * 2, h: excR * 2 });
+          hitRectsRef.current.push({ id: `!:${item.id}`, x: excX - 8, y: excY - 10, w: 16, h: 20 });
         }
       } else if (item.id === PLAN_START_ID) {
         // Plan Start — purple diamond with special label
@@ -581,7 +576,10 @@ export function OverviewPage() {
         }
 
         // Milestone name to the right — clipped at the next item in this row
-        const nameX = cx + r + 6;
+        // If there's a constraint violation indicator, offset the name start to clear it
+        const msViolation = constraintViolations.get(item.id);
+        const excIndicatorW = msViolation ? 20 : 0;
+        const nameX = cx + r + 6 + excIndicatorW;
         const nameClipEnd = Math.min((nextItemX.get(item.id) ?? w) - 4, w);
         const nameVisible = nameX < nameClipEnd;
         if (nameVisible) {
@@ -599,38 +597,24 @@ export function OverviewPage() {
 
         hitRectsRef.current.push({ id: item.id, x: cx - r, y: cy - r, w: r * 2, h: r * 2 });
 
-        // Constraint violation indicator — orange "!" circle to the right of the diamond
-        const msViolation = constraintViolations.get(item.id);
+        // Constraint violation indicator — orange bold "!" between diamond and name
         if (msViolation) {
-          const excR = 9;
-          const excX = cx + r + excR + 4;
+          const excX = cx + r + 10;
           const excY = cy;
           ctx.fillStyle = "#e65100";
-          ctx.beginPath();
-          ctx.arc(excX, excY, excR, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "white";
-          ctx.font = "bold 13px sans-serif";
+          ctx.font = "bold 16px sans-serif";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
-          ctx.fillText("!", excX, excY + 0.5);
+          ctx.fillText("!", excX, excY);
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
-          hitRectsRef.current.push({ id: `!:${item.id}`, x: excX - excR, y: excY - excR, w: excR * 2, h: excR * 2 });
+          hitRectsRef.current.push({ id: `!:${item.id}`, x: excX - 8, y: excY - 10, w: 16, h: 20 });
         }
       }
     }
 
-    // === HOVER INFO PANEL (bottom-left) ===
+    // === HOVER INFO PANEL ===
     if (hoverId) {
-      const panelPad = 10;
-      const margin = 8;
-      const lineGap = 4;
-      const titleSize = 20;
-      const bodySize = 15;
-
-      // Build lines
-      const lines: string[] = [];
       const isViolationHover = hoverId.startsWith("!:");
       const rawId = isViolationHover ? hoverId.slice(2) : hoverId;
       const taskId = rawId as import("../protocol").TaskId;
@@ -638,117 +622,143 @@ export function OverviewPage() {
       const task = rawId === PLAN_START_ID ? null : plan.tasks[taskId];
       const ms = rawId === PLAN_START_ID ? null : plan.milestones[msId];
 
+      ctx.save();
+      ctx.resetTransform();
+      ctx.scale(dpr, dpr);
+
       if (isViolationHover) {
-        // Constraint violation tooltip
+        // Compact floating tooltip near cursor, orange border
         const v = constraintViolations.get(rawId);
         if (v) {
-          const nodeName = task?.name ?? ms?.name ?? v.node_name;
-          lines.push(nodeName);
           const kindLabel = v.kind === "Fixed" ? "Fixed date violated"
             : v.kind === "Latest" ? "Latest date exceeded"
             : "Earliest date not met";
-          lines.push(`⚠ ${kindLabel}`);
-          lines.push(`Required: ${v.required_date}`);
-          lines.push(`Scheduled: ${v.scheduled_date}`);
-        }
-      } else if (task) {
-        const tname = task.context_label ? `${task.name} | ${task.context_label}` : task.name;
-        lines.push(tname);
-        const taskState = plan.node_allocations.tasks[taskId];
-        const status = taskState?.status ?? "Unknown";
-        const mondaySuffix = mondayLinkedIds.has(hoverId) ? " (Linked to Monday ✓)" : "";
-        lines.push(`Status: ${status}${mondaySuffix}`);
-        if (task.actual_start) {
-          lines.push(`Started: ${task.actual_start}`);
-        } else if (taskState) {
-          const alloc = taskState.allocation;
-          const sched = "Fixed" in alloc ? alloc.Fixed.start_date : alloc.Dynamic.scheduled_start_date;
-          lines.push(`Scheduled: ${sched}`);
-        }
-        // End date
-        if (taskState) {
-          const alloc = taskState.allocation;
-          const endDate = "Fixed" in alloc ? alloc.Fixed.end_date : alloc.Dynamic.scheduled_end_date;
-          lines.push(`Ends: ${endDate}`);
-        }
-        // Workers
-        const workerNames = task.workers.flatMap((slot) => {
-          if ("Specific" in slot) {
-            const user = plan.users_data[slot.Specific.user_id];
-            return user ? [user.user.name] : [];
-          } else {
-            const tagNames = slot.Placeholder.required_tags
-              .map((tid) => plan.tags.find((t) => t.id === tid)?.name)
-              .filter(Boolean).join(", ");
-            return tagNames ? [`needs: ${tagNames}`] : ["(unassigned)"];
+          const lines = [kindLabel, `Required: ${v.required_date}`, `Scheduled: ${v.scheduled_date}`];
+          const font = "12px sans-serif";
+          const pad = 7;
+          const lineH = 17;
+          ctx.font = font;
+          const panelW = lines.reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0) + pad * 2;
+          const panelH = lines.length * lineH + pad * 2 - 3;
+          const mx = mousePosRef.current.x;
+          const my = mousePosRef.current.y;
+          let px = mx + 14;
+          let py = my - panelH / 2;
+          if (px + panelW > w - 4) px = mx - panelW - 10;
+          if (py < 4) py = 4;
+          if (py + panelH > h - 4) py = h - 4 - panelH;
+
+          ctx.fillStyle = "rgba(18,18,18,0.95)";
+          roundRect(ctx, px, py, panelW, panelH, 4);
+          ctx.fill();
+          ctx.strokeStyle = "#e65100";
+          ctx.lineWidth = 1.5;
+          roundRect(ctx, px, py, panelW, panelH, 4);
+          ctx.stroke();
+
+          ctx.fillStyle = "#e8a87c";
+          ctx.textBaseline = "top";
+          for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], px + pad, py + pad + i * lineH);
           }
-        });
-        if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
-        if (constraintViolations.has(hoverId)) lines.push("⚠ Constraint violated");
-      } else if (ms) {
-        const mname = ms.context_label ? `${ms.name} | ${ms.context_label}` : ms.name;
-        lines.push(mname);
-        const mondaySuffix = mondayLinkedIds.has(hoverId) ? " (Linked to Monday ✓)" : "";
-        lines.push(`Milestone${mondaySuffix}`);
-        const msState = plan.node_allocations.milestones[msId];
-        if (msState) lines.push(`Scheduled: ${msState.date}`);
-        if (constraintViolations.has(hoverId)) lines.push("⚠ Constraint violated");
-      } else if (rawId === PLAN_START_ID) {
-        lines.push("Plan Start");
-        lines.push(`Date: ${plan.start_date}`);
-      }
+          ctx.textBaseline = "alphabetic";
+        }
+      } else {
+        // Standard bottom-left info panel
+        const panelPad = 10;
+        const margin = 8;
+        const lineGap = 4;
+        const titleSize = 20;
+        const bodySize = 15;
+        const lines: string[] = [];
 
-      if (lines.length > 0) {
-        ctx.save();
-        ctx.resetTransform();
-        ctx.scale(dpr, dpr);
-
-        // Measure
-        ctx.font = `${titleSize}px sans-serif`;
-        const titleW = ctx.measureText(lines[0]).width;
-        ctx.font = `${bodySize}px sans-serif`;
-        const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
-        const panelW = Math.max(titleW, bodyMaxW) + panelPad * 2;
-        const panelH = panelPad * 2
-          + (titleSize * 1.25)
-          + (lines.length > 1 ? lineGap + (lines.length - 1) * (bodySize * 1.4) + (lines.length - 2) * lineGap : 0);
-
-        const px = margin;
-        const py = h - margin - panelH;
-
-        // Shadow
-        ctx.fillStyle = "rgba(0,0,0,0.19)";
-        ctx.beginPath();
-        roundRect(ctx, px + 2, py + 3, panelW, panelH, 6);
-        ctx.fill();
-
-        // Background
-        ctx.fillStyle = "rgba(30,30,30,0.86)";
-        roundRect(ctx, px, py, panelW, panelH, 6);
-        ctx.fill();
-
-        // Border
-        ctx.strokeStyle = "#4a4a4a";
-        ctx.lineWidth = 1;
-        roundRect(ctx, px, py, panelW, panelH, 6);
-        ctx.stroke();
-
-        // Title line
-        ctx.font = `${titleSize}px sans-serif`;
-        ctx.fillStyle = "#d4d4d4";
-        ctx.textBaseline = "top";
-        ctx.fillText(lines[0], px + panelPad, py + panelPad);
-
-        // Body lines
-        ctx.font = `${bodySize}px sans-serif`;
-        ctx.fillStyle = "#8a8a8a";
-        const bodyStartY = py + panelPad + titleSize * 1.25 + lineGap;
-        for (let i = 0; i < lines.length - 1; i++) {
-          ctx.fillText(lines[i + 1], px + panelPad, bodyStartY + i * (bodySize * 1.4 + lineGap));
+        if (task) {
+          const tname = task.context_label ? `${task.name} | ${task.context_label}` : task.name;
+          lines.push(tname);
+          const taskState = plan.node_allocations.tasks[taskId];
+          const status = taskState?.status ?? "Unknown";
+          const mondaySuffix = mondayLinkedIds.has(hoverId) ? " (Linked to Monday ✓)" : "";
+          lines.push(`Status: ${status}${mondaySuffix}`);
+          if (task.actual_start) {
+            lines.push(`Started: ${task.actual_start}`);
+          } else if (taskState) {
+            const alloc = taskState.allocation;
+            const sched = "Fixed" in alloc ? alloc.Fixed.start_date : alloc.Dynamic.scheduled_start_date;
+            lines.push(`Scheduled: ${sched}`);
+          }
+          if (taskState) {
+            const alloc = taskState.allocation;
+            const endDate = "Fixed" in alloc ? alloc.Fixed.end_date : alloc.Dynamic.scheduled_end_date;
+            lines.push(`Ends: ${endDate}`);
+          }
+          const workerNames = task.workers.flatMap((slot) => {
+            if ("Specific" in slot) {
+              const user = plan.users_data[slot.Specific.user_id];
+              return user ? [user.user.name] : [];
+            } else {
+              const tagNames = slot.Placeholder.required_tags
+                .map((tid) => plan.tags.find((t) => t.id === tid)?.name)
+                .filter(Boolean).join(", ");
+              return tagNames ? [`needs: ${tagNames}`] : ["(unassigned)"];
+            }
+          });
+          if (workerNames.length > 0) lines.push(`Workers: ${workerNames.join(", ")}`);
+          if (constraintViolations.has(hoverId)) lines.push("⚠ Constraint violated");
+        } else if (ms) {
+          const mname = ms.context_label ? `${ms.name} | ${ms.context_label}` : ms.name;
+          lines.push(mname);
+          const mondaySuffix = mondayLinkedIds.has(hoverId) ? " (Linked to Monday ✓)" : "";
+          lines.push(`Milestone${mondaySuffix}`);
+          const msState = plan.node_allocations.milestones[msId];
+          if (msState) lines.push(`Scheduled: ${msState.date}`);
+          if (constraintViolations.has(hoverId)) lines.push("⚠ Constraint violated");
+        } else if (rawId === PLAN_START_ID) {
+          lines.push("Plan Start");
+          lines.push(`Date: ${plan.start_date}`);
         }
 
-        ctx.restore();
+        if (lines.length > 0) {
+          ctx.font = `${titleSize}px sans-serif`;
+          const titleW = ctx.measureText(lines[0]).width;
+          ctx.font = `${bodySize}px sans-serif`;
+          const bodyMaxW = lines.slice(1).reduce((mx, l) => Math.max(mx, ctx.measureText(l).width), 0);
+          const panelW = Math.max(titleW, bodyMaxW) + panelPad * 2;
+          const panelH = panelPad * 2
+            + (titleSize * 1.25)
+            + (lines.length > 1 ? lineGap + (lines.length - 1) * (bodySize * 1.4) + (lines.length - 2) * lineGap : 0);
+
+          const px = margin;
+          const py = h - margin - panelH;
+
+          ctx.fillStyle = "rgba(0,0,0,0.19)";
+          roundRect(ctx, px + 2, py + 3, panelW, panelH, 6);
+          ctx.fill();
+
+          ctx.fillStyle = "rgba(30,30,30,0.86)";
+          roundRect(ctx, px, py, panelW, panelH, 6);
+          ctx.fill();
+
+          ctx.strokeStyle = "#4a4a4a";
+          ctx.lineWidth = 1;
+          roundRect(ctx, px, py, panelW, panelH, 6);
+          ctx.stroke();
+
+          ctx.font = `${titleSize}px sans-serif`;
+          ctx.fillStyle = "#d4d4d4";
+          ctx.textBaseline = "top";
+          ctx.fillText(lines[0], px + panelPad, py + panelPad);
+
+          ctx.font = `${bodySize}px sans-serif`;
+          ctx.fillStyle = "#8a8a8a";
+          const bodyStartY = py + panelPad + titleSize * 1.25 + lineGap;
+          for (let i = 0; i < lines.length - 1; i++) {
+            ctx.fillText(lines[i + 1], px + panelPad, bodyStartY + i * (bodySize * 1.4 + lineGap));
+          }
+          ctx.textBaseline = "alphabetic";
+        }
       }
+
+      ctx.restore();
     }
 
     ctx.restore();
