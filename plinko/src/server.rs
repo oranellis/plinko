@@ -116,12 +116,23 @@ pub(crate) fn handle_protocol(
     }
 
     let mut line = String::new();
-    match recv(&mut line) {
-        Ok(false) | Err(_) => {
-            eprintln!("[connect] {peer}: disconnected before handshake");
-            return;
+    // Loop on WouldBlock (50 ms polling interval) just like the auth phase below.
+    loop {
+        match recv(&mut line) {
+            Ok(true) => break,
+            Ok(false) => {
+                eprintln!("[connect] {peer}: disconnected before handshake");
+                return;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                line.clear();
+                continue;
+            }
+            Err(_) => {
+                eprintln!("[connect] {peer}: disconnected before handshake");
+                return;
+            }
         }
-        Ok(true) => {}
     }
     let client_hello: ClientMessage = match serde_json::from_str(line.trim()) {
         Ok(m) => m,
