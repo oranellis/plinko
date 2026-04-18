@@ -14,6 +14,7 @@ import { IconToday } from "../components/icons";
 import "./AllocationPage.css";
 
 const USER_PANEL_W = 220;
+const PANEL_HEADER_H = 40; // header row in user panel (fits the 30px toggle button)
 const ROW_H = 32;
 const HEADER_H = 44; // month row (20px) + day row (24px)
 const UTIL_ROW_H = 36; // utilisation row below date header
@@ -312,15 +313,30 @@ export function AllocationPage() {
     ctx.fillStyle = "#252526";
     ctx.fillRect(0, 0, effectivePanelW, h);
 
+    // Panel header (contains the toggle button, drawn above the user list)
+    if (effectivePanelW > 42) {
+      ctx.fillStyle = "#888";
+      ctx.font = "11px sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillText("USERS", 44, PANEL_HEADER_H / 2);
+      ctx.textBaseline = "alphabetic";
+    }
+    ctx.strokeStyle = "#3a3a3c";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, PANEL_HEADER_H);
+    ctx.lineTo(effectivePanelW, PANEL_HEADER_H);
+    ctx.stroke();
+
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, effectivePanelW, h);
+    ctx.rect(0, PANEL_HEADER_H, effectivePanelW, h - PANEL_HEADER_H);
     ctx.clip();
 
     for (let i = 0; i < users.length; i++) {
       const u = users[i];
-      const y = i * ROW_H - userScrollY;
-      if (y + ROW_H < 0 || y > h) continue;
+      const y = PANEL_HEADER_H + i * ROW_H - userScrollY;
+      if (y + ROW_H < PANEL_HEADER_H || y > h) continue;
 
       const isSelected = u.id === selectedUserId;
       ctx.fillStyle = isSelected ? "#2d4a6a" : (i % 2 === 0 ? "#252526" : "#222224");
@@ -918,7 +934,7 @@ export function AllocationPage() {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     mousePosRef.current = { x: mx, y: my };
-    const epw = panelCollapsed ? 0 : USER_PANEL_W;
+    const epw = Math.round(panelWRef.current);
 
     if (e.pointerType === "mouse") {
       if (mx >= epw) {
@@ -962,7 +978,7 @@ export function AllocationPage() {
       if (area === "user") {
         // Vertical scroll in user panel (touch only)
         dragRef.current.lastY = e.clientY;
-        const maxU = Math.max(0, users.length * ROW_H - size.h);
+        const maxU = Math.max(0, users.length * ROW_H - (size.h - PANEL_HEADER_H));
         setUserScrollY((sy) => Math.max(0, Math.min(maxU, sy - dy)));
       } else if (!isTouch || area === "header") {
         // Mouse always scrolls horizontally; header area is horizontal-only
@@ -1017,7 +1033,7 @@ export function AllocationPage() {
     const mx = e.clientX - rect.left;
     const epw = Math.round(panelWRef.current);
     if (mx < epw) {
-      const maxU = Math.max(0, users.length * ROW_H - size.h);
+      const maxU = Math.max(0, users.length * ROW_H - (size.h - PANEL_HEADER_H));
       setUserScrollY((sy) => Math.max(0, Math.min(maxU, sy + e.deltaY)));
     } else {
       if (e.shiftKey) {

@@ -3,5 +3,5 @@ members = ["plinko-shared", "plinko"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.5"
+version = "0.4.6"
 edition = "2021"

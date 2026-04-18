@@ -38,8 +38,10 @@ export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder
     const spaceBelow = window.innerHeight - rect.bottom;
     const dropH = Math.min(options.length * 28 + 36, 220);
     const top = spaceBelow >= dropH ? rect.bottom + 2 : rect.top - dropH - 2;
+    const width = Math.max(rect.width, 200);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPos({ top, left: rect.left, width: rect.width });
+    setPos({ top, left, width });
   }, [anchor, options.length]);
 
   // Auto-focus filter input once position is resolved and the input is in the DOM.

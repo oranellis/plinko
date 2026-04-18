@@ -70,8 +70,10 @@ export function DatePicker({ value, onChange, disabled = false, placeholder = "S
     if (triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       const popH = 280;
+      const popW = 240;
       const top = (window.innerHeight - rect.bottom >= popH) ? rect.bottom + 2 : rect.top - popH - 2;
-      setPos({ top, left: rect.left });
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - popW - 8));
+      setPos({ top, left });
     }
     setOpen(true);
   };
