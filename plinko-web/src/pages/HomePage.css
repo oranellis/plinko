@@ -95,3 +95,28 @@
   color: #444;
   pointer-events: none;
 }
+
+@media (max-width: 530px) {
+  .home-page {
+    padding-bottom: 80px;
+  }
+
+  .home-cards-row {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .home-card {
+    width: 280px;
+    height: 64px;
+    flex-direction: row;
+    justify-content: flex-start;
+    padding: 0 20px;
+    gap: 16px;
+    border-radius: 8px;
+  }
+
+  .home-card-label {
+    font-size: 15px;
+  }
+}

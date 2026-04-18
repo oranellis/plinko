@@ -73,6 +73,8 @@ export function ResourcesPage() {
   // ── Calendar popup ──
   const [editPopup, setEditPopup] = useState<{ date: IsoDate; value: string } | null>(null);
 
+  const [leftCollapsed, setLeftCollapsed] = useState(() => window.innerWidth < 600);
+
   // Scrollable calendar ref — scroll to today on mount
   const calScrollRef = useRef<HTMLDivElement>(null);
   const todayMarkerRef = useRef<HTMLDivElement>(null);
@@ -331,7 +333,14 @@ export function ResourcesPage() {
   return (
     <div className="resources-page">
       {/* ── Left panel ── */}
-      <div className="resources-left">
+      <div className={`resources-left${leftCollapsed ? " resources-left--collapsed" : ""}`}>
+        <button
+          className="resources-panel-close"
+          onClick={() => setLeftCollapsed(true)}
+          title="Collapse panel"
+        >
+          ‹
+        </button>
 
         {leftView === "list" && (
           <>
@@ -591,6 +600,15 @@ export function ResourcesPage() {
       {/* ── Right: Scrollable calendar ── */}
       <div className="resources-right">
         <div className="resources-cal-label">
+          {leftCollapsed && (
+            <button
+              className="resources-panel-open btn btn-secondary btn-sm"
+              onClick={() => setLeftCollapsed(false)}
+              title="Show panel"
+            >
+              ☰
+            </button>
+          )}
           <span>
             {selected === "plan"
               ? "Plan calendar overrides"

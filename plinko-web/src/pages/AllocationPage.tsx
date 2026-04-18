@@ -107,6 +107,11 @@ export function AllocationPage() {
   const [showUsers, setShowUsers] = useState(false); // kept for ref compatibility
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
+  // null = follow auto; toggles to a boolean when user manually overrides
+  const [userPanelOverride, setUserPanelOverride] = useState<boolean | null>(null);
+  const autoCollapsed = size.w < 600;
+  const panelCollapsed = userPanelOverride ?? autoCollapsed;
+
   // Monday-linked node IDs (set of raw task UUID strings)
   const [mondayLinkedIds, setMondayLinkedIds] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -141,7 +146,16 @@ export function AllocationPage() {
     return result;
   }, [plan]);
 
-  const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0, moved: false, isTouch: false });
+  const dragRef = useRef<{
+    active: boolean;
+    startX: number; lastX: number;
+    startY: number; lastY: number;
+    scrollXStart: number;
+    moved: boolean;
+    isTouch: boolean;
+    area: 'user' | 'task' | 'header' | null;
+    axis: 'h' | 'v' | null;
+  }>({ active: false, startX: 0, lastX: 0, startY: 0, lastY: 0, scrollXStart: 0, moved: false, isTouch: false, area: null, axis: null });
   const pendingClickRef = useRef<string | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
 
@@ -162,11 +176,13 @@ export function AllocationPage() {
   const scrollXRef = useRef(scrollX);
   const sizeRef2 = useRef(size);
   const dayWRef2 = useRef(dayW);
+  const panelCollapsedRef = useRef(panelCollapsed);
   setShowUsersRef.current = setShowUsers;
   planRef.current = plan;
   scrollXRef.current = scrollX;
   sizeRef2.current = size;
   dayWRef2.current = dayW;
+  panelCollapsedRef.current = panelCollapsed;
 
   useEffect(() => {
     setToolbarActions(
@@ -177,7 +193,8 @@ export function AllocationPage() {
         if (!p) return;
         const today = formatDate(new Date());
         const offset = daysBetween(p.start_date, today);
-        const tlW = sw - USER_PANEL_W;
+        const epw = panelCollapsedRef.current ? 0 : USER_PANEL_W;
+        const tlW = sw - epw;
         setScrollX(Math.max(0, offset * dw - tlW / 2));
       }}><IconToday size={24} /></button>
     );
@@ -191,7 +208,7 @@ export function AllocationPage() {
     if (!plan) return;
     const today = formatDate(new Date());
     const offset = daysBetween(plan.start_date, today);
-    const timelineW = size.w - USER_PANEL_W;
+    const timelineW = size.w - (panelCollapsedRef.current ? 0 : USER_PANEL_W);
     setScrollX(Math.max(0, offset * dayW - timelineW / 2));
   }, [plan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -259,6 +276,7 @@ export function AllocationPage() {
 
     const { w, h } = size;
     const dpr = window.devicePixelRatio || 1;
+    const effectivePanelW = panelCollapsed ? 0 : USER_PANEL_W;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = `${w}px`;
@@ -281,17 +299,17 @@ export function AllocationPage() {
     const colorIndex = (id: string) => allTaskIds.indexOf(id);
 
     // ── TIMELINE SETUP ────────────────────────────────────────────────────
-    const tlX = USER_PANEL_W;
+    const tlX = effectivePanelW;
     const tlW = w - tlX;
     const taskContentTop = HEADER_H + UTIL_ROW_H;
 
     // ── USER PANEL ────────────────────────────────────────────────────────
     ctx.fillStyle = "#252526";
-    ctx.fillRect(0, 0, USER_PANEL_W, h);
+    ctx.fillRect(0, 0, effectivePanelW, h);
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, USER_PANEL_W, h);
+    ctx.rect(0, 0, effectivePanelW, h);
     ctx.clip();
 
     for (let i = 0; i < users.length; i++) {
@@ -301,12 +319,12 @@ export function AllocationPage() {
 
       const isSelected = u.id === selectedUserId;
       ctx.fillStyle = isSelected ? "#2d4a6a" : (i % 2 === 0 ? "#252526" : "#222224");
-      ctx.fillRect(0, y, USER_PANEL_W, ROW_H);
+      ctx.fillRect(0, y, effectivePanelW, ROW_H);
 
       // Name (full width)
       ctx.save();
       ctx.beginPath();
-      ctx.rect(10, y, USER_PANEL_W - 16, ROW_H);
+      ctx.rect(10, y, effectivePanelW - 16, ROW_H);
       ctx.clip();
       ctx.fillStyle = "#d4d4d4";
       ctx.font = "13px sans-serif";
@@ -320,7 +338,7 @@ export function AllocationPage() {
       ctx.lineWidth = 0.5;
       ctx.beginPath();
       ctx.moveTo(0, y + ROW_H);
-      ctx.lineTo(USER_PANEL_W, y + ROW_H);
+      ctx.lineTo(effectivePanelW, y + ROW_H);
       ctx.stroke();
 
       hitUserRectsRef.current.push({ id: u.id, y, h: ROW_H });
@@ -331,8 +349,8 @@ export function AllocationPage() {
     ctx.strokeStyle = "#3a3a3c";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(USER_PANEL_W, 0);
-    ctx.lineTo(USER_PANEL_W, h);
+    ctx.moveTo(effectivePanelW, 0);
+    ctx.lineTo(effectivePanelW, h);
     ctx.stroke();
 
     if (!selectedUserId || tlW <= 0) {
@@ -692,7 +710,7 @@ export function AllocationPage() {
           const myPos = mousePosRef.current.y;
           let px = mxPos - panelW - 14;
           let py = myPos - panelH / 2;
-          if (px < USER_PANEL_W + 4) px = mxPos + 14;
+          if (px < effectivePanelW + 4) px = mxPos + 14;
           if (py < 4) py = 4;
           if (py + panelH > h - 4) py = h - 4 - panelH;
 
@@ -749,7 +767,7 @@ export function AllocationPage() {
             + titleSize * 1.25
             + (lines.length > 1 ? lineGap + (lines.length - 1) * (bodySize * 1.4) + (lines.length - 2) * lineGap : 0);
 
-          const px = USER_PANEL_W + margin;
+          const px = effectivePanelW + margin;
           const py = h - margin - panelH;
 
           ctx.fillStyle = "rgba(0,0,0,0.19)";
@@ -809,7 +827,7 @@ export function AllocationPage() {
     }
 
     ctx.restore();
-  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId, mondayLinkedIds, constraintViolations]);
+  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId, mondayLinkedIds, constraintViolations, panelCollapsed]);
 
   useEffect(() => { render(); }, [render]);
 
@@ -818,19 +836,32 @@ export function AllocationPage() {
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
+    const epw = panelCollapsed ? 0 : USER_PANEL_W;
 
-    // User panel click
-    if (mx < USER_PANEL_W) {
-      for (const r of hitUserRectsRef.current) {
-        if (my >= r.y && my <= r.y + r.h) {
-          setSelectedUserId((prev) => (prev === r.id ? null : r.id));
-          return;
+    // User panel area (only reachable when panel is visible)
+    if (mx < epw) {
+      if (e.pointerType === "mouse") {
+        for (const r of hitUserRectsRef.current) {
+          if (my >= r.y && my <= r.y + r.h) {
+            setSelectedUserId((prev) => (prev === r.id ? null : r.id));
+            break;
+          }
         }
+        return;
       }
+      // Touch: track drag for vertical scroll; resolve click on pointerUp if not moved
+      const hitUser = hitUserRectsRef.current.find((r) => my >= r.y && my <= r.y + r.h);
+      pendingClickRef.current = hitUser ? `user:${hitUser.id}` : null;
+      dragRef.current = {
+        active: true, startX: e.clientX, lastX: e.clientX,
+        startY: e.clientY, lastY: e.clientY,
+        scrollXStart: scrollX, moved: false, isTouch: true,
+        area: "user", axis: null,
+      };
       return;
     }
 
-    // Record potential click target (resolved on pointerUp if no drag)
+    // Task panel or header area
     pendingClickRef.current = null;
     for (const r of hitTaskRectsRef.current) {
       if (my >= r.y && my <= r.y + r.h) {
@@ -839,8 +870,14 @@ export function AllocationPage() {
       }
     }
 
-    // Start drag tracking
-    dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, scrollXStart: scrollX, moved: false, isTouch: e.pointerType !== "mouse" };
+    const area = my < HEADER_H + UTIL_ROW_H ? "header" : "task";
+    dragRef.current = {
+      active: true, startX: e.clientX, lastX: e.clientX,
+      startY: e.clientY, lastY: e.clientY,
+      scrollXStart: scrollX, moved: false,
+      isTouch: e.pointerType !== "mouse",
+      area, axis: null,
+    };
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -848,10 +885,10 @@ export function AllocationPage() {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     mousePosRef.current = { x: mx, y: my };
+    const epw = panelCollapsed ? 0 : USER_PANEL_W;
 
     if (e.pointerType === "mouse") {
-      // Update hover — check violation indicators first, then task rows
-      if (mx >= USER_PANEL_W) {
+      if (mx >= epw) {
         let hit: string | null = null;
         for (const r of hitViolationRectsRef.current) {
           if (mx >= r.x && mx <= r.x + r.r && my >= r.y && my <= r.y + ROW_H) {
@@ -871,30 +908,72 @@ export function AllocationPage() {
 
     if (dragRef.current.active) {
       const dx = e.clientX - dragRef.current.lastX;
-      const totalMove = Math.abs(e.clientX - dragRef.current.startX);
+      const dy = e.clientY - dragRef.current.lastY;
+      const totalDX = Math.abs(e.clientX - dragRef.current.startX);
+      const totalDY = Math.abs(e.clientY - dragRef.current.startY);
+      const totalMove = Math.max(totalDX, totalDY);
       const moveThreshold = dragRef.current.isTouch ? 8 : 5;
+
       if (totalMove > moveThreshold) {
         dragRef.current.moved = true;
-        pendingClickRef.current = null; // cancel click if dragged
+        pendingClickRef.current = null;
       }
-      dragRef.current.lastX = e.clientX;
-      setScrollX((sx) => Math.max(0, sx - dx));
+
+      // Lock touch drag axis after 12px movement
+      if (dragRef.current.isTouch && dragRef.current.axis === null && totalMove > 12) {
+        dragRef.current.axis = totalDX >= totalDY ? "h" : "v";
+      }
+
+      const { area, axis, isTouch } = dragRef.current;
+
+      if (area === "user") {
+        // Vertical scroll in user panel (touch only)
+        dragRef.current.lastY = e.clientY;
+        const maxU = Math.max(0, users.length * ROW_H - size.h);
+        setUserScrollY((sy) => Math.max(0, Math.min(maxU, sy - dy)));
+      } else if (!isTouch || area === "header") {
+        // Mouse always scrolls horizontally; header area is horizontal-only
+        dragRef.current.lastX = e.clientX;
+        setScrollX((sx) => Math.max(0, sx - dx));
+      } else if (area === "task") {
+        if (axis === "v") {
+          dragRef.current.lastY = e.clientY;
+          const maxT = Math.max(0, userTasks.length * ROW_H - (size.h - HEADER_H - UTIL_ROW_H));
+          setTaskScrollY((sy) => Math.max(0, Math.min(maxT, sy - dy)));
+        } else if (axis === "h") {
+          dragRef.current.lastX = e.clientX;
+          setScrollX((sx) => Math.max(0, sx - dx));
+        } else {
+          // Axis not yet locked — keep positions current so scroll begins from here when axis locks
+          dragRef.current.lastX = e.clientX;
+          dragRef.current.lastY = e.clientY;
+        }
+      }
     }
   };
 
   const onPointerUp = () => {
     const pending = pendingClickRef.current;
-    if (!dragRef.current.moved && pending && !pending.startsWith("!:")) {
-      setEditTaskId(pending as TaskId);
+    if (!dragRef.current.moved && pending) {
+      if (pending.startsWith("user:")) {
+        const userId = pending.slice(5) as UserId;
+        setSelectedUserId((prev) => (prev === userId ? null : userId));
+        // Auto-collapse panel after selection on narrow screens
+        if (autoCollapsed) setUserPanelOverride(null);
+      } else if (!pending.startsWith("!:")) {
+        setEditTaskId(pending as TaskId);
+      }
     }
     dragRef.current.active = false;
     dragRef.current.moved = false;
+    dragRef.current.axis = null;
     pendingClickRef.current = null;
   };
 
   const onPointerCancel = () => {
     dragRef.current.active = false;
     dragRef.current.moved = false;
+    dragRef.current.axis = null;
     pendingClickRef.current = null;
     setHoveredTaskId(null);
   };
@@ -903,7 +982,8 @@ export function AllocationPage() {
     e.preventDefault();
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
-    if (mx < USER_PANEL_W) {
+    const epw = panelCollapsed ? 0 : USER_PANEL_W;
+    if (mx < epw) {
       const maxU = Math.max(0, users.length * ROW_H - size.h);
       setUserScrollY((sy) => Math.max(0, Math.min(maxU, sy + e.deltaY)));
     } else {
@@ -931,6 +1011,13 @@ export function AllocationPage() {
 
   return (
     <div className="allocation-page" ref={containerRef}>
+      <button
+        className="allocation-panel-toggle"
+        onClick={() => setUserPanelOverride(!panelCollapsed)}
+        title={panelCollapsed ? "Show users panel" : "Hide users panel"}
+      >
+        {panelCollapsed ? "☰" : "✕"}
+      </button>
       <canvas
         ref={canvasRef}
         width={size.w}
