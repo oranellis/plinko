@@ -156,6 +156,20 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
           setError(formatPlanError(resp.Error));
           return;
         }
+        // Apply status and actual dates if non-default — CreateTask always
+        // creates tasks as NotStarted since status lives in node_allocations.
+        if (status !== "NotStarted" || actualEndVal) {
+          const statusPatch: TaskPatch = {
+            status,
+            actual_start_date: actualStartVal,
+            actual_end_date: actualEndVal,
+          };
+          const statusResp = await sendRequest({ UpdateTask: [newTaskId as TaskId, statusPatch] });
+          if (typeof statusResp === "object" && "Error" in statusResp) {
+            setError(formatPlanError(statusResp.Error));
+            return;
+          }
+        }
       }
 
       // Sync forward dependents: diff old vs new
