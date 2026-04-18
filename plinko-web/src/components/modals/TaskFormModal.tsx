@@ -107,6 +107,17 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
 
   const handleSave = async () => {
     if (!name.trim()) return;
+    // Validate required dates based on status
+    const needsStart = status === "InProgress" || status === "OnHold";
+    const needsEnd = status === "Complete" || status === "Dropped";
+    if (needsStart && !actualStart) {
+      setError("Actual start date is required for this status.");
+      return;
+    }
+    if (needsEnd && !actualEnd) {
+      setError("Actual end date is required for this status.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -369,11 +380,15 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
       {(() => {
         const startDisabled = status === "NotStarted";
         const endDisabled = status !== "Complete" && status !== "Dropped";
+        const needsStart = status === "InProgress" || status === "OnHold";
+        const needsEnd = status === "Complete" || status === "Dropped";
+        const startMissing = needsStart && !actualStart;
+        const endMissing = needsEnd && !actualEnd;
         return (
           <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Actual Start
+              <label style={{ fontSize: 12, color: startMissing ? "#e57373" : "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Actual Start{startMissing ? " *" : ""}
               </label>
               <DatePicker
                 value={actualStart}
@@ -382,8 +397,8 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
               />
             </div>
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ fontSize: 12, color: "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                Actual End
+              <label style={{ fontSize: 12, color: endMissing ? "#e57373" : "#999", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Actual End{endMissing ? " *" : ""}
               </label>
               <DatePicker
                 value={actualEnd}
