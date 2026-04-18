@@ -132,9 +132,13 @@ fn handle_ws_connection(
             match out_rx.try_recv() {
                 Ok(msg) => {
                     let json = serde_json::to_string(&msg).unwrap();
-                    if ws.send(WsMessage::Text(json.into())).is_err() {
-                        eprintln!("[ws] {peer_send}: write error, closing");
-                        return;
+                    match ws.send(WsMessage::Text(json.clone().into())) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln!("[ws] {peer_send}: write error, closing: {e}");
+                            eprintln!("[ws] {peer_send}: failed payload: {}", json);
+                            return;
+                        }
                     }
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
