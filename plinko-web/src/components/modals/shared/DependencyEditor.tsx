@@ -47,20 +47,21 @@ function nodeKey(n: NodeId): string {
 
 function buildOptions(plan: Plan, exclude: NodeId | null, excludeKeys: Set<string>, noPlanStart: boolean): NodeOption[] {
   const excludeK = exclude ? nodeKey(exclude) : null;
+  const targetK = nodeKey(plan.scheduler_target);
   const opts: NodeOption[] = [];
   if (!noPlanStart) {
-    opts.push({ key: "PlanStart", label: "Plan Start", nodeId: "PlanStart" });
+    opts.push({ key: "PlanStart", label: "Plan Start", nodeId: "PlanStart", color: "#a78bfa" });
   }
   for (const t of Object.values(plan.tasks)) {
     const k = `task:${t.id}`;
     if (k !== excludeK && !excludeKeys.has(k)) {
-      opts.push({ key: k, label: t.name, nodeId: { Task: t.id } });
+      opts.push({ key: k, label: t.name, nodeId: { Task: t.id }, color: k === targetK ? "#f5c842" : undefined });
     }
   }
   for (const m of Object.values(plan.milestones)) {
     const k = `milestone:${m.id}`;
     if (k !== excludeK && !excludeKeys.has(k)) {
-      opts.push({ key: k, label: m.name, nodeId: { Milestone: m.id } });
+      opts.push({ key: k, label: m.name, nodeId: { Milestone: m.id }, color: k === targetK ? "#f5c842" : undefined });
     }
   }
   return opts.sort((a, b) => a.label.localeCompare(b.label));
@@ -156,6 +157,8 @@ export function DependencyEditor({
             const targetSet = dep.id !== null && dep.id !== undefined;
             const label = targetSet ? nodeLabel(dep.id, plan) : "";
             const isPlanStart = dep.id === "PlanStart";
+            const isSchedulerTarget = targetSet && nodeKey(dep.id) === nodeKey(plan.scheduler_target);
+            const depColor = !label ? "#555" : isPlanStart ? "#a78bfa" : isSchedulerTarget ? "#f5c842" : "#d4d4d4";
 
             return (
               <div key={idx}>
@@ -181,7 +184,7 @@ export function DependencyEditor({
                       background: "#252526",
                       border: `1px solid ${pickerOpen ? "#4a90d9" : "#3a3a3c"}`,
                       borderRadius: 4,
-                      color: !label ? "#555" : isPlanStart ? "#a78bfa" : "#d4d4d4",
+                      color: depColor,
                       fontSize: 13,
                       padding: "0 8px",
                       height: 26,

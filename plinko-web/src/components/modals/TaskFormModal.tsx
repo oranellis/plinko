@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Modal } from "../Modal";
-import type { DateConstraint, Dependency, Milestone, NodeId, Plan, PlanRequest, PlanResponse, Status, Task, TaskId, TaskPatch, WorkerSlot } from "../../protocol";
+import type { DateConstraint, Dependency, Milestone, NodeId, Plan, PlanRequest, PlanResponse, Status, Task, TaskId, TaskAllocation, TaskPatch, WorkerSlot } from "../../protocol";
 import { formatPlanError } from "../../protocol";
 import { DependencyEditor } from "./shared/DependencyEditor";
-import { filterNumericKey } from "../../utils/planUtils";
+import { filterNumericKey, todayIso } from "../../utils/planUtils";
 import { WorkerEditor } from "./shared/WorkerEditor";
 import { ConstraintEditor } from "./shared/ConstraintEditor";
 import { SegmentedControl } from "./shared/SegmentedControl";
@@ -48,6 +48,20 @@ function buildInitialDependents(task: Task | null, plan: Plan): Dependency[] {
   return result;
 }
 
+/** Extract the scheduled start/end dates from an allocation (filtering sentinel 1970-01-01). */
+function getPlannedDates(alloc: TaskAllocation): { start: string; end: string } | null {
+  if ("Fixed" in alloc) {
+    const start = alloc.Fixed.start_date;
+    const end = alloc.Fixed.corrected_end_date ?? alloc.Fixed.end_date;
+    if (start === "1970-01-01" || end === "1970-01-01") return null;
+    return { start, end };
+  }
+  if ("Dynamic" in alloc) {
+    return { start: alloc.Dynamic.scheduled_start_date, end: alloc.Dynamic.scheduled_end_date };
+  }
+  return null;
+}
+
 export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
   const [name, setName] = useState(task?.name ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
@@ -61,10 +75,20 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
   const [actualStart, setActualStart] = useState(task?.actual_start ?? "");
   const [actualEnd, setActualEnd] = useState<string>(() => {
     if (!task) return "";
-    const alloc = plan.node_allocations.tasks[task.id]?.allocation;
-    if (alloc && "Fixed" in alloc) return alloc.Fixed.corrected_end_date ?? "";
+    const taskState = plan.node_allocations.tasks[task.id];
+    if (!taskState) return "";
+    const { status: taskStatus, allocation: alloc } = taskState;
+    // Only read actual end for terminal statuses (Complete/Dropped)
+    if (taskStatus !== "Complete" && taskStatus !== "Dropped") return "";
+    if ("Fixed" in alloc) {
+      const d = alloc.Fixed.corrected_end_date ?? alloc.Fixed.end_date;
+      return d && d !== "1970-01-01" ? d : "";
+    }
     return "";
   });
+  // Track whether actualStart was auto-filled when switching to Dropped, so we
+  // can clear it again if the user reverts to a non-terminal status.
+  const autoFilledActualStart = useRef(false);
   const [workers, setWorkers] = useState<WorkerSlot[]>(task?.workers ?? []);
   const [dependencies, setDependencies] = useState<Dependency[]>(task?.dependencies ?? []);
   const [dependents, setDependents] = useState<Dependency[]>(() => buildInitialDependents(task, plan));
@@ -231,14 +255,40 @@ export function TaskFormModal({ task, plan, sendRequest, onClose }: Props) {
           selected={STATUSES.indexOf(status)}
           onChange={(i) => {
             const newStatus = STATUSES[i];
+            const prevStatus = status;
             setStatus(newStatus);
-            // Auto-set actual end to today when completing/dropping, if not already set
-            if ((newStatus === "Complete" || newStatus === "Dropped") && !actualEnd) {
-              setActualEnd(new Date().toISOString().slice(0, 10));
-            }
-            // Clear actual end if status moves back to a non-terminal state
-            if (newStatus !== "Complete" && newStatus !== "Dropped") {
+            if (newStatus === "Dropped") {
+              // Use planned dates from the current allocation rather than today
+              const taskState = task ? plan.node_allocations.tasks[task.id] : null;
+              const planned = taskState ? getPlannedDates(taskState.allocation) : null;
+              if (prevStatus === "NotStarted") {
+                // Set both actual start and end from planned dates
+                if (planned) {
+                  if (!actualStart) {
+                    setActualStart(planned.start);
+                    autoFilledActualStart.current = true;
+                  }
+                  setActualEnd(planned.end);
+                } else if (!actualEnd) {
+                  setActualEnd(todayIso());
+                }
+              } else {
+                // InProgress/OnHold: only set actual end, preserve existing start
+                if (planned) {
+                  setActualEnd(planned.end);
+                } else if (!actualEnd) {
+                  setActualEnd(todayIso());
+                }
+              }
+            } else if (newStatus === "Complete") {
+              if (!actualEnd) setActualEnd(todayIso());
+            } else {
+              // Reverting to non-terminal: clear actual end and any auto-filled start
               setActualEnd("");
+              if (autoFilledActualStart.current) {
+                setActualStart("");
+                autoFilledActualStart.current = false;
+              }
             }
           }}
         />

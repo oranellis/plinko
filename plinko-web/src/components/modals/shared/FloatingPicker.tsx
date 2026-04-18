@@ -8,6 +8,8 @@ import { createPortal } from "react-dom";
 export interface PickerOption {
   key: string;
   label: string;
+  /** Optional text color for this option (e.g. purple for Plan Start, gold for scheduler target) */
+  color?: string;
 }
 
 interface Props {
@@ -126,7 +128,7 @@ export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder
                 background: isSel ? "#1c3a5a" : "none",
                 border: "none",
                 padding: "6px 10px",
-                color: isSel ? "#7cb9f4" : "#d4d4d4",
+                color: isSel ? "#7cb9f4" : (o.color ?? "#d4d4d4"),
                 fontSize: 13,
                 cursor: "pointer",
                 fontFamily: "inherit",

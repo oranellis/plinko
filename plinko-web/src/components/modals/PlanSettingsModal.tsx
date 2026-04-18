@@ -80,7 +80,9 @@ export function PlanSettingsModal({ plan, sendRequest, onClose }: Props) {
             onChange={(e) => setTargetFilter(e.target.value)}
             style={{
               width: "100%", background: "#1e1e1e", border: "1px solid #3a3a3c",
-              borderRadius: 4, color: "#d4d4d4", fontSize: 12, padding: "4px 8px", outline: "none"
+              borderRadius: 4,
+              color: targetOpen ? "#d4d4d4" : targetKey === "plan_start" ? "#a78bfa" : "#f5c842",
+              fontSize: 12, padding: "4px 8px", outline: "none"
             }}
           />
           {targetOpen && (
@@ -94,7 +96,8 @@ export function PlanSettingsModal({ plan, sendRequest, onClose }: Props) {
                   style={{
                     display: "block", width: "100%", textAlign: "left",
                     background: o.key === targetKey ? "#2d4a6a" : "none",
-                    border: "none", padding: "6px 10px", color: "#d4d4d4",
+                    border: "none", padding: "6px 10px",
+                    color: o.key === "plan_start" ? "#a78bfa" : o.key === targetKey ? "#f5c842" : "#d4d4d4",
                     fontSize: 12, cursor: "pointer", fontFamily: "inherit",
                   }}
                 >{o.label}</button>
