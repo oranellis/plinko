@@ -42,10 +42,10 @@ export function FloatingPicker({ anchor, options, onSelect, onClose, placeholder
     setPos({ top, left: rect.left, width: rect.width });
   }, [anchor, options.length]);
 
-  // Auto-focus filter input
+  // Auto-focus filter input once position is resolved and the input is in the DOM.
   useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+    if (pos) inputRef.current?.focus();
+  }, [pos]);
 
   // Close on outside click
   useEffect(() => {
