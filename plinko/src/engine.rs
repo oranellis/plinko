@@ -258,7 +258,16 @@ impl PlanEngine {
             | PlanRequest::GetPlanVisibility { .. }
             | PlanRequest::SetPlanVisibility { .. }
             | PlanRequest::ListPlanVersions { .. }
-            | PlanRequest::RestorePlanVersion { .. } => PlanResponse::PlanUpdated,
+            | PlanRequest::RestorePlanVersion { .. }
+            | PlanRequest::ListOrganisations
+            | PlanRequest::CreateOrganisation { .. }
+            | PlanRequest::DeleteOrganisation { .. }
+            | PlanRequest::RenameOrganisation { .. }
+            | PlanRequest::GetOrgMembers { .. }
+            | PlanRequest::AddOrgMember { .. }
+            | PlanRequest::RemoveOrgMember { .. }
+            | PlanRequest::SetPlanOrg { .. }
+            | PlanRequest::GetPlanOrg { .. } => PlanResponse::PlanUpdated,
         }
     }
 }

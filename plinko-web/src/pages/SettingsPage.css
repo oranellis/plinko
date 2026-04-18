@@ -1,10 +1,116 @@
 .settings-page {
-  padding: 32px 40px;
-  overflow-y: auto;
   height: 100%;
   background: #1e1e1e;
   color: #d4d4d4;
   box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Sidebar layout ──────────────────────────────────────────────────────── */
+
+.settings-layout {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  overflow: hidden;
+}
+
+.settings-sidebar {
+  width: 180px;
+  flex-shrink: 0;
+  background: #252526;
+  border-right: 1px solid #2a2a2c;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 0;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.settings-nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  padding: 9px 18px;
+  font-size: 13px;
+  color: #aaa;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s, color 0.1s;
+}
+
+.settings-nav-item:hover {
+  background: #2d2d30;
+  color: #d4d4d4;
+}
+
+.settings-nav-item.active {
+  background: #2d2d30;
+  border-left-color: #4a90d9;
+  color: #d4d4d4;
+  font-weight: 500;
+}
+
+.settings-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 40px;
+  box-sizing: border-box;
+}
+
+.settings-content-panel {
+  max-width: 640px;
+}
+
+/* ── Org selector tabs ───────────────────────────────────────────────────── */
+
+.settings-org-tab {
+  background: #252526;
+  border: 1px solid #3a3a3c;
+  border-radius: 4px;
+  color: #aaa;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.settings-org-tab:hover {
+  background: #2d2d30;
+  color: #d4d4d4;
+}
+
+.settings-org-tab.active {
+  background: #2d4a6a;
+  border-color: #4a90d9;
+  color: #d4d4d4;
+}
+
+/* ── Form helpers ────────────────────────────────────────────────────────── */
+
+.settings-form-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  max-width: 380px;
+}
+
+.settings-error {
+  font-size: 12px;
+  color: #e57373;
+}
+
+.settings-success {
+  font-size: 12px;
+  color: #7dbd7d;
 }
 
 .settings-section {

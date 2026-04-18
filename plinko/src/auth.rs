@@ -4,6 +4,7 @@
 //! Passwords are stored as bcrypt hashes (cost 12).
 
 use bcrypt::{DEFAULT_COST, hash, verify};
+use plinko_shared::protocol::{OrgMembership, OrgRole};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -22,6 +23,7 @@ pub struct SessionInfo {
     pub user_id: String,
     pub email: String,
     pub is_admin: bool,
+    pub org_memberships: Vec<OrgMembership>,
 }
 
 #[derive(Debug)]
@@ -34,6 +36,7 @@ pub enum AuthError {
     SessionNotFound,
     WrongPassword,
     Db(rusqlite::Error),
+    OtherError(String),
 }
 
 impl std::fmt::Display for AuthError {
@@ -47,6 +50,7 @@ impl std::fmt::Display for AuthError {
             Self::SessionNotFound => write!(f, "Session not found — please log in again"),
             Self::WrongPassword => write!(f, "Incorrect current password"),
             Self::Db(e) => write!(f, "Database error: {e}"),
+            Self::OtherError(msg) => write!(f, "{msg}"),
         }
     }
 }
@@ -104,68 +108,78 @@ impl AuthDb {
 
     /// Validate credentials. Returns `SessionInfo` on success.
     pub fn login(&self, email: &str, password: &str) -> Result<(String, SessionInfo), AuthError> {
-        let conn = self.inner.lock().unwrap();
-        let row: Option<(String, String, bool)> = conn
-            .query_row(
-                "SELECT id, password_hash, is_admin FROM users WHERE username = ?1",
-                params![email],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .optional()?;
+        let (token, user_id, is_admin) = {
+            let conn = self.inner.lock().unwrap();
+            let row: Option<(String, String, bool)> = conn
+                .query_row(
+                    "SELECT id, password_hash, is_admin FROM users WHERE username = ?1",
+                    params![email],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
+                .optional()?;
 
-        let (user_id, hash_stored, is_admin) = row.ok_or(AuthError::InvalidCredentials)?;
+            let (user_id, hash_stored, is_admin) = row.ok_or(AuthError::InvalidCredentials)?;
 
-        if !verify(password, &hash_stored).unwrap_or(false) {
-            return Err(AuthError::InvalidCredentials);
-        }
+            if !verify(password, &hash_stored).unwrap_or(false) {
+                return Err(AuthError::InvalidCredentials);
+            }
 
-        // Create session (7-day expiry).
-        let token = Uuid::new_v4().to_string();
-        let expires = chrono::Utc::now()
-            .checked_add_signed(chrono::Duration::days(7))
-            .unwrap()
-            .to_rfc3339();
-        conn.execute(
-            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?1, ?2, ?3)",
-            params![token, user_id, expires],
-        )?;
+            // Create session (7-day expiry).
+            let token = Uuid::new_v4().to_string();
+            let expires = chrono::Utc::now()
+                .checked_add_signed(chrono::Duration::days(7))
+                .unwrap()
+                .to_rfc3339();
+            conn.execute(
+                "INSERT INTO sessions (token, user_id, expires_at) VALUES (?1, ?2, ?3)",
+                params![token, user_id, expires],
+            )?;
+            (token, user_id, is_admin)
+        }; // conn dropped here — lock released before re-acquiring in get_user_org_memberships
 
+        let org_memberships = self.get_user_org_memberships(&user_id);
         Ok((
             token,
             SessionInfo {
                 user_id,
                 email: email.to_string(),
                 is_admin,
+                org_memberships,
             },
         ))
     }
 
     /// Validate a session token. Returns `SessionInfo` if valid and not expired.
     pub fn authenticate_token(&self, token: &str) -> Result<SessionInfo, AuthError> {
-        let conn = self.inner.lock().unwrap();
-        let row: Option<(String, String, bool, String)> = conn
-            .query_row(
-                "SELECT u.id, u.username, u.is_admin, s.expires_at
-                 FROM sessions s JOIN users u ON s.user_id = u.id
-                 WHERE s.token = ?1",
-                params![token],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )
-            .optional()?;
+        let (user_id, email, is_admin) = {
+            let conn = self.inner.lock().unwrap();
+            let row: Option<(String, String, bool, String)> = conn
+                .query_row(
+                    "SELECT u.id, u.username, u.is_admin, s.expires_at
+                     FROM sessions s JOIN users u ON s.user_id = u.id
+                     WHERE s.token = ?1",
+                    params![token],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                )
+                .optional()?;
 
-        let (user_id, email, is_admin, expires_at) = row.ok_or(AuthError::SessionNotFound)?;
+            let (user_id, email, is_admin, expires_at) = row.ok_or(AuthError::SessionNotFound)?;
 
-        // Check expiry.
-        let exp = chrono::DateTime::parse_from_rfc3339(&expires_at)
-            .map_err(|_| AuthError::SessionExpired)?;
-        if chrono::Utc::now() > exp {
-            return Err(AuthError::SessionExpired);
-        }
+            // Check expiry.
+            let exp = chrono::DateTime::parse_from_rfc3339(&expires_at)
+                .map_err(|_| AuthError::SessionExpired)?;
+            if chrono::Utc::now() > exp {
+                return Err(AuthError::SessionExpired);
+            }
+            (user_id, email, is_admin)
+        }; // conn dropped here — lock released before re-acquiring in get_user_org_memberships
 
+        let org_memberships = self.get_user_org_memberships(&user_id);
         Ok(SessionInfo {
             user_id,
             email,
             is_admin,
+            org_memberships,
         })
     }
 
@@ -265,11 +279,13 @@ impl AuthDb {
     }
 
     /// Change own password — requires correct old password.
+    /// Invalidates all other sessions for the user (keeps the current session active).
     pub fn change_own_password(
         &self,
         user_id: &str,
         old_password: &str,
         new_password: &str,
+        current_session_token: &str,
     ) -> Result<(), AuthError> {
         let stored_hash: String = {
             let conn = self.inner.lock().unwrap();
@@ -289,6 +305,10 @@ impl AuthDb {
         conn.execute(
             "UPDATE users SET password_hash = ?1 WHERE id = ?2",
             params![hash_new, user_id],
+        )?;
+        conn.execute(
+            "DELETE FROM sessions WHERE user_id = ?1 AND token != ?2",
+            params![user_id, current_session_token],
         )?;
         Ok(())
     }
@@ -337,8 +357,9 @@ impl AuthDb {
 
     /// Filter `plan_ids` to only those visible to the given user.
     /// Admins always see all plans.
-    /// For non-admins: plans with no visibility entries are visible to all;
-    /// plans with entries are only visible to listed users.
+    /// For non-admins:
+    ///   - Plans in an org: visible only to org members.
+    ///   - Plans without an org: use existing plan_visibility logic.
     pub fn filter_visible_plans(
         &self,
         user_id: &str,
@@ -354,7 +375,29 @@ impl AuthDb {
             .copied()
             .filter(|pid| {
                 let pid_str = pid.to_string();
-                // Count entries for this plan
+                // Check if plan belongs to an org
+                let org_id: Option<String> = conn
+                    .query_row(
+                        "SELECT org_id FROM plan_org WHERE plan_id = ?1",
+                        params![pid_str],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap_or(None);
+
+                if let Some(org_id) = org_id {
+                    // Plan is in an org — only visible to org members
+                    let is_member: i64 = conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+                            params![org_id, user_id],
+                            |r| r.get(0),
+                        )
+                        .unwrap_or(0);
+                    return is_member > 0;
+                }
+
+                // No org — use existing plan_visibility logic
                 let count: i64 = conn
                     .query_row(
                         "SELECT COUNT(*) FROM plan_visibility WHERE plan_id = ?1",
@@ -377,6 +420,196 @@ impl AuthDb {
             })
             .collect()
     }
+    // -------------------------------------------------------------------------
+    // Organisation management
+    // -------------------------------------------------------------------------
+
+    pub fn get_user_org_memberships(&self, user_id: &str) -> Vec<OrgMembership> {
+        let conn = self.inner.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT o.id, o.name, m.role FROM org_members m \
+                 JOIN organisations o ON m.org_id = o.id \
+                 WHERE m.user_id = ?1 ORDER BY o.name",
+            )
+            .unwrap_or_else(|_| panic!("prepare failed"));
+        stmt.query_map(params![user_id], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .map(|(org_id, org_name, role_str)| {
+            let role = match role_str.as_str() {
+                "Admin" => OrgRole::Admin,
+                "User" => OrgRole::User,
+                _ => OrgRole::Viewer,
+            };
+            OrgMembership {
+                org_id,
+                org_name,
+                role,
+            }
+        })
+        .collect()
+    }
+
+    pub fn list_orgs(&self) -> Result<Vec<(String, String)>, AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id, name FROM organisations ORDER BY name")?;
+        let orgs = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(orgs)
+    }
+
+    pub fn list_user_orgs(&self, user_id: &str) -> Result<Vec<(String, String)>, AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT o.id, o.name FROM organisations o \
+             JOIN org_members m ON o.id = m.org_id \
+             WHERE m.user_id = ?1 ORDER BY o.name",
+        )?;
+        let orgs = stmt
+            .query_map(params![user_id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(orgs)
+    }
+
+    pub fn create_org(&self, name: &str) -> Result<String, AuthError> {
+        let id = Uuid::new_v4().to_string();
+        let conn = self.inner.lock().unwrap();
+        conn.execute(
+            "INSERT INTO organisations (id, name) VALUES (?1, ?2)",
+            params![id, name],
+        )?;
+        Ok(id)
+    }
+
+    pub fn delete_org(&self, org_id: &str) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        conn.execute("DELETE FROM organisations WHERE id = ?1", params![org_id])
+            .map_err(|e| {
+                if let rusqlite::Error::SqliteFailure(ref sql_err, _) = e
+                    && sql_err.code == rusqlite::ErrorCode::ConstraintViolation
+                {
+                    return AuthError::OtherError(
+                        "Cannot delete an organisation that has plans assigned to it. \
+                         Reassign or unassign plans first."
+                            .to_string(),
+                    );
+                }
+                AuthError::Db(e)
+            })?;
+        Ok(())
+    }
+
+    pub fn rename_org(&self, org_id: &str, name: &str) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        conn.execute(
+            "UPDATE organisations SET name = ?1 WHERE id = ?2",
+            params![name, org_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_org_members(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<(String, String, String)>, AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT u.id, u.username, m.role FROM org_members m \
+             JOIN users u ON m.user_id = u.id \
+             WHERE m.org_id = ?1 ORDER BY u.username",
+        )?;
+        let members = stmt
+            .query_map(params![org_id], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(members)
+    }
+
+    pub fn set_org_member(&self, org_id: &str, user_id: &str, role: &str) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO org_members (org_id, user_id, role) VALUES (?1, ?2, ?3)",
+            params![org_id, user_id, role],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_org_member(&self, org_id: &str, user_id: &str) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        conn.execute(
+            "DELETE FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+            params![org_id, user_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_plan_org(&self, plan_id: Uuid, org_id: Option<&str>) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let pid = plan_id.to_string();
+        if let Some(oid) = org_id {
+            conn.execute(
+                "INSERT OR REPLACE INTO plan_org (plan_id, org_id) VALUES (?1, ?2)",
+                params![pid, oid],
+            )?;
+        } else {
+            conn.execute("DELETE FROM plan_org WHERE plan_id = ?1", params![pid])?;
+        }
+        Ok(())
+    }
+
+    pub fn get_plan_org(&self, plan_id: Uuid) -> Option<String> {
+        let conn = self.inner.lock().unwrap();
+        let pid = plan_id.to_string();
+        conn.query_row(
+            "SELECT org_id FROM plan_org WHERE plan_id = ?1",
+            params![pid],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    pub fn get_user_org_role(&self, user_id: &str, org_id: &str) -> Option<OrgRole> {
+        let conn = self.inner.lock().unwrap();
+        let role_str: Option<String> = conn
+            .query_row(
+                "SELECT role FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+                params![org_id, user_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        role_str.map(|s| match s.as_str() {
+            "Admin" => OrgRole::Admin,
+            "User" => OrgRole::User,
+            _ => OrgRole::Viewer,
+        })
+    }
+
+    pub fn is_org_admin(&self, user_id: &str, org_id: &str) -> bool {
+        matches!(
+            self.get_user_org_role(user_id, org_id),
+            Some(OrgRole::Admin)
+        )
+    }
+
     // -------------------------------------------------------------------------
     // User preferences
     // -------------------------------------------------------------------------
@@ -438,6 +671,22 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE TABLE IF NOT EXISTS user_prefs (
             user_id      TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
             last_plan_id TEXT
+        );
+        CREATE TABLE IF NOT EXISTS organisations (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS org_members (
+            org_id  TEXT NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
+            user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role    TEXT NOT NULL CHECK(role IN ('Admin', 'User', 'Viewer')),
+            PRIMARY KEY (org_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_org_members_user ON org_members(user_id);
+        CREATE TABLE IF NOT EXISTS plan_org (
+            plan_id TEXT PRIMARY KEY,
+            org_id  TEXT NOT NULL REFERENCES organisations(id) ON DELETE RESTRICT
         );",
     )
 }

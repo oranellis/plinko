@@ -262,21 +262,21 @@ pub fn import_from_monday(
         // For incomplete tasks (NotStarted/InProgress/OnHold) without a timeline:
         // derive a sensible duration estimate: ceil(2 * total_workload / #workers).
         // Only applies to newly-created tasks; pre-existing tasks keep their plinko duration.
-        if !has_timeline && new_task_ids.contains(task_id) {
-            if let Some(task) = plan.tasks.get_mut(task_id) {
-                match status {
-                    Status::Complete | Status::Dropped => {
-                        // No timeline available — use a 1-day placeholder so we
-                        // don't show the 1970 sentinel.
-                        task.duration_days_target = 1.0;
-                    }
-                    Status::NotStarted | Status::InProgress | Status::OnHold => {
-                        let total_workload: f32 =
-                            task.workers.iter().map(|w| w.workload_days()).sum();
-                        let num_workers = task.workers.len().max(1) as f32;
-                        task.duration_days_target =
-                            (2.0 * total_workload / num_workers).ceil().max(1.0);
-                    }
+        if !has_timeline
+            && new_task_ids.contains(task_id)
+            && let Some(task) = plan.tasks.get_mut(task_id)
+        {
+            match status {
+                Status::Complete | Status::Dropped => {
+                    // No timeline available — use a 1-day placeholder so we
+                    // don't show the 1970 sentinel.
+                    task.duration_days_target = 1.0;
+                }
+                Status::NotStarted | Status::InProgress | Status::OnHold => {
+                    let total_workload: f32 = task.workers.iter().map(|w| w.workload_days()).sum();
+                    let num_workers = task.workers.len().max(1) as f32;
+                    task.duration_days_target =
+                        (2.0 * total_workload / num_workers).ceil().max(1.0);
                 }
             }
         }
@@ -322,11 +322,11 @@ pub fn import_from_monday(
                 // already determines the rendered bar width for dropped tasks).
                 if let Some(task) = plan.tasks.get_mut(task_id) {
                     task.actual_start = Some(start_date);
-                    if new_task_ids.contains(task_id) {
-                        if let Some(end) = tl_end {
-                            let span = (*end - start_date).num_days().max(0) as f32 + 1.0;
-                            task.duration_days_target = span;
-                        }
+                    if new_task_ids.contains(task_id)
+                        && let Some(end) = tl_end
+                    {
+                        let span = (*end - start_date).num_days().max(0) as f32 + 1.0;
+                        task.duration_days_target = span;
                     }
                 }
                 plan.start_task(*task_id);

@@ -286,6 +286,27 @@ export interface UserLink {
   plan_user_id: UserId;
 }
 
+// ── Organisation types ────────────────────────────────────────────────────────
+
+export type OrgRole = "Admin" | "User" | "Viewer";
+
+export interface OrgMembership {
+  org_id: string;
+  org_name: string;
+  role: OrgRole;
+}
+
+export interface Organisation {
+  id: string;
+  name: string;
+}
+
+export interface OrgMember {
+  user_id: string;
+  email: string;
+  role: OrgRole;
+}
+
 // ── Protocol: PlanRequest ─────────────────────────────────────────────────────
 // Serde default enum encoding. Unit variants are bare strings;
 // tuple/struct variants are `{ "VariantName": payload }`.
@@ -347,7 +368,17 @@ export type PlanRequest =
   | { GetPlanVisibility: { plan_id: string } }
   | { SetPlanVisibility: { plan_id: string; user_ids: string[] } }
   | { ListPlanVersions: { plan_id: string } }
-  | { RestorePlanVersion: { plan_id: string; version: string } };
+  | { RestorePlanVersion: { plan_id: string; version: string } }
+  // Organisation management
+  | "ListOrganisations"
+  | { CreateOrganisation: { name: string } }
+  | { DeleteOrganisation: { org_id: string } }
+  | { RenameOrganisation: { org_id: string; name: string } }
+  | { GetOrgMembers: { org_id: string } }
+  | { AddOrgMember: { org_id: string; user_id: string; role: OrgRole } }
+  | { RemoveOrgMember: { org_id: string; user_id: string } }
+  | { SetPlanOrg: { plan_id: string; org_id: string | null } }
+  | { GetPlanOrg: { plan_id: string } };
 
 // ── Protocol: PlanResponse ────────────────────────────────────────────────────
 
@@ -365,7 +396,11 @@ export type PlanResponse =
   | { UserLinks: UserLink[] }
   | { AuthUserCreated: { user_id: string } }
   | { PlanVisibility: { plan_id: string; user_ids: string[] } }
-  | { PlanVersionList: string[] };
+  | { PlanVersionList: string[] }
+  | { OrgList: Organisation[] }
+  | { OrgCreated: { id: string; name: string } }
+  | { OrgMembers: OrgMember[] }
+  | { PlanOrgId: string | null };
 
 export type SchedulerError =
   | "EmptyChain"
@@ -432,7 +467,7 @@ export type ServerMessage =
   | { type: "MondayDone"; message: string }
   | { type: "MondayError"; message: string }
   | { type: "AuthRequired" }
-  | { type: "LoginSuccess"; session_token: string; user_id: string; email: string; is_admin: boolean; user_prefs: UserPrefs }
+  | { type: "LoginSuccess"; session_token: string; user_id: string; email: string; is_admin: boolean; user_prefs: UserPrefs; org_memberships: OrgMembership[] }
   | { type: "LoginFailed"; message: string };
 
 // ── Protocol: ClientMessage (`#[serde(tag = "type")]`) ───────────────────────
@@ -446,4 +481,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.3.20";
+export const PROTOCOL_VERSION = "0.4.0";

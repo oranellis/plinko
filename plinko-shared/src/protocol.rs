@@ -21,6 +21,37 @@ pub struct AuthUser {
     pub is_admin: bool,
 }
 
+/// Role within an organisation.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum OrgRole {
+    Admin,
+    User,
+    Viewer,
+}
+
+/// A user's membership in an organisation.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgMembership {
+    pub org_id: String,
+    pub org_name: String,
+    pub role: OrgRole,
+}
+
+/// Summary of an organisation (for lists).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Organisation {
+    pub id: String,
+    pub name: String,
+}
+
+/// A member of an organisation with their role.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrgMember {
+    pub user_id: String,
+    pub email: String,
+    pub role: OrgRole,
+}
+
 /// Maps a login user UUID to a plan user UUID.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserLink {
@@ -278,6 +309,37 @@ pub enum PlanRequest {
         /// Empty = visible to all authenticated users.
         user_ids: Vec<String>,
     },
+    // Organisation management
+    ListOrganisations,
+    CreateOrganisation {
+        name: String,
+    },
+    DeleteOrganisation {
+        org_id: String,
+    },
+    RenameOrganisation {
+        org_id: String,
+        name: String,
+    },
+    GetOrgMembers {
+        org_id: String,
+    },
+    AddOrgMember {
+        org_id: String,
+        user_id: String,
+        role: OrgRole,
+    },
+    RemoveOrgMember {
+        org_id: String,
+        user_id: String,
+    },
+    SetPlanOrg {
+        plan_id: uuid::Uuid,
+        org_id: Option<String>,
+    },
+    GetPlanOrg {
+        plan_id: uuid::Uuid,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -313,6 +375,13 @@ pub enum PlanResponse {
         user_id: String,
     },
     PlanVersionList(Vec<String>),
+    OrgList(Vec<Organisation>),
+    OrgCreated {
+        id: String,
+        name: String,
+    },
+    OrgMembers(Vec<OrgMember>),
+    PlanOrgId(Option<String>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -351,7 +420,7 @@ impl std::fmt::Display for PlanError {
     }
 }
 
-pub const VERSION: &str = "0.3.20";
+pub const VERSION: &str = "0.4.0";
 
 /// Per-user server-side preferences.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -398,6 +467,7 @@ pub enum ServerMessage {
         email: String,
         is_admin: bool,
         user_prefs: UserPrefs,
+        org_memberships: Vec<OrgMembership>,
     },
     LoginFailed {
         message: String,

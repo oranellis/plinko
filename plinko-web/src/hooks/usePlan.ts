@@ -12,7 +12,7 @@ export interface MondayState {
 
 export interface AuthState {
   required: boolean;           // server has sent AuthRequired and we're not yet authenticated
-  currentUser: { userId: string; email: string; isAdmin: boolean } | null;
+  currentUser: { userId: string; email: string; isAdmin: boolean; orgMemberships: import("../protocol").OrgMembership[] } | null;
   sessionToken: string | null;
   loginError: string | null;
 }
@@ -180,7 +180,7 @@ export function usePlan(): UsePlanResult {
             localStorage.setItem(SESSION_TOKEN_KEY, msg.session_token);
             setAuth({
               required: false,
-              currentUser: { userId: msg.user_id, email: msg.email, isAdmin: msg.is_admin },
+              currentUser: { userId: msg.user_id, email: msg.email, isAdmin: msg.is_admin, orgMemberships: msg.org_memberships ?? [] },
               sessionToken: msg.session_token,
               loginError: null,
             });

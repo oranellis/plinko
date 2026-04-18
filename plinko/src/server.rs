@@ -9,6 +9,57 @@ use crate::monday::client::MondayClient;
 use crate::monday::{export, import};
 use crate::ws_server::SessionRegistry;
 
+/// Effective access level for the currently-active plan.
+#[derive(PartialEq)]
+enum PlanRole {
+    /// Full access — SiteAdmin or OrgAdmin for this plan's org, or plan has no org.
+    Admin,
+    /// Can create/update/delete tasks and milestones; run scheduler.
+    User,
+    /// Read-only — cannot make any changes.
+    Viewer,
+    /// Not a member of the plan's org — should have been filtered out at list/load time.
+    NoAccess,
+}
+
+/// Compute the user's effective role for a specific plan.
+fn effective_plan_role(session: &SessionInfo, plan_id: uuid::Uuid, auth_db: &AuthDb) -> PlanRole {
+    if session.is_admin {
+        return PlanRole::Admin;
+    }
+    let Some(org_id) = auth_db.get_plan_org(plan_id) else {
+        // No org → legacy visibility-based access, grant full access to all who can see it.
+        return PlanRole::Admin;
+    };
+    match auth_db.get_user_org_role(&session.user_id, &org_id) {
+        Some(OrgRole::Admin) => PlanRole::Admin,
+        Some(OrgRole::User) => PlanRole::User,
+        Some(OrgRole::Viewer) => PlanRole::Viewer,
+        None => PlanRole::NoAccess,
+    }
+}
+
+/// Returns true if this request type is a task/milestone/scheduler operation
+/// that the `User` role is allowed to perform.
+fn is_user_allowed_write(req: &PlanRequest) -> bool {
+    matches!(
+        req,
+        PlanRequest::RunScheduler
+            | PlanRequest::StartTask(_)
+            | PlanRequest::PauseTask(_)
+            | PlanRequest::ResumeTask(_)
+            | PlanRequest::CompleteTask(_)
+            | PlanRequest::DropTask(_)
+            | PlanRequest::CreateTask(_)
+            | PlanRequest::UpdateTask(_, _)
+            | PlanRequest::DeleteTask(_)
+            | PlanRequest::CreateMilestone(_)
+            | PlanRequest::UpdateMilestone(_, _)
+            | PlanRequest::DeleteMilestone(_)
+            | PlanRequest::SavePlan
+    )
+}
+
 /// Internal messages sent from background Monday threads back to the connection loop.
 enum InternalMsg {
     /// A ServerMessage to forward directly to the client.
@@ -136,6 +187,7 @@ pub(crate) fn handle_protocol(
                             email: info.email.clone(),
                             is_admin: info.is_admin,
                             user_prefs: prefs,
+                            org_memberships: info.org_memberships.clone(),
                         });
                         eprintln!("[auth] {peer}: login OK as {}", info.email);
                         break (token, info);
@@ -161,6 +213,7 @@ pub(crate) fn handle_protocol(
                             email: info.email.clone(),
                             is_admin: info.is_admin,
                             user_prefs: prefs,
+                            org_memberships: info.org_memberships.clone(),
                         });
                         eprintln!("[auth] {peer}: token auth OK as {}", info.email);
                         break (session_token, info);
@@ -790,7 +843,11 @@ pub(crate) fn handle_protocol(
 
         // ── Auth PlanRequest handlers ───────────────────────────────────────
         if matches!(&request, PlanRequest::GetAuthUsers) {
-            if !session.is_admin {
+            let user_is_org_admin = session
+                .org_memberships
+                .iter()
+                .any(|m| m.role == OrgRole::Admin);
+            if !session.is_admin && !user_is_org_admin {
                 let _ = send(&ServerMessage::Response {
                     id,
                     response: PlanResponse::Error(PlanError::Unauthorized),
@@ -943,7 +1000,12 @@ pub(crate) fn handle_protocol(
             new_password,
         } = &request
         {
-            match auth_db.change_own_password(&session.user_id, old_password, new_password) {
+            match auth_db.change_own_password(
+                &session.user_id,
+                old_password,
+                new_password,
+                &session_token,
+            ) {
                 Ok(()) => {
                     let _ = send(&ServerMessage::Response {
                         id,
@@ -1009,6 +1071,245 @@ pub(crate) fn handle_protocol(
             let _ = send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanUpdated,
+            });
+            continue;
+        }
+
+        // ── Organisation management ──────────────────────────────────────────────
+
+        if matches!(&request, PlanRequest::ListOrganisations) {
+            let orgs: Vec<Organisation> = if session.is_admin {
+                auth_db
+                    .list_orgs()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(id, name)| Organisation { id, name })
+                    .collect()
+            } else {
+                auth_db
+                    .list_user_orgs(&session.user_id)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(id, name)| Organisation { id, name })
+                    .collect()
+            };
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::OrgList(orgs),
+            });
+            continue;
+        }
+
+        if let PlanRequest::CreateOrganisation { name } = &request {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.create_org(name) {
+                Ok(org_id) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::OrgCreated {
+                            id: org_id,
+                            name: name.clone(),
+                        },
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::DeleteOrganisation { org_id } = &request {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.delete_org(org_id) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::RenameOrganisation { org_id, name } = &request {
+            let is_allowed = session.is_admin || auth_db.is_org_admin(&session.user_id, org_id);
+            if !is_allowed {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.rename_org(org_id, name) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::GetOrgMembers { org_id } = &request {
+            let is_allowed = session.is_admin
+                || auth_db
+                    .get_user_org_role(&session.user_id, org_id)
+                    .is_some();
+            if !is_allowed {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            let members: Vec<OrgMember> = auth_db
+                .get_org_members(org_id)
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(user_id, email, role_str)| OrgMember {
+                    user_id,
+                    email,
+                    role: match role_str.as_str() {
+                        "Admin" => OrgRole::Admin,
+                        "User" => OrgRole::User,
+                        _ => OrgRole::Viewer,
+                    },
+                })
+                .collect();
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::OrgMembers(members),
+            });
+            continue;
+        }
+
+        if let PlanRequest::AddOrgMember {
+            org_id,
+            user_id,
+            role,
+        } = &request
+        {
+            let is_allowed = session.is_admin || auth_db.is_org_admin(&session.user_id, org_id);
+            if !is_allowed {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            let role_str = match role {
+                OrgRole::Admin => "Admin",
+                OrgRole::User => "User",
+                OrgRole::Viewer => "Viewer",
+            };
+            match auth_db.set_org_member(org_id, user_id, role_str) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::RemoveOrgMember { org_id, user_id } = &request {
+            let is_allowed = session.is_admin || auth_db.is_org_admin(&session.user_id, org_id);
+            if !is_allowed {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.remove_org_member(org_id, user_id) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::SetPlanOrg { plan_id, org_id } = &request {
+            let plan_id = *plan_id;
+            let is_allowed = session.is_admin
+                || org_id
+                    .as_deref()
+                    .is_none_or(|oid| auth_db.is_org_admin(&session.user_id, oid));
+            if !is_allowed {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.set_plan_org(plan_id, org_id.as_deref()) {
+                Ok(()) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if let PlanRequest::GetPlanOrg { plan_id } = &request {
+            let plan_id = *plan_id;
+            let org_id = auth_db.get_plan_org(plan_id);
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::PlanOrgId(org_id),
             });
             continue;
         }
@@ -1090,6 +1391,30 @@ pub(crate) fn handle_protocol(
             continue;
         }
         // ── End auth PlanRequest handlers ───────────────────────────────────
+
+        // ── Role-based access check for engine mutations ─────────────────────
+        {
+            let plan_id_opt = engine.lock().unwrap().as_ref().map(|e| e.plan().id);
+            if let Some(plan_id) = plan_id_opt {
+                let role = effective_plan_role(&session, plan_id, &auth_db);
+                let blocked = match role {
+                    PlanRole::Admin => false,
+                    PlanRole::User => !is_user_allowed_write(&request),
+                    PlanRole::Viewer | PlanRole::NoAccess => true,
+                };
+                if blocked {
+                    if send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::Unauthorized),
+                    })
+                    .is_err()
+                    {
+                        break;
+                    }
+                    continue;
+                }
+            }
+        }
 
         let response = {
             let mut eng_guard = engine.lock().unwrap();
