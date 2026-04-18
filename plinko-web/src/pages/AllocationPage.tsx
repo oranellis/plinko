@@ -184,6 +184,11 @@ export function AllocationPage() {
   dayWRef2.current = dayW;
   panelCollapsedRef.current = panelCollapsed;
 
+  // Animated panel width — interpolated over 180ms to match CSS sidebar transitions
+  const panelWRef = useRef<number>(panelCollapsed ? 0 : USER_PANEL_W);
+  const panelAnimFrameRef = useRef<number | null>(null);
+  const renderRef = useRef<(() => void) | null>(null);
+
   useEffect(() => {
     setToolbarActions(
       <button className="toolbar-btn" title="Jump to today" onClick={() => {
@@ -276,7 +281,7 @@ export function AllocationPage() {
 
     const { w, h } = size;
     const dpr = window.devicePixelRatio || 1;
-    const effectivePanelW = panelCollapsed ? 0 : USER_PANEL_W;
+    const effectivePanelW = Math.round(panelWRef.current);
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = `${w}px`;
@@ -827,16 +832,44 @@ export function AllocationPage() {
     }
 
     ctx.restore();
-  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId, mondayLinkedIds, constraintViolations, panelCollapsed]);
+  }, [plan, users, userTasks, size, scrollX, taskScrollY, userScrollY, dayW, selectedUserId, hoveredTaskId, mondayLinkedIds, constraintViolations]);
 
+  renderRef.current = render;
   useEffect(() => { render(); }, [render]);
+
+  // Animate panel width when panelCollapsed toggles (matches CSS 0.18s ease transition)
+  useEffect(() => {
+    const target = panelCollapsed ? 0 : USER_PANEL_W;
+    const startW = panelWRef.current;
+    if (startW === target) return;
+    const t0 = performance.now();
+    const dur = 180;
+    if (panelAnimFrameRef.current !== null) cancelAnimationFrame(panelAnimFrameRef.current);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / dur);
+      const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      panelWRef.current = startW + (target - startW) * eased;
+      renderRef.current?.();
+      if (t < 1) {
+        panelAnimFrameRef.current = requestAnimationFrame(step);
+      } else {
+        panelWRef.current = target;
+        panelAnimFrameRef.current = null;
+        renderRef.current?.();
+      }
+    };
+    panelAnimFrameRef.current = requestAnimationFrame(step);
+    return () => {
+      if (panelAnimFrameRef.current !== null) cancelAnimationFrame(panelAnimFrameRef.current);
+    };
+  }, [panelCollapsed]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.currentTarget.setPointerCapture(e.pointerId);
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const epw = panelCollapsed ? 0 : USER_PANEL_W;
+    const epw = Math.round(panelWRef.current);
 
     // User panel area (only reachable when panel is visible)
     if (mx < epw) {
@@ -982,7 +1015,7 @@ export function AllocationPage() {
     e.preventDefault();
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
-    const epw = panelCollapsed ? 0 : USER_PANEL_W;
+    const epw = Math.round(panelWRef.current);
     if (mx < epw) {
       const maxU = Math.max(0, users.length * ROW_H - size.h);
       setUserScrollY((sy) => Math.max(0, Math.min(maxU, sy + e.deltaY)));
