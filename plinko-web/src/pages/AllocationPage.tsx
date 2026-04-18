@@ -141,7 +141,7 @@ export function AllocationPage() {
     return result;
   }, [plan]);
 
-  const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0, moved: false });
+  const dragRef = useRef({ active: false, startX: 0, lastX: 0, scrollXStart: 0, moved: false, isTouch: false });
   const pendingClickRef = useRef<string | null>(null);
   const mousePosRef = useRef({ x: 0, y: 0 });
 
@@ -813,7 +813,8 @@ export function AllocationPage() {
 
   useEffect(() => { render(); }, [render]);
 
-  const onMouseDown = (e: React.MouseEvent) => {
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
@@ -829,7 +830,7 @@ export function AllocationPage() {
       return;
     }
 
-    // Record potential click target (resolved on mouseUp if no drag)
+    // Record potential click target (resolved on pointerUp if no drag)
     pendingClickRef.current = null;
     for (const r of hitTaskRectsRef.current) {
       if (my >= r.y && my <= r.y + r.h) {
@@ -839,37 +840,40 @@ export function AllocationPage() {
     }
 
     // Start drag tracking
-    dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, scrollXStart: scrollX, moved: false };
+    dragRef.current = { active: true, startX: e.clientX, lastX: e.clientX, scrollXStart: scrollX, moved: false, isTouch: e.pointerType !== "mouse" };
   };
 
-  const onMouseMove = (e: React.MouseEvent) => {
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     mousePosRef.current = { x: mx, y: my };
 
-    // Update hover — check violation indicators first, then task rows
-    if (mx >= USER_PANEL_W) {
-      let hit: string | null = null;
-      for (const r of hitViolationRectsRef.current) {
-        if (mx >= r.x && mx <= r.x + r.r && my >= r.y && my <= r.y + ROW_H) {
-          hit = `!:${r.id}`; break;
+    if (e.pointerType === "mouse") {
+      // Update hover — check violation indicators first, then task rows
+      if (mx >= USER_PANEL_W) {
+        let hit: string | null = null;
+        for (const r of hitViolationRectsRef.current) {
+          if (mx >= r.x && mx <= r.x + r.r && my >= r.y && my <= r.y + ROW_H) {
+            hit = `!:${r.id}`; break;
+          }
         }
-      }
-      if (!hit) {
-        for (const r of hitTaskRectsRef.current) {
-          if (my >= r.y && my <= r.y + r.h) { hit = r.id; break; }
+        if (!hit) {
+          for (const r of hitTaskRectsRef.current) {
+            if (my >= r.y && my <= r.y + r.h) { hit = r.id; break; }
+          }
         }
+        setHoveredTaskId(hit);
+      } else {
+        setHoveredTaskId(null);
       }
-      setHoveredTaskId(hit);
-    } else {
-      setHoveredTaskId(null);
     }
 
     if (dragRef.current.active) {
       const dx = e.clientX - dragRef.current.lastX;
       const totalMove = Math.abs(e.clientX - dragRef.current.startX);
-      if (totalMove > 5) {
+      const moveThreshold = dragRef.current.isTouch ? 8 : 5;
+      if (totalMove > moveThreshold) {
         dragRef.current.moved = true;
         pendingClickRef.current = null; // cancel click if dragged
       }
@@ -878,7 +882,7 @@ export function AllocationPage() {
     }
   };
 
-  const onMouseUp = () => {
+  const onPointerUp = () => {
     const pending = pendingClickRef.current;
     if (!dragRef.current.moved && pending && !pending.startsWith("!:")) {
       setEditTaskId(pending as TaskId);
@@ -887,7 +891,13 @@ export function AllocationPage() {
     dragRef.current.moved = false;
     pendingClickRef.current = null;
   };
-  const onMouseLeave = () => { dragRef.current.active = false; dragRef.current.moved = false; pendingClickRef.current = null; setHoveredTaskId(null); };
+
+  const onPointerCancel = () => {
+    dragRef.current.active = false;
+    dragRef.current.moved = false;
+    pendingClickRef.current = null;
+    setHoveredTaskId(null);
+  };
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -925,11 +935,12 @@ export function AllocationPage() {
         ref={canvasRef}
         width={size.w}
         height={size.h}
-        style={{ display: "block", cursor: dragRef.current.active ? "grabbing" : hoveredTaskId ? "pointer" : "default" }}
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseLeave}
+        style={{ display: "block", cursor: dragRef.current.active ? "grabbing" : hoveredTaskId ? "pointer" : "default", touchAction: "none" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+        onPointerLeave={(e) => { if (e.pointerType === "mouse") onPointerCancel(); }}
       />
 
       {editTaskId && plan?.tasks[editTaskId] && (

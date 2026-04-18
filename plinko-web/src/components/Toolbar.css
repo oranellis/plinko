@@ -8,6 +8,16 @@
   flex-shrink: 0;
 }
 
+/* Wrapper for the left+right button rows; on desktop it acts as a flex row
+   spanning the full toolbar width, letting toolbar-right push to the edge. */
+.toolbar-buttons-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
 .toolbar-left {
   display: flex;
   align-items: center;
@@ -133,4 +143,43 @@
 @keyframes status-bar-in {
   from { opacity: 0; transform: translateY(-3px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Mobile layout: title above buttons ────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .toolbar {
+    flex-direction: column;
+    height: auto;
+    padding: 8px 10px 6px;
+    align-items: stretch;
+    gap: 2px;
+  }
+
+  .toolbar-title {
+    position: static;
+    transform: none;
+    max-width: 100%;
+    display: block;
+    width: 100%;
+    text-align: center;
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #d4d4d4;
+    pointer-events: none;
+  }
+
+  .toolbar-buttons-row {
+    width: 100%;
+  }
+
+  .toolbar-btn {
+    padding: 6px;
+  }
+
+  .toolbar-back {
+    padding: 6px 6px;
+  }
 }

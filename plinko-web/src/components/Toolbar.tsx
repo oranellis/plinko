@@ -84,59 +84,61 @@ export function Toolbar() {
 
   return (
     <div className="toolbar">
-      <div className="toolbar-left">
-        {!isHome && (
-          <button
-            className="toolbar-back"
-            onClick={handleBack}
-            title="Back"
-          >
-            <IconBack size={15} />
-          </button>
-        )}
-        {toolbarActions}
-      </div>
       <span className="toolbar-title">
         {plan?.name ?? "Plinko"}
       </span>
-      <div className="toolbar-right">
-        {toolbarRightActions}
-        {hasMondayIntegration && (
-          <div className="monday-btn-group">
+      <div className="toolbar-buttons-row">
+        <div className="toolbar-left">
+          {!isHome && (
             <button
-              className={`toolbar-btn${activeOp === "pull" ? " monday-op-btn--active" : ""}`}
-              title="Pull from Monday"
-              onClick={handlePull}
-              disabled={!!activeOp}
+              className="toolbar-back"
+              onClick={handleBack}
+              title="Back"
             >
-              {activeOp === "pull"
-                ? <IconSpinner size={16} color="#a0a8d0" />
-                : <IconPullMonday size={16} />}
+              <IconBack size={15} />
             </button>
-            <button
-              className={`toolbar-btn${activeOp === "push" ? " monday-op-btn--active" : ""}`}
-              title="Push to Monday"
-              onClick={handlePush}
-              disabled={!!activeOp}
-            >
-              {activeOp === "push"
-                ? <IconSpinner size={16} color="#a0a8d0" />
-                : <IconPushMonday size={16} />}
-            </button>
-          </div>
-        )}
-        <button
-          className="toolbar-btn"
-          title="Settings"
-          onClick={handleSettings}
-          style={page === "settings" ? { color: "#a78bfa" } : undefined}
-        >
-          <IconSettings size={18} />
-        </button>
-        <span
-          className={`toolbar-status toolbar-status--${status}`}
-          title={status}
-        />
+          )}
+          {toolbarActions}
+        </div>
+        <div className="toolbar-right">
+          {toolbarRightActions}
+          {hasMondayIntegration && (
+            <div className="monday-btn-group">
+              <button
+                className={`toolbar-btn${activeOp === "pull" ? " monday-op-btn--active" : ""}`}
+                title="Pull from Monday"
+                onClick={handlePull}
+                disabled={!!activeOp}
+              >
+                {activeOp === "pull"
+                  ? <IconSpinner size={16} color="#a0a8d0" />
+                  : <IconPullMonday size={16} />}
+              </button>
+              <button
+                className={`toolbar-btn${activeOp === "push" ? " monday-op-btn--active" : ""}`}
+                title="Push to Monday"
+                onClick={handlePush}
+                disabled={!!activeOp}
+              >
+                {activeOp === "push"
+                  ? <IconSpinner size={16} color="#a0a8d0" />
+                  : <IconPushMonday size={16} />}
+              </button>
+            </div>
+          )}
+          <button
+            className="toolbar-btn"
+            title="Settings"
+            onClick={handleSettings}
+            style={page === "settings" ? { color: "#a78bfa" } : undefined}
+          >
+            <IconSettings size={18} />
+          </button>
+          <span
+            className={`toolbar-status toolbar-status--${status}`}
+            title={status}
+          />
+        </div>
       </div>
       {/* Status label floats below the toolbar, right-aligned */}
       {statusText && (

@@ -106,7 +106,7 @@ export function OverviewPage() {
   }, [hasMondayIntegration, plan?.id]);
 
   // Drag momentum
-  const dragRef = useRef({ active: false, startX: 0, startY: 0, velX: 0, velY: 0, lastX: 0, lastY: 0, lastT: 0 });
+  const dragRef = useRef({ active: false, startX: 0, startY: 0, velX: 0, velY: 0, lastX: 0, lastY: 0, lastT: 0, isTouch: false });
   const momRef = useRef<number | null>(null);
 
   // Register toolbar action buttons; need refs to avoid stale closures
@@ -819,13 +819,22 @@ export function OverviewPage() {
     return null;
   };
 
-  const onMouseMove = (e: React.MouseEvent) => {
+  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    if (momRef.current) cancelAnimationFrame(momRef.current);
+    dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, velX: 0, velY: 0, lastX: e.clientX, lastY: e.clientY, lastT: Date.now(), isTouch: e.pointerType !== "mouse" };
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current!.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     mousePosRef.current = { x: mx, y: my };
-    const hit = hitTest(mx, my);
-    setHoverId(hit);
+
+    if (e.pointerType === "mouse") {
+      const hit = hitTest(mx, my);
+      setHoverId(hit);
+    }
 
     if (dragRef.current.active) {
       const now = Date.now();
@@ -843,19 +852,15 @@ export function OverviewPage() {
     }
   };
 
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (momRef.current) cancelAnimationFrame(momRef.current);
-    dragRef.current = { active: true, startX: e.clientX, startY: e.clientY, velX: 0, velY: 0, lastX: e.clientX, lastY: e.clientY, lastT: Date.now() };
-  };
-
-  const onMouseUp = (e: React.MouseEvent) => {
+  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const d = dragRef.current;
     d.active = false;
 
     const dx = Math.abs(e.clientX - d.startX);
     const dy = Math.abs(e.clientY - d.startY);
-    if (dx < 4 && dy < 4) {
-      // Click — open modal (ignore clicks on the constraint violation indicator)
+    const tapThreshold = d.isTouch ? 10 : 4;
+    if (dx < tapThreshold && dy < tapThreshold) {
+      // Tap / click — open modal (ignore constraint violation indicator taps)
       const rect = canvasRef.current!.getBoundingClientRect();
       const id = hitTest(e.clientX - rect.left, e.clientY - rect.top);
       if (id && plan && !id.startsWith("!:")) {
@@ -865,7 +870,7 @@ export function OverviewPage() {
       return;
     }
 
-    // Momentum
+    // Momentum scroll
     let vx = d.velX * 1000;
     let vy = d.velY * 1000;
     const friction = 0.85;
@@ -953,11 +958,12 @@ export function OverviewPage() {
         ref={canvasRef}
         width={size.w}
         height={size.h}
-        style={{ display: "block", cursor: hoverId ? "pointer" : "default" }}
-        onMouseMove={onMouseMove}
-        onMouseDown={onMouseDown}
-        onMouseUp={onMouseUp}
-        onMouseLeave={() => { dragRef.current.active = false; setHoverId(null); }}
+        style={{ display: "block", cursor: hoverId ? "pointer" : "default", touchAction: "none" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={() => { dragRef.current.active = false; setHoverId(null); }}
+        onPointerLeave={(e) => { if (e.pointerType === "mouse") { dragRef.current.active = false; setHoverId(null); } }}
       />
 
       {/* Modals */}
