@@ -24,6 +24,7 @@ export function SettingsPage() {
 
   // ── Sidebar navigation ──────────────────────────────────────────────────────
   const [activeSection, setActiveSection] = useState<SettingsSection>("profile");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 600);
 
   const sections = useMemo(() => {
     const items: { id: SettingsSection; label: string }[] = [
@@ -919,7 +920,14 @@ export function SettingsPage() {
 
       <div className="settings-layout">
         {/* Sidebar */}
-        <nav className="settings-sidebar">
+        <nav className={`settings-sidebar${sidebarCollapsed ? " settings-sidebar--collapsed" : ""}`}>
+          <button
+            className="settings-sidebar-close"
+            onClick={() => setSidebarCollapsed(true)}
+            title="Hide navigation"
+          >
+            ✕
+          </button>
           {sections.map((s) => (
             <button
               key={s.id}
@@ -933,6 +941,15 @@ export function SettingsPage() {
 
         {/* Content panel */}
         <div className="settings-main">
+          {sidebarCollapsed && (
+            <button
+              className="settings-sidebar-open"
+              onClick={() => setSidebarCollapsed(false)}
+              title="Show navigation"
+            >
+              ☰
+            </button>
+          )}
           {activeSection === "profile" && renderProfile()}
           {activeSection === "plan" && plan && renderPlanSettings()}
           {activeSection === "plan-management" && renderPlanManagement()}
