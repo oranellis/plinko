@@ -93,8 +93,8 @@ export function IconUsers({ size = defaults.size, color = defaults.color }: Icon
 export function IconSearch({ size = defaults.size, color = defaults.color }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="6.5" cy="6.5" r="4" stroke={color} strokeWidth="1.4" />
-      <line x1="9.8" y1="9.8" x2="13.5" y2="13.5" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="6.5" cy="6.5" r="4" stroke={color} strokeWidth="0.95" />
+      <line x1="9.8" y1="9.8" x2="13.5" y2="13.5" stroke={color} strokeWidth="1.05" strokeLinecap="round" />
     </svg>
   );
 }
@@ -102,12 +102,12 @@ export function IconSearch({ size = defaults.size, color = defaults.color }: Ico
 export function IconToday({ size = defaults.size, color = defaults.color }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="2" y="3" width="12" height="11" rx="1.5" stroke={color} strokeWidth="1.3" />
-      <line x1="2" y1="7" x2="14" y2="7" stroke={color} strokeWidth="1.2" />
-      <line x1="5.5" y1="1.5" x2="5.5" y2="5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
-      <line x1="10.5" y1="1.5" x2="10.5" y2="5" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
-      <line x1="8" y1="9" x2="8" y2="13" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
-      <line x1="5.5" y1="11" x2="10.5" y2="11" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      <rect x="2" y="3" width="12" height="11" rx="1.5" stroke={color} strokeWidth="0.9" />
+      <line x1="2" y1="7" x2="14" y2="7" stroke={color} strokeWidth="0.8" />
+      <line x1="5.5" y1="1.5" x2="5.5" y2="5" stroke={color} strokeWidth="0.95" strokeLinecap="round" />
+      <line x1="10.5" y1="1.5" x2="10.5" y2="5" stroke={color} strokeWidth="0.95" strokeLinecap="round" />
+      <line x1="8" y1="9" x2="8" y2="13" stroke={color} strokeWidth="0.95" strokeLinecap="round" />
+      <line x1="5.5" y1="11" x2="10.5" y2="11" stroke={color} strokeWidth="0.95" strokeLinecap="round" />
     </svg>
   );
 }
@@ -117,8 +117,8 @@ export function IconAddTask({ size = defaults.size, color = defaults.color }: Ic
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect x="1.5" y="4" width="9" height="2.5" rx="1" fill={color} />
       <rect x="1.5" y="9.5" width="6" height="2.5" rx="1" fill={color} />
-      <line x1="12" y1="9" x2="12" y2="15" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
-      <line x1="9" y1="12" x2="15" y2="12" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      <line x1="12" y1="9" x2="12" y2="15" stroke={color} strokeWidth="1.05" strokeLinecap="round" />
+      <line x1="9" y1="12" x2="15" y2="12" stroke={color} strokeWidth="1.05" strokeLinecap="round" />
     </svg>
   );
 }
@@ -126,9 +126,9 @@ export function IconAddTask({ size = defaults.size, color = defaults.color }: Ic
 export function IconAddMilestone({ size = defaults.size, color = defaults.color }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M7 2.5L2.5 7L7 11.5L11.5 7Z" stroke={color} strokeWidth="1.4" strokeLinejoin="round" />
-      <line x1="13" y1="10" x2="13" y2="15.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M7 2.5L2.5 7L7 11.5L11.5 7Z" stroke={color} strokeWidth="0.95" strokeLinejoin="round" />
+      <line x1="13" y1="10" x2="13" y2="15.5" stroke={color} strokeWidth="1.0" strokeLinecap="round" />
+      <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke={color} strokeWidth="1.0" strokeLinecap="round" />
     </svg>
   );
 }
