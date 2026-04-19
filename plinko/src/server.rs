@@ -410,7 +410,19 @@ pub(crate) fn handle_protocol(
             continue;
         }
 
-        if matches!(&request, PlanRequest::NewPlan) {
+        if let PlanRequest::NewPlan { org_id } = &request {
+            let can_create = session.is_admin
+                || session
+                    .org_memberships
+                    .iter()
+                    .any(|m| m.role == OrgRole::Admin);
+            if !can_create {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let new_plan = plinko_shared::data::Plan::new("New Plan");
             let new_plan_clone = {
                 let mut eng = engine.lock().unwrap();
@@ -428,6 +440,9 @@ pub(crate) fn handle_protocol(
                 eng_ref.plan().clone()
             };
             let _ = auth_db.set_user_last_plan(&session.user_id, Some(new_plan_clone.id));
+            if let Some(oid) = org_id.as_deref() {
+                let _ = auth_db.set_plan_org(new_plan_clone.id, Some(oid));
+            }
             let has_monday_integration = storage
                 .lock()
                 .unwrap()

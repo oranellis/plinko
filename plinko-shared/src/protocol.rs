@@ -221,7 +221,9 @@ pub enum PlanRequest {
         scheduler_target: NodeId,
     },
     SavePlan,
-    NewPlan,
+    NewPlan {
+        org_id: Option<String>,
+    },
     LoadPlan {
         plan_id: uuid::Uuid,
     },
@@ -420,7 +422,7 @@ impl std::fmt::Display for PlanError {
     }
 }
 
-pub const VERSION: &str = "0.4.6";
+pub const VERSION: &str = "0.5.0";
 
 /// Per-user server-side preferences.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

@@ -314,7 +314,7 @@ export interface OrgMember {
 export type PlanRequest =
   | "RunScheduler"
   | "SavePlan"
-  | "NewPlan"
+  | { NewPlan: { org_id: string | null } }
   | "ListPlans"
   | { StartTask: TaskId }
   | { PauseTask: TaskId }
@@ -481,4 +481,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.4.6";
+export const PROTOCOL_VERSION = "0.5.0";

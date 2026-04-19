@@ -32,7 +32,7 @@ export function SettingsPage() {
     ];
     if (plan) items.push({ id: "plan", label: "Plan Settings" });
     items.push({ id: "plan-management", label: "Plan Management" });
-    if (plan) items.push({ id: "user-links", label: "User Links" });
+    if (plan && (isOrgAdmin || isSiteAdmin)) items.push({ id: "user-links", label: "User Links" });
     if (isOrgAdmin || isSiteAdmin) items.push({ id: "organisation", label: "Organisation" });
     if (isSiteAdmin) items.push({ id: "site-admin", label: "Site Administration" });
     return items;
@@ -210,9 +210,9 @@ export function SettingsPage() {
   }, [sendRequest]);
 
   useEffect(() => {
-    if (status !== "connected") return;
+    if (status !== "connected" || (!isOrgAdmin && !isSiteAdmin)) return;
     fetchAuthUsers();
-  }, [status, fetchAuthUsers]);
+  }, [status, isOrgAdmin, isSiteAdmin, fetchAuthUsers]);
 
   const fetchUserLinks = useCallback(() => {
     if (!plan) return;
@@ -547,9 +547,11 @@ export function SettingsPage() {
         <button className="btn btn-primary" onClick={handleSave} disabled={!plan}>
           Save Snapshot
         </button>
-        <button className="btn btn-secondary" onClick={() => setShowNewPlan(true)}>
-          New Plan
-        </button>
+        {(isOrgAdmin || isSiteAdmin) && (
+          <button className="btn btn-secondary" onClick={() => setShowNewPlan(true)}>
+            New Plan
+          </button>
+        )}
       </div>
 
       <h3 className="settings-subheading">Saved Plans</h3>
@@ -569,13 +571,15 @@ export function SettingsPage() {
               <button className="btn btn-secondary btn-sm" onClick={() => handleLoad(p.id)} disabled={loadingId === p.id}>
                 {loadingId === p.id ? "Loading…" : "Load"}
               </button>
-              <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.id)}>Delete</button>
+              {(isOrgAdmin || isSiteAdmin) && (
+                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.id)}>Delete</button>
+              )}
             </div>
           </div>
         ))}
       </div>
 
-      {plan && (
+      {plan && (isOrgAdmin || isSiteAdmin) && (
         <>
           <h3 className="settings-subheading">Integrations</h3>
           <div className="settings-row" style={{ gap: 8 }}>
@@ -787,39 +791,6 @@ export function SettingsPage() {
                     ))
                   )}
                 </div>
-
-                {canManage && (
-                  <>
-                    <h3 className="settings-subheading">Add Member</h3>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <select
-                        className="settings-select"
-                        value={orgNewMemberUserId}
-                        onChange={(e) => setOrgNewMemberUserId(e.target.value)}
-                        style={{ flex: 1, minWidth: 160 }}
-                      >
-                        <option value="">Select user…</option>
-                        {authUsersLoaded && authUsers
-                          .filter((u) => !orgMembers.some((m) => m.user_id === u.id))
-                          .map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
-                      </select>
-                      <select
-                        className="settings-select"
-                        value={orgNewMemberRole}
-                        onChange={(e) => setOrgNewMemberRole(e.target.value as OrgRole)}
-                        style={{ width: 90 }}
-                      >
-                        <option value="Admin">Admin</option>
-                        <option value="User">User</option>
-                        <option value="Viewer">Viewer</option>
-                      </select>
-                      <button className="btn btn-primary btn-sm" onClick={handleAddOrgMember} disabled={!orgNewMemberUserId}>
-                        Add
-                      </button>
-                    </div>
-                    {orgAddError && <span className="settings-error" style={{ marginTop: 6 }}>{orgAddError}</span>}
-                  </>
-                )}
               </>
             )}
           </>
@@ -910,13 +881,91 @@ export function SettingsPage() {
           </div>
         </>
       )}
+
+      {orgs.length > 0 && (
+        <>
+          <h3 className="settings-subheading">Organisation Membership</h3>
+          <p className="settings-description">Add and manage user memberships across organisations.</p>
+          <div className="form-row" style={{ marginBottom: 12 }}>
+            <label>Organisation</label>
+            <select
+              className="settings-select"
+              value={selectedOrgId ?? ""}
+              onChange={(e) => setSelectedOrgId(e.target.value)}
+              style={{ flex: 1 }}
+            >
+              {orgs.map((org) => (
+                <option key={org.id} value={org.id}>{org.name}</option>
+              ))}
+            </select>
+          </div>
+          {selectedOrgId && (
+            <>
+              <div className="settings-plan-list" style={{ marginBottom: 12 }}>
+                {!orgMembersLoaded ? (
+                  <div className="settings-empty">Loading…</div>
+                ) : orgMembers.length === 0 ? (
+                  <div className="settings-empty">No members yet.</div>
+                ) : (
+                  orgMembers.map((m) => (
+                    <div key={m.user_id} className="settings-plan-row">
+                      <span className="settings-plan-name" style={{ flex: 1 }}>{m.email}</span>
+                      <select
+                        className="settings-select"
+                        value={m.role}
+                        onChange={(e) => handleSetMemberRole(m.user_id, e.target.value as OrgRole)}
+                        style={{ width: 90 }}
+                      >
+                        <option value="Admin">Admin</option>
+                        <option value="User">User</option>
+                        <option value="Viewer">Viewer</option>
+                      </select>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleRemoveOrgMember(m.user_id)}>
+                        Remove
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <h3 className="settings-subheading">Add Member</h3>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <select
+                  className="settings-select"
+                  value={orgNewMemberUserId}
+                  onChange={(e) => setOrgNewMemberUserId(e.target.value)}
+                  style={{ flex: 1, minWidth: 160 }}
+                >
+                  <option value="">Select user…</option>
+                  {authUsersLoaded && authUsers
+                    .filter((u) => !orgMembers.some((m) => m.user_id === u.id))
+                    .map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
+                </select>
+                <select
+                  className="settings-select"
+                  value={orgNewMemberRole}
+                  onChange={(e) => setOrgNewMemberRole(e.target.value as OrgRole)}
+                  style={{ width: 90 }}
+                >
+                  <option value="Admin">Admin</option>
+                  <option value="User">User</option>
+                  <option value="Viewer">Viewer</option>
+                </select>
+                <button className="btn btn-primary btn-sm" onClick={handleAddOrgMember} disabled={!orgNewMemberUserId}>
+                  Add
+                </button>
+              </div>
+              {orgAddError && <span className="settings-error" style={{ marginTop: 6 }}>{orgAddError}</span>}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 
   return (
     <div className="settings-page">
       {showMonday && plan && <MondayModal planId={plan.id} onClose={() => setShowMonday(false)} />}
-      {showNewPlan && <NewPlanModal onClose={() => setShowNewPlan(false)} sendRequest={sendRequest} />}
+      {showNewPlan && <NewPlanModal orgs={orgs} onClose={() => setShowNewPlan(false)} sendRequest={sendRequest} />}
 
       <div className="settings-layout">
         {/* Sidebar */}

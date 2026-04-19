@@ -233,7 +233,7 @@ impl PlanEngine {
             }
             // Server-level requests handled in server.rs
             PlanRequest::SavePlan
-            | PlanRequest::NewPlan
+            | PlanRequest::NewPlan { .. }
             | PlanRequest::LoadPlan { .. }
             | PlanRequest::DeletePlan { .. }
             | PlanRequest::ListPlans
