@@ -255,8 +255,6 @@ impl PlanEngine {
             | PlanRequest::ChangeMyPassword { .. }
             | PlanRequest::GetUserLinks { .. }
             | PlanRequest::SetUserLinks { .. }
-            | PlanRequest::GetPlanVisibility { .. }
-            | PlanRequest::SetPlanVisibility { .. }
             | PlanRequest::ListPlanVersions { .. }
             | PlanRequest::RestorePlanVersion { .. }
             | PlanRequest::ListOrganisations

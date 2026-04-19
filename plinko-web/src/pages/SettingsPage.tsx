@@ -349,35 +349,11 @@ export function SettingsPage() {
   const [editPasswordId, setEditPasswordId] = useState<string | null>(null);
   const [editPasswordValue, setEditPasswordValue] = useState("");
   const [editPasswordError, setEditPasswordError] = useState<string | null>(null);
-  const [planVisibility, setPlanVisibility] = useState<Record<string, string[]>>({});
-  const [visibilityLoaded, setVisibilityLoaded] = useState(false);
 
   useEffect(() => {
     if (status !== "connected" || !isSiteAdmin) return;
     fetchAuthUsers();
   }, [status, isSiteAdmin, fetchAuthUsers]);
-
-  const fetchAllPlanVisibility = useCallback(async () => {
-    if (!isSiteAdmin) return;
-    const updated: Record<string, string[]> = {};
-    await Promise.all(
-      plans.map(async (p) => {
-        const resp = await sendRequest({ GetPlanVisibility: { plan_id: p.id } });
-        if (typeof resp === "object" && resp !== null && "PlanVisibility" in resp) {
-          updated[p.id] = (resp as { PlanVisibility: { plan_id: string; user_ids: string[] } }).PlanVisibility.user_ids;
-        } else {
-          updated[p.id] = [];
-        }
-      })
-    );
-    setPlanVisibility(updated);
-    setVisibilityLoaded(true);
-  }, [sendRequest, plans, isSiteAdmin]);
-
-  useEffect(() => {
-    if (status !== "connected" || !isSiteAdmin || plans.length === 0) return;
-    fetchAllPlanVisibility();
-  }, [status, isSiteAdmin, plans, fetchAllPlanVisibility]);
 
   const handleCreateUser = async () => {
     setCreateUserError(null);
@@ -419,13 +395,6 @@ export function SettingsPage() {
     } catch (e) {
       setEditPasswordError(String(e));
     }
-  };
-
-  const handleTogglePlanVisibility = async (planId: string, userId: string) => {
-    const current = planVisibility[planId] ?? [];
-    const updated = current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId];
-    setPlanVisibility((prev) => ({ ...prev, [planId]: updated }));
-    await sendRequest({ SetPlanVisibility: { plan_id: planId, user_ids: updated } });
   };
 
   // ── Render helpers ──────────────────────────────────────────────────────────
@@ -819,35 +788,6 @@ export function SettingsPage() {
         {createUserError && <span className="settings-error">{createUserError}</span>}
         <button className="btn btn-primary" onClick={handleCreateUser} disabled={!newUserEmail || !newUserPassword}>Create User</button>
       </div>
-
-      {visibilityLoaded && authUsersLoaded && plans.length > 0 && (
-        <>
-          <h3 className="settings-subheading">Plan Access</h3>
-          <p className="settings-description">Control which users can see each plan. Empty selection = visible to all.</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {plans.map((p) => {
-              const visibleTo = planVisibility[p.id] ?? [];
-              return (
-                <div key={p.id} style={{ background: "#1a1a2e", borderRadius: 8, padding: "12px 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                    <span style={{ fontWeight: 600, color: "#e0e0e0", flex: 1 }}>{p.name}</span>
-                    {visibleTo.length === 0 && <span style={{ fontSize: 11, color: "#888", background: "#2a2a3e", borderRadius: 4, padding: "2px 8px" }}>visible to all</span>}
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {authUsers.filter((u) => !u.is_admin).map((u) => (
-                      <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#ccc", cursor: "pointer" }}>
-                        <input type="checkbox" checked={visibleTo.includes(u.id)} onChange={() => handleTogglePlanVisibility(p.id, u.id)} />
-                        {u.email}
-                      </label>
-                    ))}
-                    {authUsers.filter((u) => !u.is_admin).length === 0 && <span style={{ color: "#666", fontSize: 13 }}>No non-admin users.</span>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
 
       {orgs.length > 0 && (
         <>

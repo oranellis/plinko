@@ -372,8 +372,6 @@ export type PlanRequest =
   | { ChangeMyPassword: { old_password: string; new_password: string } }
   | { GetUserLinks: { plan_id: string } }
   | { SetUserLinks: { plan_id: string; links: UserLink[] } }
-  | { GetPlanVisibility: { plan_id: string } }
-  | { SetPlanVisibility: { plan_id: string; user_ids: string[] } }
   | { ListPlanVersions: { plan_id: string } }
   | { RestorePlanVersion: { plan_id: string; version: string } }
   // Organisation management
@@ -406,7 +404,6 @@ export type PlanResponse =
   | { AuthUsers: AuthUser[] }
   | { UserLinks: UserLink[] }
   | { AuthUserCreated: { user_id: string } }
-  | { PlanVisibility: { plan_id: string; user_ids: string[] } }
   | { PlanVersionList: string[] }
   | { OrgList: Organisation[] }
   | { OrgCreated: { id: string; name: string } }
@@ -494,4 +491,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.5.3";
+export const PROTOCOL_VERSION = "0.5.4";
