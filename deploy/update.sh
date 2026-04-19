@@ -2,7 +2,7 @@
 # deploy/update.sh
 #
 # Update a running Plinko instance to the latest Docker image.
-# Pulls the newest image, gracefully restarts the service, then verifies
+# Pulls the newest image, recreates containers with the new image, then verifies
 # the application is healthy. Requires an initial deploy via setup.sh.
 #
 # Usage:
@@ -10,14 +10,14 @@
 #
 # Options:
 #   --image  IMAGE    Docker image override (default: ghcr.io/oranellis/plinko:latest)
-#   --domain DOMAIN   Domain for HTTPS health check (autodetected from service if omitted)
+#   --domain DOMAIN   Domain for HTTPS health check (autodetected from .env if omitted)
 #   --help            Show this help message
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
-SERVICE_NAME="plinko"
+ENV_FILE="$SCRIPT_DIR/.env"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
@@ -41,7 +41,7 @@ Update a running Plinko instance to the latest Docker image.
 
 Options:
   --image  IMAGE    Docker image to pull (default: ghcr.io/oranellis/plinko:latest)
-  --domain DOMAIN   Domain for HTTPS health check (autodetected if omitted)
+  --domain DOMAIN   Domain for HTTPS health check (autodetected from .env if omitted)
   --help            Show this help message
 
 Examples:
@@ -103,20 +103,7 @@ if [[ ${#ERRORS[@]} -gt 0 ]]; then
     exit 1
 fi
 
-# 4. Systemd service should be registered
-if systemctl list-unit-files "${SERVICE_NAME}.service" &>/dev/null \
-        && systemctl list-unit-files "${SERVICE_NAME}.service" | grep -q "${SERVICE_NAME}"; then
-    SVC_STATE=$(systemctl is-active "${SERVICE_NAME}" 2>/dev/null || echo "inactive")
-    success "Service: ${SERVICE_NAME}.service is ${SVC_STATE}"
-else
-    warn "systemd service '${SERVICE_NAME}' is not registered."
-    warn "The update will still pull the image and attempt a compose restart,"
-    warn "but automatic startup on boot requires running setup.sh first."
-fi
-
 # 5. ghcr.io reachable
-# ghcr.io always returns HTTP 401 for unauthenticated requests — that is correct
-# behaviour. Only treat connection failures (curl exit / HTTP 000) as an error.
 GHCR_HTTP=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" https://ghcr.io/v2/ 2>/dev/null || echo "000")
 if [[ "$GHCR_HTTP" == "000" ]]; then
     ERRORS+=("Cannot reach ghcr.io (connection failed). Outbound HTTPS is required to pull the Docker image.
@@ -134,16 +121,26 @@ if [[ ${#ERRORS[@]} -gt 0 ]]; then
     exit 1
 fi
 
-# 6. Auto-detect domain from the running systemd service environment (if not provided)
+# 6. Auto-detect domain from .env file (if not provided on command line)
 if [[ -z "$DOMAIN" ]]; then
-    DOMAIN=$(systemctl show "${SERVICE_NAME}" -p Environment 2>/dev/null \
-             | grep -oP 'DOMAIN=\K\S+' | head -1 || true)
-    if [[ -n "$DOMAIN" ]]; then
-        success "Detected domain: $DOMAIN"
-    else
-        warn "Could not detect domain — HTTPS health check will be skipped."
-        warn "Pass --domain your.domain.com to enable it."
+    if [[ -f "$ENV_FILE" ]]; then
+        DOMAIN=$(grep -oP '^DOMAIN=\K\S+' "$ENV_FILE" 2>/dev/null | head -1 || true)
+        if [[ -n "$DOMAIN" ]]; then
+            success "Detected domain from .env: $DOMAIN"
+        fi
     fi
+    if [[ -z "$DOMAIN" ]]; then
+        warn "Could not detect domain — HTTPS health check will be skipped."
+        warn "Pass --domain your.domain.com to enable it, or re-run setup.sh."
+    fi
+fi
+
+# 7. Warn if no running stack detected
+if ! docker compose -f "$COMPOSE_FILE" ps --quiet 2>/dev/null | grep -q .; then
+    warn "No running Plinko containers detected."
+    warn "The update will still apply — containers will be started with the new image."
+else
+    success "Stack: Plinko containers are running"
 fi
 
 success "All preflight checks passed"
@@ -197,30 +194,13 @@ else
     info "Current:  $NEW_DIGEST"
 fi
 
-# ── Stop running service ──────────────────────────────────────────────────────
-step "Stopping Service"
+# ── Recreate containers with new image ────────────────────────────────────────
+step "Restarting Stack"
 
-if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
-    info "Stopping ${SERVICE_NAME}.service (waiting up to 60 s for graceful shutdown)..."
-    systemctl stop "${SERVICE_NAME}"
-    success "Service stopped"
-else
-    warn "Service '${SERVICE_NAME}' was not running."
-    # Stop any lingering compose stack manually just in case
-    if docker compose -f "$COMPOSE_FILE" ps --quiet 2>/dev/null | grep -q .; then
-        info "Stopping orphaned compose stack..."
-        DOMAIN="${DOMAIN:-}" PLINKO_IMAGE="$IMAGE" \
-            docker compose -f "$COMPOSE_FILE" down --timeout 30 2>/dev/null || true
-        success "Compose stack stopped"
-    fi
-fi
-
-# ── Start updated service ─────────────────────────────────────────────────────
-step "Starting Service"
-
-info "Starting ${SERVICE_NAME}.service with updated image..."
-systemctl start "${SERVICE_NAME}"
-success "systemctl start ${SERVICE_NAME} — OK"
+info "Recreating containers with updated image..."
+DOMAIN="${DOMAIN:-}" PLINKO_IMAGE="$IMAGE" \
+    docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+success "Stack restarted"
 
 # ── Health check ──────────────────────────────────────────────────────────────
 step "Health Check"
@@ -257,7 +237,7 @@ if [[ $CONTAINER_HEALTHY -eq 1 ]]; then
 else
     warn "Health check timed out or container is unhealthy (elapsed: ${ELAPSED}s)"
     warn "Check container status:  docker compose -f $COMPOSE_FILE ps"
-    warn "Check application logs:  journalctl -u plinko -n 50"
+    warn "Check application logs:  docker compose -f $COMPOSE_FILE logs plinko"
 fi
 
 # ── HTTPS endpoint check ──────────────────────────────────────────────────────
@@ -287,7 +267,7 @@ echo "    $IMAGE"
 [[ -n "$NEW_DIGEST" && "$NEW_DIGEST" != "unknown" ]] && echo "    $NEW_DIGEST"
 echo ""
 echo -e "  ${BOLD}Useful commands${RESET}"
-echo "    Logs:    journalctl -u plinko -f"
-echo "    Status:  systemctl status plinko"
-echo "    Restart: systemctl restart plinko"
+echo "    Logs:    docker compose -f $COMPOSE_FILE logs -f"
+echo "    Status:  docker compose -f $COMPOSE_FILE ps"
+echo "    Restart: docker compose -f $COMPOSE_FILE restart"
 echo ""

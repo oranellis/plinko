@@ -2,8 +2,10 @@
 # deploy/setup.sh
 #
 # One-shot server setup for Plinko.
-# Installs Docker, obtains a TLS certificate, starts the application, and
-# registers a systemd service for automatic startup on boot.
+# Installs Docker, obtains a TLS certificate, and starts the application via
+# Docker Compose. The compose stack uses restart: unless-stopped so containers
+# restart automatically when the Docker daemon starts on boot — no systemd
+# service wrapper is needed.
 #
 # Usage:
 #   sudo ./deploy/setup.sh --domain plinko.example.com --email admin@example.com
@@ -18,8 +20,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
-SERVICE_NAME="plinko"
-SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+ENV_FILE="$SCRIPT_DIR/.env"
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'
@@ -161,9 +162,6 @@ for port in 80 443; do
 done
 
 # 7. Internet access — must reach ghcr.io to pull the image.
-# ghcr.io always returns HTTP 401 for unauthenticated requests; that is correct
-# behaviour and means the host is reachable. Only flag an error for connection
-# failures (curl exit codes 6/7/28 etc.) — not for HTTP 4xx responses.
 GHCR_HTTP=$(curl -s --max-time 10 -o /dev/null -w "%{http_code}" https://ghcr.io/v2/ 2>/dev/null || echo "000")
 if [[ "$GHCR_HTTP" == "000" ]]; then
     ERRORS+=("Cannot reach ghcr.io (connection failed). Outbound HTTPS is required to pull the Docker image.
@@ -280,8 +278,6 @@ if [[ $_needs_cert -eq 1 ]]; then
     [[ $STAGING -eq 1 ]] && warn "Using Let's Encrypt STAGING environment"
 
     # Remove stale certbot state for this domain so certbot starts fresh.
-    # We remove the live dir and renewal config but preserve accounts/ so we
-    # don't unnecessarily re-register with Let's Encrypt on every run.
     rm -rf "$CERT_DIR"
     rm -f  "$SCRIPT_DIR/certs/renewal/$DOMAIN.conf"
 
@@ -313,9 +309,7 @@ if [[ $_needs_cert -eq 1 ]]; then
     done
 
     # nginx now holds the bootstrap cert open by file descriptor.
-    # Remove the live directory so certbot's new_lineage() can create it fresh
-    # when storing the real certificate — Linux keeps the files accessible to
-    # nginx via fd even after the directory entry is deleted from disk.
+    # Remove the live directory so certbot's new_lineage() can create it fresh.
     rm -rf "$CERT_DIR"
 
     # Request the real certificate
@@ -370,66 +364,30 @@ if [[ $_needs_cert -eq 1 ]]; then
 
     success "Certificate obtained for $DOMAIN"
 
-    # Stop the bootstrap nginx — it will be started properly by systemd below
+    # Stop the bootstrap nginx before bringing up the full stack
     info "Stopping bootstrap nginx..."
     DOMAIN="$DOMAIN" PLINKO_IMAGE="$IMAGE" \
         docker compose -f "$COMPOSE_FILE" down --timeout 15 2>/dev/null || true
 fi
 
-# ── Systemd service ───────────────────────────────────────────────────────────
-step "Systemd Service"
+# ── Save environment for future runs ─────────────────────────────────────────
+step "Environment"
 
-# Stop any running stack before handing control to systemd
-if docker compose -f "$COMPOSE_FILE" ps --quiet 2>/dev/null | grep -q .; then
-    info "Stopping existing stack (systemd will manage it from here)..."
-    DOMAIN="$DOMAIN" PLINKO_IMAGE="$IMAGE" \
-        docker compose -f "$COMPOSE_FILE" down --timeout 30 2>/dev/null || true
-fi
-
-cat > "$SERVICE_FILE" <<EOF
-[Unit]
-Description=Plinko project-management server
-Documentation=https://github.com/oranellis/plinko
-Requires=docker.service
-After=docker.service network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-Restart=on-failure
-RestartSec=15
-
-Environment="DOMAIN=${DOMAIN}"
-Environment="PLINKO_IMAGE=${IMAGE}"
-
-# Pull latest image before starting (ensures updates are applied on restart)
-ExecStartPre=/usr/bin/docker compose -f ${COMPOSE_FILE} pull --quiet plinko
-
-# Run in the foreground so systemd tracks the process and captures logs
-ExecStart=/usr/bin/docker compose -f ${COMPOSE_FILE} up --remove-orphans
-
-# Graceful shutdown
-ExecStop=/usr/bin/docker compose -f ${COMPOSE_FILE} down --timeout 30
-
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=plinko
-
-[Install]
-WantedBy=multi-user.target
+cat > "$ENV_FILE" <<EOF
+DOMAIN=${DOMAIN}
+PLINKO_IMAGE=${IMAGE}
 EOF
+success "Saved environment to $ENV_FILE"
 
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
-success "Service installed: $SERVICE_FILE"
-success "Service enabled — will start automatically on boot"
-
-# ── Start via systemd ─────────────────────────────────────────────────────────
+# ── Start Application ─────────────────────────────────────────────────────────
+# Docker Compose uses restart: unless-stopped — containers will automatically
+# restart when the Docker daemon starts on boot. No systemd wrapper is needed.
 step "Starting Application"
 
-info "Starting plinko via systemd..."
-systemctl start "$SERVICE_NAME"
-success "systemctl start $SERVICE_NAME — OK"
+info "Starting Plinko stack..."
+DOMAIN="$DOMAIN" PLINKO_IMAGE="$IMAGE" \
+    docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+success "Stack started"
 
 # ── Health check ──────────────────────────────────────────────────────────────
 step "Health Check"
@@ -442,7 +400,6 @@ CONTAINER_HEALTHY=0
 
 printf "  "
 while [[ $ELAPSED -lt $MAX_WAIT ]]; do
-    # Get health status via docker inspect (works regardless of compose project name)
     STATUS=$(docker ps --filter "label=com.docker.compose.service=plinko" \
                  --format '{{.Status}}' 2>/dev/null | head -1 || echo "")
 
@@ -467,7 +424,7 @@ if [[ $CONTAINER_HEALTHY -eq 1 ]]; then
 else
     warn "Health check timed out or failed (elapsed: ${ELAPSED}s)"
     warn "Check container status: docker compose -f $COMPOSE_FILE ps"
-    warn "Check logs:             journalctl -u plinko -n 50"
+    warn "Check logs:             docker compose -f $COMPOSE_FILE logs plinko"
 fi
 
 # Test the HTTPS endpoint
@@ -495,13 +452,18 @@ echo "    Password: root"
 echo -e "  ${RED}${BOLD}  → Change this password immediately in Settings!${RESET}"
 echo ""
 echo -e "  ${BOLD}Useful commands${RESET}"
-echo "    Status:   systemctl status plinko"
-echo "    Logs:     journalctl -u plinko -f"
-echo "    Stop:     systemctl stop plinko"
-echo "    Restart:  systemctl restart plinko"
+echo "    Status:   docker compose -f $COMPOSE_FILE ps"
+echo "    Logs:     docker compose -f $COMPOSE_FILE logs -f"
+echo "    Stop:     docker compose -f $COMPOSE_FILE down"
+echo "    Restart:  docker compose -f $COMPOSE_FILE restart"
 echo "    Update:   sudo ./deploy/update.sh"
+echo ""
+echo -e "  ${BOLD}Auto-restart${RESET}"
+echo "    Containers use restart: unless-stopped — they will restart automatically"
+echo "    when the Docker daemon starts on boot. No extra configuration needed."
 echo ""
 echo -e "  ${BOLD}Backup${RESET}"
 echo "    docker run --rm -v plinko_plinko-data:/data:ro -v \$(pwd):/backup \\"
 echo "      alpine tar czf /backup/plinko-backup-\$(date +%Y%m%d).tar.gz -C /data ."
 echo ""
+
