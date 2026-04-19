@@ -267,7 +267,10 @@ impl PlanEngine {
             | PlanRequest::AddOrgMember { .. }
             | PlanRequest::RemoveOrgMember { .. }
             | PlanRequest::SetPlanOrg { .. }
-            | PlanRequest::GetPlanOrg { .. } => PlanResponse::PlanUpdated,
+            | PlanRequest::GetPlanOrg { .. }
+            | PlanRequest::GetOrgPlans { .. }
+            | PlanRequest::GetUserPlanPermissions { .. }
+            | PlanRequest::SetUserPlanPermission { .. } => PlanResponse::PlanUpdated,
         }
     }
 }

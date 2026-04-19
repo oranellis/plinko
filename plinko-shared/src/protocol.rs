@@ -52,6 +52,15 @@ pub struct OrgMember {
     pub role: OrgRole,
 }
 
+/// Per-plan permission entry for a specific user (used in the plan-access management UI).
+/// `permission` is one of `"NoAccess"`, `"Viewer"`, `"User"`, or `"Default"` (inherit org role).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PlanPermissionEntry {
+    pub plan_id: uuid::Uuid,
+    pub plan_name: String,
+    pub permission: String,
+}
+
 /// Maps a login user UUID to a plan user UUID.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct UserLink {
@@ -342,6 +351,20 @@ pub enum PlanRequest {
     GetPlanOrg {
         plan_id: uuid::Uuid,
     },
+    // Per-plan permission management (org admins / site admins only)
+    GetOrgPlans {
+        org_id: String,
+    },
+    GetUserPlanPermissions {
+        org_id: String,
+        user_id: String,
+    },
+    SetUserPlanPermission {
+        plan_id: uuid::Uuid,
+        user_id: String,
+        /// One of "NoAccess", "Viewer", "User", or "Default" (removes the explicit override).
+        permission: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -384,6 +407,8 @@ pub enum PlanResponse {
     },
     OrgMembers(Vec<OrgMember>),
     PlanOrgId(Option<String>),
+    OrgPlanList(Vec<(uuid::Uuid, String)>),
+    UserPlanPermissions(Vec<PlanPermissionEntry>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -422,7 +447,7 @@ impl std::fmt::Display for PlanError {
     }
 }
 
-pub const VERSION: &str = "0.5.2";
+pub const VERSION: &str = "0.5.3";
 
 /// Per-user server-side preferences.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

@@ -7,6 +7,7 @@ use bcrypt::{DEFAULT_COST, hash, verify};
 use plinko_shared::protocol::{OrgMembership, OrgRole};
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -387,14 +388,31 @@ impl AuthDb {
 
                 if let Some(org_id) = org_id {
                     // Plan is in an org — only visible to org members
-                    let is_member: i64 = conn
+                    let role: Option<String> = conn
                         .query_row(
-                            "SELECT COUNT(*) FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+                            "SELECT role FROM org_members WHERE org_id = ?1 AND user_id = ?2",
                             params![org_id, user_id],
                             |r| r.get(0),
                         )
-                        .unwrap_or(0);
-                    return is_member > 0;
+                        .optional()
+                        .unwrap_or(None);
+
+                    return match role.as_deref() {
+                        None => false, // not a member
+                        Some("Admin") => true, // org admins bypass per-plan permissions
+                        Some(_) => {
+                            // Non-admin members: check for an explicit NoAccess override
+                            let perm: Option<String> = conn
+                                .query_row(
+                                    "SELECT permission FROM plan_permissions WHERE plan_id = ?1 AND user_id = ?2",
+                                    params![pid_str, user_id],
+                                    |r| r.get(0),
+                                )
+                                .optional()
+                                .unwrap_or(None);
+                            perm.as_deref() != Some("NoAccess")
+                        }
+                    };
                 }
 
                 // No org — use existing plan_visibility logic
@@ -585,6 +603,112 @@ impl AuthDb {
         .flatten()
     }
 
+    /// Returns all plan IDs that belong to the given organisation.
+    pub fn get_plans_for_org(&self, org_id: &str) -> Vec<Uuid> {
+        let conn = self.inner.lock().unwrap();
+        let mut stmt = match conn.prepare("SELECT plan_id FROM plan_org WHERE org_id = ?1") {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
+        stmt.query_map(params![org_id], |r| r.get::<_, String>(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .filter_map(|s| Uuid::parse_str(&s).ok())
+            .collect()
+    }
+
+    /// Returns true if the user is a member of the given organisation (any role).
+    pub fn is_org_member(&self, user_id: &str, org_id: &str) -> bool {
+        let conn = self.inner.lock().unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+                params![org_id, user_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        count > 0
+    }
+
+    /// Returns the explicit plan-level permission for a user, if set.
+    /// `None` means "inherit org role" (default).
+    pub fn get_plan_permission(&self, plan_id: Uuid, user_id: &str) -> Option<String> {
+        let conn = self.inner.lock().unwrap();
+        let pid = plan_id.to_string();
+        conn.query_row(
+            "SELECT permission FROM plan_permissions WHERE plan_id = ?1 AND user_id = ?2",
+            params![pid, user_id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+    }
+
+    /// Sets an explicit plan-level permission for a user.
+    /// Pass `None` to delete the override (revert to inheriting the org role).
+    pub fn set_plan_permission(
+        &self,
+        plan_id: Uuid,
+        user_id: &str,
+        permission: Option<&str>,
+    ) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let pid = plan_id.to_string();
+        match permission {
+            Some(p) => {
+                conn.execute(
+                    "INSERT OR REPLACE INTO plan_permissions (plan_id, user_id, permission) VALUES (?1, ?2, ?3)",
+                    params![pid, user_id, p],
+                )?;
+            }
+            None => {
+                conn.execute(
+                    "DELETE FROM plan_permissions WHERE plan_id = ?1 AND user_id = ?2",
+                    params![pid, user_id],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns explicit per-plan permissions for a user within the given org.
+    /// Plans with no explicit row are omitted (they inherit the org role).
+    pub fn get_user_permissions_for_org(
+        &self,
+        org_id: &str,
+        user_id: &str,
+    ) -> HashMap<Uuid, String> {
+        let conn = self.inner.lock().unwrap();
+        let mut stmt = match conn.prepare(
+            "SELECT pp.plan_id, pp.permission \
+             FROM plan_permissions pp \
+             JOIN plan_org po ON pp.plan_id = po.plan_id \
+             WHERE po.org_id = ?1 AND pp.user_id = ?2",
+        ) {
+            Ok(s) => s,
+            Err(_) => return HashMap::new(),
+        };
+        stmt.query_map(params![org_id, user_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .filter_map(|(s, p)| Uuid::parse_str(&s).ok().map(|id| (id, p)))
+        .collect()
+    }
+
+    /// Removes all plan-level permission rows for a plan (call on plan deletion).
+    pub fn delete_plan_permissions(&self, plan_id: Uuid) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let pid = plan_id.to_string();
+        conn.execute(
+            "DELETE FROM plan_permissions WHERE plan_id = ?1",
+            params![pid],
+        )?;
+        Ok(())
+    }
+
     pub fn get_user_org_role(&self, user_id: &str, org_id: &str) -> Option<OrgRole> {
         let conn = self.inner.lock().unwrap();
         let role_str: Option<String> = conn
@@ -687,6 +811,12 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
         CREATE TABLE IF NOT EXISTS plan_org (
             plan_id TEXT PRIMARY KEY,
             org_id  TEXT NOT NULL REFERENCES organisations(id) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS plan_permissions (
+            plan_id    TEXT NOT NULL,
+            user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            permission TEXT NOT NULL CHECK(permission IN ('NoAccess', 'Viewer', 'User')),
+            PRIMARY KEY (plan_id, user_id)
         );",
     )
 }

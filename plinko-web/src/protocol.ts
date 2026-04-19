@@ -307,6 +307,13 @@ export interface OrgMember {
   role: OrgRole;
 }
 
+export interface PlanPermissionEntry {
+  plan_id: string;
+  plan_name: string;
+  /** "NoAccess" | "Viewer" | "User" | "Default" (inherit org role) */
+  permission: string;
+}
+
 // ── Protocol: PlanRequest ─────────────────────────────────────────────────────
 // Serde default enum encoding. Unit variants are bare strings;
 // tuple/struct variants are `{ "VariantName": payload }`.
@@ -378,7 +385,11 @@ export type PlanRequest =
   | { AddOrgMember: { org_id: string; user_id: string; role: OrgRole } }
   | { RemoveOrgMember: { org_id: string; user_id: string } }
   | { SetPlanOrg: { plan_id: string; org_id: string | null } }
-  | { GetPlanOrg: { plan_id: string } };
+  | { GetPlanOrg: { plan_id: string } }
+  // Per-plan permission management (org admins / site admins only)
+  | { GetOrgPlans: { org_id: string } }
+  | { GetUserPlanPermissions: { org_id: string; user_id: string } }
+  | { SetUserPlanPermission: { plan_id: string; user_id: string; permission: string } };
 
 // ── Protocol: PlanResponse ────────────────────────────────────────────────────
 
@@ -400,7 +411,9 @@ export type PlanResponse =
   | { OrgList: Organisation[] }
   | { OrgCreated: { id: string; name: string } }
   | { OrgMembers: OrgMember[] }
-  | { PlanOrgId: string | null };
+  | { PlanOrgId: string | null }
+  | { OrgPlanList: [string, string][] }
+  | { UserPlanPermissions: PlanPermissionEntry[] };
 
 export type SchedulerError =
   | "EmptyChain"
@@ -481,4 +494,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.5.2";
+export const PROTOCOL_VERSION = "0.5.3";

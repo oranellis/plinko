@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePlanContext } from "../context/PlanContext";
 import { MondayModal } from "../components/modals/MondayModal";
 import { NewPlanModal } from "../components/modals/NewPlanModal";
+import { PlanPermissionsModal } from "../components/modals/PlanPermissionsModal";
 import { DatePicker } from "../components/modals/shared/DatePicker";
 import { nodeIdString } from "../utils/planUtils";
 import type { AuthUser, NodeId, OrgMember, Organisation, OrgRole, PlanError, UserLink } from "../protocol";
@@ -242,13 +243,13 @@ export function SettingsPage() {
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [orgMembersLoaded, setOrgMembersLoaded] = useState(false);
-  const [currentPlanOrgId, setCurrentPlanOrgId] = useState<string | null | undefined>(undefined);
   const [orgNewMemberUserId, setOrgNewMemberUserId] = useState("");
   const [orgNewMemberRole, setOrgNewMemberRole] = useState<OrgRole>("User");
   const [orgAddError, setOrgAddError] = useState<string | null>(null);
   const [orgRenameValue, setOrgRenameValue] = useState("");
   const [newOrgName, setNewOrgName] = useState("");
   const [createOrgError, setCreateOrgError] = useState<string | null>(null);
+  const [planPermissionsUser, setPlanPermissionsUser] = useState<{ userId: string; email: string } | null>(null);
 
   const fetchOrgs = useCallback(() => {
     sendRequest("ListOrganisations").then((resp) => {
@@ -285,16 +286,6 @@ export function SettingsPage() {
     setOrgRenameValue(org?.name ?? "");
   }, [selectedOrgId, fetchOrgMembers, orgs]);
 
-  // Fetch current plan's org assignment
-  useEffect(() => {
-    if (!plan) { setCurrentPlanOrgId(undefined); return; }
-    sendRequest({ GetPlanOrg: { plan_id: plan.id } }).then((resp) => {
-      if (typeof resp === "object" && resp !== null && "PlanOrgId" in resp) {
-        setCurrentPlanOrgId((resp as { PlanOrgId: string | null }).PlanOrgId);
-      }
-    }).catch(console.error);
-  }, [plan?.id, sendRequest]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleRenameOrg = async () => {
     if (!selectedOrgId || !orgRenameValue.trim()) return;
     const resp = await sendRequest({ RenameOrganisation: { org_id: selectedOrgId, name: orgRenameValue.trim() } });
@@ -325,12 +316,6 @@ export function SettingsPage() {
     if (!selectedOrgId) return;
     await sendRequest({ AddOrgMember: { org_id: selectedOrgId, user_id: userId, role } });
     fetchOrgMembers(selectedOrgId);
-  };
-
-  const handleSetPlanOrg = async (orgId: string | null) => {
-    if (!plan) return;
-    await sendRequest({ SetPlanOrg: { plan_id: plan.id, org_id: orgId } });
-    setCurrentPlanOrgId(orgId);
   };
 
   const handleCreateOrg = async () => {
@@ -719,42 +704,22 @@ export function SettingsPage() {
               <>
                 <h3 className="settings-subheading">{selectedOrg.name}</h3>
 
-                {canManage && (
-                  <>
-                    <div className="form-row">
-                      <label>Rename Organisation</label>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <input
-                          type="text"
-                          value={orgRenameValue}
-                          onChange={(e) => setOrgRenameValue(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === "Enter") handleRenameOrg(); }}
-                          style={{ flex: 1, background: "#1e1e1e", border: "1px solid #3a3a3c", borderRadius: 4, color: "#d4d4d4", fontSize: 13, padding: "6px 10px", outline: "none", fontFamily: "inherit" }}
-                        />
-                        <button className="btn btn-secondary btn-sm" onClick={handleRenameOrg} disabled={!orgRenameValue.trim()}>
-                          Rename
-                        </button>
-                      </div>
+                {isSiteAdmin && (
+                  <div className="form-row">
+                    <label>Rename Organisation</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        type="text"
+                        value={orgRenameValue}
+                        onChange={(e) => setOrgRenameValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") handleRenameOrg(); }}
+                        style={{ flex: 1, background: "#1e1e1e", border: "1px solid #3a3a3c", borderRadius: 4, color: "#d4d4d4", fontSize: 13, padding: "6px 10px", outline: "none", fontFamily: "inherit" }}
+                      />
+                      <button className="btn btn-secondary btn-sm" onClick={handleRenameOrg} disabled={!orgRenameValue.trim()}>
+                        Rename
+                      </button>
                     </div>
-
-                    {plan && currentPlanOrgId !== undefined && (
-                      <div className="form-row">
-                        <label>Plan Assignment</label>
-                        {currentPlanOrgId === selectedOrgId ? (
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <span style={{ fontSize: 13, color: "#7dbd7d" }}>✓ "{plan.name}" is assigned to this organisation</span>
-                          </div>
-                        ) : (
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <span style={{ fontSize: 13, color: "#888" }}>"{plan.name}" is not assigned to this organisation</span>
-                            <button className="btn btn-primary btn-sm" onClick={() => handleSetPlanOrg(selectedOrgId)}>
-                              Assign to this org
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
+                  </div>
                 )}
 
                 <h3 className="settings-subheading">Members</h3>
@@ -779,8 +744,11 @@ export function SettingsPage() {
                               <option value="User">User</option>
                               <option value="Viewer">Viewer</option>
                             </select>
-                            <button className="btn btn-danger btn-sm" onClick={() => handleRemoveOrgMember(m.user_id)}>
-                              Remove
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setPlanPermissionsUser({ userId: m.user_id, email: m.email })}
+                            >
+                              Plan Access
                             </button>
                           </>
                         ) : (
@@ -965,6 +933,15 @@ export function SettingsPage() {
     <div className="settings-page">
       {showMonday && plan && <MondayModal planId={plan.id} onClose={() => setShowMonday(false)} />}
       {showNewPlan && <NewPlanModal orgs={orgs} onClose={() => setShowNewPlan(false)} sendRequest={sendRequest} />}
+      {planPermissionsUser && selectedOrgId && (
+        <PlanPermissionsModal
+          orgId={selectedOrgId}
+          userId={planPermissionsUser.userId}
+          email={planPermissionsUser.email}
+          sendRequest={sendRequest}
+          onClose={() => setPlanPermissionsUser(null)}
+        />
+      )}
 
       <div className="settings-layout">
         {/* Sidebar */}
