@@ -685,6 +685,19 @@ impl AuthDb {
         )
     }
 
+    /// Returns true if the user is an admin of at least one organisation.
+    pub fn is_any_org_admin(&self, user_id: &str) -> bool {
+        let conn = self.inner.lock().unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM org_members WHERE user_id = ?1 AND role = 'Admin'",
+                params![user_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        count > 0
+    }
+
     // -------------------------------------------------------------------------
     // User preferences
     // -------------------------------------------------------------------------

@@ -16,9 +16,11 @@ use crate::server::handle_protocol;
 use plinko_shared::data::Storage;
 
 /// Registry of active sessions for broadcasting plan state updates.
-/// Maps session_id → mpsc::Sender so that any session can push unsolicited
-/// messages to any other session.
-pub type SessionRegistry = Arc<Mutex<HashMap<u64, Sender<ServerMessage>>>>;
+/// Maps session_id → (user_id, is_admin, mpsc::Sender) so that broadcasts can be
+/// filtered by the recipient's effective role on the plan being broadcast.
+/// Sessions are registered with a placeholder ("", false) before auth completes,
+/// and updated to real values after successful authentication.
+pub type SessionRegistry = Arc<Mutex<HashMap<u64, (String, bool, Sender<ServerMessage>)>>>;
 
 static SESSION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -90,8 +92,11 @@ fn handle_ws_connection(
     let storage_clone = Arc::clone(&storage);
     let peer_clone = peer.clone();
 
-    // Register this session so other sessions can broadcast to us.
-    registry.lock().unwrap().insert(session_id, out_tx.clone());
+    // Register with a placeholder; handle_protocol updates to real user info after auth.
+    registry
+        .lock()
+        .unwrap()
+        .insert(session_id, ("".to_string(), false, out_tx.clone()));
     // Automatically deregister when handle_ws_connection returns for any reason.
     let _registry_guard = RegistryGuard {
         session_id,

@@ -12,7 +12,7 @@ use crate::ws_server::SessionRegistry;
 /// Effective access level for the currently-active plan.
 #[derive(PartialEq)]
 enum PlanRole {
-    /// Full access — SiteAdmin or OrgAdmin for this plan's org, or plan has no org.
+    /// Full access — SiteAdmin or OrgAdmin for this plan's org.
     Admin,
     /// Can create/update/delete tasks and milestones; run scheduler.
     User,
@@ -28,8 +28,8 @@ fn effective_plan_role(session: &SessionInfo, plan_id: uuid::Uuid, auth_db: &Aut
         return PlanRole::Admin;
     }
     let Some(org_id) = auth_db.get_plan_org(plan_id) else {
-        // No org → legacy visibility-based access, grant full access to all who can see it.
-        return PlanRole::Admin;
+        // Plans must be in an org. No-org plans are inaccessible to non-admins.
+        return PlanRole::NoAccess;
     };
     match auth_db.get_user_org_role(&session.user_id, &org_id) {
         Some(OrgRole::Admin) => PlanRole::Admin, // org admins bypass per-plan permissions
@@ -50,6 +50,22 @@ fn effective_plan_role(session: &SessionInfo, plan_id: uuid::Uuid, auth_db: &Aut
             }
         }
         None => PlanRole::NoAccess,
+    }
+}
+
+/// Returns true if the user identified by (user_id, is_admin) has at least Viewer
+/// access to `plan_id`. Used in broadcast filtering.
+fn has_plan_access(user_id: &str, is_admin: bool, plan_id: uuid::Uuid, auth_db: &AuthDb) -> bool {
+    if is_admin || user_id.is_empty() {
+        return is_admin;
+    }
+    let Some(org_id) = auth_db.get_plan_org(plan_id) else {
+        return false;
+    };
+    match auth_db.get_user_org_role(user_id, &org_id) {
+        None => false,
+        Some(OrgRole::Admin) => true,
+        Some(_) => auth_db.get_plan_permission(plan_id, user_id).as_deref() != Some("NoAccess"),
     }
 }
 
@@ -82,23 +98,34 @@ enum InternalMsg {
     ImportDone { plan: Box<Plan>, message: String },
 }
 
-/// Broadcast a `PlanState` message to all sessions in the registry *except* `my_id`.
+/// Broadcast a `PlanState` message to all sessions in the registry *except* `my_id`,
+/// but only to sessions whose user has at least Viewer access to the plan.
 ///
 /// Conflict policy: **last-writer-wins**. All plan mutations are serialised through
 /// `Arc<Mutex<PlanEngine>>`, so concurrent edits are applied in arrival order.  The
 /// full `PlanState` snapshot is sent after every mutation, ensuring every client
 /// converges to the same state.  No optimistic locking or operational transformation
 /// is applied — if two users edit the same field simultaneously, the last write wins.
-fn broadcast_plan_state(my_id: u64, registry: &SessionRegistry, plan: &Plan, has_monday: bool) {
+fn broadcast_plan_state(
+    my_id: u64,
+    registry: &SessionRegistry,
+    plan: &Plan,
+    has_monday: bool,
+    auth_db: &AuthDb,
+) {
     let msg = ServerMessage::PlanState {
         plan: Box::new(plan.clone()),
         has_monday_integration: has_monday,
     };
     let reg = registry.lock().unwrap();
-    for (&id, sender) in reg.iter() {
-        if id != my_id {
-            let _ = sender.send(msg.clone());
+    for (&id, (user_id, is_admin, sender)) in reg.iter() {
+        if id == my_id {
+            continue;
         }
+        if !has_plan_access(user_id, *is_admin, plan.id, auth_db) {
+            continue;
+        }
+        let _ = sender.send(msg.clone());
     }
 }
 
@@ -260,6 +287,16 @@ pub(crate) fn handle_protocol(
     };
     // ── End auth phase ─────────────────────────────────────────────────────
 
+    // Update registry with authenticated user info so broadcasts can be filtered
+    // by recipient access level. The entry was inserted with a placeholder before auth.
+    {
+        let mut reg = registry.lock().unwrap();
+        if let Some(entry) = reg.get_mut(&session_id) {
+            entry.0 = session.user_id.clone();
+            entry.1 = session.is_admin;
+        }
+    }
+
     // Determine the initial state to send. If no plan is active, try to auto-load
     // from the user's last-plan preference.
     //
@@ -315,18 +352,29 @@ pub(crate) fn handle_protocol(
 
     match initial_plan_info {
         Some((plan, has_monday)) => {
-            eprintln!(
-                "[connect] {peer}: handshake OK (version {VERSION}), sending plan \"{}\"",
-                plan.name
-            );
-            if send(&ServerMessage::PlanState {
-                plan: Box::new(plan),
-                has_monday_integration: has_monday,
-            })
-            .is_err()
-            {
-                eprintln!("[connect] {peer}: failed to send initial PlanState");
-                return;
+            // Check the user has at least Viewer access to the currently loaded plan
+            if !has_plan_access(&session.user_id, session.is_admin, plan.id, &auth_db) {
+                eprintln!(
+                    "[connect] {peer}: handshake OK (version {VERSION}), no access to loaded plan"
+                );
+                if send(&ServerMessage::NoPlanActive).is_err() {
+                    eprintln!("[connect] {peer}: failed to send NoPlanActive");
+                    return;
+                }
+            } else {
+                eprintln!(
+                    "[connect] {peer}: handshake OK (version {VERSION}), sending plan \"{}\"",
+                    plan.name
+                );
+                if send(&ServerMessage::PlanState {
+                    plan: Box::new(plan),
+                    has_monday_integration: has_monday,
+                })
+                .is_err()
+                {
+                    eprintln!("[connect] {peer}: failed to send initial PlanState");
+                    return;
+                }
             }
         }
         None => {
@@ -375,6 +423,7 @@ pub(crate) fn handle_protocol(
                             &registry,
                             &done_plan,
                             has_monday_integration,
+                            &auth_db,
                         );
                     }
                 }
@@ -425,18 +474,7 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::NewPlan { org_id } = &request {
-            let can_create = session.is_admin
-                || session
-                    .org_memberships
-                    .iter()
-                    .any(|m| m.role == OrgRole::Admin);
-            if !can_create {
-                let _ = send(&ServerMessage::Response {
-                    id,
-                    response: PlanResponse::Error(PlanError::Unauthorized),
-                });
-                continue;
-            }
+            // org_id is required; check before the permission check so the error is clear
             let Some(oid) = org_id.as_deref() else {
                 let _ = send(&ServerMessage::Response {
                     id,
@@ -446,6 +484,15 @@ pub(crate) fn handle_protocol(
                 });
                 continue;
             };
+            // Only site admins and admins of the specific target org may create plans there.
+            let can_create = session.is_admin || auth_db.is_org_admin(&session.user_id, oid);
+            if !can_create {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let new_plan = plinko_shared::data::Plan::new("New Plan");
             let new_plan_clone = {
                 let mut eng = engine.lock().unwrap();
@@ -482,6 +529,7 @@ pub(crate) fn handle_protocol(
                 &registry,
                 &new_plan_clone,
                 has_monday_integration,
+                &auth_db,
             );
             continue;
         }
@@ -538,6 +586,7 @@ pub(crate) fn handle_protocol(
                         &registry,
                         &loaded_plan_clone,
                         has_monday_integration,
+                        &auth_db,
                     );
                 }
                 Err(e) => {
@@ -578,6 +627,14 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::DeletePlan { plan_id } = &request {
             let plan_id = *plan_id;
+            // Only site admins or org admins of this plan's org may delete it.
+            if effective_plan_role(&session, plan_id, &auth_db) != PlanRole::Admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let _ = auth_db.delete_plan_permissions(plan_id); // clean up per-plan permissions
             let _ = storage.lock().unwrap().delete_plan(plan_id);
             let all_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
@@ -618,6 +675,14 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::LoadMondayConfig { plan_id } = &request {
             let plan_id = *plan_id;
+            // Require at least Viewer access on the plan.
+            if effective_plan_role(&session, plan_id, &auth_db) == PlanRole::NoAccess {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let stor = storage.lock().unwrap();
             let config = stor.load_monday_config(plan_id).unwrap_or_default();
             if send(&ServerMessage::Response {
@@ -632,6 +697,15 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::LoadMondayApiToken = &request {
+            // Require site admin or any org admin to read the global API token.
+            let allowed = session.is_admin || auth_db.is_any_org_admin(&session.user_id);
+            if !allowed {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let token = storage.lock().unwrap().load_monday_api_token();
             if send(&ServerMessage::Response {
                 id,
@@ -650,6 +724,14 @@ pub(crate) fn handle_protocol(
             token,
         } = request
         {
+            // Only org admins or site admins may change Monday configuration.
+            if effective_plan_role(&session, plan_id, &auth_db) != PlanRole::Admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let stor = storage.lock().unwrap();
             stor.save_monday_config(plan_id, &config);
             stor.save_monday_api_token(token.trim());
@@ -727,6 +809,14 @@ pub(crate) fn handle_protocol(
             &request
         {
             let plan_id = *plan_id;
+            // Only org admins or site admins may pull from Monday.
+            if effective_plan_role(&session, plan_id, &auth_db) != PlanRole::Admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let is_reimport = matches!(request, PlanRequest::MondayFullReimport { .. });
             let plan_clone_opt = {
                 let eng_guard = engine.lock().unwrap();
@@ -795,6 +885,14 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::MondayPushPreview { plan_id } = &request {
             let plan_id = *plan_id;
+            // Only org admins or site admins may push to Monday.
+            if effective_plan_role(&session, plan_id, &auth_db) != PlanRole::Admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let plan_snapshot_opt = {
                 let eng_guard = engine.lock().unwrap();
                 eng_guard.as_ref().map(|e| e.plan().clone())
@@ -831,6 +929,14 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::MondayPush { plan_id } = &request {
             let plan_id = *plan_id;
+            // Only org admins or site admins may push to Monday.
+            if effective_plan_role(&session, plan_id, &auth_db) != PlanRole::Admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let plan_snapshot_opt = {
                 let eng_guard = engine.lock().unwrap();
                 eng_guard.as_ref().map(|e| e.plan().clone())
@@ -902,11 +1008,8 @@ pub(crate) fn handle_protocol(
 
         // ── Auth PlanRequest handlers ───────────────────────────────────────
         if matches!(&request, PlanRequest::GetAuthUsers) {
-            let user_is_org_admin = session
-                .org_memberships
-                .iter()
-                .any(|m| m.role == OrgRole::Admin);
-            if !session.is_admin && !user_is_org_admin {
+            let is_allowed = session.is_admin || auth_db.is_any_org_admin(&session.user_id);
+            if !is_allowed {
                 let _ = send(&ServerMessage::Response {
                     id,
                     response: PlanResponse::Error(PlanError::Unauthorized),
@@ -1082,6 +1185,14 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::GetUserLinks { plan_id } = &request {
+            // Require at least Viewer access to read user links.
+            if effective_plan_role(&session, *plan_id, &auth_db) == PlanRole::NoAccess {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let links = storage.lock().unwrap().load_user_links(*plan_id);
             let _ = send(&ServerMessage::Response {
                 id,
@@ -1091,6 +1202,14 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::SetUserLinks { plan_id, links } = &request {
+            // Only org admins or site admins may change user links.
+            if effective_plan_role(&session, *plan_id, &auth_db) != PlanRole::Admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             storage.lock().unwrap().save_user_links(*plan_id, links);
             let _ = send(&ServerMessage::Response {
                 id,
@@ -1471,6 +1590,14 @@ pub(crate) fn handle_protocol(
 
         // ── Version history ────────────────────────────────────────────────
         if let PlanRequest::ListPlanVersions { plan_id } = &request {
+            // Only org admins or site admins may see version history.
+            if effective_plan_role(&session, *plan_id, &auth_db) != PlanRole::Admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let versions = storage
                 .lock()
                 .unwrap()
@@ -1531,7 +1658,13 @@ pub(crate) fn handle_protocol(
                     {
                         break;
                     }
-                    broadcast_plan_state(session_id, &registry, &restored_clone, has_monday);
+                    broadcast_plan_state(
+                        session_id,
+                        &registry,
+                        &restored_clone,
+                        has_monday,
+                        &auth_db,
+                    );
                 }
                 Err(e) => {
                     eprintln!("[{peer}] restore error: {e}");
@@ -1608,7 +1741,13 @@ pub(crate) fn handle_protocol(
                 {
                     break;
                 }
-                broadcast_plan_state(session_id, &registry, &changed_plan, has_monday_integration);
+                broadcast_plan_state(
+                    session_id,
+                    &registry,
+                    &changed_plan,
+                    has_monday_integration,
+                    &auth_db,
+                );
             }
         }
     }
