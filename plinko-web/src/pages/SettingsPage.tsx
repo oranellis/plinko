@@ -124,7 +124,6 @@ export function SettingsPage() {
   const [plans, setPlans] = useState<PlanEntry[]>([]);
   const [showMonday, setShowMonday] = useState(false);
   const [showNewPlan, setShowNewPlan] = useState(false);
-  const [loadingId, setLoadingId] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [showVersionModal, setShowVersionModal] = useState(false);
   const [versionList, setVersionList] = useState<string[]>([]);
@@ -150,15 +149,6 @@ export function SettingsPage() {
   const handleSave = async () => {
     await sendRequest("SavePlan");
     fetchPlans();
-  };
-
-  const handleLoad = async (planId: string) => {
-    setLoadingId(planId);
-    try {
-      await sendRequest({ LoadPlan: { plan_id: planId } });
-    } finally {
-      setLoadingId(null);
-    }
   };
 
   const handleDelete = async (planId: string) => {
@@ -521,14 +511,11 @@ export function SettingsPage() {
               <span className="settings-plan-name">{p.name}</span>
               <span className="settings-plan-ts">{p.timestamp}</span>
             </div>
-            <div className="settings-plan-actions">
-              <button className="btn btn-secondary btn-sm" onClick={() => handleLoad(p.id)} disabled={loadingId === p.id}>
-                {loadingId === p.id ? "Loading…" : "Load"}
-              </button>
-              {(isOrgAdmin || isSiteAdmin) && (
+            {(isOrgAdmin || isSiteAdmin) && (
+              <div className="settings-plan-actions">
                 <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.id)}>Delete</button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
