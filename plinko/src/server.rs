@@ -423,6 +423,15 @@ pub(crate) fn handle_protocol(
                 });
                 continue;
             }
+            let Some(oid) = org_id.as_deref() else {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::AuthError(
+                        "A plan must be assigned to an organisation".to_string(),
+                    )),
+                });
+                continue;
+            };
             let new_plan = plinko_shared::data::Plan::new("New Plan");
             let new_plan_clone = {
                 let mut eng = engine.lock().unwrap();
@@ -440,9 +449,7 @@ pub(crate) fn handle_protocol(
                 eng_ref.plan().clone()
             };
             let _ = auth_db.set_user_last_plan(&session.user_id, Some(new_plan_clone.id));
-            if let Some(oid) = org_id.as_deref() {
-                let _ = auth_db.set_plan_org(new_plan_clone.id, Some(oid));
-            }
+            let _ = auth_db.set_plan_org(new_plan_clone.id, Some(oid));
             let has_monday_integration = storage
                 .lock()
                 .unwrap()
@@ -1302,10 +1309,16 @@ pub(crate) fn handle_protocol(
 
         if let PlanRequest::SetPlanOrg { plan_id, org_id } = &request {
             let plan_id = *plan_id;
-            let is_allowed = session.is_admin
-                || org_id
-                    .as_deref()
-                    .is_none_or(|oid| auth_db.is_org_admin(&session.user_id, oid));
+            let Some(oid) = org_id.as_deref() else {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::AuthError(
+                        "A plan must remain assigned to an organisation".to_string(),
+                    )),
+                });
+                continue;
+            };
+            let is_allowed = session.is_admin || auth_db.is_org_admin(&session.user_id, oid);
             if !is_allowed {
                 let _ = send(&ServerMessage::Response {
                     id,
@@ -1313,7 +1326,7 @@ pub(crate) fn handle_protocol(
                 });
                 continue;
             }
-            match auth_db.set_plan_org(plan_id, org_id.as_deref()) {
+            match auth_db.set_plan_org(plan_id, Some(oid)) {
                 Ok(()) => {
                     let _ = send(&ServerMessage::Response {
                         id,

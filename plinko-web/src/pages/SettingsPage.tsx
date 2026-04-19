@@ -346,7 +346,7 @@ export function SettingsPage() {
   };
 
   const handleDeleteOrg = async (orgId: string) => {
-    if (!confirm("Delete this organisation? All member associations will be removed. Plans must be unassigned first.")) return;
+    if (!confirm("Delete this organisation? All member associations will be removed. Plans in this organisation must be reassigned to another organisation first.")) return;
     const resp = await sendRequest({ DeleteOrganisation: { org_id: orgId } });
     if (resp === "PlanUpdated") {
       setOrgs((prev) => prev.filter((o) => o.id !== orgId));
@@ -743,7 +743,6 @@ export function SettingsPage() {
                         {currentPlanOrgId === selectedOrgId ? (
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                             <span style={{ fontSize: 13, color: "#7dbd7d" }}>✓ "{plan.name}" is assigned to this organisation</span>
-                            <button className="btn btn-secondary btn-sm" onClick={() => handleSetPlanOrg(null)}>Unassign</button>
                           </div>
                         ) : (
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
