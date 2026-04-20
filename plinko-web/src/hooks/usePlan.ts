@@ -12,7 +12,7 @@ export interface MondayState {
 
 export interface AuthState {
   required: boolean;           // server has sent AuthRequired and we're not yet authenticated
-  currentUser: { userId: string; email: string; isAdmin: boolean; orgMemberships: import("../protocol").OrgMembership[] } | null;
+  currentUser: { userId: string; email: string; isAdmin: boolean; orgMemberships: import("../protocol").OrgMembership[]; activeOrgId: string | null } | null;
   sessionToken: string | null;
   loginError: string | null;
 }
@@ -28,6 +28,7 @@ export interface UsePlanResult {
   login: (email: string, password: string) => void;
   logout: () => void;
   reconnect: () => void;
+  setActiveOrg: (orgId: string) => Promise<void>;
 }
 
 const SESSION_TOKEN_KEY = "plinko_session_token";
@@ -180,7 +181,7 @@ export function usePlan(): UsePlanResult {
             localStorage.setItem(SESSION_TOKEN_KEY, msg.session_token);
             setAuth({
               required: false,
-              currentUser: { userId: msg.user_id, email: msg.email, isAdmin: msg.is_admin, orgMemberships: msg.org_memberships ?? [] },
+              currentUser: { userId: msg.user_id, email: msg.email, isAdmin: msg.is_admin, orgMemberships: msg.org_memberships ?? [], activeOrgId: msg.active_org_id ?? null },
               sessionToken: msg.session_token,
               loginError: null,
             });
@@ -302,6 +303,18 @@ export function usePlan(): UsePlanResult {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const setActiveOrg = useCallback(async (orgId: string) => {
+    const resp = await sendRequest({ SetActiveOrg: { org_id: orgId } });
+    if (resp === "ActiveOrgSet") {
+      setAuth((prev) => ({
+        ...prev,
+        currentUser: prev.currentUser
+          ? { ...prev.currentUser, activeOrgId: orgId }
+          : null,
+      }));
+    }
+  }, [sendRequest]);
+
   const reconnect = useCallback(() => {
     // Close existing socket if any, then reconnect.
     const currentWs = wsRef.current;
@@ -312,5 +325,5 @@ export function usePlan(): UsePlanResult {
     connectRef.current?.();
   }, []);
 
-  return { plan, status, monday, auth, hasMondayIntegration, remoteUpdate, sendRequest, login, logout, reconnect };
+  return { plan, status, monday, auth, hasMondayIntegration, remoteUpdate, sendRequest, login, logout, reconnect, setActiveOrg };
 }

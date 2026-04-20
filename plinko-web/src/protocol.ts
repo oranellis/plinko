@@ -314,6 +314,18 @@ export interface PlanPermissionEntry {
   permission: string;
 }
 
+// ── Bug report ───────────────────────────────────────────────────────────────
+
+export interface BugReport {
+  id: string;
+  user_id: string;
+  email: string;
+  description: string;
+  page_url: string;
+  user_agent: string;
+  submitted_at: string;
+}
+
 // ── Protocol: PlanRequest ─────────────────────────────────────────────────────
 // Serde default enum encoding. Unit variants are bare strings;
 // tuple/struct variants are `{ "VariantName": payload }`.
@@ -387,7 +399,10 @@ export type PlanRequest =
   // Per-plan permission management (org admins / site admins only)
   | { GetOrgPlans: { org_id: string } }
   | { GetUserPlanPermissions: { org_id: string; user_id: string } }
-  | { SetUserPlanPermission: { plan_id: string; user_id: string; permission: string } };
+  | { SetUserPlanPermission: { plan_id: string; user_id: string; permission: string } }
+  | { SetActiveOrg: { org_id: string } }
+  | { SubmitBugReport: { description: string; page_url: string; user_agent: string } }
+  | "ListBugReports";
 
 // ── Protocol: PlanResponse ────────────────────────────────────────────────────
 
@@ -410,7 +425,9 @@ export type PlanResponse =
   | { OrgMembers: OrgMember[] }
   | { PlanOrgId: string | null }
   | { OrgPlanList: [string, string][] }
-  | { UserPlanPermissions: PlanPermissionEntry[] };
+  | { UserPlanPermissions: PlanPermissionEntry[] }
+  | "ActiveOrgSet"
+  | { BugReports: BugReport[] };
 
 export type SchedulerError =
   | "EmptyChain"
@@ -477,7 +494,7 @@ export type ServerMessage =
   | { type: "MondayDone"; message: string }
   | { type: "MondayError"; message: string }
   | { type: "AuthRequired" }
-  | { type: "LoginSuccess"; session_token: string; user_id: string; email: string; is_admin: boolean; user_prefs: UserPrefs; org_memberships: OrgMembership[] }
+  | { type: "LoginSuccess"; session_token: string; user_id: string; email: string; is_admin: boolean; user_prefs: UserPrefs; org_memberships: OrgMembership[]; active_org_id: string | null }
   | { type: "LoginFailed"; message: string };
 
 // ── Protocol: ClientMessage (`#[serde(tag = "type")]`) ───────────────────────
@@ -491,4 +508,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.5.7";
+export const PROTOCOL_VERSION = "0.5.8";

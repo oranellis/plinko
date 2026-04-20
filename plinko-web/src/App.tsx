@@ -6,6 +6,7 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { AllocationPage } from "./pages/AllocationPage";
 import { ResourcesPage } from "./pages/ResourcesPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { AdminPage } from "./pages/AdminPage";
 import { LoginPage } from "./pages/LoginPage";
 import plinkoLogo from "./assets/plinko_logo.svg";
 import { PROTOCOL_VERSION } from "./protocol";
@@ -30,7 +31,7 @@ function PageRouter() {
   }
 
   // No active plan — only settings is accessible.
-  if (plan === null && page !== "settings") {
+  if (plan === null && page !== "settings" && page !== "admin") {
     return (
       <div className="no-plan-screen">
         <div className="no-plan-content">
@@ -61,6 +62,7 @@ function PageRouter() {
     case "allocation": return <AllocationPage />;
     case "resources": return <ResourcesPage />;
     case "settings": return <SettingsPage />;
+    case "admin": return <AdminPage />;
     default: return <HomePage />;
   }
 }

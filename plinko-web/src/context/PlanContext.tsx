@@ -8,7 +8,8 @@ export type PageId =
   | "allocation"
   | "resources"
   | "daily"
-  | "settings";
+  | "settings"
+  | "admin";
 
 interface PlanContextValue {
   plan: Plan | null;
@@ -21,6 +22,7 @@ interface PlanContextValue {
   login: (email: string, password: string) => void;
   logout: () => void;
   reconnect: () => void;
+  setActiveOrg: (orgId: string) => Promise<void>;
   page: PageId;
   setPage: (p: PageId) => void;
   previousPage: PageId | null;
@@ -35,10 +37,29 @@ const PlanContext = createContext<PlanContextValue | null>(null);
 
 export function PlanProvider({ children }: { children: React.ReactNode }) {
   const planData = usePlan();
-  const [page, setPage] = React.useState<PageId>("home");
+  const initialPage: PageId = window.location.pathname === "/admin" ? "admin" : "home";
+  const [page, setPageState] = React.useState<PageId>(initialPage);
   const [previousPage, setPreviousPage] = React.useState<PageId | null>(null);
   const [toolbarActions, setToolbarActions] = React.useState<React.ReactNode>(null);
   const [toolbarRightActions, setToolbarRightActions] = React.useState<React.ReactNode>(null);
+
+  const setPage = React.useCallback((p: PageId) => {
+    setPageState(p);
+    if (p === "admin") {
+      window.history.pushState({}, "", "/admin");
+    } else if (window.location.pathname !== "/") {
+      window.history.pushState({}, "", "/");
+    }
+  }, []);
+
+  React.useEffect(() => {
+    const handler = () => {
+      const path = window.location.pathname;
+      setPageState(path === "/admin" ? "admin" : "home");
+    };
+    window.addEventListener("popstate", handler);
+    return () => window.removeEventListener("popstate", handler);
+  }, []);
 
   return (
     <PlanContext.Provider value={{ ...planData, page, setPage, previousPage, setPreviousPage, toolbarActions, setToolbarActions, toolbarRightActions, setToolbarRightActions }}>

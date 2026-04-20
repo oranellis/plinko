@@ -195,6 +195,17 @@ impl UserPatch {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BugReport {
+    pub id: String,
+    pub user_id: String,
+    pub email: String,
+    pub description: String,
+    pub page_url: String,
+    pub user_agent: String,
+    pub submitted_at: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum PlanRequest {
     RunScheduler,
     StartTask(TaskId),
@@ -356,6 +367,17 @@ pub enum PlanRequest {
         /// One of "NoAccess", "Viewer", "User", or "Default" (removes the explicit override).
         permission: String,
     },
+    // Active org segmentation
+    SetActiveOrg {
+        org_id: String,
+    },
+    // Bug reports
+    SubmitBugReport {
+        description: String,
+        page_url: String,
+        user_agent: String,
+    },
+    ListBugReports,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -395,6 +417,8 @@ pub enum PlanResponse {
     PlanOrgId(Option<String>),
     OrgPlanList(Vec<(uuid::Uuid, String)>),
     UserPlanPermissions(Vec<PlanPermissionEntry>),
+    ActiveOrgSet,
+    BugReports(Vec<BugReport>),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -433,7 +457,7 @@ impl std::fmt::Display for PlanError {
     }
 }
 
-pub const VERSION: &str = "0.5.7";
+pub const VERSION: &str = "0.5.8";
 
 /// Per-user server-side preferences.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -481,6 +505,7 @@ pub enum ServerMessage {
         is_admin: bool,
         user_prefs: UserPrefs,
         org_memberships: Vec<OrgMembership>,
+        active_org_id: Option<String>,
     },
     LoginFailed {
         message: String,

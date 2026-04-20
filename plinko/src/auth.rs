@@ -25,6 +25,7 @@ pub struct SessionInfo {
     pub email: String,
     pub is_admin: bool,
     pub org_memberships: Vec<OrgMembership>,
+    pub active_org_id: Option<String>,
 }
 
 #[derive(Debug)]
@@ -109,7 +110,7 @@ impl AuthDb {
 
     /// Validate credentials. Returns `SessionInfo` on success.
     pub fn login(&self, email: &str, password: &str) -> Result<(String, SessionInfo), AuthError> {
-        let (token, user_id, is_admin) = {
+        let (token, user_id, is_admin, active_org_id_raw) = {
             let conn = self.inner.lock().unwrap();
             let row: Option<(String, String, bool)> = conn
                 .query_row(
@@ -125,6 +126,33 @@ impl AuthDb {
                 return Err(AuthError::InvalidCredentials);
             }
 
+            // For non-admins, require at least one org membership.
+            if !is_admin {
+                let org_count: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM org_members WHERE user_id = ?1",
+                        params![user_id],
+                        |r| r.get(0),
+                    )
+                    .unwrap_or(0);
+                if org_count == 0 {
+                    return Err(AuthError::OtherError(
+                        "Your account is not assigned to an organisation.                          Please contact an administrator."
+                            .to_string(),
+                    ));
+                }
+            }
+
+            // Pick first org alphabetically as the default active org.
+            let first_org: Option<String> = conn
+                .query_row(
+                    "SELECT o.id FROM org_members m                      JOIN organisations o ON m.org_id = o.id                      WHERE m.user_id = ?1 ORDER BY o.name LIMIT 1",
+                    params![user_id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .unwrap_or(None);
+
             // Create session (7-day expiry).
             let token = Uuid::new_v4().to_string();
             let expires = chrono::Utc::now()
@@ -132,13 +160,14 @@ impl AuthDb {
                 .unwrap()
                 .to_rfc3339();
             conn.execute(
-                "INSERT INTO sessions (token, user_id, expires_at) VALUES (?1, ?2, ?3)",
-                params![token, user_id, expires],
+                "INSERT INTO sessions (token, user_id, expires_at, active_org_id)                  VALUES (?1, ?2, ?3, ?4)",
+                params![token, user_id, expires, first_org],
             )?;
-            (token, user_id, is_admin)
+            (token, user_id, is_admin, first_org)
         }; // conn dropped here — lock released before re-acquiring in get_user_org_memberships
 
         let org_memberships = self.get_user_org_memberships(&user_id);
+        let active_org_id = active_org_id_raw;
         Ok((
             token,
             SessionInfo {
@@ -146,25 +175,27 @@ impl AuthDb {
                 email: email.to_string(),
                 is_admin,
                 org_memberships,
+                active_org_id,
             },
         ))
     }
 
     /// Validate a session token. Returns `SessionInfo` if valid and not expired.
     pub fn authenticate_token(&self, token: &str) -> Result<SessionInfo, AuthError> {
-        let (user_id, email, is_admin) = {
+        let (user_id, email, is_admin, active_org_id_raw) = {
             let conn = self.inner.lock().unwrap();
-            let row: Option<(String, String, bool, String)> = conn
+            let row: Option<(String, String, bool, String, Option<String>)> = conn
                 .query_row(
-                    "SELECT u.id, u.username, u.is_admin, s.expires_at
+                    "SELECT u.id, u.username, u.is_admin, s.expires_at, s.active_org_id
                      FROM sessions s JOIN users u ON s.user_id = u.id
                      WHERE s.token = ?1",
                     params![token],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
                 )
                 .optional()?;
 
-            let (user_id, email, is_admin, expires_at) = row.ok_or(AuthError::SessionNotFound)?;
+            let (user_id, email, is_admin, expires_at, active_org_id_raw) =
+                row.ok_or(AuthError::SessionNotFound)?;
 
             // Check expiry.
             let exp = chrono::DateTime::parse_from_rfc3339(&expires_at)
@@ -172,15 +203,41 @@ impl AuthDb {
             if chrono::Utc::now() > exp {
                 return Err(AuthError::SessionExpired);
             }
-            (user_id, email, is_admin)
+            (user_id, email, is_admin, active_org_id_raw)
         }; // conn dropped here — lock released before re-acquiring in get_user_org_memberships
 
         let org_memberships = self.get_user_org_memberships(&user_id);
+
+        // Validate and backfill active_org_id for non-admins.
+        let active_org_id = if is_admin {
+            active_org_id_raw
+        } else {
+            let first_org = org_memberships.first().map(|m| m.org_id.clone());
+            let valid = active_org_id_raw
+                .as_ref()
+                .map(|oid| org_memberships.iter().any(|m| &m.org_id == oid))
+                .unwrap_or(false);
+            if valid {
+                active_org_id_raw
+            } else {
+                // Backfill: update the session row to the first org.
+                if let Some(ref fid) = first_org {
+                    let conn = self.inner.lock().unwrap();
+                    let _ = conn.execute(
+                        "UPDATE sessions SET active_org_id = ?1 WHERE token = ?2",
+                        params![fid, token],
+                    );
+                }
+                first_org
+            }
+        };
+
         Ok(SessionInfo {
             user_id,
             email,
             is_admin,
             org_memberships,
+            active_org_id,
         })
     }
 
@@ -731,6 +788,85 @@ impl AuthDb {
         )?;
         Ok(())
     }
+
+    // -------------------------------------------------------------------------
+    // Active org management
+    // -------------------------------------------------------------------------
+
+    /// Switch a session's active organisation. The user must be a member.
+    pub fn set_active_org(&self, token: &str, org_id: &str) -> Result<(), AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let user_id: Option<String> = conn
+            .query_row(
+                "SELECT user_id FROM sessions WHERE token = ?1",
+                params![token],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let user_id = user_id.ok_or(AuthError::SessionNotFound)?;
+        let is_member: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM org_members WHERE org_id = ?1 AND user_id = ?2",
+                params![org_id, user_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if is_member == 0 {
+            return Err(AuthError::OtherError(
+                "Not a member of this organisation".to_string(),
+            ));
+        }
+        conn.execute(
+            "UPDATE sessions SET active_org_id = ?1 WHERE token = ?2",
+            params![org_id, token],
+        )?;
+        Ok(())
+    }
+
+    // -------------------------------------------------------------------------
+    // Bug reports
+    // -------------------------------------------------------------------------
+
+    pub fn submit_bug_report(
+        &self,
+        user_id: &str,
+        email: &str,
+        description: &str,
+        page_url: &str,
+        user_agent: &str,
+    ) -> Result<String, AuthError> {
+        let id = Uuid::new_v4().to_string();
+        let conn = self.inner.lock().unwrap();
+        conn.execute(
+            "INSERT INTO bug_reports              (id, user_id, email, description, page_url, user_agent)              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![id, user_id, email, description, page_url, user_agent],
+        )?;
+        Ok(id)
+    }
+
+    pub fn list_bug_reports(&self) -> Vec<plinko_shared::protocol::BugReport> {
+        let conn = self.inner.lock().unwrap();
+        let mut stmt = match conn.prepare(
+            "SELECT id, user_id, email, description, page_url, user_agent, submitted_at              FROM bug_reports ORDER BY submitted_at DESC",
+        ) {
+            Ok(s) => s,
+            Err(_) => return vec![],
+        };
+        stmt.query_map([], |r| {
+            Ok(plinko_shared::protocol::BugReport {
+                id: r.get(0)?,
+                user_id: r.get(1)?,
+                email: r.get(2)?,
+                description: r.get(3)?,
+                page_url: r.get(4)?,
+                user_agent: r.get(5)?,
+                submitted_at: r.get(6)?,
+            })
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect()
+    }
 }
 
 fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -781,8 +917,30 @@ fn create_schema(conn: &Connection) -> Result<(), rusqlite::Error> {
             user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             permission TEXT NOT NULL CHECK(permission IN ('NoAccess', 'Viewer', 'User')),
             PRIMARY KEY (plan_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS bug_reports (
+            id           TEXT PRIMARY KEY,
+            user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            email        TEXT NOT NULL,
+            description  TEXT NOT NULL,
+            page_url     TEXT NOT NULL,
+            user_agent   TEXT NOT NULL,
+            submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
         );",
-    )
+    )?;
+    // Migration: add active_org_id column to sessions if it doesn't exist yet
+    // (SQLite doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN, so we catch
+    // the duplicate-column error.)
+    match conn.execute(
+        "ALTER TABLE sessions ADD COLUMN active_org_id TEXT          REFERENCES organisations(id) ON DELETE SET NULL",
+        [],
+    ) {
+        Ok(_) => {}
+        Err(rusqlite::Error::SqliteFailure(_, Some(ref msg)))
+            if msg.contains("duplicate column name") => {}
+        Err(e) => return Err(e),
+    }
+    Ok(())
 }
 
 /// Validate that `s` is a plausible email address (local@domain.tld).

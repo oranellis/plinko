@@ -205,7 +205,7 @@ pub(crate) fn handle_protocol(
         return;
     }
 
-    let (session_token, session): (String, SessionInfo) = loop {
+    let (session_token, mut session): (String, SessionInfo) = loop {
         let mut line = String::new();
         // WouldBlock means "no data yet" (WS uses a 50 ms recv timeout) — loop.
         loop {
@@ -240,6 +240,7 @@ pub(crate) fn handle_protocol(
                             is_admin: info.is_admin,
                             user_prefs: prefs,
                             org_memberships: info.org_memberships.clone(),
+                            active_org_id: info.active_org_id.clone(),
                         });
                         eprintln!("[auth] {peer}: login OK as {}", info.email);
                         break (token, info);
@@ -266,6 +267,7 @@ pub(crate) fn handle_protocol(
                             is_admin: info.is_admin,
                             user_prefs: prefs,
                             org_memberships: info.org_memberships.clone(),
+                            active_org_id: info.active_org_id.clone(),
                         });
                         eprintln!("[auth] {peer}: token auth OK as {}", info.email);
                         break (session_token, info);
@@ -474,8 +476,12 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::NewPlan { org_id } = &request {
-            // org_id is required; check before the permission check so the error is clear
-            let Some(oid) = org_id.as_deref() else {
+            // Fall back to the session's active_org_id if client sends None.
+            let resolved_org = org_id
+                .as_deref()
+                .or(session.active_org_id.as_deref())
+                .map(|s| s.to_string());
+            let Some(oid_owned) = resolved_org else {
                 let _ = send(&ServerMessage::Response {
                     id,
                     response: PlanResponse::Error(PlanError::AuthError(
@@ -484,6 +490,7 @@ pub(crate) fn handle_protocol(
                 });
                 continue;
             };
+            let oid = oid_owned.as_str();
             // Only site admins and admins of the specific target org may create plans there.
             let can_create = session.is_admin || auth_db.is_org_admin(&session.user_id, oid);
             if !can_create {
@@ -548,6 +555,22 @@ pub(crate) fn handle_protocol(
                 }
                 continue;
             }
+            // For non-admins, the plan must belong to the session's active org.
+            if !session.is_admin {
+                let active_org = session.active_org_id.as_deref();
+                let plan_org = auth_db.get_plan_org(plan_id);
+                if active_org.is_some() && plan_org.as_deref() != active_org {
+                    if send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::Unauthorized),
+                    })
+                    .is_err()
+                    {
+                        break;
+                    }
+                    continue;
+                }
+            }
             let load_result = storage.lock().unwrap().load_latest(plan_id);
             match load_result {
                 Ok(plan) => {
@@ -605,9 +628,15 @@ pub(crate) fn handle_protocol(
         }
 
         if matches!(&request, PlanRequest::ListPlans) {
-            let all_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
-            let visible_ids =
-                auth_db.filter_visible_plans(&session.user_id, session.is_admin, &all_ids);
+            let visible_ids: Vec<uuid::Uuid> = if session.is_admin {
+                let all_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
+                auth_db.filter_visible_plans(&session.user_id, true, &all_ids)
+            } else if let Some(ref org_id) = session.active_org_id {
+                let org_plan_ids = auth_db.get_plans_for_org(org_id);
+                auth_db.filter_visible_plans(&session.user_id, false, &org_plan_ids)
+            } else {
+                vec![]
+            };
             let mut list = Vec::new();
             for pid in visible_ids {
                 if let Some((name, last_saved)) = storage.lock().unwrap().plan_summary(pid) {
@@ -1585,6 +1614,81 @@ pub(crate) fn handle_protocol(
                     });
                 }
             }
+            continue;
+        }
+
+        // ── Active org ──────────────────────────────────────────────────────
+        if let PlanRequest::SetActiveOrg { org_id } = &request {
+            let allowed =
+                session.is_admin || session.org_memberships.iter().any(|m| m.org_id == *org_id);
+            if !allowed {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            match auth_db.set_active_org(&session_token, org_id) {
+                Ok(()) => {
+                    session.active_org_id = Some(org_id.clone());
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::ActiveOrgSet,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        // ── Bug reports ─────────────────────────────────────────────────────
+        if let PlanRequest::SubmitBugReport {
+            description,
+            page_url,
+            user_agent,
+        } = &request
+        {
+            match auth_db.submit_bug_report(
+                &session.user_id,
+                &session.email,
+                description,
+                page_url,
+                user_agent,
+            ) {
+                Ok(_) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::PlanUpdated,
+                    });
+                }
+                Err(e) => {
+                    let _ = send(&ServerMessage::Response {
+                        id,
+                        response: PlanResponse::Error(PlanError::AuthError(e.to_string())),
+                    });
+                }
+            }
+            continue;
+        }
+
+        if matches!(&request, PlanRequest::ListBugReports) {
+            if !session.is_admin {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            let reports = auth_db.list_bug_reports();
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::BugReports(reports),
+            });
             continue;
         }
 

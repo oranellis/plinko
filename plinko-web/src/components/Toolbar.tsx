@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePlanContext } from "../context/PlanContext";
+import { BugReportModal } from "./modals/BugReportModal";
 import { IconBack, IconPullMonday, IconPushMonday, IconSettings, IconSpinner } from "./icons";
 import "./Toolbar.css";
 
@@ -134,6 +135,7 @@ export function Toolbar() {
   // All hooks must come before any conditional return.
   const [activeOp, setActiveOp] = useState<MondayOp>(null);
   const [doneText, setDoneText] = useState<{ text: string; isError: boolean } | null>(null);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
   const doneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -283,6 +285,16 @@ export function Toolbar() {
           )}
           <button
             className="toolbar-btn"
+            title="Report a bug"
+            onClick={() => setBugReportOpen(true)}
+          >
+            <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+              <circle cx="9" cy="9" r="3" />
+              <path d="M9 1v2M9 15v2M1 9h2M15 9h2M3.2 3.2l1.4 1.4M13.4 13.4l1.4 1.4M14.8 3.2l-1.4 1.4M4.6 13.4l-1.4 1.4" />
+            </svg>
+          </button>
+          <button
+            className="toolbar-btn"
             title="Settings"
             onClick={handleSettings}
             style={page === "settings" ? { color: "#a78bfa" } : undefined}
@@ -295,6 +307,9 @@ export function Toolbar() {
           />
         </div>
       </div>
+      {bugReportOpen && (
+        <BugReportModal sendRequest={sendRequest} onClose={() => setBugReportOpen(false)} />
+      )}
       {/* Status label floats below the toolbar, right-aligned */}
       {statusText && (
         <div

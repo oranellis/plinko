@@ -9,7 +9,7 @@ import type { AuthUser, NodeId, OrgMember, Organisation, OrgRole, PlanError, Use
 import { formatPlanError } from "../protocol";
 import "./SettingsPage.css";
 
-type SettingsSection = "profile" | "plan" | "plan-management" | "user-links" | "organisation" | "site-admin";
+type SettingsSection = "profile" | "plan" | "plan-management" | "user-links" | "organisation";
 
 interface PlanEntry {
   id: string;
@@ -18,7 +18,7 @@ interface PlanEntry {
 }
 
 export function SettingsPage() {
-  const { plan, status, auth, sendRequest } = usePlanContext();
+  const { plan, status, auth, sendRequest, setPage, setActiveOrg } = usePlanContext();
 
   const isSiteAdmin = !!auth.currentUser?.isAdmin;
   const isOrgAdmin = auth.currentUser?.orgMemberships?.some((m) => m.role === "Admin") ?? false;
@@ -35,7 +35,6 @@ export function SettingsPage() {
     items.push({ id: "plan-management", label: "Plan Management" });
     if (plan && (isOrgAdmin || isSiteAdmin)) items.push({ id: "user-links", label: "User Links" });
     if (isOrgAdmin || isSiteAdmin) items.push({ id: "organisation", label: "Organisation" });
-    if (isSiteAdmin) items.push({ id: "site-admin", label: "Site Administration" });
     return items;
   }, [plan, isOrgAdmin, isSiteAdmin]);
 
@@ -189,13 +188,11 @@ export function SettingsPage() {
   const [userLinks, setUserLinks] = useState<UserLink[]>([]);
   const [userLinksLoaded, setUserLinksLoaded] = useState(false);
   const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);
-  const [authUsersLoaded, setAuthUsersLoaded] = useState(false);
 
   const fetchAuthUsers = useCallback(() => {
     sendRequest("GetAuthUsers").then((resp) => {
       if (typeof resp === "object" && resp !== null && "AuthUsers" in resp) {
         setAuthUsers((resp as { AuthUsers: AuthUser[] }).AuthUsers);
-        setAuthUsersLoaded(true);
       }
     }).catch(console.error);
   }, [sendRequest]);
@@ -233,9 +230,6 @@ export function SettingsPage() {
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [orgMembersLoaded, setOrgMembersLoaded] = useState(false);
-  const [orgNewMemberUserId, setOrgNewMemberUserId] = useState("");
-  const [orgNewMemberRole, setOrgNewMemberRole] = useState<OrgRole>("User");
-  const [orgAddError, setOrgAddError] = useState<string | null>(null);
   const [orgRenameValue, setOrgRenameValue] = useState("");
   const [newOrgName, setNewOrgName] = useState("");
   const [createOrgError, setCreateOrgError] = useState<string | null>(null);
@@ -284,24 +278,6 @@ export function SettingsPage() {
     }
   };
 
-  const handleAddOrgMember = async () => {
-    if (!selectedOrgId || !orgNewMemberUserId) return;
-    setOrgAddError(null);
-    const resp = await sendRequest({ AddOrgMember: { org_id: selectedOrgId, user_id: orgNewMemberUserId, role: orgNewMemberRole } });
-    if (resp === "PlanUpdated") {
-      setOrgNewMemberUserId("");
-      fetchOrgMembers(selectedOrgId);
-    } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
-      setOrgAddError(formatPlanError((resp as { Error: PlanError }).Error));
-    }
-  };
-
-  const handleRemoveOrgMember = async (userId: string) => {
-    if (!selectedOrgId) return;
-    await sendRequest({ RemoveOrgMember: { org_id: selectedOrgId, user_id: userId } });
-    fetchOrgMembers(selectedOrgId);
-  };
-
   const handleSetMemberRole = async (userId: string, role: OrgRole) => {
     if (!selectedOrgId) return;
     await sendRequest({ AddOrgMember: { org_id: selectedOrgId, user_id: userId, role } });
@@ -328,62 +304,6 @@ export function SettingsPage() {
       if (selectedOrgId === orgId) setSelectedOrgId(orgs.find((o) => o.id !== orgId)?.id ?? null);
     } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
       alert(formatPlanError((resp as { Error: PlanError }).Error));
-    }
-  };
-
-  // ── Site admin state ────────────────────────────────────────────────────────
-  const [newUserEmail, setNewUserEmail] = useState("");
-  const [newUserPassword, setNewUserPassword] = useState("");
-  const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
-  const [createUserError, setCreateUserError] = useState<string | null>(null);
-  const [editPasswordId, setEditPasswordId] = useState<string | null>(null);
-  const [editPasswordValue, setEditPasswordValue] = useState("");
-  const [editPasswordError, setEditPasswordError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (status !== "connected" || !isSiteAdmin) return;
-    fetchAuthUsers();
-  }, [status, isSiteAdmin, fetchAuthUsers]);
-
-  const handleCreateUser = async () => {
-    setCreateUserError(null);
-    try {
-      const resp = await sendRequest({ CreateAuthUser: { email: newUserEmail, password: newUserPassword, is_admin: newUserIsAdmin } });
-      if (typeof resp === "object" && resp !== null && "AuthUserCreated" in resp) {
-        setNewUserEmail("");
-        setNewUserPassword("");
-        setNewUserIsAdmin(false);
-        fetchAuthUsers();
-      } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
-        setCreateUserError(formatPlanError((resp as { Error: PlanError }).Error));
-      }
-    } catch (e) {
-      setCreateUserError(String(e));
-    }
-  };
-
-  const handleToggleAdmin = async (userId: string, isAdmin: boolean) => {
-    await sendRequest({ UpdateAuthUser: { user_id: userId, new_is_admin: isAdmin } });
-    fetchAuthUsers();
-  };
-
-  const handleDeleteUser = async (userId: string) => {
-    await sendRequest({ DeleteAuthUser: { user_id: userId } });
-    fetchAuthUsers();
-  };
-
-  const handleSetPassword = async (userId: string) => {
-    setEditPasswordError(null);
-    try {
-      const resp = await sendRequest({ SetAuthUserPassword: { user_id: userId, new_password: editPasswordValue } });
-      if (resp === "PasswordChanged") {
-        setEditPasswordId(null);
-        setEditPasswordValue("");
-      } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
-        setEditPasswordError(formatPlanError((resp as { Error: PlanError }).Error));
-      }
-    } catch (e) {
-      setEditPasswordError(String(e));
     }
   };
 
@@ -722,139 +642,7 @@ export function SettingsPage() {
     );
   };
 
-  const renderSiteAdmin = () => (
-    <div className="settings-content-panel">
-      <h2 className="settings-heading">Site Administration</h2>
 
-      <h3 className="settings-subheading">Login Users</h3>
-      <div className="settings-plan-list" style={{ marginBottom: 16 }}>
-        {authUsers.map((u) => (
-          <div key={u.id} className="settings-plan-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span className="settings-plan-name" style={{ flex: 1 }}>{u.email}</span>
-              {u.is_admin && <span className="home-user-badge">admin</span>}
-              {u.id !== auth.currentUser?.userId && (
-                <>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleToggleAdmin(u.id, !u.is_admin)}>
-                    {u.is_admin ? "Remove admin" : "Make admin"}
-                  </button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditPasswordId(editPasswordId === u.id ? null : u.id); setEditPasswordValue(""); setEditPasswordError(null); }}>
-                    Set password
-                  </button>
-                  <button className="btn btn-danger btn-sm" onClick={() => handleDeleteUser(u.id)}>Delete</button>
-                </>
-              )}
-              {u.id === auth.currentUser?.userId && <span style={{ fontSize: 12, color: "#555" }}>(you)</span>}
-            </div>
-            {editPasswordId === u.id && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  type="password"
-                  className="settings-input"
-                  placeholder="New password"
-                  value={editPasswordValue}
-                  onChange={(e) => setEditPasswordValue(e.target.value)}
-                  style={{ flex: 1 }}
-                />
-                <button className="btn btn-primary btn-sm" onClick={() => handleSetPassword(u.id)} disabled={!editPasswordValue}>Save</button>
-                {editPasswordError && <span style={{ color: "#e57373", fontSize: 12 }}>{editPasswordError}</span>}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <h3 className="settings-subheading">Create New User</h3>
-      <div className="settings-form-stack">
-        <input type="email" className="settings-input" placeholder="Email address" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} />
-        <input type="password" className="settings-input" placeholder="Password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} />
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#aaa", cursor: "pointer" }}>
-          <input type="checkbox" checked={newUserIsAdmin} onChange={(e) => setNewUserIsAdmin(e.target.checked)} />
-          Site Administrator
-        </label>
-        {createUserError && <span className="settings-error">{createUserError}</span>}
-        <button className="btn btn-primary" onClick={handleCreateUser} disabled={!newUserEmail || !newUserPassword}>Create User</button>
-      </div>
-
-      {orgs.length > 0 && (
-        <>
-          <h3 className="settings-subheading">Organisation Membership</h3>
-          <p className="settings-description">Add and manage user memberships across organisations.</p>
-          <div className="form-row" style={{ marginBottom: 12 }}>
-            <label>Organisation</label>
-            <select
-              className="settings-select"
-              value={selectedOrgId ?? ""}
-              onChange={(e) => setSelectedOrgId(e.target.value)}
-              style={{ flex: 1 }}
-            >
-              {orgs.map((org) => (
-                <option key={org.id} value={org.id}>{org.name}</option>
-              ))}
-            </select>
-          </div>
-          {selectedOrgId && (
-            <>
-              <div className="settings-plan-list" style={{ marginBottom: 12 }}>
-                {!orgMembersLoaded ? (
-                  <div className="settings-empty">Loading…</div>
-                ) : orgMembers.length === 0 ? (
-                  <div className="settings-empty">No members yet.</div>
-                ) : (
-                  orgMembers.map((m) => (
-                    <div key={m.user_id} className="settings-plan-row">
-                      <span className="settings-plan-name" style={{ flex: 1 }}>{m.email}</span>
-                      <select
-                        className="settings-select"
-                        value={m.role}
-                        onChange={(e) => handleSetMemberRole(m.user_id, e.target.value as OrgRole)}
-                        style={{ width: 90 }}
-                      >
-                        <option value="Admin">Admin</option>
-                        <option value="User">User</option>
-                        <option value="Viewer">Viewer</option>
-                      </select>
-                      <button className="btn btn-danger btn-sm" onClick={() => handleRemoveOrgMember(m.user_id)}>
-                        Remove
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-              <h3 className="settings-subheading">Add Member</h3>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <select
-                  className="settings-select"
-                  value={orgNewMemberUserId}
-                  onChange={(e) => setOrgNewMemberUserId(e.target.value)}
-                  style={{ flex: 1, minWidth: 160 }}
-                >
-                  <option value="">Select user…</option>
-                  {authUsersLoaded && authUsers
-                    .filter((u) => !orgMembers.some((m) => m.user_id === u.id))
-                    .map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
-                </select>
-                <select
-                  className="settings-select"
-                  value={orgNewMemberRole}
-                  onChange={(e) => setOrgNewMemberRole(e.target.value as OrgRole)}
-                  style={{ width: 90 }}
-                >
-                  <option value="Admin">Admin</option>
-                  <option value="User">User</option>
-                  <option value="Viewer">Viewer</option>
-                </select>
-                <button className="btn btn-primary btn-sm" onClick={handleAddOrgMember} disabled={!orgNewMemberUserId}>
-                  Add
-                </button>
-              </div>
-              {orgAddError && <span className="settings-error" style={{ marginTop: 6 }}>{orgAddError}</span>}
-            </>
-          )}
-        </>
-      )}
-    </div>
-  );
 
   return (
     <div className="settings-page">
@@ -889,6 +677,31 @@ export function SettingsPage() {
               {s.label}
             </button>
           ))}
+          <div className="settings-sidebar-bottom">
+            {auth.currentUser && auth.currentUser.orgMemberships && auth.currentUser.orgMemberships.length > 0 && (
+              <div className="settings-org-selector">
+                <label className="settings-org-selector-label">Organisation</label>
+                <select
+                  className="settings-select settings-org-selector-select"
+                  value={auth.currentUser.activeOrgId ?? ""}
+                  onChange={(e) => setActiveOrg(e.target.value)}
+                  disabled={auth.currentUser.orgMemberships.length <= 1}
+                >
+                  {auth.currentUser.orgMemberships.map((m) => (
+                    <option key={m.org_id} value={m.org_id}>{m.org_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {isSiteAdmin && (
+              <button
+                className="settings-nav-item settings-admin-link"
+                onClick={() => setPage("admin")}
+              >
+                Site Administration →
+              </button>
+            )}
+          </div>
         </nav>
 
         {/* Content panel */}
@@ -907,7 +720,6 @@ export function SettingsPage() {
           {activeSection === "plan-management" && renderPlanManagement()}
           {activeSection === "user-links" && plan && renderUserLinks()}
           {activeSection === "organisation" && (isOrgAdmin || isSiteAdmin) && renderOrganisation()}
-          {activeSection === "site-admin" && isSiteAdmin && renderSiteAdmin()}
         </div>
       </div>
     </div>

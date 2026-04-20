@@ -330,3 +330,35 @@
 .settings-input:focus {
   border-color: #4a90d9;
 }
+
+/* ── Sidebar bottom org selector ─────────────────────────────────────────── */
+.settings-sidebar-bottom {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid #2a2a2a;
+}
+
+.settings-org-selector {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-org-selector-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings-org-selector-select {
+  width: 100%;
+  font-size: 12px;
+}
+
+.settings-admin-link {
+  color: #a78bfa;
+  font-size: 12px;
+}
