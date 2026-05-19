@@ -193,7 +193,7 @@ Plinko uses **semantic versioning** (`MAJOR.MINOR.PATCH`). One version number co
 |---|---|
 | Breaking wire protocol or storage format change | MAJOR |
 | New user-visible feature | MINOR |
-| Bug fix, refactor, or **any AI-driven change session** | PATCH |
+| Bug fix, refactor, non-user-visible feature | PATCH |
 
 ### The four canonical locations — all must always match
 
@@ -219,7 +219,7 @@ Updates all four files atomically and prints the next steps (check → commit �
 **Every AI work session that makes code or config changes must bump the patch version as part of its final commit.** This ensures deployed versions are always distinguishable and stale browser clients reconnect cleanly after an upgrade.
 
 Procedure at the end of each session:
-1. Run `./scripts/bump-version.sh <current+1-patch>` (e.g. `0.3.0` → `0.3.1`)
+1. Run `./scripts/bump-version.sh <next.version.number>` (e.g. `0.3.0` → `0.3.1`)
 2. Run `cargo check` to verify the workspace still compiles
 3. Stage the four version files and commit: `chore: bump version to X.Y.Z`
 4. Do **not** create a git tag — tags mark human-approved releases
