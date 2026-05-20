@@ -208,28 +208,25 @@ impl AuthDb {
 
         let org_memberships = self.get_user_org_memberships(&user_id);
 
-        // Validate and backfill active_org_id for non-admins.
-        let active_org_id = if is_admin {
+        // Validate and backfill active_org_id for all users (including admins).
+        // If the stored org is missing or no longer valid, default to the first membership.
+        let first_org = org_memberships.first().map(|m| m.org_id.clone());
+        let valid = active_org_id_raw
+            .as_ref()
+            .map(|oid| org_memberships.iter().any(|m| &m.org_id == oid))
+            .unwrap_or(false);
+        let active_org_id = if valid {
             active_org_id_raw
         } else {
-            let first_org = org_memberships.first().map(|m| m.org_id.clone());
-            let valid = active_org_id_raw
-                .as_ref()
-                .map(|oid| org_memberships.iter().any(|m| &m.org_id == oid))
-                .unwrap_or(false);
-            if valid {
-                active_org_id_raw
-            } else {
-                // Backfill: update the session row to the first org.
-                if let Some(ref fid) = first_org {
-                    let conn = self.inner.lock().unwrap();
-                    let _ = conn.execute(
-                        "UPDATE sessions SET active_org_id = ?1 WHERE token = ?2",
-                        params![fid, token],
-                    );
-                }
-                first_org
+            // Backfill: update the session row to the first org.
+            if let Some(ref fid) = first_org {
+                let conn = self.inner.lock().unwrap();
+                let _ = conn.execute(
+                    "UPDATE sessions SET active_org_id = ?1 WHERE token = ?2",
+                    params![fid, token],
+                );
             }
+            first_org
         };
 
         Ok(SessionInfo {

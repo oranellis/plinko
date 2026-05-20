@@ -628,12 +628,14 @@ pub(crate) fn handle_protocol(
         }
 
         if matches!(&request, PlanRequest::ListPlans) {
-            let visible_ids: Vec<uuid::Uuid> = if session.is_admin {
+            let visible_ids: Vec<uuid::Uuid> = if let Some(ref org_id) = session.active_org_id {
+                // Scoped to active org; site admins bypass per-plan permissions within the org
+                let org_plan_ids = auth_db.get_plans_for_org(org_id);
+                auth_db.filter_visible_plans(&session.user_id, session.is_admin, &org_plan_ids)
+            } else if session.is_admin {
+                // Site admin with no active org set — fallback to showing all plans
                 let all_ids = storage.lock().unwrap().list_plans().unwrap_or_default();
                 auth_db.filter_visible_plans(&session.user_id, true, &all_ids)
-            } else if let Some(ref org_id) = session.active_org_id {
-                let org_plan_ids = auth_db.get_plans_for_org(org_id);
-                auth_db.filter_visible_plans(&session.user_id, false, &org_plan_ids)
             } else {
                 vec![]
             };
