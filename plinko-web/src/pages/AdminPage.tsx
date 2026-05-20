@@ -436,7 +436,7 @@ export function AdminPage() {
                   {bugReports.map((r) => (
                     <tr key={r.id}>
                       <td style={{ color: "#888", fontSize: 11 }}>{r.id}</td>
-                      <td>{r.user_email}</td>
+                      <td>{r.email}</td>
                       <td style={{ whiteSpace: "nowrap", fontSize: 12 }}>{r.submitted_at.replace("T", " ").slice(0, 19)}</td>
                       <td style={{ fontSize: 12, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.page_url}</td>
                       <td style={{ maxWidth: 300 }}>{r.description}</td>

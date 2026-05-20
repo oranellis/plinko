@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Modal } from "../Modal";
-import type { PlanResponse } from "../../protocol";
+import type { PlanRequest, PlanResponse } from "../../protocol";
 
 interface Props {
-  sendRequest: (req: unknown) => Promise<PlanResponse>;
+  sendRequest: (req: PlanRequest) => Promise<PlanResponse>;
   onClose: () => void;
 }
 
@@ -42,8 +42,6 @@ export function BugReportModal({ sendRequest, onClose }: Props) {
       title="Submit Bug Report"
       onClose={onClose}
       onSave={submitted ? undefined : handleSubmit}
-      saveLabel={submitting ? "Submitting…" : "Submit"}
-      saveDisabled={submitting || !description.trim()}
     >
       {submitted ? (
         <div style={{ padding: "8px 0", color: "#81c784" }}>
@@ -75,6 +73,15 @@ export function BugReportModal({ sendRequest, onClose }: Props) {
             autoFocus
           />
           {error && <div style={{ color: "#e57373", fontSize: 12, marginTop: 6 }}>{error}</div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+            <button
+              className="btn btn-primary"
+              onClick={handleSubmit}
+              disabled={submitting || !description.trim()}
+            >
+              {submitting ? "Submitting…" : "Submit"}
+            </button>
+          </div>
         </>
       )}
     </Modal>
