@@ -306,6 +306,7 @@ export function usePlan(): UsePlanResult {
   const setActiveOrg = useCallback(async (orgId: string) => {
     const resp = await sendRequest({ SetActiveOrg: { org_id: orgId } });
     if (resp === "ActiveOrgSet") {
+      setPlan(null);
       setAuth((prev) => ({
         ...prev,
         currentUser: prev.currentUser

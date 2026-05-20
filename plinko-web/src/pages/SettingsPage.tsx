@@ -583,7 +583,7 @@ export function SettingsPage() {
                 <select
                   className="settings-select settings-org-selector-select"
                   value={auth.currentUser.activeOrgId ?? ""}
-                  onChange={(e) => setActiveOrg(e.target.value)}
+                  onChange={(e) => { setActiveOrg(e.target.value).then(() => setPage("home")); }}
                   disabled={auth.currentUser.orgMemberships.length <= 1}
                 >
                   {auth.currentUser.orgMemberships.map((m) => (
