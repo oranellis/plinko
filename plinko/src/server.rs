@@ -53,6 +53,14 @@ fn effective_plan_role(session: &SessionInfo, plan_id: uuid::Uuid, auth_db: &Aut
     }
 }
 
+/// Returns true if `org_id` is the active org for this session.
+/// Site admins bypass the active-org restriction so they can manage any org from the admin page,
+/// but all org-scoped data fetches from the settings page pass through this.
+/// Non-site-admins are hard-restricted to their active org.
+fn is_active_org_or_admin(session: &SessionInfo, org_id: &str) -> bool {
+    session.is_admin || session.active_org_id.as_deref() == Some(org_id)
+}
+
 /// Returns true if the user identified by (user_id, is_admin) has at least Viewer
 /// access to `plan_id`. Used in broadcast filtering.
 fn has_plan_access(user_id: &str, is_admin: bool, plan_id: uuid::Uuid, auth_db: &AuthDb) -> bool {
@@ -555,8 +563,8 @@ pub(crate) fn handle_protocol(
                 }
                 continue;
             }
-            // For non-admins, the plan must belong to the session's active org.
-            if !session.is_admin {
+            // The plan must belong to the session's active org (applies to everyone, including admins).
+            {
                 let active_org = session.active_org_id.as_deref();
                 let plan_org = auth_db.get_plan_org(plan_id);
                 if active_org.is_some() && plan_org.as_deref() != active_org {
@@ -1047,8 +1055,14 @@ pub(crate) fn handle_protocol(
                 });
                 continue;
             }
-            let users = auth_db.list_users().unwrap_or_default();
-            // Map auth::AuthUser to protocol::AuthUser
+            // Site admins see all users; org admins only see members of their active org.
+            let users = if session.is_admin {
+                auth_db.list_users().unwrap_or_default()
+            } else if let Some(ref org_id) = session.active_org_id {
+                auth_db.list_org_users(org_id).unwrap_or_default()
+            } else {
+                vec![]
+            };
             let proto_users: Vec<AuthUser> = users
                 .into_iter()
                 .map(|u| AuthUser {
@@ -1353,11 +1367,11 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::GetOrgMembers { org_id } = &request {
-            let is_allowed = session.is_admin
+            let is_member = session.is_admin
                 || auth_db
                     .get_user_org_role(&session.user_id, org_id)
                     .is_some();
-            if !is_allowed {
+            if !is_member || !is_active_org_or_admin(&session, org_id) {
                 let _ = send(&ServerMessage::Response {
                     id,
                     response: PlanResponse::Error(PlanError::Unauthorized),
@@ -1391,7 +1405,8 @@ pub(crate) fn handle_protocol(
             role,
         } = &request
         {
-            let is_allowed = session.is_admin || auth_db.is_org_admin(&session.user_id, org_id);
+            let is_allowed = (session.is_admin || auth_db.is_org_admin(&session.user_id, org_id))
+                && is_active_org_or_admin(&session, org_id);
             if !is_allowed {
                 let _ = send(&ServerMessage::Response {
                     id,
@@ -1422,7 +1437,8 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::RemoveOrgMember { org_id, user_id } = &request {
-            let is_allowed = session.is_admin || auth_db.is_org_admin(&session.user_id, org_id);
+            let is_allowed = (session.is_admin || auth_db.is_org_admin(&session.user_id, org_id))
+                && is_active_org_or_admin(&session, org_id);
             if !is_allowed {
                 let _ = send(&ServerMessage::Response {
                     id,
@@ -1485,6 +1501,18 @@ pub(crate) fn handle_protocol(
         if let PlanRequest::GetPlanOrg { plan_id } = &request {
             let plan_id = *plan_id;
             let org_id = auth_db.get_plan_org(plan_id);
+            // Only return if the plan is in the user's active org (or user is site admin).
+            let allowed = match &org_id {
+                Some(oid) => is_active_org_or_admin(&session, oid),
+                None => session.is_admin,
+            };
+            if !allowed {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
             let _ = send(&ServerMessage::Response {
                 id,
                 response: PlanResponse::PlanOrgId(org_id),
@@ -1493,7 +1521,8 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::GetOrgPlans { org_id } = &request {
-            let is_allowed = session.is_admin || auth_db.is_org_admin(&session.user_id, org_id);
+            let is_allowed = (session.is_admin || auth_db.is_org_admin(&session.user_id, org_id))
+                && is_active_org_or_admin(&session, org_id);
             if !is_allowed {
                 let _ = send(&ServerMessage::Response {
                     id,
@@ -1516,7 +1545,8 @@ pub(crate) fn handle_protocol(
         }
 
         if let PlanRequest::GetUserPlanPermissions { org_id, user_id } = &request {
-            let is_allowed = session.is_admin || auth_db.is_org_admin(&session.user_id, org_id);
+            let is_allowed = (session.is_admin || auth_db.is_org_admin(&session.user_id, org_id))
+                && is_active_org_or_admin(&session, org_id);
             if !is_allowed {
                 let _ = send(&ServerMessage::Response {
                     id,

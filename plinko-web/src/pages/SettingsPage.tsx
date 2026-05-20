@@ -5,7 +5,7 @@ import { NewPlanModal } from "../components/modals/NewPlanModal";
 import { PlanPermissionsModal } from "../components/modals/PlanPermissionsModal";
 import { DatePicker } from "../components/modals/shared/DatePicker";
 import { nodeIdString } from "../utils/planUtils";
-import type { AuthUser, NodeId, OrgMember, Organisation, OrgRole, PlanError, UserLink } from "../protocol";
+import type { AuthUser, NodeId, OrgMember, OrgRole, PlanError, UserLink } from "../protocol";
 import { formatPlanError } from "../protocol";
 import "./SettingsPage.css";
 
@@ -226,48 +226,36 @@ export function SettingsPage() {
   };
 
   // ── Organisation state ──────────────────────────────────────────────────────
-  const [orgs, setOrgs] = useState<Organisation[]>([]);
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  // Always operate on the active org — derived directly from auth state, no extra request needed.
+  const activeOrgId = auth.currentUser?.activeOrgId ?? null;
+  const activeOrgName = auth.currentUser?.orgMemberships?.find(
+    (m) => m.org_id === activeOrgId
+  )?.org_name ?? null;
+
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [orgMembersLoaded, setOrgMembersLoaded] = useState(false);
   const [planPermissionsUser, setPlanPermissionsUser] = useState<{ userId: string; email: string } | null>(null);
 
-  const fetchOrgs = useCallback(() => {
-    sendRequest("ListOrganisations").then((resp) => {
-      if (typeof resp === "object" && resp !== null && "OrgList" in resp) {
-        const list = (resp as { OrgList: Organisation[] }).OrgList;
-        setOrgs(list);
-        if (list.length > 0 && !selectedOrgId) {
-          setSelectedOrgId(list[0].id);
-        }
-      }
-    }).catch(console.error);
-  }, [sendRequest, selectedOrgId]);
-
-  useEffect(() => {
-    if (status !== "connected" || (!isOrgAdmin && !isSiteAdmin)) return;
-    fetchOrgs();
-  }, [status, isOrgAdmin, isSiteAdmin, fetchOrgs]);
-
-  const fetchOrgMembers = useCallback((orgId: string) => {
+  const fetchOrgMembers = useCallback(() => {
+    if (!activeOrgId) return;
     setOrgMembersLoaded(false);
-    sendRequest({ GetOrgMembers: { org_id: orgId } }).then((resp) => {
+    sendRequest({ GetOrgMembers: { org_id: activeOrgId } }).then((resp) => {
       if (typeof resp === "object" && resp !== null && "OrgMembers" in resp) {
         setOrgMembers((resp as { OrgMembers: OrgMember[] }).OrgMembers);
         setOrgMembersLoaded(true);
       }
     }).catch(console.error);
-  }, [sendRequest]);
+  }, [sendRequest, activeOrgId]);
 
   useEffect(() => {
-    if (!selectedOrgId) return;
-    fetchOrgMembers(selectedOrgId);
-  }, [selectedOrgId, fetchOrgMembers]);
+    if (status !== "connected" || (!isOrgAdmin && !isSiteAdmin)) return;
+    fetchOrgMembers();
+  }, [status, isOrgAdmin, isSiteAdmin, fetchOrgMembers]);
 
   const handleSetMemberRole = async (userId: string, role: OrgRole) => {
-    if (!selectedOrgId) return;
-    await sendRequest({ AddOrgMember: { org_id: selectedOrgId, user_id: userId, role } });
-    fetchOrgMembers(selectedOrgId);
+    if (!activeOrgId) return;
+    await sendRequest({ AddOrgMember: { org_id: activeOrgId, user_id: userId, role } });
+    fetchOrgMembers();
   };
 
   // ── Render helpers ──────────────────────────────────────────────────────────
@@ -485,19 +473,18 @@ export function SettingsPage() {
   );
 
   const renderOrganisation = () => {
-    const selectedOrg = orgs.find((o) => o.id === selectedOrgId);
-    const myOrgMembership = auth.currentUser?.orgMemberships?.find((m) => m.org_id === selectedOrgId);
+    const myOrgMembership = auth.currentUser?.orgMemberships?.find((m) => m.org_id === activeOrgId);
     const canManage = isSiteAdmin || myOrgMembership?.role === "Admin";
 
     return (
       <div className="settings-content-panel">
         <h2 className="settings-heading">Organisation</h2>
 
-        {!selectedOrg ? (
+        {!activeOrgId ? (
           <div className="settings-empty" style={{ marginTop: 24 }}>No organisation found.</div>
         ) : (
           <>
-            <h3 className="settings-subheading">{selectedOrg.name}</h3>
+            <h3 className="settings-subheading">{activeOrgName}</h3>
 
             <h3 className="settings-subheading">Members</h3>
             <div className="settings-plan-list" style={{ marginBottom: 16 }}>
@@ -546,10 +533,16 @@ export function SettingsPage() {
   return (
     <div className="settings-page">
       {showMonday && plan && <MondayModal planId={plan.id} onClose={() => setShowMonday(false)} />}
-      {showNewPlan && <NewPlanModal orgs={orgs} onClose={() => setShowNewPlan(false)} sendRequest={sendRequest} />}
-      {planPermissionsUser && selectedOrgId && (
+      {showNewPlan && activeOrgId && activeOrgName && (
+        <NewPlanModal
+          orgs={[{ id: activeOrgId, name: activeOrgName }]}
+          onClose={() => setShowNewPlan(false)}
+          sendRequest={sendRequest}
+        />
+      )}
+      {planPermissionsUser && activeOrgId && (
         <PlanPermissionsModal
-          orgId={selectedOrgId}
+          orgId={activeOrgId}
           userId={planPermissionsUser.userId}
           email={planPermissionsUser.email}
           sendRequest={sendRequest}

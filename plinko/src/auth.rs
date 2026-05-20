@@ -262,6 +262,26 @@ impl AuthDb {
         Ok(users)
     }
 
+    /// List users that are members of a specific organisation (includes is_admin flag).
+    pub fn list_org_users(&self, org_id: &str) -> Result<Vec<AuthUser>, AuthError> {
+        let conn = self.inner.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT u.id, u.username, u.is_admin FROM users u \
+             JOIN org_members m ON m.user_id = u.id \
+             WHERE m.org_id = ?1 ORDER BY u.username",
+        )?;
+        let users = stmt
+            .query_map(params![org_id], |r| {
+                Ok(AuthUser {
+                    id: r.get(0)?,
+                    email: r.get(1)?,
+                    is_admin: r.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(users)
+    }
+
     /// Create a new user. `email` is used as the login username. Returns the new user's UUID.
     pub fn create_user(
         &self,
