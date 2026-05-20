@@ -289,8 +289,20 @@ export function Toolbar() {
             onClick={() => setBugReportOpen(true)}
           >
             <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-              <circle cx="9" cy="9" r="3" />
-              <path d="M9 1v2M9 15v2M1 9h2M15 9h2M3.2 3.2l1.4 1.4M13.4 13.4l1.4 1.4M14.8 3.2l-1.4 1.4M4.6 13.4l-1.4 1.4" />
+              {/* body */}
+              <ellipse cx="9" cy="10" rx="3.5" ry="4.5" />
+              {/* head */}
+              <circle cx="9" cy="4.5" r="1.8" />
+              {/* antennae */}
+              <path d="M8 3.2 Q6.5 1.5 5 1" />
+              <path d="M10 3.2 Q11.5 1.5 13 1" />
+              {/* legs */}
+              <path d="M5.5 8 L2.5 7" />
+              <path d="M5.5 10 L2 10" />
+              <path d="M5.5 12 L2.5 13" />
+              <path d="M12.5 8 L15.5 7" />
+              <path d="M12.5 10 L16 10" />
+              <path d="M12.5 12 L15.5 13" />
             </svg>
           </button>
           <button

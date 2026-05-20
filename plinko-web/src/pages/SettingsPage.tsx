@@ -230,9 +230,6 @@ export function SettingsPage() {
   const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
   const [orgMembers, setOrgMembers] = useState<OrgMember[]>([]);
   const [orgMembersLoaded, setOrgMembersLoaded] = useState(false);
-  const [orgRenameValue, setOrgRenameValue] = useState("");
-  const [newOrgName, setNewOrgName] = useState("");
-  const [createOrgError, setCreateOrgError] = useState<string | null>(null);
   const [planPermissionsUser, setPlanPermissionsUser] = useState<{ userId: string; email: string } | null>(null);
 
   const fetchOrgs = useCallback(() => {
@@ -265,46 +262,12 @@ export function SettingsPage() {
   useEffect(() => {
     if (!selectedOrgId) return;
     fetchOrgMembers(selectedOrgId);
-    // Reset rename value to selected org name
-    const org = orgs.find((o) => o.id === selectedOrgId);
-    setOrgRenameValue(org?.name ?? "");
-  }, [selectedOrgId, fetchOrgMembers, orgs]);
-
-  const handleRenameOrg = async () => {
-    if (!selectedOrgId || !orgRenameValue.trim()) return;
-    const resp = await sendRequest({ RenameOrganisation: { org_id: selectedOrgId, name: orgRenameValue.trim() } });
-    if (resp === "PlanUpdated") {
-      setOrgs((prev) => prev.map((o) => o.id === selectedOrgId ? { ...o, name: orgRenameValue.trim() } : o));
-    }
-  };
+  }, [selectedOrgId, fetchOrgMembers]);
 
   const handleSetMemberRole = async (userId: string, role: OrgRole) => {
     if (!selectedOrgId) return;
     await sendRequest({ AddOrgMember: { org_id: selectedOrgId, user_id: userId, role } });
     fetchOrgMembers(selectedOrgId);
-  };
-
-  const handleCreateOrg = async () => {
-    if (!newOrgName.trim()) return;
-    setCreateOrgError(null);
-    const resp = await sendRequest({ CreateOrganisation: { name: newOrgName.trim() } });
-    if (typeof resp === "object" && resp !== null && "OrgCreated" in resp) {
-      setNewOrgName("");
-      fetchOrgs();
-    } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
-      setCreateOrgError(formatPlanError((resp as { Error: PlanError }).Error));
-    }
-  };
-
-  const handleDeleteOrg = async (orgId: string) => {
-    if (!confirm("Delete this organisation? All member associations will be removed. Plans in this organisation must be reassigned to another organisation first.")) return;
-    const resp = await sendRequest({ DeleteOrganisation: { org_id: orgId } });
-    if (resp === "PlanUpdated") {
-      setOrgs((prev) => prev.filter((o) => o.id !== orgId));
-      if (selectedOrgId === orgId) setSelectedOrgId(orgs.find((o) => o.id !== orgId)?.id ?? null);
-    } else if (typeof resp === "object" && resp !== null && "Error" in resp) {
-      alert(formatPlanError((resp as { Error: PlanError }).Error));
-    }
   };
 
   // ── Render helpers ──────────────────────────────────────────────────────────
@@ -411,7 +374,7 @@ export function SettingsPage() {
         <button className="btn btn-primary" onClick={handleSave} disabled={!plan}>
           Save Snapshot
         </button>
-        {(isOrgAdmin || isSiteAdmin) && (
+        {isSiteAdmin && (
           <button className="btn btn-secondary" onClick={() => setShowNewPlan(true)}>
             New Plan
           </button>
@@ -530,112 +493,48 @@ export function SettingsPage() {
       <div className="settings-content-panel">
         <h2 className="settings-heading">Organisation</h2>
 
-        {isSiteAdmin && (
-          <>
-            <h3 className="settings-subheading">Create Organisation</h3>
-            <div className="settings-form-stack">
-              <input
-                type="text"
-                className="settings-input"
-                placeholder="Organisation name…"
-                value={newOrgName}
-                onChange={(e) => setNewOrgName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleCreateOrg(); }}
-              />
-              {createOrgError && <span className="settings-error">{createOrgError}</span>}
-              <button className="btn btn-primary" onClick={handleCreateOrg} disabled={!newOrgName.trim()}>
-                Create Organisation
-              </button>
-            </div>
-          </>
-        )}
-
-        {orgs.length === 0 ? (
-          <div className="settings-empty" style={{ marginTop: 24 }}>No organisations found.</div>
+        {!selectedOrg ? (
+          <div className="settings-empty" style={{ marginTop: 24 }}>No organisation found.</div>
         ) : (
           <>
-            {orgs.length > 1 || isSiteAdmin ? (
-              <>
-                <h3 className="settings-subheading">Select Organisation</h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
-                  {orgs.map((org) => (
-                    <div key={org.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <button
-                        className={`settings-org-tab${selectedOrgId === org.id ? " active" : ""}`}
-                        onClick={() => setSelectedOrgId(org.id)}
-                        style={{ flex: 1 }}
-                      >
-                        {org.name}
-                      </button>
-                      {isSiteAdmin && (
-                        <button className="btn btn-danger btn-sm" onClick={() => handleDeleteOrg(org.id)}>Delete</button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : null}
+            <h3 className="settings-subheading">{selectedOrg.name}</h3>
 
-            {selectedOrg && (
-              <>
-                <h3 className="settings-subheading">{selectedOrg.name}</h3>
-
-                {isSiteAdmin && (
-                  <div className="form-row">
-                    <label>Rename Organisation</label>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <input
-                        type="text"
-                        value={orgRenameValue}
-                        onChange={(e) => setOrgRenameValue(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleRenameOrg(); }}
-                        style={{ flex: 1, background: "#1e1e1e", border: "1px solid #3a3a3c", borderRadius: 4, color: "#d4d4d4", fontSize: 13, padding: "6px 10px", outline: "none", fontFamily: "inherit" }}
-                      />
-                      <button className="btn btn-secondary btn-sm" onClick={handleRenameOrg} disabled={!orgRenameValue.trim()}>
-                        Rename
-                      </button>
-                    </div>
+            <h3 className="settings-subheading">Members</h3>
+            <div className="settings-plan-list" style={{ marginBottom: 16 }}>
+              {!orgMembersLoaded ? (
+                <div className="settings-empty">Loading…</div>
+              ) : orgMembers.length === 0 ? (
+                <div className="settings-empty">No members yet.</div>
+              ) : (
+                orgMembers.map((m) => (
+                  <div key={m.user_id} className="settings-plan-row">
+                    <span className="settings-plan-name" style={{ flex: 1 }}>{m.email}</span>
+                    {canManage ? (
+                      <>
+                        <select
+                          className="settings-select"
+                          value={m.role}
+                          onChange={(e) => handleSetMemberRole(m.user_id, e.target.value as OrgRole)}
+                          style={{ width: 90 }}
+                        >
+                          <option value="Admin">Admin</option>
+                          <option value="User">User</option>
+                          <option value="Viewer">Viewer</option>
+                        </select>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => setPlanPermissionsUser({ userId: m.user_id, email: m.email })}
+                        >
+                          Plan Access
+                        </button>
+                      </>
+                    ) : (
+                      <span style={{ fontSize: 12, color: "#888" }}>{m.role}</span>
+                    )}
                   </div>
-                )}
-
-                <h3 className="settings-subheading">Members</h3>
-                <div className="settings-plan-list" style={{ marginBottom: 16 }}>
-                  {!orgMembersLoaded ? (
-                    <div className="settings-empty">Loading…</div>
-                  ) : orgMembers.length === 0 ? (
-                    <div className="settings-empty">No members yet.</div>
-                  ) : (
-                    orgMembers.map((m) => (
-                      <div key={m.user_id} className="settings-plan-row">
-                        <span className="settings-plan-name" style={{ flex: 1 }}>{m.email}</span>
-                        {canManage ? (
-                          <>
-                            <select
-                              className="settings-select"
-                              value={m.role}
-                              onChange={(e) => handleSetMemberRole(m.user_id, e.target.value as OrgRole)}
-                              style={{ width: 90 }}
-                            >
-                              <option value="Admin">Admin</option>
-                              <option value="User">User</option>
-                              <option value="Viewer">Viewer</option>
-                            </select>
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => setPlanPermissionsUser({ userId: m.user_id, email: m.email })}
-                            >
-                              Plan Access
-                            </button>
-                          </>
-                        ) : (
-                          <span style={{ fontSize: 12, color: "#888" }}>{m.role}</span>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </>
-            )}
+                ))
+              )}
+            </div>
           </>
         )}
       </div>
