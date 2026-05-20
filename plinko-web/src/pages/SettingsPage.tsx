@@ -190,17 +190,18 @@ export function SettingsPage() {
   const [authUsers, setAuthUsers] = useState<AuthUser[]>([]);
 
   const fetchAuthUsers = useCallback(() => {
-    sendRequest("GetAuthUsers").then((resp) => {
+    if (!plan) return;
+    sendRequest({ GetAuthUsersForPlan: { plan_id: plan.id } }).then((resp) => {
       if (typeof resp === "object" && resp !== null && "AuthUsers" in resp) {
         setAuthUsers((resp as { AuthUsers: AuthUser[] }).AuthUsers);
       }
     }).catch(console.error);
-  }, [sendRequest]);
+  }, [sendRequest, plan]);
 
   useEffect(() => {
-    if (status !== "connected" || (!isOrgAdmin && !isSiteAdmin)) return;
+    if (status !== "connected" || !plan) return;
     fetchAuthUsers();
-  }, [status, isOrgAdmin, isSiteAdmin, fetchAuthUsers]);
+  }, [status, plan, fetchAuthUsers]);
 
   const fetchUserLinks = useCallback(() => {
     if (!plan) return;

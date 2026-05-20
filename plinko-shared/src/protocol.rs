@@ -293,6 +293,11 @@ pub enum PlanRequest {
     LoadMondayApiToken,
     // Auth user management (admin-only except ChangeMyPassword/GetUserLinks/SetUserLinks)
     GetAuthUsers,
+    /// Like GetAuthUsers but scoped to the org that owns the given plan.
+    /// Safe for non-admins: only users within the same org are returned.
+    GetAuthUsersForPlan {
+        plan_id: uuid::Uuid,
+    },
     CreateAuthUser {
         email: String,
         password: String,
@@ -457,7 +462,7 @@ impl std::fmt::Display for PlanError {
     }
 }
 
-pub const VERSION: &str = "0.5.12";
+pub const VERSION: &str = "0.5.13";
 
 /// Per-user server-side preferences.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

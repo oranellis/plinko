@@ -377,6 +377,7 @@ export type PlanRequest =
   | "LoadMondayApiToken"
   // Auth
   | "GetAuthUsers"
+  | { GetAuthUsersForPlan: { plan_id: string } }
   | { CreateAuthUser: { email: string; password: string; is_admin: boolean } }
   | { UpdateAuthUser: { user_id: string; new_email?: string; new_is_admin?: boolean } }
   | { SetAuthUserPassword: { user_id: string; new_password: string } }
@@ -508,4 +509,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.5.12";
+export const PROTOCOL_VERSION = "0.5.13";

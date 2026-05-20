@@ -1078,6 +1078,36 @@ pub(crate) fn handle_protocol(
             continue;
         }
 
+        if let PlanRequest::GetAuthUsersForPlan { plan_id } = &request {
+            // Require at least Viewer access on the plan.
+            if effective_plan_role(&session, *plan_id, &auth_db) == PlanRole::NoAccess {
+                let _ = send(&ServerMessage::Response {
+                    id,
+                    response: PlanResponse::Error(PlanError::Unauthorized),
+                });
+                continue;
+            }
+            // Always scope to the plan's org — even site admins only see org members here.
+            let users = if let Some(org_id) = auth_db.get_plan_org(*plan_id) {
+                auth_db.list_org_users(&org_id).unwrap_or_default()
+            } else {
+                vec![]
+            };
+            let proto_users: Vec<AuthUser> = users
+                .into_iter()
+                .map(|u| AuthUser {
+                    id: u.id,
+                    email: u.email,
+                    is_admin: u.is_admin,
+                })
+                .collect();
+            let _ = send(&ServerMessage::Response {
+                id,
+                response: PlanResponse::AuthUsers(proto_users),
+            });
+            continue;
+        }
+
         if let PlanRequest::CreateAuthUser {
             email,
             password,

@@ -248,6 +248,7 @@ impl PlanEngine {
             | PlanRequest::LoadMondayConfig { .. }
             | PlanRequest::LoadMondayApiToken
             | PlanRequest::GetAuthUsers
+            | PlanRequest::GetAuthUsersForPlan { .. }
             | PlanRequest::CreateAuthUser { .. }
             | PlanRequest::UpdateAuthUser { .. }
             | PlanRequest::SetAuthUserPassword { .. }
