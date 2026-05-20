@@ -374,7 +374,7 @@ export function SettingsPage() {
         <button className="btn btn-primary" onClick={handleSave} disabled={!plan}>
           Save Snapshot
         </button>
-        {isSiteAdmin && (
+        {(isOrgAdmin || isSiteAdmin) && (
           <button className="btn btn-secondary" onClick={() => setShowNewPlan(true)}>
             New Plan
           </button>
