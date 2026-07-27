@@ -51,11 +51,16 @@ services:
     volumes:
       - ./certs:/etc/letsencrypt
       - ./certbot-www:/var/www/certbot
+      - /var/run/docker.sock:/var/run/docker.sock  # needed for the nginx reload deploy-hook
     # Attempt renewal every 12 h; Let's Encrypt only renews within 30 days of expiry.
+    # On successful renewal, signal nginx to reload via the Docker API so the new
+    # cert is picked up without a full container restart.
     entrypoint: >
       /bin/sh -c "trap exit TERM;
       while :; do
-        certbot renew --webroot --webroot-path=/var/www/certbot --quiet;
+        certbot renew --webroot --webroot-path=/var/www/certbot --quiet
+          --deploy-hook 'curl -sf --unix-socket /var/run/docker.sock
+            -X POST \"http://localhost/containers/deploy-nginx-1/kill?signal=HUP\"';
         sleep 12h & wait $${!};
       done"
 
