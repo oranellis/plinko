@@ -11,7 +11,7 @@ use crate::types::{
     user::{User, UserUuid},
 };
 
-struct Plan {
+pub struct Plan {
     tasks: HashMap<TaskUuid, Task>,
     milestones: HashMap<MilestoneUuid, Milestone>,
     users: HashMap<UserUuid, User>,
@@ -26,7 +26,7 @@ struct PlanSchedulerData {
     scheduler_target: Option<TaskUuid>,
 }
 
-struct PlanVolatileState {
+pub struct PlanVolatileState {
     tasks: HashMap<Uuid, task::VolatileState>,
     milestones: HashMap<Uuid, milestone::VolatileState>,
 }
