@@ -7,6 +7,8 @@ pub struct Milestone {
     persistent_state: PersistentState,
 }
 
+pub type MilestoneUuid = Uuid;
+
 pub struct PersistentState {
     actual_date: Option<NaiveDate>,
 }

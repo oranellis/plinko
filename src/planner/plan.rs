@@ -4,18 +4,18 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::types::{
-    milestone::{self, Milestone},
+    milestone::{self, Milestone, MilestoneUuid},
     schedule::{CalendarChanges, WeeklySchedules},
-    tag::Tag,
+    tag::{Tag, TagUuid},
     task::{self, Task, TaskUuid},
-    user::User,
+    user::{User, UserUuid},
 };
 
 struct Plan {
-    tasks: HashMap<Uuid, Task>,
-    milestones: HashMap<Uuid, Milestone>,
-    users: HashMap<Uuid, User>,
-    tags: HashMap<Uuid, Tag>,
+    tasks: HashMap<TaskUuid, Task>,
+    milestones: HashMap<MilestoneUuid, Milestone>,
+    users: HashMap<UserUuid, User>,
+    tags: HashMap<TagUuid, Tag>,
     plan_weekly_schedule: WeeklySchedules,
     plan_calendar_changes: CalendarChanges,
     scheduler_data: PlanSchedulerData,

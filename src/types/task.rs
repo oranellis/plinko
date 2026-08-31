@@ -1,22 +1,25 @@
 use chrono::NaiveDate;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
-use crate::types::{tag::TagUuid, user::UserUuid, workload::Workload};
+use crate::types::{
+    Days, dependency::Dependency, tag::TagUuid, user::UserUuid, workload::Workload,
+};
 
 pub struct Task {
     id: TaskUuid,
     name: String,
     mode: ScheduleMode,
     duration: u32,
-    allocations: BTreeMap<Worker, WorkDays>, // Days
+    constraint: Constraint,
+    dependencies: Vec<Dependency>,
+    allocations: HashMap<Worker, Days>, // Days
     description: Option<String>,
     links: Vec<String>,
     persistent_state: PersistentState,
 }
 
 pub type TaskUuid = Uuid;
-pub type WorkDays = u32;
 
 #[derive(Default)]
 pub struct PersistentState {
@@ -29,7 +32,7 @@ pub struct PersistentState {
 pub struct VolatileState {
     start_date: Option<NaiveDate>,
     end_date: Option<NaiveDate>,
-    assigned_allocations: BTreeMap<UserUuid, BTreeMap<NaiveDate, Workload>>,
+    assigned_allocations: HashMap<UserUuid, BTreeMap<NaiveDate, Workload>>,
 }
 
 #[derive(Default)]
@@ -52,4 +55,11 @@ enum ScheduleMode {
 enum Worker {
     Tag(TagUuid),
     User(UserUuid),
+}
+
+enum Constraint {
+    None,
+    Earliest(NaiveDate),
+    Latest(NaiveDate),
+    Fixed(NaiveDate),
 }
