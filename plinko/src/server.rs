@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use plinko_shared::data::{Plan, Storage};
+use plinko_shared::monday::BoardColumn;
 use plinko_shared::protocol::*;
 
 use crate::auth::{AuthDb, SessionInfo};
@@ -8,6 +9,23 @@ use crate::engine::PlanEngine;
 use crate::monday::client::MondayClient;
 use crate::monday::{export, import};
 use crate::ws_server::SessionRegistry;
+
+fn preferred_status_column(columns: &[BoardColumn]) -> Option<&BoardColumn> {
+    columns
+        .iter()
+        .find(|column| {
+            column.column_type == "status" && column.title.eq_ignore_ascii_case("status")
+        })
+        .or_else(|| columns.iter().find(|column| column.column_type == "status"))
+}
+
+fn extend_unique(target: &mut Vec<String>, values: Vec<String>) {
+    for value in values {
+        if !target.contains(&value) {
+            target.push(value);
+        }
+    }
+}
 
 /// Effective access level for the currently-active plan.
 #[derive(PartialEq)]
@@ -806,21 +824,22 @@ pub(crate) fn handle_protocol(
             let users = client.fetch_users().unwrap_or_default();
             let mut columns = client.fetch_columns(&board_id).unwrap_or_default();
 
+            // Item-based boards keep their status labels on the parent board.
+            let mut status_labels = preferred_status_column(&columns)
+                .and_then(|status_col| client.fetch_status_labels(&board_id, &status_col.id).ok())
+                .unwrap_or_default();
+
             // Status columns typically live on the subitems board, not the parent board.
             // Fetch subitems board ID and include its columns so the user can map them.
             let subitem_board_id = client.fetch_subitem_board_id(&board_id).unwrap_or_default();
-            let mut status_labels = vec![];
             if !subitem_board_id.is_empty() {
                 let sub_columns = client.fetch_columns(&subitem_board_id).unwrap_or_default();
                 // Find the first status-type column on the subitems board to populate labels.
-                if let Some(status_col) = sub_columns
-                    .iter()
-                    .find(|c| c.column_type == "status" && c.title.to_lowercase() == "status")
-                    .or_else(|| sub_columns.iter().find(|c| c.column_type == "status"))
-                {
-                    status_labels = client
-                        .fetch_status_labels(&subitem_board_id, &status_col.id.clone())
+                if let Some(status_col) = preferred_status_column(&sub_columns) {
+                    let subitem_labels = client
+                        .fetch_status_labels(&subitem_board_id, &status_col.id)
                         .unwrap_or_default();
+                    extend_unique(&mut status_labels, subitem_labels);
                 }
                 // Merge subitem columns into the column list (tagged so UI can distinguish them).
                 for mut col in sub_columns {
@@ -1918,4 +1937,34 @@ pub(crate) fn handle_protocol(
         }
     }
     eprintln!("[disconnect] {peer}: disconnected (served {request_count} requests)");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extend_unique, preferred_status_column};
+    use plinko_shared::monday::BoardColumn;
+
+    fn column(id: &str, title: &str, column_type: &str) -> BoardColumn {
+        BoardColumn {
+            id: id.to_string(),
+            title: title.to_string(),
+            column_type: column_type.to_string(),
+        }
+    }
+
+    #[test]
+    fn monday_status_discovery_prefers_named_status_and_merges_board_labels() {
+        let columns = vec![
+            column("phase", "Phase", "status"),
+            column("status", "Status", "status"),
+        ];
+        assert_eq!(preferred_status_column(&columns).unwrap().id, "status");
+
+        let mut labels = vec!["Not started".to_string(), "Completed".to_string()];
+        extend_unique(
+            &mut labels,
+            vec!["Completed".to_string(), "On Hold".to_string()],
+        );
+        assert_eq!(labels, ["Not started", "Completed", "On Hold"]);
+    }
 }
