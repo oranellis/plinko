@@ -509,4 +509,4 @@ export type ClientMessage =
 
 // ── Protocol version ─────────────────────────────────────────────────────────
 
-export const PROTOCOL_VERSION = "0.5.13";
+export const PROTOCOL_VERSION = "0.5.14";
