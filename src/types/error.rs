@@ -1,7 +1,13 @@
+use std::fmt::Debug;
+
+use crate::types::short_id::ShortId;
+
 #[derive(Debug)]
 pub enum PlinkoError {
     Generic(String),
     InvalidWorkload,
+    PlanExists(ShortId),
+    EntryDoesNotExist(Box<dyn Debug>),
 }
 
 impl std::fmt::Display for PlinkoError {
@@ -9,6 +15,12 @@ impl std::fmt::Display for PlinkoError {
         match self {
             PlinkoError::Generic(s) => write!(f, "{}", s),
             PlinkoError::InvalidWorkload => write!(f, "invalid workload"),
+            PlinkoError::PlanExists(short_id) => {
+                write!(f, "plan {} already exists in tenant", short_id)
+            }
+            PlinkoError::EntryDoesNotExist(entry) => {
+                write!(f, "entry {:?} does not exist", entry)
+            }
         }
     }
 }

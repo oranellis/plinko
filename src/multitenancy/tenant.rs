@@ -2,7 +2,14 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use crate::{multitenancy::user::TenantLoginUser, planner::plan::Plan, types::short_id::ShortId};
+use crate::{
+    multitenancy::user::TenantLoginUser,
+    planner::plan::Plan,
+    types::{
+        error::{PlinkoError, PlinkoResult},
+        short_id::ShortId,
+    },
+};
 
 pub struct Tenant {
     id: ShortId,
@@ -49,5 +56,21 @@ impl Tenant {
 
     pub fn plans(&self) -> &HashMap<ShortId, Plan> {
         &self.plans
+    }
+
+    pub fn insert_plan(&mut self, plan: Plan) -> PlinkoResult<()> {
+        match self.plans.entry(*plan.id()) {
+            std::collections::hash_map::Entry::Occupied(occupied_entry) => {
+                Err(PlinkoError::PlanExists(*occupied_entry.get().id()))
+            }
+            std::collections::hash_map::Entry::Vacant(vacant_entry) => {
+                vacant_entry.insert(plan);
+                Ok(())
+            }
+        }
+    }
+
+    pub fn get_plan_mut(&mut self, id: &ShortId) -> Option<&mut Plan> {
+        self.plans.get_mut(id)
     }
 }

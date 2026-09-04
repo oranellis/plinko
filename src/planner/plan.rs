@@ -24,6 +24,12 @@ pub struct Plan {
     scheduler_data: PlanSchedulerData,
 }
 
+impl Plan {
+    pub fn id(&self) -> &ShortId {
+        &self.id
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct PlanSchedulerData {
     start_date: NaiveDate,
