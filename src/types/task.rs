@@ -24,10 +24,14 @@ pub struct PersistentState {
     actual_end_date: Option<NaiveDate>,
 }
 
+pub struct DateRange {
+    start: NaiveDate,
+    end: NaiveDate,
+}
+
 #[derive(Default)]
 pub struct VolatileState {
-    start_date: Option<NaiveDate>,
-    end_date: Option<NaiveDate>,
+    date_range: Option<DateRange>,
     assigned_allocations: HashMap<Uuid, BTreeMap<NaiveDate, Workload>>,
 }
 

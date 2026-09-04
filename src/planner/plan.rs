@@ -23,8 +23,6 @@ pub struct Plan {
     scheduler_data: PlanSchedulerData,
 }
 
-impl Plan {}
-
 struct PlanSchedulerData {
     start_date: NaiveDate,
     scheduler_target: Option<Uuid>,
@@ -35,7 +33,7 @@ pub struct PlanVolatileState {
     milestones: HashMap<Uuid, milestone::VolatileState>,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct ShortId([u8; 8]);
 
 impl ShortId {
