@@ -5,19 +5,19 @@ use nanoid::nanoid;
 use uuid::Uuid;
 
 use crate::types::{
-    milestone::{self, Milestone, MilestoneUuid},
+    milestone::{self, Milestone},
     schedule::{CalendarChanges, WeeklySchedules},
-    tag::{Tag, TagUuid},
-    task::{self, Task, TaskUuid},
-    user::{User, UserUuid},
+    tag::Tag,
+    task::{self, Task},
+    user::User,
 };
 
 pub struct Plan {
     id: ShortId,
-    tasks: HashMap<TaskUuid, Task>,
-    milestones: HashMap<MilestoneUuid, Milestone>,
-    users: HashMap<UserUuid, User>,
-    tags: HashMap<TagUuid, Tag>,
+    tasks: HashMap<Uuid, Task>,
+    milestones: HashMap<Uuid, Milestone>,
+    users: HashMap<Uuid, User>,
+    tags: HashMap<Uuid, Tag>,
     plan_weekly_schedule: WeeklySchedules,
     plan_calendar_changes: CalendarChanges,
     scheduler_data: PlanSchedulerData,
@@ -27,7 +27,7 @@ impl Plan {}
 
 struct PlanSchedulerData {
     start_date: NaiveDate,
-    scheduler_target: Option<TaskUuid>,
+    scheduler_target: Option<Uuid>,
 }
 
 pub struct PlanVolatileState {

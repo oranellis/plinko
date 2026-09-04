@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use crate::types::{milestone::MilestoneUuid, task::TaskUuid};
+use uuid::Uuid;
 
 pub struct Dependency {
     node: PlanNode,
@@ -10,8 +10,8 @@ pub struct Dependency {
 type LagDays = i32;
 
 pub enum PlanNode {
-    Task(TaskUuid),
-    Milestone(MilestoneUuid),
+    Task(Uuid),
+    Milestone(Uuid),
     PlanStart,
 }
 

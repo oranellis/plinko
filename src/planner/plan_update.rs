@@ -1,9 +1,6 @@
-use crate::types::{
-    milestone::{Milestone, MilestoneUuid},
-    tag::{Tag, TagUuid},
-    task::{Task, TaskUuid},
-    user::{User, UserUuid},
-};
+use uuid::Uuid;
+
+use crate::types::{milestone::Milestone, tag::Tag, task::Task, user::User};
 
 struct PlanUpdate {
     update_type: PlanUpdateType,
@@ -19,24 +16,24 @@ enum PlanUpdateType {
 
 enum TaskUpdate {
     Add(Task),
-    Update(TaskUuid, Task),
-    Remove(TaskUuid),
+    Update(Uuid, Task),
+    Remove(Uuid),
 }
 
 enum MilestoneUpdate {
     Add(Milestone),
-    Update(MilestoneUuid, Milestone),
-    Remove(MilestoneUuid),
+    Update(Uuid, Milestone),
+    Remove(Uuid),
 }
 
 enum UserUpdate {
     Add(User),
-    Update(UserUuid, User),
-    Remove(UserUuid),
+    Update(Uuid, User),
+    Remove(Uuid),
 }
 
 enum TagUpdate {
     Add(Tag),
-    Update(TagUuid, Tag),
-    Remove(TagUuid),
+    Update(Uuid, Tag),
+    Remove(Uuid),
 }

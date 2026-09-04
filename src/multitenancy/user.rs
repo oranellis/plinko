@@ -1,8 +1,6 @@
 use uuid::Uuid;
 
 pub struct TenantUser {
-    id: TenantUserUuid,
+    id: Uuid,
     email: String,
 }
-
-pub type TenantUserUuid = Uuid;

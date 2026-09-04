@@ -1,7 +1,13 @@
 use std::collections::HashMap;
 
-use crate::multitenancy::user::{TenantUser, TenantUserUuid};
+use uuid::Uuid;
+
+use crate::{
+    multitenancy::user::TenantUser,
+    planner::plan::{Plan, ShortId},
+};
 
 struct Tenant {
-    users: HashMap<TenantUserUuid, TenantUser>,
+    users: HashMap<Uuid, TenantUser>,
+    plans: HashMap<ShortId, Plan>,
 }

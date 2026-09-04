@@ -6,11 +6,9 @@ use crate::types::{
 };
 
 pub struct User {
-    id: UserUuid,
+    id: Uuid,
     name: String,
     weekly_schedules: WeeklySchedule,
     calendar_changes: CalendarChanges,
     tags: Vec<Tag>,
 }
-
-pub type UserUuid = Uuid;
