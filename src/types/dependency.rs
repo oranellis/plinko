@@ -2,6 +2,7 @@ use std::hash::Hash;
 
 use uuid::Uuid;
 
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Dependency {
     node: PlanNode,
     lag: LagDays,
@@ -9,10 +10,12 @@ pub struct Dependency {
 
 type LagDays = i32;
 
+#[derive(Debug, Default, PartialEq, Eq)]
 pub enum PlanNode {
+    #[default]
+    PlanStart,
     Task(Uuid),
     Milestone(Uuid),
-    PlanStart,
 }
 
 impl Hash for PlanNode {

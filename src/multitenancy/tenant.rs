@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use crate::{
-    multitenancy::user::TenantLoginUser,
-    planner::plan::{Plan, ShortId},
-};
+use crate::{multitenancy::user::TenantLoginUser, planner::plan::Plan, types::short_id::ShortId};
 
 pub struct Tenant {
     id: ShortId,
@@ -40,5 +37,17 @@ impl Tenant {
 
     pub fn id(&self) -> &ShortId {
         &self.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn users(&self) -> &HashMap<Uuid, TenantLoginUser> {
+        &self.users
+    }
+
+    pub fn plans(&self) -> &HashMap<ShortId, Plan> {
+        &self.plans
     }
 }

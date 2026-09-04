@@ -2,6 +2,7 @@ pub mod dependency;
 pub mod error;
 pub mod milestone;
 pub mod schedule;
+pub mod short_id;
 pub mod tag;
 pub mod task;
 pub mod user;

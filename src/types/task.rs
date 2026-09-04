@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use crate::types::{Days, dependency::Dependency, workload::Workload};
 
+#[derive(Debug, PartialEq)]
 pub struct Task {
     id: Uuid,
     name: String,
@@ -17,25 +18,26 @@ pub struct Task {
     persistent_state: PersistentState,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct PersistentState {
     status: Status,
     actual_start_date: Option<NaiveDate>,
     actual_end_date: Option<NaiveDate>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct DateRange {
     start: NaiveDate,
     end: NaiveDate,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct VolatileState {
     date_range: Option<DateRange>,
     assigned_allocations: HashMap<Uuid, BTreeMap<NaiveDate, Workload>>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 enum Status {
     #[default]
     NotStarted,
@@ -45,19 +47,22 @@ enum Status {
     Dropped,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 enum ScheduleMode {
     #[default]
     Strict,
     Flexible,
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
 enum Worker {
     Tag(Uuid),
     User(Uuid),
 }
 
+#[derive(Debug, Default, PartialEq)]
 enum Constraint {
+    #[default]
     None,
     Earliest(NaiveDate),
     Latest(NaiveDate),

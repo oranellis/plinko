@@ -5,6 +5,7 @@ use crate::types::{
     tag::Tag,
 };
 
+#[derive(Debug, PartialEq)]
 pub struct User {
     id: Uuid,
     name: String,

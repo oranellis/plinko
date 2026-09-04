@@ -1,12 +1,14 @@
 use chrono::NaiveDate;
 use uuid::Uuid;
 
+#[derive(Debug, PartialEq)]
 pub struct Milestone {
     id: Uuid,
     name: String,
     persistent_state: PersistentState,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct PersistentState {
     actual_date: Option<NaiveDate>,
 }

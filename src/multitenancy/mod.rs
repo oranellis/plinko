@@ -1,2 +1,2 @@
-pub mod tenent;
+pub mod tenant;
 pub mod user;

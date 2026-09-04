@@ -4,6 +4,7 @@ use chrono::NaiveDate;
 
 use crate::types::workload::Workload;
 
+#[derive(Debug, PartialEq)]
 pub struct CalendarChanges {
     changes: HashMap<NaiveDate, Workload>,
 }
@@ -24,6 +25,7 @@ impl CalendarChanges {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct WeeklySchedule {
     pub monday: Workload,
     pub tuesday: Workload,
@@ -35,6 +37,7 @@ pub struct WeeklySchedule {
     pub start_date: NaiveDate,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct WeeklySchedules {
     schedules: HashMap<NaiveDate, WeeklySchedule>,
 }
