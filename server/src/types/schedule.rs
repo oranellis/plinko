@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
-use crate::types::workload::Workload;
+use crate::types::{error::PlinkoResult, workload::Workload};
 
 #[derive(Debug, PartialEq)]
 pub struct CalendarChanges {
@@ -35,6 +35,43 @@ pub struct WeeklySchedule {
     pub saturday: Workload,
     pub sunday: Workload,
     pub start_date: NaiveDate,
+}
+
+impl WeeklySchedule {
+    pub fn new_initial_schedule() -> Self {
+        WeeklySchedule {
+            monday: Workload::new_unchecked(8),
+            tuesday: Workload::new_unchecked(8),
+            wednesday: Workload::new_unchecked(8),
+            thursday: Workload::new_unchecked(8),
+            friday: Workload::new_unchecked(8),
+            saturday: Workload::new_unchecked(0),
+            sunday: Workload::new_unchecked(0),
+            start_date: NaiveDate::MIN,
+        }
+    }
+
+    pub fn new_from_days(
+        mon: u8,
+        tue: u8,
+        wed: u8,
+        thu: u8,
+        fri: u8,
+        sat: u8,
+        sun: u8,
+        start_date: NaiveDate,
+    ) -> PlinkoResult<Self> {
+        Ok(Self {
+            monday: Workload::new(mon)?,
+            tuesday: Workload::new(tue)?,
+            wednesday: Workload::new(wed)?,
+            thursday: Workload::new(thu)?,
+            friday: Workload::new(fri)?,
+            saturday: Workload::new(sat)?,
+            sunday: Workload::new(sun)?,
+            start_date,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]

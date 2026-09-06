@@ -1,6 +1,9 @@
 use uuid::Uuid;
 
-use crate::types::{milestone::Milestone, tag::Tag, task::Task, user::User};
+use crate::{
+    planner::plan::PlanSchedulerData,
+    types::{milestone::Milestone, tag::Tag, task::Task, user::User},
+};
 
 struct PlanUpdate {
     update_type: PlanUpdateType,
@@ -36,4 +39,9 @@ enum TagUpdate {
     Add(Tag),
     Update(Uuid, Tag),
     Remove(Uuid),
+}
+
+enum SchedulerDataUpdate {
+    Update(PlanSchedulerData),
+    Reset,
 }

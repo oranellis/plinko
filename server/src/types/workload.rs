@@ -6,15 +6,19 @@ pub struct Workload {
 }
 
 impl Workload {
-    fn new(value: u8) -> PlinkoResult<Self> {
-        if value > 8 {
+    pub fn new(value: u8) -> PlinkoResult<Self> {
+        if value >= 0 && value <= 8 {
             Ok(Self { value: value })
         } else {
             Err(PlinkoError::InvalidWorkload)
         }
     }
 
-    fn value(&self) -> u8 {
+    pub fn new_unchecked(value: u8) -> Self {
+        Self { value: value }
+    }
+
+    pub fn get(&self) -> u8 {
         self.value
     }
 }

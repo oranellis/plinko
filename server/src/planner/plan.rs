@@ -4,8 +4,9 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::types::{
+    dependency::PlanNode,
     milestone::{self, Milestone},
-    schedule::{CalendarChanges, WeeklySchedules},
+    schedule::{CalendarChanges, WeeklySchedule, WeeklySchedules},
     short_id::ShortId,
     tag::Tag,
     task::{self, Task},
@@ -28,15 +29,62 @@ impl Plan {
     pub fn id(&self) -> &ShortId {
         &self.id
     }
+
+    pub fn new(id: ShortId, start_date: NaiveDate) -> Self {
+        Self {
+            id,
+            tasks: HashMap::new(),
+            milestones: HashMap::new(),
+            users: HashMap::new(),
+            tags: HashMap::new(),
+            plan_weekly_schedule: WeeklySchedules::new(WeeklySchedule::new_initial_schedule()),
+            plan_calendar_changes: CalendarChanges::new(),
+            scheduler_data: PlanSchedulerData::new(start_date),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
-struct PlanSchedulerData {
+pub struct PlanSchedulerData {
     start_date: NaiveDate,
-    scheduler_target: Option<Uuid>,
+    scheduler_target: PlanNode,
+}
+
+impl PlanSchedulerData {
+    fn new(start_date: NaiveDate) -> Self {
+        Self {
+            start_date,
+            scheduler_target: PlanNode::PlanStart,
+        }
+    }
+
+    pub fn set_start_date(&mut self, date: NaiveDate) {
+        self.start_date = date;
+    }
+
+    pub fn set_scheduler_target(&mut self, node: PlanNode) {
+        self.scheduler_target = node;
+    }
+
+    pub fn start_date(&self) -> &NaiveDate {
+        &self.start_date
+    }
+
+    pub fn scheduler_target(&self) -> &PlanNode {
+        &self.scheduler_target
+    }
 }
 
 pub struct PlanVolatileState {
-    tasks: HashMap<Uuid, task::VolatileState>,
-    milestones: HashMap<Uuid, milestone::VolatileState>,
+    pub tasks: HashMap<Uuid, task::VolatileState>,
+    pub milestones: HashMap<Uuid, milestone::VolatileState>,
+}
+
+impl PlanVolatileState {
+    fn from(
+        tasks: HashMap<Uuid, task::VolatileState>,
+        milestones: HashMap<Uuid, milestone::VolatileState>,
+    ) -> Self {
+        Self { tasks, milestones }
+    }
 }
