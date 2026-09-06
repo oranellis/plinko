@@ -13,12 +13,13 @@ pub struct PersistentState {
     actual_date: Option<NaiveDate>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct VolatileState {
     derived_status: Status,
     date: NaiveDate,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 enum Status {
     #[default]
     NotStarted,

@@ -6,6 +6,7 @@ use crate::types::short_id::ShortId;
 pub enum PlinkoError {
     Generic(String),
     InvalidWorkload,
+    InvalidShortId(String),
     PlanExists(ShortId),
     EntryDoesNotExist(Box<dyn Debug>),
 }
@@ -20,6 +21,9 @@ impl std::fmt::Display for PlinkoError {
             }
             PlinkoError::EntryDoesNotExist(entry) => {
                 write!(f, "entry {:?} does not exist", entry)
+            }
+            PlinkoError::InvalidShortId(s) => {
+                write!(f, "cannot create ShortId, invalid entry: {}", s)
             }
         }
     }

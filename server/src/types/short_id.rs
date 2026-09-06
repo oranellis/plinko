@@ -1,18 +1,33 @@
 use nanoid::nanoid;
 
+use crate::types::error::{PlinkoError, PlinkoResult};
+
 #[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ShortId([u8; 8]);
 
 impl ShortId {
     pub fn new() -> Self {
-        let id = nanoid!(8);
-        let mut buf = [0u8; 8];
-        buf.copy_from_slice(id.as_bytes());
-        Self(buf)
+        Self::from_str(&nanoid!(8)).expect("nanoid output unexpectedly invalid")
     }
 
     pub fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.0).expect("nanoid output is always valid ASCII/UTF-8")
+        std::str::from_utf8(&self.0).expect("contained ID unexpectedly invalid")
+    }
+
+    pub fn from_str(s: &str) -> PlinkoResult<ShortId> {
+        if s.len() == 8 && s.is_ascii() {
+            let mut buf = [0u8; 8];
+            buf.copy_from_slice(s.as_bytes());
+            Ok(Self(buf))
+        } else {
+            Err(PlinkoError::InvalidShortId(s.to_string()))
+        }
+    }
+}
+
+impl From<ShortId> for String {
+    fn from(value: ShortId) -> Self {
+        String::from_utf8(value.0.to_vec()).expect("contained ID unexpectedly invalid")
     }
 }
 

@@ -16,6 +16,7 @@ use crate::types::{
 #[derive(Debug, PartialEq)]
 pub struct Plan {
     id: ShortId,
+    name: String,
     tasks: HashMap<Uuid, Task>,
     milestones: HashMap<Uuid, Milestone>,
     users: HashMap<Uuid, User>,
@@ -30,9 +31,14 @@ impl Plan {
         &self.id
     }
 
-    pub fn new(id: ShortId, start_date: NaiveDate) -> Self {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn new(id: ShortId, name: String, start_date: NaiveDate) -> Self {
         Self {
             id,
+            name,
             tasks: HashMap::new(),
             milestones: HashMap::new(),
             users: HashMap::new(),
@@ -75,13 +81,14 @@ impl PlanSchedulerData {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct PlanVolatileState {
     pub tasks: HashMap<Uuid, task::VolatileState>,
     pub milestones: HashMap<Uuid, milestone::VolatileState>,
 }
 
 impl PlanVolatileState {
-    fn from(
+    pub fn new(
         tasks: HashMap<Uuid, task::VolatileState>,
         milestones: HashMap<Uuid, milestone::VolatileState>,
     ) -> Self {

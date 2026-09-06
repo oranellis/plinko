@@ -31,6 +31,11 @@ impl Tenant {
         }
     }
 
+    /// Create a new tenant with a specific initial login
+    ///
+    /// * `id`: A unique ID for the tenant
+    /// * `name`: A friendly name for the tenant
+    /// * `user`: An initial user to populate the tenant with
     pub fn new_with_login(id: ShortId, name: String, user: TenantLoginUser) -> Self {
         let mut users = HashMap::new();
         users.insert(*user.id(), user);
