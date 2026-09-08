@@ -5,3 +5,9 @@ pub struct Tag {
     id: Uuid,
     name: String,
 }
+
+impl Tag {
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
+}

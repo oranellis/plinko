@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use uuid::Uuid;
+
 use crate::types::short_id::ShortId;
 
 #[derive(Debug)]
@@ -8,7 +10,8 @@ pub enum PlinkoError {
     InvalidWorkload,
     InvalidShortId(String),
     PlanExists(ShortId),
-    EntryDoesNotExist(Box<dyn Debug>),
+    ItemExists(Uuid),
+    ItemDoesNotExist(Uuid),
 }
 
 impl std::fmt::Display for PlinkoError {
@@ -19,11 +22,14 @@ impl std::fmt::Display for PlinkoError {
             PlinkoError::PlanExists(short_id) => {
                 write!(f, "plan {} already exists in tenant", short_id)
             }
-            PlinkoError::EntryDoesNotExist(entry) => {
-                write!(f, "entry {:?} does not exist", entry)
+            PlinkoError::ItemDoesNotExist(id) => {
+                write!(f, "item {} does not exist", id)
             }
             PlinkoError::InvalidShortId(s) => {
                 write!(f, "cannot create ShortId, invalid entry: {}", s)
+            }
+            PlinkoError::ItemExists(id) => {
+                write!(f, "item {} already exists", id)
             }
         }
     }

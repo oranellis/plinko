@@ -13,3 +13,9 @@ pub struct User {
     calendar_changes: CalendarChanges,
     tags: Vec<Tag>,
 }
+
+impl User {
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
+}

@@ -8,6 +8,12 @@ pub struct Milestone {
     persistent_state: PersistentState,
 }
 
+impl Milestone {
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct PersistentState {
     actual_date: Option<NaiveDate>,

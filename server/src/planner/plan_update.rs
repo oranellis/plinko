@@ -5,43 +5,43 @@ use crate::{
     types::{milestone::Milestone, tag::Tag, task::Task, user::User},
 };
 
-struct PlanUpdate {
-    update_type: PlanUpdateType,
-    time: chrono::DateTime<chrono::Utc>,
+pub struct PlanUpdate {
+    pub update_type: PlanUpdateType,
+    pub time: chrono::DateTime<chrono::Utc>,
 }
 
-enum PlanUpdateType {
+pub enum PlanUpdateType {
     Task(TaskUpdate),
     User(UserUpdate),
     Milestone(MilestoneUpdate),
     Tag(TagUpdate),
+    SchedulerData(SchedulerDataUpdate),
 }
 
-enum TaskUpdate {
+pub enum TaskUpdate {
     Add(Task),
-    Update(Uuid, Task),
+    Update(Task),
     Remove(Uuid),
 }
 
-enum MilestoneUpdate {
+pub enum MilestoneUpdate {
     Add(Milestone),
-    Update(Uuid, Milestone),
+    Update(Milestone),
     Remove(Uuid),
 }
 
-enum UserUpdate {
+pub enum UserUpdate {
     Add(User),
-    Update(Uuid, User),
+    Update(User),
     Remove(Uuid),
 }
 
-enum TagUpdate {
+pub enum TagUpdate {
     Add(Tag),
-    Update(Uuid, Tag),
+    Update(Tag),
     Remove(Uuid),
 }
 
-enum SchedulerDataUpdate {
+pub enum SchedulerDataUpdate {
     Update(PlanSchedulerData),
-    Reset,
 }

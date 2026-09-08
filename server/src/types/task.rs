@@ -2,7 +2,7 @@ use chrono::NaiveDate;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
-use crate::types::{Days, dependency::Dependency, workload::Workload};
+use crate::types::{Days, dependency::Dependency, error::PlinkoResult, workload::Workload};
 
 #[derive(Debug, PartialEq)]
 pub struct Task {
@@ -16,6 +16,16 @@ pub struct Task {
     description: Option<String>,
     links: Vec<String>,
     persistent_state: PersistentState,
+}
+
+impl Task {
+    pub fn new() -> PlinkoResult<Task> {
+        todo!("implement task new")
+    }
+
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
 }
 
 #[derive(Debug, Default, PartialEq)]
