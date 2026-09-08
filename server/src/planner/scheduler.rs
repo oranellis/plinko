@@ -1,5 +1,5 @@
 use crate::planner::plan::{Plan, PlanVolatileState};
 
-fn generate(plan: &Plan) -> PlanVolatileState {
+pub fn generate(_plan: &Plan) -> PlanVolatileState {
     todo!()
 }

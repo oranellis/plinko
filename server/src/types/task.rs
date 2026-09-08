@@ -48,7 +48,7 @@ pub struct VolatileState {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-enum Status {
+pub enum Status {
     #[default]
     NotStarted,
     InProgress,
@@ -58,20 +58,20 @@ enum Status {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-enum ScheduleMode {
+pub enum ScheduleMode {
     #[default]
     Strict,
     Flexible,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-enum Worker {
+pub enum Worker {
     Tag(Uuid),
     User(Uuid),
 }
 
 #[derive(Debug, Default, PartialEq)]
-enum Constraint {
+pub enum Constraint {
     #[default]
     None,
     Earliest(NaiveDate),

@@ -7,14 +7,14 @@ pub struct ShortId([u8; 8]);
 
 impl ShortId {
     pub fn new() -> Self {
-        Self::from_str(&nanoid!(8)).expect("nanoid output unexpectedly invalid")
+        Self::from_str_checked(&nanoid!(8)).expect("nanoid output unexpectedly invalid")
     }
 
     pub fn as_str(&self) -> &str {
         std::str::from_utf8(&self.0).expect("contained ID unexpectedly invalid")
     }
 
-    pub fn from_str(s: &str) -> PlinkoResult<ShortId> {
+    pub fn from_str_checked(s: &str) -> PlinkoResult<ShortId> {
         if s.len() == 8 && s.is_ascii() {
             let mut buf = [0u8; 8];
             buf.copy_from_slice(s.as_bytes());

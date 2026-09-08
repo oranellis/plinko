@@ -25,6 +25,12 @@ impl CalendarChanges {
     }
 }
 
+impl Default for CalendarChanges {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct WeeklySchedule {
     pub monday: Workload,
@@ -51,6 +57,7 @@ impl WeeklySchedule {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new_from_days(
         mon: u8,
         tue: u8,

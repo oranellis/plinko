@@ -26,7 +26,7 @@ pub struct VolatileState {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-enum Status {
+pub enum Status {
     #[default]
     NotStarted,
     InProgress,

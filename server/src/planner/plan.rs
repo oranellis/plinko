@@ -82,7 +82,6 @@ impl Plan {
     }
 
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
-        let t = u.time;
         match u.update_type {
             PlanUpdateType::Task(update) => self.task_update(update),
             PlanUpdateType::User(update) => self.user_update(update),
