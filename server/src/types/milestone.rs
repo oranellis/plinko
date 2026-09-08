@@ -9,6 +9,13 @@ pub struct Milestone {
 }
 
 impl Milestone {
+    pub fn new(name: String) -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            name,
+            persistent_state: PersistentState::new(),
+        }
+    }
     pub fn id(&self) -> &Uuid {
         &self.id
     }
@@ -17,6 +24,12 @@ impl Milestone {
 #[derive(Debug, PartialEq)]
 pub struct PersistentState {
     actual_date: Option<NaiveDate>,
+}
+
+impl PersistentState {
+    pub fn new() -> Self {
+        Self { actual_date: None }
+    }
 }
 
 #[derive(Debug, PartialEq)]

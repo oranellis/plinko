@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::types::{Days, dependency::Dependency, error::PlinkoResult, workload::Workload};
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Task {
     id: Uuid,
     name: String,
@@ -19,8 +19,19 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn new() -> PlinkoResult<Task> {
-        todo!("implement task new")
+    pub fn new(name: String) -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            name,
+            mode: ScheduleMode::Strict,
+            duration: 0,
+            constraint: Constraint::None,
+            dependencies: Vec::new(),
+            allocations: HashMap::new(),
+            description: None,
+            links: Vec::new(),
+            persistent_state: PersistentState::new(),
+        }
     }
 
     pub fn id(&self) -> &Uuid {
@@ -28,14 +39,24 @@ impl Task {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PersistentState {
     status: Status,
     actual_start_date: Option<NaiveDate>,
     actual_end_date: Option<NaiveDate>,
 }
 
-#[derive(Debug, PartialEq)]
+impl PersistentState {
+    pub fn new() -> Self {
+        Self {
+            status: Status::NotStarted,
+            actual_start_date: None,
+            actual_end_date: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DateRange {
     start: NaiveDate,
     end: NaiveDate,
@@ -47,7 +68,7 @@ pub struct VolatileState {
     assigned_allocations: HashMap<Uuid, BTreeMap<NaiveDate, Workload>>,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Status {
     #[default]
     NotStarted,
@@ -57,20 +78,20 @@ pub enum Status {
     Dropped,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScheduleMode {
     #[default]
     Strict,
     Flexible,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Worker {
     Tag(Uuid),
     User(Uuid),
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Constraint {
     #[default]
     None,

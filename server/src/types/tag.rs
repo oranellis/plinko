@@ -7,6 +7,12 @@ pub struct Tag {
 }
 
 impl Tag {
+    pub fn new(name: String) -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            name,
+        }
+    }
     pub fn id(&self) -> &Uuid {
         &self.id
     }

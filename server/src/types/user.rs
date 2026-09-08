@@ -15,6 +15,16 @@ pub struct User {
 }
 
 impl User {
+    pub fn new(name: String) -> Self {
+        Self {
+            id: Uuid::now_v7(),
+            name,
+            weekly_schedules: WeeklySchedule::new_initial_schedule(),
+            calendar_changes: CalendarChanges::new(),
+            tags: Vec::new(),
+        }
+    }
+
     pub fn id(&self) -> &Uuid {
         &self.id
     }

@@ -42,6 +42,34 @@ impl Plan {
         &self.name
     }
 
+    pub fn tasks(&self) -> &HashMap<Uuid, Task> {
+        &self.tasks
+    }
+
+    pub fn milestones(&self) -> &HashMap<Uuid, Milestone> {
+        &self.milestones
+    }
+
+    pub fn users(&self) -> &HashMap<Uuid, User> {
+        &self.users
+    }
+
+    pub fn tags(&self) -> &HashMap<Uuid, Tag> {
+        &self.tags
+    }
+
+    pub fn weekly_schedules(&self) -> &WeeklySchedules {
+        &self.plan_weekly_schedule
+    }
+
+    pub fn calendar_changes(&self) -> &CalendarChanges {
+        &self.plan_calendar_changes
+    }
+
+    pub fn scheduler_data(&self) -> &PlanSchedulerData {
+        &self.scheduler_data
+    }
+
     pub fn new(id: ShortId, name: String, start_date: NaiveDate) -> Self {
         Self {
             id,
