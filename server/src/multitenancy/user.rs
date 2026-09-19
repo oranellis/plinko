@@ -1,4 +1,6 @@
+// modules{{{
 use uuid::Uuid;
+// }}}
 
 pub struct TenantLoginUser {
     id: Uuid,
@@ -6,6 +8,7 @@ pub struct TenantLoginUser {
     email: String,
 }
 
+// impl TenantLoginUser{{{
 impl TenantLoginUser {
     pub fn new(name: String, email: String) -> Self {
         Self {
@@ -35,3 +38,4 @@ impl TenantLoginUser {
         self.email = email;
     }
 }
+// }}}

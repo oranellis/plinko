@@ -1,8 +1,19 @@
+// modules {{{
 use chrono::NaiveDate;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
 
-use crate::types::{Days, dependency::Dependency, error::PlinkoResult, workload::Workload};
+use crate::{
+    helpers::functions::check_id_match,
+    traits::patch::Patchable,
+    types::{
+        Days,
+        dependency::Dependency,
+        error::{PlinkoError, PlinkoResult},
+        workload::Workload,
+    },
+};
+// }}}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Task {
@@ -10,7 +21,7 @@ pub struct Task {
     name: String,
     mode: ScheduleMode,
     duration: u32,
-    constraint: Constraint,
+    time_constraint: TimeConstraint,
     dependencies: Vec<Dependency>,
     allocations: HashMap<Worker, Days>, // Days
     description: Option<String>,
@@ -18,6 +29,7 @@ pub struct Task {
     persistent_state: PersistentState,
 }
 
+// impl Task {{{
 impl Task {
     pub fn new(name: String) -> Self {
         Self {
@@ -25,7 +37,7 @@ impl Task {
             name,
             mode: ScheduleMode::Strict,
             duration: 0,
-            constraint: Constraint::None,
+            time_constraint: TimeConstraint::None,
             dependencies: Vec::new(),
             allocations: HashMap::new(),
             description: None,
@@ -39,6 +51,42 @@ impl Task {
     }
 }
 
+impl Patchable<TaskPatch> for Task {
+    fn apply_patch(&mut self, patch: TaskPatch) -> PlinkoResult<()> {
+        check_id_match(*self.id(), patch.id)?;
+
+        if let Some(n) = patch.name {
+            self.name = n;
+        }
+        if let Some(m) = patch.mode {
+            self.mode = m
+        }
+        if let Some(d) = patch.duration {
+            self.duration = d
+        }
+        if let Some(t) = patch.time_constraint {
+            self.time_constraint = t
+        }
+        if let Some(d) = patch.dependencies {
+            self.dependencies = d
+        }
+        if let Some(a) = patch.allocations {
+            self.allocations = a
+        }
+        if let Some(d) = patch.description {
+            self.description = d
+        }
+        if let Some(l) = patch.links {
+            self.links = l
+        }
+        if let Some(p) = patch.persistent_state {
+            self.persistent_state = p
+        }
+        Ok(())
+    }
+}
+// }}}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PersistentState {
     status: Status,
@@ -46,6 +94,7 @@ pub struct PersistentState {
     actual_end_date: Option<NaiveDate>,
 }
 
+// impl PersistentState {{{
 impl PersistentState {
     pub fn new() -> Self {
         Self {
@@ -55,6 +104,7 @@ impl PersistentState {
         }
     }
 }
+// }}}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DateRange {
@@ -92,10 +142,23 @@ pub enum Worker {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub enum Constraint {
+pub enum TimeConstraint {
     #[default]
     None,
     Earliest(NaiveDate),
     Latest(NaiveDate),
     Fixed(NaiveDate),
+}
+
+pub struct TaskPatch {
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub mode: Option<ScheduleMode>,
+    pub duration: Option<u32>,
+    pub time_constraint: Option<TimeConstraint>,
+    pub dependencies: Option<Vec<Dependency>>,
+    pub allocations: Option<HashMap<Worker, Days>>,
+    pub description: Option<Option<String>>,
+    pub links: Option<Vec<String>>,
+    pub persistent_state: Option<PersistentState>,
 }

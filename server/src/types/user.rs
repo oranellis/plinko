@@ -1,9 +1,16 @@
+// modules{{{
 use uuid::Uuid;
 
-use crate::types::{
-    schedule::{CalendarChanges, WeeklySchedule},
-    tag::Tag,
+use crate::{
+    helpers::functions::check_id_match,
+    traits::patch::Patchable,
+    types::{
+        error::PlinkoResult,
+        schedule::{CalendarChanges, WeeklySchedule},
+        tag::Tag,
+    },
 };
+// }}}
 
 #[derive(Debug, PartialEq)]
 pub struct User {
@@ -14,6 +21,7 @@ pub struct User {
     tags: Vec<Tag>,
 }
 
+// impl User{{{
 impl User {
     pub fn new(name: String) -> Self {
         Self {
@@ -28,4 +36,32 @@ impl User {
     pub fn id(&self) -> &Uuid {
         &self.id
     }
+}
+
+impl Patchable<UserPatch> for User {
+    fn apply_patch(&mut self, patch: UserPatch) -> PlinkoResult<()> {
+        check_id_match(*self.id(), patch.id)?;
+        if let Some(n) = patch.name {
+            self.name = n;
+        }
+        if let Some(w) = patch.weekly_schedule {
+            self.weekly_schedules = w
+        }
+        if let Some(c) = patch.calendar_changes {
+            self.calendar_changes = c
+        }
+        if let Some(t) = patch.tags {
+            self.tags = t
+        }
+        Ok(())
+    }
+}
+// }}}
+
+pub struct UserPatch {
+    id: Uuid,
+    name: Option<String>,
+    weekly_schedule: Option<WeeklySchedule>,
+    calendar_changes: Option<CalendarChanges>,
+    tags: Option<Vec<Tag>>,
 }

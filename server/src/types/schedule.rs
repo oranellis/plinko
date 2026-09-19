@@ -1,14 +1,17 @@
+// modules{{{
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
 
 use crate::types::{error::PlinkoResult, workload::Workload};
+// }}}
 
 #[derive(Debug, PartialEq)]
 pub struct CalendarChanges {
     changes: HashMap<NaiveDate, Workload>,
 }
 
+// impl CalendarChanges{{{
 impl CalendarChanges {
     pub fn new() -> Self {
         Self {
@@ -30,6 +33,7 @@ impl Default for CalendarChanges {
         Self::new()
     }
 }
+// }}}
 
 #[derive(Debug, PartialEq)]
 pub struct WeeklySchedule {
@@ -43,6 +47,7 @@ pub struct WeeklySchedule {
     pub start_date: NaiveDate,
 }
 
+// impl WeeklySchedule{{{
 impl WeeklySchedule {
     pub fn new_initial_schedule() -> Self {
         WeeklySchedule {
@@ -80,12 +85,14 @@ impl WeeklySchedule {
         })
     }
 }
+// }}}
 
 #[derive(Debug, PartialEq)]
 pub struct WeeklySchedules {
     schedules: HashMap<NaiveDate, WeeklySchedule>,
 }
 
+// impl WeeklySchedules{{{
 impl WeeklySchedules {
     pub fn new(initial_schedule: WeeklySchedule) -> Self {
         let mut schedules = WeeklySchedules {
@@ -103,3 +110,4 @@ impl WeeklySchedules {
         self.schedules.remove(date);
     }
 }
+// }}}

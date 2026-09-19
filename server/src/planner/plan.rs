@@ -1,3 +1,4 @@
+// modules{{{
 use std::collections::{HashMap, hash_map::Entry};
 
 use chrono::NaiveDate;
@@ -8,6 +9,7 @@ use crate::{
         MilestoneUpdate, PlanUpdate, PlanUpdateType, SchedulerDataUpdate, TagUpdate, TaskUpdate,
         UserUpdate,
     },
+    traits::patch::Patchable,
     types::{
         dependency::PlanNode,
         error::{PlinkoError, PlinkoResult},
@@ -19,6 +21,7 @@ use crate::{
         user::User,
     },
 };
+// }}}
 
 #[derive(Debug, PartialEq)]
 pub struct Plan {
@@ -33,6 +36,7 @@ pub struct Plan {
     scheduler_data: PlanSchedulerData,
 }
 
+// impl Plan{{{
 impl Plan {
     pub fn id(&self) -> &ShortId {
         &self.id
@@ -122,15 +126,17 @@ impl Plan {
     fn task_update(&mut self, update: TaskUpdate) -> PlinkoResult<()> {
         match update {
             TaskUpdate::Add(task) => add_item(&mut self.tasks, *task.id(), task),
-            TaskUpdate::Update(task) => update_item(&mut self.tasks, *task.id(), task),
+            TaskUpdate::Update(task_patch) => {
+                update_item(&mut self.tasks, task_patch.id, task_patch)
+            }
             TaskUpdate::Remove(id) => remove_item(&mut self.tasks, id),
         }
     }
 
     fn user_update(&mut self, update: UserUpdate) -> PlinkoResult<()> {
         match update {
-            UserUpdate::Add(user) => add_item(&mut self.users, *user.id(), user),
-            UserUpdate::Update(user) => update_item(&mut self.users, *user.id(), user),
+            UserUpdate::Add(u) => add_item(&mut self.users, *u.id(), u),
+            UserUpdate::Update(u) => update_item(&mut self.users, u.id, u),
             UserUpdate::Remove(id) => remove_item(&mut self.users, id),
         }
     }
@@ -138,15 +144,15 @@ impl Plan {
     fn milestone_update(&mut self, update: MilestoneUpdate) -> PlinkoResult<()> {
         match update {
             MilestoneUpdate::Add(m) => add_item(&mut self.milestones, *m.id(), m),
-            MilestoneUpdate::Update(m) => update_item(&mut self.milestones, *m.id(), m),
+            MilestoneUpdate::Update(m) => update_item(&mut self.milestones, m.id, m),
             MilestoneUpdate::Remove(id) => remove_item(&mut self.milestones, id),
         }
     }
 
     fn tag_update(&mut self, update: TagUpdate) -> PlinkoResult<()> {
         match update {
-            TagUpdate::Add(tag) => add_item(&mut self.tags, *tag.id(), tag),
-            TagUpdate::Update(tag) => update_item(&mut self.tags, *tag.id(), tag),
+            TagUpdate::Add(t) => add_item(&mut self.tags, *t.id(), t),
+            TagUpdate::Update(t) => update_item(&mut self.tags, *t.id(), t),
             TagUpdate::Remove(id) => remove_item(&mut self.tags, id),
         }
     }
@@ -172,10 +178,13 @@ fn add_item<T>(map: &mut HashMap<Uuid, T>, id: Uuid, item: T) -> PlinkoResult<()
     }
 }
 
-fn update_item<T>(map: &mut HashMap<Uuid, T>, id: Uuid, item: T) -> PlinkoResult<()> {
+fn update_item<T, P>(map: &mut HashMap<Uuid, T>, id: Uuid, patch: P) -> PlinkoResult<()>
+where
+    T: Patchable<P>,
+{
     match map.entry(id) {
-        Entry::Occupied(mut entry) => {
-            entry.insert(item);
+        Entry::Occupied(entry) => {
+            entry.into_mut().apply_patch(patch);
             Ok(())
         }
         Entry::Vacant(_) => Err(PlinkoError::ItemDoesNotExist(id)),
@@ -186,7 +195,7 @@ fn remove_item<T>(map: &mut HashMap<Uuid, T>, id: Uuid) -> PlinkoResult<()> {
     map.remove(&id)
         .ok_or(PlinkoError::ItemDoesNotExist(id))
         .map(drop)
-}
+} // }}}
 
 #[derive(Debug, PartialEq)]
 pub struct PlanSchedulerData {
@@ -194,6 +203,7 @@ pub struct PlanSchedulerData {
     scheduler_target: PlanNode,
 }
 
+// impl PlanSchedulerData{{{
 impl PlanSchedulerData {
     fn new(start_date: NaiveDate) -> Self {
         Self {
@@ -219,12 +229,32 @@ impl PlanSchedulerData {
     }
 }
 
+impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
+    fn apply_patch(&mut self, patch: PlanSchedulerDataPatch) -> PlinkoResult<()> {
+        if let Some(s) = patch.start_date {
+            self.start_date = s;
+        }
+        if let Some(t) = patch.scheduler_target {
+            self.scheduler_target = t
+        }
+        Ok(())
+    }
+}
+// }}}
+
+#[derive(Debug)]
+pub struct PlanSchedulerDataPatch {
+    start_date: Option<NaiveDate>,
+    scheduler_target: Option<PlanNode>,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct PlanVolatileState {
     pub tasks: HashMap<Uuid, task::VolatileState>,
     pub milestones: HashMap<Uuid, milestone::VolatileState>,
 }
 
+// impl PlanVolatileState{{{
 impl PlanVolatileState {
     pub fn new(
         tasks: HashMap<Uuid, task::VolatileState>,
@@ -232,4 +262,4 @@ impl PlanVolatileState {
     ) -> Self {
         Self { tasks, milestones }
     }
-}
+} // }}}

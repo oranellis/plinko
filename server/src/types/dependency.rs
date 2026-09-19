@@ -1,6 +1,8 @@
+// modules{{{
 use std::hash::Hash;
 
 use uuid::Uuid;
+// }}}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Dependency {

@@ -1,3 +1,4 @@
+// modules{{{
 use std::collections::HashMap;
 
 use uuid::Uuid;
@@ -10,6 +11,7 @@ use crate::{
         short_id::ShortId,
     },
 };
+// }}}
 
 pub struct Tenant {
     id: ShortId,
@@ -18,6 +20,7 @@ pub struct Tenant {
     plans: HashMap<ShortId, Plan>,
 }
 
+// impl Tenant{{{
 impl Tenant {
     pub fn new(id: ShortId, name: String) -> Self {
         let mut users = HashMap::new();
@@ -79,3 +82,4 @@ impl Tenant {
         self.plans.get_mut(id)
     }
 }
+// }}}

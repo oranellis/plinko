@@ -1,8 +1,10 @@
-use std::fmt::Debug;
+// modules{{{
+use std::fmt::{Debug, Display};
 
 use uuid::Uuid;
 
 use crate::types::short_id::ShortId;
+// }}}
 
 #[derive(Debug)]
 pub enum PlinkoError {
@@ -12,8 +14,10 @@ pub enum PlinkoError {
     PlanExists(ShortId),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
+    IdMismatch(impl Display, impl Display),
 }
 
+// impl PlinkoError{{{
 impl std::fmt::Display for PlinkoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -30,6 +34,9 @@ impl std::fmt::Display for PlinkoError {
             }
             PlinkoError::ItemExists(id) => {
                 write!(f, "item {} already exists", id)
+            }
+            PlinkoError::IdMismatch(id1, id2) => {
+                write!(f, "{} does not match {}", id1, id2)
             }
         }
     }
@@ -48,5 +55,6 @@ impl From<&str> for PlinkoError {
         PlinkoError::Generic(value.to_string())
     }
 }
+// }}}
 
 pub type PlinkoResult<T> = Result<T, PlinkoError>;

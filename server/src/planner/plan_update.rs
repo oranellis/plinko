@@ -1,9 +1,16 @@
+// modules{{{
 use uuid::Uuid;
 
 use crate::{
-    planner::plan::PlanSchedulerData,
-    types::{milestone::Milestone, tag::Tag, task::Task, user::User},
+    planner::plan::PlanSchedulerDataPatch,
+    types::{
+        milestone::{Milestone, MilestonePatch},
+        tag::{Tag, TagPatch},
+        task::{Task, TaskPatch},
+        user::{User, UserPatch},
+    },
 };
+// }}}
 
 pub struct PlanUpdate {
     pub update_type: PlanUpdateType,
@@ -20,28 +27,28 @@ pub enum PlanUpdateType {
 
 pub enum TaskUpdate {
     Add(Task),
-    Update(Task),
+    Update(TaskPatch),
     Remove(Uuid),
 }
 
 pub enum MilestoneUpdate {
     Add(Milestone),
-    Update(Milestone),
+    Update(MilestonePatch),
     Remove(Uuid),
 }
 
 pub enum UserUpdate {
     Add(User),
-    Update(User),
+    Update(UserPatch),
     Remove(Uuid),
 }
 
 pub enum TagUpdate {
     Add(Tag),
-    Update(Tag),
+    Update(TagPatch),
     Remove(Uuid),
 }
 
 pub enum SchedulerDataUpdate {
-    Update(PlanSchedulerData),
+    Update(PlanSchedulerDataPatch),
 }
