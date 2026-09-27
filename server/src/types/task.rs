@@ -6,7 +6,9 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{Days, dependency::Dependency, error::PlinkoResult, workload::Workload},
+    types::{
+        Days, common::DateRange, dependency::Dependency, error::PlinkoResult, workload::Workload,
+    },
 };
 // }}}
 
@@ -101,16 +103,10 @@ impl PersistentState {
 }
 // }}}
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct DateRange {
-    start: NaiveDate,
-    end: NaiveDate,
-}
-
 #[derive(Debug, Default, PartialEq)]
 pub struct VolatileState {
-    date_range: Option<DateRange>,
-    assigned_allocations: HashMap<Uuid, BTreeMap<NaiveDate, Workload>>,
+    pub date_range: Option<DateRange>,
+    pub assigned_allocations: HashMap<Uuid, BTreeMap<NaiveDate, Workload>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

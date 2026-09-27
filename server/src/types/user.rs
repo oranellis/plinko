@@ -2,7 +2,6 @@
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match,
     traits::patch::Patchable,
     types::{
         error::PlinkoResult,
