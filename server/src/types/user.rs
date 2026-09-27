@@ -13,37 +13,25 @@ use crate::{
 // }}}
 
 #[derive(Debug, PartialEq)]
-pub struct User {
-    id: Uuid,
-    name: String,
+pub struct PlanUserData {
     weekly_schedules: WeeklySchedule,
     calendar_changes: CalendarChanges,
     tags: Vec<Tag>,
 }
 
 // impl User{{{
-impl User {
-    pub fn new(name: String) -> Self {
+impl PlanUserData {
+    pub fn new() -> Self {
         Self {
-            id: Uuid::now_v7(),
-            name,
             weekly_schedules: WeeklySchedule::new_initial_schedule(),
             calendar_changes: CalendarChanges::new(),
             tags: Vec::new(),
         }
     }
-
-    pub fn id(&self) -> &Uuid {
-        &self.id
-    }
 }
 
-impl Patchable<UserPatch> for User {
-    fn apply_patch(&mut self, patch: UserPatch) -> PlinkoResult<()> {
-        check_id_match(*self.id(), patch.id)?;
-        if let Some(n) = patch.name {
-            self.name = n;
-        }
+impl Patchable<PlanUserDataPatch> for PlanUserData {
+    fn apply_patch(&mut self, patch: PlanUserDataPatch) -> PlinkoResult<()> {
         if let Some(w) = patch.weekly_schedule {
             self.weekly_schedules = w
         }
@@ -58,9 +46,8 @@ impl Patchable<UserPatch> for User {
 }
 // }}}
 
-pub struct UserPatch {
+pub struct PlanUserDataPatch {
     pub id: Uuid,
-    pub name: Option<String>,
     pub weekly_schedule: Option<WeeklySchedule>,
     pub calendar_changes: Option<CalendarChanges>,
     pub tags: Option<Vec<Tag>>,

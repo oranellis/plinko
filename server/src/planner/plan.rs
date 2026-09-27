@@ -18,7 +18,7 @@ use crate::{
         short_id::ShortId,
         tag::Tag,
         task::{self, Task},
-        user::User,
+        user::PlanUserData,
     },
 };
 // }}}
@@ -29,7 +29,7 @@ pub struct Plan {
     name: String,
     tasks: HashMap<Uuid, Task>,
     milestones: HashMap<Uuid, Milestone>,
-    users: HashMap<Uuid, User>,
+    users: HashMap<Uuid, PlanUserData>,
     tags: HashMap<Uuid, Tag>,
     plan_weekly_schedule: WeeklySchedules,
     plan_calendar_changes: CalendarChanges,
@@ -54,7 +54,7 @@ impl Plan {
         &self.milestones
     }
 
-    pub fn users(&self) -> &HashMap<Uuid, User> {
+    pub fn users(&self) -> &HashMap<Uuid, PlanUserData> {
         &self.users
     }
 
@@ -126,7 +126,7 @@ impl Plan {
 
     fn user_update(&mut self, update: UserUpdate) -> PlinkoResult<()> {
         match update {
-            UserUpdate::Add(user) => add_item(&mut self.users, *user.id(), user),
+            UserUpdate::Add(id, user) => add_item(&mut self.users, id, user),
             UserUpdate::Update(user_patch) => {
                 update_map_item(&mut self.users, user_patch.id, user_patch)
             }

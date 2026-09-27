@@ -7,7 +7,7 @@ use crate::{
         milestone::{Milestone, MilestonePatch},
         tag::{Tag, TagPatch},
         task::{Task, TaskPatch},
-        user::{User, UserPatch},
+        user::{PlanUserData, PlanUserDataPatch},
     },
 };
 // }}}
@@ -38,8 +38,8 @@ pub enum MilestoneUpdate {
 }
 
 pub enum UserUpdate {
-    Add(User),
-    Update(UserPatch),
+    Add(Uuid, PlanUserData),
+    Update(PlanUserDataPatch),
     Remove(Uuid),
 }
 

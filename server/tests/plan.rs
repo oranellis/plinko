@@ -6,8 +6,9 @@ use plinko::{
             MilestoneUpdate, PlanUpdate, PlanUpdateType, TagUpdate, TaskUpdate, UserUpdate,
         },
     },
-    types::{milestone::Milestone, short_id::ShortId, tag::Tag, task::Task, user::User},
+    types::{milestone::Milestone, short_id::ShortId, tag::Tag, task::Task, user::PlanUserData},
 };
+use uuid::Uuid;
 
 #[test]
 fn create_plan() {
@@ -24,7 +25,7 @@ fn add_task_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
     let start_date = NaiveDate::from_ymd_opt(2000, 12, 31).unwrap();
     let mut plan = Plan::new(id, "My Plan".to_owned(), start_date);
-    let task = Task::new("Task Name".to_string()).expect("error not expected");
+    let task = Task::new("Task Name".to_string());
     let task_id = *task.id();
     let update = PlanUpdate {
         update_type: PlanUpdateType::Task(TaskUpdate::Add(task)),
@@ -54,10 +55,10 @@ fn add_user_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
     let start_date = NaiveDate::from_ymd_opt(2000, 12, 31).unwrap();
     let mut plan = Plan::new(id, "My Plan".to_owned(), start_date);
-    let user = User::new("John Doe".to_string());
-    let user_id = *user.id();
+    let user_data = PlanUserData::new();
+    let user_id = Uuid::now_v7(); // Fake Uuid, would normally match Tenant user Uuid
     let update = PlanUpdate {
-        update_type: PlanUpdateType::User(UserUpdate::Add(user)),
+        update_type: PlanUpdateType::User(UserUpdate::Add(user_id, user_data)),
         time: DateTime::from_timestamp(978307200, 0).expect("time should be fine"),
     };
     plan.apply_update(update).expect("should not error");
