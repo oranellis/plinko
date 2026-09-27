@@ -11,5 +11,5 @@ where
 {
     (id1 == id2)
         .then_some(())
-        .ok_or(PlinkoError::IdMismatch(id1, id2))
+        .ok_or(PlinkoError::IdMismatch(id1.to_string(), id2.to_string()))
 }

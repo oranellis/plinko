@@ -88,15 +88,6 @@ impl Plan {
         }
     }
 
-    // pub fn ensure_uuid_exists(&self, id: &Uuid) -> PlinkoResult<()> {
-    //     (self.tags.contains_key(id)
-    //         || self.users.contains_key(id)
-    //         || self.milestones.contains_key(id)
-    //         || self.tasks.contains_key(id))
-    //     .then_some(())
-    //     .ok_or(PlinkoError::ItemDoesNotExist(*id))
-    // }
-
     pub fn ensure_node_exists(&self, node: &PlanNode) -> PlinkoResult<()> {
         match node {
             PlanNode::PlanStart => Ok(()),
@@ -127,7 +118,7 @@ impl Plan {
         match update {
             TaskUpdate::Add(task) => add_item(&mut self.tasks, *task.id(), task),
             TaskUpdate::Update(task_patch) => {
-                update_item(&mut self.tasks, task_patch.id, task_patch)
+                update_map_item(&mut self.tasks, task_patch.id, task_patch)
             }
             TaskUpdate::Remove(id) => remove_item(&mut self.tasks, id),
         }
@@ -135,34 +126,40 @@ impl Plan {
 
     fn user_update(&mut self, update: UserUpdate) -> PlinkoResult<()> {
         match update {
-            UserUpdate::Add(u) => add_item(&mut self.users, *u.id(), u),
-            UserUpdate::Update(u) => update_item(&mut self.users, u.id, u),
+            UserUpdate::Add(user) => add_item(&mut self.users, *user.id(), user),
+            UserUpdate::Update(user_patch) => {
+                update_map_item(&mut self.users, user_patch.id, user_patch)
+            }
             UserUpdate::Remove(id) => remove_item(&mut self.users, id),
         }
     }
 
     fn milestone_update(&mut self, update: MilestoneUpdate) -> PlinkoResult<()> {
         match update {
-            MilestoneUpdate::Add(m) => add_item(&mut self.milestones, *m.id(), m),
-            MilestoneUpdate::Update(m) => update_item(&mut self.milestones, m.id, m),
+            MilestoneUpdate::Add(milestone) => {
+                add_item(&mut self.milestones, *milestone.id(), milestone)
+            }
+            MilestoneUpdate::Update(milestone_patch) => {
+                update_map_item(&mut self.milestones, milestone_patch.id, milestone_patch)
+            }
             MilestoneUpdate::Remove(id) => remove_item(&mut self.milestones, id),
         }
     }
 
     fn tag_update(&mut self, update: TagUpdate) -> PlinkoResult<()> {
         match update {
-            TagUpdate::Add(t) => add_item(&mut self.tags, *t.id(), t),
-            TagUpdate::Update(t) => update_item(&mut self.tags, *t.id(), t),
+            TagUpdate::Add(tag) => add_item(&mut self.tags, *tag.id(), tag),
+            TagUpdate::Update(tag_patch) => {
+                update_map_item(&mut self.tags, tag_patch.id, tag_patch)
+            }
             TagUpdate::Remove(id) => remove_item(&mut self.tags, id),
         }
     }
 
-    fn scheduler_data_update(&mut self, update: SchedulerDataUpdate) -> Result<(), PlinkoError> {
+    fn scheduler_data_update(&mut self, update: SchedulerDataUpdate) -> PlinkoResult<()> {
         match update {
             SchedulerDataUpdate::Update(plan_scheduler_data) => {
-                self.ensure_node_exists(&plan_scheduler_data.scheduler_target)?;
-                self.scheduler_data = plan_scheduler_data;
-                Ok(())
+                self.scheduler_data.apply_patch(plan_scheduler_data)
             }
         }
     }
@@ -178,13 +175,13 @@ fn add_item<T>(map: &mut HashMap<Uuid, T>, id: Uuid, item: T) -> PlinkoResult<()
     }
 }
 
-fn update_item<T, P>(map: &mut HashMap<Uuid, T>, id: Uuid, patch: P) -> PlinkoResult<()>
+fn update_map_item<T, P>(map: &mut HashMap<Uuid, T>, id: Uuid, patch: P) -> PlinkoResult<()>
 where
     T: Patchable<P>,
 {
     match map.entry(id) {
         Entry::Occupied(entry) => {
-            entry.into_mut().apply_patch(patch);
+            entry.into_mut().apply_patch(patch)?;
             Ok(())
         }
         Entry::Vacant(_) => Err(PlinkoError::ItemDoesNotExist(id)),

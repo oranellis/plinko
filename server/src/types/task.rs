@@ -6,12 +6,7 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{
-        Days,
-        dependency::Dependency,
-        error::{PlinkoError, PlinkoResult},
-        workload::Workload,
-    },
+    types::{Days, dependency::Dependency, error::PlinkoResult, workload::Workload},
 };
 // }}}
 

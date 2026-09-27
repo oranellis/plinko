@@ -3,9 +3,7 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match,
-    traits::patch::Patchable,
-    types::error::{PlinkoError, PlinkoResult},
+    helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
 };
 // }}}
 
@@ -50,6 +48,12 @@ pub struct PersistentState {
 }
 
 // impl PersistentState{{{
+impl Default for PersistentState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PersistentState {
     pub fn new() -> Self {
         Self { actual_date: None }

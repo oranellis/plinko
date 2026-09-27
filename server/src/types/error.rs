@@ -1,5 +1,5 @@
 // modules{{{
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ pub enum PlinkoError {
     PlanExists(ShortId),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
-    IdMismatch(impl Display, impl Display),
+    IdMismatch(String, String),
 }
 
 // impl PlinkoError{{{

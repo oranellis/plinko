@@ -59,9 +59,9 @@ impl Patchable<UserPatch> for User {
 // }}}
 
 pub struct UserPatch {
-    id: Uuid,
-    name: Option<String>,
-    weekly_schedule: Option<WeeklySchedule>,
-    calendar_changes: Option<CalendarChanges>,
-    tags: Option<Vec<Tag>>,
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub weekly_schedule: Option<WeeklySchedule>,
+    pub calendar_changes: Option<CalendarChanges>,
+    pub tags: Option<Vec<Tag>>,
 }
