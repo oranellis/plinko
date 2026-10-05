@@ -1,0 +1,68 @@
+// modules {{{
+use chrono::NaiveDate;
+use uuid::Uuid;
+
+use crate::{
+    helpers::functions::check_id_match,
+    traits::patch::Patchable,
+    types::{common::DateRange, dependency::Dependency, error::PlinkoResult},
+};
+// }}}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlanBuffer {
+    id: Uuid,
+    dependencies: Vec<Dependency>,
+    set_start_day: Option<NaiveDate>,
+    duration: u32,
+}
+
+// impl PlanBuffer {{{
+impl PlanBuffer {
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
+
+    pub fn dependencies(&self) -> &Vec<Dependency> {
+        &self.dependencies
+    }
+
+    pub fn set_start_day(&self) -> &Option<NaiveDate> {
+        &self.set_start_day
+    }
+
+    pub fn duration(&self) -> &u32 {
+        &self.duration
+    }
+}
+
+impl Patchable<PlanBufferPatch> for PlanBuffer {
+    fn apply_patch(&mut self, patch: PlanBufferPatch) -> PlinkoResult<()> {
+        check_id_match(*self.id(), patch.id)?;
+
+        if let Some(p) = patch.dependancies {
+            self.dependencies = p;
+        }
+        if let Some(p) = patch.set_start_day {
+            self.set_start_day = p
+        }
+        if let Some(p) = patch.duration {
+            self.duration = p;
+        }
+        Ok(())
+    }
+}
+// }}}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VolatileState {
+    pub date_range: Option<DateRange>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlanBufferPatch {
+    pub id: Uuid,
+    pub dependancies: Option<Vec<Dependency>>,
+    pub set_start_day: Option<Option<NaiveDate>>,
+    pub duration: Option<u32>,
+}

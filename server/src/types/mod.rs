@@ -2,6 +2,7 @@ pub mod common;
 pub mod dependency;
 pub mod error;
 pub mod milestone;
+pub mod plan_buffer;
 pub mod schedule;
 pub mod short_id;
 pub mod tag;
