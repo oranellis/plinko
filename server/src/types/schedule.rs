@@ -62,25 +62,25 @@ impl WeeklySchedule {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_from_days(
-        mon: u8,
-        tue: u8,
-        wed: u8,
-        thu: u8,
-        fri: u8,
-        sat: u8,
-        sun: u8,
-        start_date: NaiveDate,
-    ) -> PlinkoResult<Self> {
+    /// Hours per day, Monday first.
+    pub fn new_from_days(hours: [u8; 7], start_date: NaiveDate) -> PlinkoResult<Self> {
+        let [
+            monday,
+            tuesday,
+            wednesday,
+            thursday,
+            friday,
+            saturday,
+            sunday,
+        ] = hours.map(Workload::new);
         Ok(Self {
-            monday: Workload::new(mon)?,
-            tuesday: Workload::new(tue)?,
-            wednesday: Workload::new(wed)?,
-            thursday: Workload::new(thu)?,
-            friday: Workload::new(fri)?,
-            saturday: Workload::new(sat)?,
-            sunday: Workload::new(sun)?,
+            monday: monday?,
+            tuesday: tuesday?,
+            wednesday: wednesday?,
+            thursday: thursday?,
+            friday: friday?,
+            saturday: saturday?,
+            sunday: sunday?,
             start_date,
         })
     }
@@ -111,3 +111,16 @@ impl WeeklySchedules {
     }
 }
 // }}}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_from_days_validates_hours() {
+        let d = NaiveDate::MIN;
+        let s = WeeklySchedule::new_from_days([8, 8, 8, 8, 4, 0, 0], d).unwrap();
+        assert_eq!(s.friday.get(), 4);
+        assert!(WeeklySchedule::new_from_days([8, 8, 8, 8, 9, 0, 0], d).is_err());
+    }
+}
