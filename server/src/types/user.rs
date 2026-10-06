@@ -11,7 +11,7 @@ use crate::{
 };
 // }}}
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlanUserData {
     weekly_schedules: WeeklySchedule,
     calendar_changes: CalendarChanges,
@@ -26,6 +26,12 @@ impl Default for PlanUserData {
             calendar_changes: CalendarChanges::new(),
             tags: Vec::new(),
         }
+    }
+}
+
+impl From<NewPlanUser> for PlanUserData {
+    fn from(_: NewPlanUser) -> Self {
+        Self::default()
     }
 }
 
@@ -44,6 +50,10 @@ impl Patchable<PlanUserDataPatch> for PlanUserData {
     }
 }
 // }}}
+
+pub struct NewPlanUser {
+    pub id: Uuid,
+}
 
 pub struct PlanUserDataPatch {
     pub id: Uuid,

@@ -6,7 +6,7 @@ use chrono::NaiveDate;
 use crate::types::{error::PlinkoResult, workload::Workload};
 // }}}
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CalendarChanges {
     changes: HashMap<NaiveDate, Workload>,
 }
@@ -35,7 +35,7 @@ impl Default for CalendarChanges {
 }
 // }}}
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WeeklySchedule {
     pub monday: Workload,
     pub tuesday: Workload,
@@ -87,7 +87,7 @@ impl WeeklySchedule {
 }
 // }}}
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct WeeklySchedules {
     schedules: HashMap<NaiveDate, WeeklySchedule>,
 }

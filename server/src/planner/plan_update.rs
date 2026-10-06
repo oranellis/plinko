@@ -1,15 +1,14 @@
 // modules{{{
-use uuid::Uuid;
-
 use crate::{
     planner::plan::PlanSchedulerDataPatch,
     types::{
+        crud::Crud,
         milestone::{MilestonePatch, NewMilestone},
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         tag::{NewTag, TagPatch},
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
-        user::PlanUserDataPatch,
+        user::{NewPlanUser, PlanUserDataPatch},
     },
 };
 // }}}
@@ -21,45 +20,12 @@ pub enum PlanUpdate {
     Milestone(MilestoneUpdate),
     PlanBuffer(PlanBufferUpdate),
     Tag(TagUpdate),
-    SchedulerData(SchedulerDataUpdate),
+    SchedulerData(PlanSchedulerDataPatch),
 }
 
-pub enum TaskUpdate {
-    Add(NewTask),
-    Update(TaskPatch),
-    Remove(Uuid),
-}
-
-pub enum TaskGroupUpdate {
-    Add(NewTaskGroup),
-    Update(TaskGroupPatch),
-    Remove(Uuid),
-}
-
-pub enum PlanBufferUpdate {
-    Add(NewPlanBuffer),
-    Update(PlanBufferPatch),
-    Remove(Uuid),
-}
-
-pub enum MilestoneUpdate {
-    Add(NewMilestone),
-    Update(MilestonePatch),
-    Remove(Uuid),
-}
-
-pub enum UserUpdate {
-    Add(Uuid),
-    Update(PlanUserDataPatch),
-    Remove(Uuid),
-}
-
-pub enum TagUpdate {
-    Add(NewTag),
-    Update(TagPatch),
-    Remove(Uuid),
-}
-
-pub enum SchedulerDataUpdate {
-    Update(PlanSchedulerDataPatch),
-}
+pub type TaskUpdate = Crud<NewTask, TaskPatch>;
+pub type TaskGroupUpdate = Crud<NewTaskGroup, TaskGroupPatch>;
+pub type PlanBufferUpdate = Crud<NewPlanBuffer, PlanBufferPatch>;
+pub type MilestoneUpdate = Crud<NewMilestone, MilestonePatch>;
+pub type UserUpdate = Crud<NewPlanUser, PlanUserDataPatch>;
+pub type TagUpdate = Crud<NewTag, TagPatch>;

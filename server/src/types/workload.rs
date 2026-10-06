@@ -1,6 +1,6 @@
 use crate::types::error::{PlinkoError, PlinkoResult};
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Workload {
     value: u8,
 }

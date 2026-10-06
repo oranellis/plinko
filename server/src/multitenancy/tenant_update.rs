@@ -1,15 +1,13 @@
 // modules{{{
-use chrono::{DateTime, Utc};
-use uuid::Uuid;
-
 use crate::{
     multitenancy::{
         user::{NewTenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
     planner::{plan::NewPlan, plan_update::PlanUpdate},
-    types::short_id::ShortId,
+    types::{crud::Crud, short_id::ShortId},
 };
+use chrono::{DateTime, Utc};
 // }}}
 
 /// The deterministic boundary for mutating a tenant. Every change to tenant state is a
@@ -25,17 +23,8 @@ pub enum TenantUpdateType {
     Plan(PlanTenantUpdate),
 }
 
-pub enum UserUpdate {
-    Add(NewTenantLoginUser),
-    Update(TenantLoginUserPatch),
-    Remove(Uuid),
-}
-
-pub enum UserGroupUpdate {
-    Add(NewTenantUserGroup),
-    Update(TenantUserGroupPatch),
-    Remove(Uuid),
-}
+pub type UserUpdate = Crud<NewTenantLoginUser, TenantLoginUserPatch>;
+pub type UserGroupUpdate = Crud<NewTenantUserGroup, TenantUserGroupPatch>;
 
 pub enum PlanTenantUpdate {
     Add(NewPlan),

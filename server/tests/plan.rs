@@ -16,6 +16,7 @@ use plinko::{
         tag::NewTag,
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
+        user::NewPlanUser,
     },
 };
 use uuid::Uuid;
@@ -84,7 +85,7 @@ fn add_user_to_plan() {
         start_date,
     });
     let user_id = Uuid::now_v7(); // Fake Uuid, would normally match Tenant user Uuid
-    let update = PlanUpdate::User(UserUpdate::Add(user_id));
+    let update = PlanUpdate::User(UserUpdate::Add(NewPlanUser { id: user_id }));
     plan.apply_update(update).expect("should not error");
     assert!(plan.users().contains_key(&user_id));
 }

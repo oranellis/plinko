@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::{
-    planner::{plan::Plan, plan_item::PlanItem},
+    planner::{plan::Plan, plan_entity::PlanItem},
     types::{
         dependency::{Dependency, DependencyNode, PlanNode},
         milestone::Milestone,
@@ -64,7 +64,7 @@ impl<'a> Graph<'a> {
     }
 
     fn item_edges<T: PlanItem>(&self, id: Uuid) -> Vec<Vertex> {
-        let Some(item) = T::items(self.plan).get(&id) else {
+        let Some(item) = T::entities(self.plan).get(&id) else {
             return Vec::new();
         };
         let parent = item.parent();
@@ -76,7 +76,7 @@ impl<'a> Graph<'a> {
 }
 
 fn collect_members<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<PlanNode>>) {
-    for (id, item) in T::items(plan) {
+    for (id, item) in T::entities(plan) {
         if let Parent::Node(group) = item.parent() {
             members.entry(group).or_default().push(T::node(*id));
         }

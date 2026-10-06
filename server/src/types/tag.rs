@@ -4,7 +4,7 @@ use crate::{
     helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Tag {
     id: Uuid,
     name: String,
