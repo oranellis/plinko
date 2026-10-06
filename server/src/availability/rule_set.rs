@@ -5,7 +5,10 @@ use chrono::{NaiveDate, Weekday};
 use uuid::Uuid;
 
 use crate::{
-    availability::rule::{NewRule, Rule, RuleKind, RulePatch, WeeklySchedule},
+    availability::{
+        calendar::run_days,
+        rule::{NewRule, Rule, RuleKind, RulePatch},
+    },
     traits::entity::Entity,
     types::{
         crud::Crud,
@@ -18,8 +21,8 @@ use crate::{
 /// How much someone can work on each day, as a set of rules over a default weekly schedule
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuleSet {
-    week_start: Weekday,
-    rules: HashMap<Uuid, Rule>,
+    pub(super) week_start: Weekday,
+    pub(super) rules: HashMap<Uuid, Rule>,
 }
 
 pub enum RuleSetUpdate {
@@ -56,30 +59,24 @@ impl RuleSet {
         }
     }
 
-    /// Hours available on `day`: the highest priority rule kind that applies, else the weekly
-    /// schedule
+    /// Hours available on `day`. Use `calendar` to read many days.
     pub fn availability_on(&self, day: NaiveDate) -> Workload {
-        let in_effect = || self.in_effect(day);
-        if in_effect().any(|r| matches!(r.kind(), RuleKind::Holiday)) {
-            return Workload::default();
-        }
-        let workdays = in_effect().filter_map(|r| match r.kind() {
-            RuleKind::FiniteWorkdays { hours, .. } if self.in_run(r, day) => Some((r, hours)),
-            _ => None,
-        });
-        match latest(workdays) {
-            Some(hours) => *hours,
-            None => self.driving_hours(day),
-        }
+        self.calendar(day, day)
+            .on(day)
+            .expect("calendar covers the day")
     }
 
     /// Every rule in effect on `day`, whether or not it changes that day, lowest priority first.
     /// A finite run of workdays is in effect from its start until its last day.
     pub fn active_rules(&self, day: NaiveDate) -> Vec<&Rule> {
+        let driving = self.driving_calendar(self.lookback(day), day);
         let mut rules: Vec<_> = self
             .in_effect(day)
             .filter(|r| match r.kind() {
-                RuleKind::FiniteWorkdays { .. } => self.run_end(r, day).is_none_or(|e| e == day),
+                RuleKind::FiniteWorkdays { days, .. } => {
+                    let run = run_days(r, &driving, day);
+                    run.len() < *days as usize || run.last() == Some(&day)
+                }
                 _ => true,
             })
             .collect();
@@ -90,53 +87,6 @@ impl RuleSet {
     fn in_effect(&self, day: NaiveDate) -> impl Iterator<Item = &Rule> {
         self.rules.values().filter(move |r| r.is_in_effect(day))
     }
-
-    /// Hours under the weekly and monthly rules alone
-    fn driving_hours(&self, day: NaiveDate) -> Workload {
-        let monthly = self.in_effect(day).filter_map(|r| match r.kind() {
-            RuleKind::Monthly(m) if m.matches(day, self.week_start) => Some((r, m)),
-            _ => None,
-        });
-        if let Some(m) = monthly.max_by_key(|(r, m)| (m.priority, r.start_day(), *r.id())) {
-            return m.1.hours;
-        }
-        let weekly = self.in_effect(day).filter_map(|r| match r.kind() {
-            RuleKind::Weekly(schedule) => Some((r, schedule)),
-            _ => None,
-        });
-        latest(weekly)
-            .unwrap_or(&WeeklySchedule::default())
-            .on(chrono::Datelike::weekday(&day))
-    }
-
-    /// The day a run of workdays set its last day, if that is on or before `limit`
-    fn run_end(&self, rule: &Rule, limit: NaiveDate) -> Option<NaiveDate> {
-        let RuleKind::FiniteWorkdays { days, .. } = rule.kind() else {
-            return None;
-        };
-        let mut counted = 0;
-        for day in rule.start_day().iter_days().take_while(|d| *d <= limit) {
-            if self.driving_hours(day).get() >= 1 {
-                counted += 1;
-                if counted == *days {
-                    return Some(day);
-                }
-            }
-        }
-        None
-    }
-
-    /// Whether `day` is a working day inside the rule's run
-    fn in_run(&self, rule: &Rule, day: NaiveDate) -> bool {
-        self.driving_hours(day).get() >= 1 && self.run_end(rule, day).is_none_or(|e| e == day)
-    }
-}
-
-/// The value of the rule that started last, ties going to the larger id
-fn latest<'a, T>(rules: impl Iterator<Item = (&'a Rule, T)>) -> Option<T> {
-    rules
-        .max_by_key(|(r, _)| (r.start_day(), *r.id()))
-        .map(|(_, v)| v)
 }
 
 fn rank(kind: &RuleKind) -> u8 {
@@ -173,10 +123,10 @@ impl Entity<RuleSet> for Rule {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Weekday::{Mon, Sun};
+    use chrono::Weekday::{Mon, Sun, Wed};
 
     use super::*;
-    use crate::availability::rule::{MonthTarget, MonthlyOverride, Ordinal};
+    use crate::availability::rule::{MonthTarget, MonthlyOverride, Ordinal, WeeklySchedule};
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
@@ -329,6 +279,33 @@ mod tests {
             .map(|&(m, day)| hours(&set, if m == 12 { 2023 } else { 2024 }, m, day))
             .collect();
         assert_eq!(results, [1, 0, 0, 1, 1, 8]);
+    }
+
+    #[test]
+    fn calendar_matches_day_by_day_answers() {
+        let mut set = RuleSet::default();
+        let part_time = WeeklySchedule::new([4, 4, 4, 4, 4, 0, 0]).unwrap();
+        add(&mut set, d(2024, 1, 15), RuleKind::Weekly(part_time));
+        let second_wed = monthly(Ordinal::Second, MonthTarget::Weekday(Wed), 1, 3);
+        add(&mut set, d(2024, 1, 1), second_wed);
+        let run = RuleKind::FiniteWorkdays {
+            days: 9,
+            hours: Workload::new(2).unwrap(),
+        };
+        add(&mut set, d(2024, 1, 10), run);
+        let holiday = add(&mut set, d(2024, 1, 22), RuleKind::Holiday);
+        stop(&mut set, holiday, d(2024, 1, 24)).unwrap();
+
+        // the range starts inside the workday run and runs over month ends
+        let (from, to) = (d(2024, 1, 12), d(2024, 3, 10));
+        let calendar = set.calendar(from, to);
+        assert_eq!((calendar.start(), calendar.end()), (from, to));
+        for day in from.iter_days().take_while(|day| *day <= to) {
+            let expected = set.availability_on(day);
+            assert_eq!(calendar.on(day), Some(expected), "{day}");
+        }
+        assert_eq!(calendar.on(d(2024, 1, 11)), None);
+        assert!(set.calendar(to, from).hours().is_empty());
     }
 
     #[test]

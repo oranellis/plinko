@@ -25,18 +25,18 @@ fn days_of_month(day: NaiveDate) -> Vec<NaiveDate> {
 }
 
 impl MonthlyOverride {
-    /// Whether `day` is one of the days this rule picks in its month. `week_start` decides which
+    /// The days this rule picks in the month containing `month_of`. `week_start` decides which
     /// weeks are full for the `Week` target.
-    pub fn matches(&self, day: NaiveDate, week_start: Weekday) -> bool {
-        let days = days_of_month(day);
+    pub fn days_in_month(&self, month_of: NaiveDate, week_start: Weekday) -> Vec<NaiveDate> {
+        let days = days_of_month(month_of);
         match self.target {
-            MonthTarget::Day => pick(&days, self.ordinal) == Some(day),
+            MonthTarget::Day => pick(&days, self.ordinal).into_iter().collect(),
             MonthTarget::Weekday(weekday) => {
                 let days: Vec<_> = days
                     .into_iter()
                     .filter(|d| d.weekday() == weekday)
                     .collect();
-                pick(&days, self.ordinal) == Some(day)
+                pick(&days, self.ordinal).into_iter().collect()
             }
             MonthTarget::Week(toggled) => {
                 let last = days[days.len() - 1];
@@ -45,10 +45,12 @@ impl MonthlyOverride {
                     .filter(|d| d.weekday() == week_start && *d + Days::new(6) <= last)
                     .collect();
                 let Some(week) = pick(&weeks, self.ordinal) else {
-                    return false;
+                    return Vec::new();
                 };
-                let offset = (day - week).num_days();
-                (0..7).contains(&offset) && toggled[day.weekday().num_days_from_monday() as usize]
+                week.iter_days()
+                    .take(7)
+                    .filter(|d| toggled[d.weekday().num_days_from_monday() as usize])
+                    .collect()
             }
         }
     }
