@@ -39,3 +39,9 @@ impl TenantLoginUser {
     }
 }
 // }}}
+
+pub struct TenantLoginUserPatch {
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub email: Option<String>,
+}

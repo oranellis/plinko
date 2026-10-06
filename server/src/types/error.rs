@@ -12,6 +12,7 @@ pub enum PlinkoError {
     InvalidWorkload,
     InvalidShortId(String),
     PlanExists(ShortId),
+    PlanDoesNotExist(ShortId),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
     IdMismatch(String, String),
@@ -25,6 +26,9 @@ impl std::fmt::Display for PlinkoError {
             PlinkoError::InvalidWorkload => write!(f, "invalid workload"),
             PlinkoError::PlanExists(short_id) => {
                 write!(f, "plan {} already exists in tenant", short_id)
+            }
+            PlinkoError::PlanDoesNotExist(short_id) => {
+                write!(f, "plan {} does not exist in tenant", short_id)
             }
             PlinkoError::ItemDoesNotExist(id) => {
                 write!(f, "item {} does not exist", id)

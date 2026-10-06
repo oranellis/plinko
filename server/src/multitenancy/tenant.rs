@@ -4,7 +4,10 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    multitenancy::user::TenantLoginUser,
+    multitenancy::{
+        tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
+        user::TenantLoginUser,
+    },
     planner::plan::Plan,
     types::{
         error::{PlinkoError, PlinkoResult},
@@ -78,8 +81,28 @@ impl Tenant {
         }
     }
 
-    pub fn get_plan_mut(&mut self, id: &ShortId) -> Option<&mut Plan> {
-        self.plans.get_mut(id)
+    pub fn apply_update(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
+        match u.update_type {
+            TenantUpdateType::Plan(update) => self.plan_update(update),
+            TenantUpdateType::User(_) => todo!(),
+            TenantUpdateType::UserGroup(_) => todo!(),
+        }
+    }
+
+    fn plan_update(&mut self, update: PlanTenantUpdate) -> PlinkoResult<()> {
+        match update {
+            PlanTenantUpdate::Add(plan) => self.insert_plan(*plan),
+            PlanTenantUpdate::Remove(id) => self
+                .plans
+                .remove(&id)
+                .map(drop)
+                .ok_or(PlinkoError::PlanDoesNotExist(id)),
+            PlanTenantUpdate::Update(id, update) => self
+                .plans
+                .get_mut(&id)
+                .ok_or(PlinkoError::PlanDoesNotExist(id))?
+                .apply_update(update),
+        }
     }
 }
 // }}}

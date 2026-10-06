@@ -6,8 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     planner::plan_update::{
-        MilestoneUpdate, PlanUpdate, PlanUpdateType, SchedulerDataUpdate, TagUpdate, TaskUpdate,
-        UserUpdate,
+        MilestoneUpdate, PlanUpdate, SchedulerDataUpdate, TagUpdate, TaskUpdate, UserUpdate,
     },
     traits::patch::Patchable,
     types::{
@@ -105,12 +104,12 @@ impl Plan {
     }
 
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
-        match u.update_type {
-            PlanUpdateType::Task(update) => self.task_update(update),
-            PlanUpdateType::User(update) => self.user_update(update),
-            PlanUpdateType::Milestone(update) => self.milestone_update(update),
-            PlanUpdateType::Tag(update) => self.tag_update(update),
-            PlanUpdateType::SchedulerData(update) => self.scheduler_data_update(update),
+        match u {
+            PlanUpdate::Task(update) => self.task_update(update),
+            PlanUpdate::User(update) => self.user_update(update),
+            PlanUpdate::Milestone(update) => self.milestone_update(update),
+            PlanUpdate::Tag(update) => self.tag_update(update),
+            PlanUpdate::SchedulerData(update) => self.scheduler_data_update(update),
         }
     }
 

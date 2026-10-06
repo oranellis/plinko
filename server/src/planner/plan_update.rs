@@ -12,12 +12,7 @@ use crate::{
 };
 // }}}
 
-pub struct PlanUpdate {
-    pub update_type: PlanUpdateType,
-    pub time: chrono::DateTime<chrono::Utc>,
-}
-
-pub enum PlanUpdateType {
+pub enum PlanUpdate {
     Task(TaskUpdate),
     User(UserUpdate),
     Milestone(MilestoneUpdate),
