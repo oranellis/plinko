@@ -18,6 +18,7 @@ use crate::{
         error::{PlinkoError, PlinkoResult},
         short_id::ShortId,
         user::NewPlanUser,
+        workload::Workload,
     },
 };
 // }}}
@@ -28,7 +29,7 @@ pub struct Tenant {
     pub(super) users: HashMap<Uuid, TenantLoginUser>,
     pub(super) user_groups: HashMap<Uuid, TenantUserGroup>,
     volatile: HashMap<Uuid, TenantUserVolatileState>,
-    plan_calendars: HashMap<ShortId, Calendar>,
+    plan_calendars: HashMap<ShortId, Calendar<Workload>>,
     pub(super) plans: HashMap<ShortId, Plan>,
 }
 
@@ -197,12 +198,12 @@ impl Tenant {
     }
 
     /// A user's availability calendar, as of the last `refresh_calendars`
-    pub fn calendar(&self, user: &Uuid) -> Option<&Calendar> {
+    pub fn calendar(&self, user: &Uuid) -> Option<&Calendar<Workload>> {
         self.volatile.get(user)?.calendar.as_ref()
     }
 
     /// A plan's default availability calendar, as of the last `refresh_calendars`
-    pub fn plan_calendar(&self, plan: &ShortId) -> Option<&Calendar> {
+    pub fn plan_calendar(&self, plan: &ShortId) -> Option<&Calendar<Workload>> {
         self.plan_calendars.get(plan)
     }
 

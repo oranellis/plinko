@@ -21,6 +21,7 @@ use crate::{
         task::{self, Task, Worker},
         task_group::TaskGroup,
         user::{PlanUserData, PlanUserGroupData},
+        workload::Workload,
     },
 };
 // }}}
@@ -43,7 +44,7 @@ pub struct Plan {
     pub(super) user_groups: HashMap<Uuid, PlanUserGroupData>,
     pub(super) tags: HashMap<Uuid, Tag>,
     pub(super) affinities: HashMap<Uuid, Affinity>,
-    default_availability: RuleSet,
+    default_availability: RuleSet<Workload>,
     scheduler_data: PlanSchedulerData,
 }
 
@@ -109,7 +110,7 @@ impl Plan {
     }
 
     /// Availability of placeholder users
-    pub fn default_availability(&self) -> &RuleSet {
+    pub fn default_availability(&self) -> &RuleSet<Workload> {
         &self.default_availability
     }
 

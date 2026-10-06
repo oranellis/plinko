@@ -7,31 +7,31 @@ use uuid::Uuid;
 use crate::{
     availability::{
         calendar::run_days,
+        day_value::DayValue,
         rule::{NewRule, Rule, RuleKind, RulePatch},
     },
     traits::entity::Entity,
     types::{
         crud::Crud,
         error::{PlinkoError, PlinkoResult},
-        workload::Workload,
     },
 };
 // }}}
 
 /// How much someone can work on each day, as a set of rules over a default weekly schedule
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuleSet {
+pub struct RuleSet<V> {
     pub(super) week_start: Weekday,
-    pub(super) rules: HashMap<Uuid, Rule>,
+    pub(super) rules: HashMap<Uuid, Rule<V>>,
 }
 
-pub enum RuleSetUpdate {
-    Rule(Crud<NewRule, RulePatch>),
+pub enum RuleSetUpdate<V> {
+    Rule(Crud<NewRule<V>, RulePatch<V>>),
     WeekStart(Weekday),
 }
 
 // impl RuleSet{{{
-impl Default for RuleSet {
+impl<V> Default for RuleSet<V> {
     fn default() -> Self {
         Self {
             week_start: Weekday::Mon,
@@ -40,16 +40,16 @@ impl Default for RuleSet {
     }
 }
 
-impl RuleSet {
+impl<V: DayValue> RuleSet<V> {
     pub fn week_start(&self) -> Weekday {
         self.week_start
     }
 
-    pub fn rules(&self) -> &HashMap<Uuid, Rule> {
+    pub fn rules(&self) -> &HashMap<Uuid, Rule<V>> {
         &self.rules
     }
 
-    pub fn apply_update(&mut self, update: RuleSetUpdate) -> PlinkoResult<()> {
+    pub fn apply_update(&mut self, update: RuleSetUpdate<V>) -> PlinkoResult<()> {
         match update {
             RuleSetUpdate::Rule(update) => Rule::apply_crud(self, update),
             RuleSetUpdate::WeekStart(weekday) => {
@@ -59,8 +59,8 @@ impl RuleSet {
         }
     }
 
-    /// Hours available on `day`. Use `calendar` to read many days.
-    pub fn availability_on(&self, day: NaiveDate) -> Workload {
+    /// The value on `day`. Use `calendar` to read many days.
+    pub fn value_on(&self, day: NaiveDate) -> V {
         self.calendar(day, day)
             .on(day)
             .expect("calendar covers the day")
@@ -68,7 +68,7 @@ impl RuleSet {
 
     /// Every rule in effect on `day`, whether or not it changes that day, lowest priority first.
     /// A finite run of workdays is in effect from its start until its last day.
-    pub fn active_rules(&self, day: NaiveDate) -> Vec<&Rule> {
+    pub fn active_rules(&self, day: NaiveDate) -> Vec<&Rule<V>> {
         let driving = self.driving_calendar(self.lookback(day), day);
         let mut rules: Vec<_> = self
             .in_effect(day)
@@ -84,12 +84,12 @@ impl RuleSet {
         rules
     }
 
-    fn in_effect(&self, day: NaiveDate) -> impl Iterator<Item = &Rule> {
+    fn in_effect(&self, day: NaiveDate) -> impl Iterator<Item = &Rule<V>> {
         self.rules.values().filter(move |r| r.is_in_effect(day))
     }
 }
 
-fn rank(kind: &RuleKind) -> u8 {
+fn rank<V>(kind: &RuleKind<V>) -> u8 {
     match kind {
         RuleKind::Weekly(_) => 0,
         RuleKind::Monthly(_) => 1,
@@ -99,18 +99,18 @@ fn rank(kind: &RuleKind) -> u8 {
 }
 // }}}
 
-impl Entity<RuleSet> for Rule {
-    type New = NewRule;
-    type Patch = RulePatch;
+impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
+    type New = NewRule<V>;
+    type Patch = RulePatch<V>;
 
-    fn entities(set: &RuleSet) -> &HashMap<Uuid, Self> {
+    fn entities(set: &RuleSet<V>) -> &HashMap<Uuid, Self> {
         &set.rules
     }
-    fn entities_mut(set: &mut RuleSet) -> &mut HashMap<Uuid, Self> {
+    fn entities_mut(set: &mut RuleSet<V>) -> &mut HashMap<Uuid, Self> {
         &mut set.rules
     }
 
-    fn validate(set: &RuleSet, id: Uuid) -> PlinkoResult<()> {
+    fn validate(set: &RuleSet<V>, id: Uuid) -> PlinkoResult<()> {
         let rule = &set.rules[&id];
         let stops_before_start = rule.stop_day().is_some_and(|s| s <= rule.start_day());
         let empty_run = matches!(rule.kind(), RuleKind::FiniteWorkdays { days: 0, .. });
@@ -126,17 +126,20 @@ mod tests {
     use chrono::Weekday::{Mon, Sun, Wed};
 
     use super::*;
-    use crate::availability::rule::{MonthTarget, MonthlyOverride, Ordinal, WeeklySchedule};
+    use crate::{
+        availability::rule::{MonthTarget, MonthlyOverride, Ordinal, WeeklySchedule},
+        types::workload::Workload,
+    };
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
     }
 
-    fn hours(set: &RuleSet, y: i32, m: u32, day: u32) -> u8 {
-        set.availability_on(d(y, m, day)).get()
+    fn hours(set: &RuleSet<Workload>, y: i32, m: u32, day: u32) -> u8 {
+        set.value_on(d(y, m, day)).get()
     }
 
-    fn add(set: &mut RuleSet, start_day: NaiveDate, kind: RuleKind) -> Uuid {
+    fn add(set: &mut RuleSet<Workload>, start_day: NaiveDate, kind: RuleKind<Workload>) -> Uuid {
         let id = Uuid::now_v7();
         let new = NewRule {
             id,
@@ -148,7 +151,7 @@ mod tests {
         id
     }
 
-    fn stop(set: &mut RuleSet, id: Uuid, day: NaiveDate) -> PlinkoResult<()> {
+    fn stop(set: &mut RuleSet<Workload>, id: Uuid, day: NaiveDate) -> PlinkoResult<()> {
         let patch = RulePatch {
             id,
             start_day: None,
@@ -158,11 +161,16 @@ mod tests {
         set.apply_update(RuleSetUpdate::Rule(Crud::Update(patch)))
     }
 
-    fn monthly(ordinal: Ordinal, target: MonthTarget, hours: u8, priority: u32) -> RuleKind {
+    fn monthly(
+        ordinal: Ordinal,
+        target: MonthTarget,
+        hours: u8,
+        priority: u32,
+    ) -> RuleKind<Workload> {
         RuleKind::Monthly(MonthlyOverride {
             ordinal,
             target,
-            hours: Workload::new(hours).unwrap(),
+            value: Workload::new(hours).unwrap(),
             priority,
         })
     }
@@ -170,15 +178,15 @@ mod tests {
     // January 2024 starts on a Monday and has five of them, February 2024 has four
     #[test]
     fn defaults_to_eight_hour_weekdays() {
-        let set = RuleSet::default();
+        let set = RuleSet::<Workload>::default();
         assert_eq!(hours(&set, 2024, 1, 1), 8);
         assert_eq!(hours(&set, 2024, 1, 6), 0);
     }
 
     #[test]
     fn weekly_rule_applies_from_its_start_until_stopped() {
-        let mut set = RuleSet::default();
-        let part_time = WeeklySchedule::new([4, 4, 4, 4, 4, 0, 0]).unwrap();
+        let mut set = RuleSet::<Workload>::default();
+        let part_time = WeeklySchedule::from_hours([4, 4, 4, 4, 4, 0, 0]).unwrap();
         let id = add(&mut set, d(2024, 1, 8), RuleKind::Weekly(part_time));
         stop(&mut set, id, d(2024, 1, 15)).unwrap();
         assert_eq!(hours(&set, 2024, 1, 5), 8);
@@ -188,7 +196,7 @@ mod tests {
 
     #[test]
     fn missing_ordinals_fall_back_to_the_nearest_valid() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         let fifth_monday = monthly(Ordinal::Fifth, MonthTarget::Weekday(Mon), 2, 0);
         add(&mut set, d(2024, 1, 1), fifth_monday);
         assert_eq!(hours(&set, 2024, 1, 29), 2);
@@ -198,7 +206,7 @@ mod tests {
 
     #[test]
     fn day_targets_count_from_either_end() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         add(
             &mut set,
             d(2024, 1, 1),
@@ -213,7 +221,7 @@ mod tests {
 
     #[test]
     fn week_targets_use_full_weeks_from_the_week_start() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         let toggles = [true, false, false, false, false, false, false];
         let first_week = monthly(Ordinal::First, MonthTarget::Week(toggles), 2, 0);
         add(&mut set, d(2024, 1, 1), first_week);
@@ -228,7 +236,7 @@ mod tests {
 
     #[test]
     fn higher_priority_then_later_start_wins_between_monthly_rules() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         let first_day = monthly(Ordinal::First, MonthTarget::Day, 2, 1);
         let first_monday = monthly(Ordinal::First, MonthTarget::Weekday(Mon), 5, 2);
         add(&mut set, d(2024, 1, 1), first_day);
@@ -243,10 +251,10 @@ mod tests {
 
     #[test]
     fn finite_workdays_skip_days_that_are_not_working() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         let run = RuleKind::FiniteWorkdays {
             days: 3,
-            hours: Workload::new(2).unwrap(),
+            value: Workload::new(2).unwrap(),
         };
         let id = add(&mut set, d(2024, 1, 4), run);
         let results: Vec<_> = (4..=9).map(|day| hours(&set, 2024, 1, day)).collect();
@@ -262,7 +270,7 @@ mod tests {
 
     #[test]
     fn workdays_follow_the_weekly_and_monthly_rules_for_what_counts() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         add(
             &mut set,
             d(2023, 12, 1),
@@ -270,7 +278,7 @@ mod tests {
         );
         let run = RuleKind::FiniteWorkdays {
             days: 3,
-            hours: Workload::new(1).unwrap(),
+            value: Workload::new(1).unwrap(),
         };
         add(&mut set, d(2023, 12, 29), run);
         // Fri the 29th counts, the weekend and Monday the 1st (0h) do not, then Tue and Wed
@@ -283,14 +291,14 @@ mod tests {
 
     #[test]
     fn calendar_matches_day_by_day_answers() {
-        let mut set = RuleSet::default();
-        let part_time = WeeklySchedule::new([4, 4, 4, 4, 4, 0, 0]).unwrap();
+        let mut set = RuleSet::<Workload>::default();
+        let part_time = WeeklySchedule::from_hours([4, 4, 4, 4, 4, 0, 0]).unwrap();
         add(&mut set, d(2024, 1, 15), RuleKind::Weekly(part_time));
         let second_wed = monthly(Ordinal::Second, MonthTarget::Weekday(Wed), 1, 3);
         add(&mut set, d(2024, 1, 1), second_wed);
         let run = RuleKind::FiniteWorkdays {
             days: 9,
-            hours: Workload::new(2).unwrap(),
+            value: Workload::new(2).unwrap(),
         };
         add(&mut set, d(2024, 1, 10), run);
         let holiday = add(&mut set, d(2024, 1, 22), RuleKind::Holiday);
@@ -301,19 +309,19 @@ mod tests {
         let calendar = set.calendar(from, to);
         assert_eq!((calendar.start(), calendar.end()), (from, to));
         for day in from.iter_days().take_while(|day| *day <= to) {
-            let expected = set.availability_on(day);
+            let expected = set.value_on(day);
             assert_eq!(calendar.on(day), Some(expected), "{day}");
         }
         assert_eq!(calendar.on(d(2024, 1, 11)), None);
-        assert!(set.calendar(to, from).hours().is_empty());
+        assert!(set.calendar(to, from).values().is_empty());
     }
 
     #[test]
     fn holidays_win_until_stopped() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         let run = RuleKind::FiniteWorkdays {
             days: 10,
-            hours: Workload::new(4).unwrap(),
+            value: Workload::new(4).unwrap(),
         };
         add(&mut set, d(2024, 1, 1), run);
         let holiday = add(&mut set, d(2024, 1, 8), RuleKind::Holiday);
@@ -326,7 +334,7 @@ mod tests {
 
     #[test]
     fn active_rules_include_rules_that_do_not_change_the_day() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         let first_monday = monthly(Ordinal::First, MonthTarget::Weekday(Mon), 2, 0);
         let monthly_id = add(&mut set, d(2024, 1, 1), first_monday);
         let holiday_id = add(&mut set, d(2024, 3, 1), RuleKind::Holiday);
@@ -338,14 +346,14 @@ mod tests {
 
     #[test]
     fn invalid_rules_are_rejected_and_reverted() {
-        let mut set = RuleSet::default();
+        let mut set = RuleSet::<Workload>::default();
         let id = add(&mut set, d(2024, 1, 8), RuleKind::Holiday);
         assert!(stop(&mut set, id, d(2024, 1, 8)).is_err());
         assert_eq!(set.rules()[&id].stop_day(), None);
 
         let empty = RuleKind::FiniteWorkdays {
             days: 0,
-            hours: Workload::new(2).unwrap(),
+            value: Workload::new(2).unwrap(),
         };
         let new = NewRule {
             id: Uuid::now_v7(),
@@ -357,5 +365,37 @@ mod tests {
                 .is_err()
         );
         assert_eq!(set.rules().len(), 1);
+    }
+
+    #[test]
+    fn boolean_rule_sets_default_to_every_day_and_use_the_same_rules() {
+        let mut set = RuleSet::<bool>::default();
+        let allowed = |set: &RuleSet<bool>, day| set.value_on(d(2024, 1, day));
+        assert!((1..=7).all(|day| allowed(&set, day)));
+
+        let add = |set: &mut RuleSet<bool>, start_day, kind| {
+            let new = NewRule {
+                id: Uuid::now_v7(),
+                start_day,
+                kind,
+            };
+            set.apply_update(RuleSetUpdate::Rule(Crud::Add(new)))
+                .unwrap();
+        };
+        // Mondays only from the 1st, except the second Monday of each month
+        let mondays = WeeklySchedule::new(std::array::from_fn(|i| i == 0));
+        add(&mut set, d(2024, 1, 1), RuleKind::Weekly(mondays));
+        let second_monday = MonthlyOverride {
+            ordinal: Ordinal::Second,
+            target: MonthTarget::Weekday(Mon),
+            value: false,
+            priority: 0,
+        };
+        add(&mut set, d(2024, 1, 1), RuleKind::Monthly(second_monday));
+        let on: Vec<_> = (1..=15).filter(|day| allowed(&set, *day)).collect();
+        assert_eq!(on, [1, 15]);
+
+        add(&mut set, d(2024, 1, 15), RuleKind::Holiday);
+        assert!(!allowed(&set, 15));
     }
 }

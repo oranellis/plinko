@@ -38,8 +38,6 @@ identified!(
     AffinityPatch,
     NewDataBlock,
     DataBlockPatch,
-    NewRule,
-    RulePatch,
     NewTask,
     TaskPatch,
     NewTaskGroup,
@@ -59,3 +57,15 @@ identified!(
     NewTenantUserGroup,
     TenantUserGroupPatch,
 );
+
+impl<V> Identified for NewRule<V> {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+}
+
+impl<V> Identified for RulePatch<V> {
+    fn id(&self) -> Uuid {
+        self.id
+    }
+}

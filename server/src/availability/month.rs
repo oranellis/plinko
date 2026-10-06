@@ -24,7 +24,7 @@ fn days_of_month(day: NaiveDate) -> Vec<NaiveDate> {
         .collect()
 }
 
-impl MonthlyOverride {
+impl<V> MonthlyOverride<V> {
     /// The days this rule picks in the month containing `month_of`. `week_start` decides which
     /// weeks are full for the `Week` target.
     pub fn days_in_month(&self, month_of: NaiveDate, week_start: Weekday) -> Vec<NaiveDate> {

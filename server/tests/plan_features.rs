@@ -200,7 +200,12 @@ fn milestones_and_buffers_count_as_nodes_too() {
     assert_eq!(plan.unscheduled(), HashSet::from([milestone, buffer]));
 }
 
-fn add_affinity(plan: &mut Plan, weekly: [u8; 7]) -> Uuid {
+/// Allowed weekdays, Monday as 0
+fn days(allowed: &[usize]) -> [bool; 7] {
+    std::array::from_fn(|i| allowed.contains(&i))
+}
+
+fn add_affinity(plan: &mut Plan, weekly: [bool; 7]) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewAffinity {
         id,
@@ -211,7 +216,7 @@ fn add_affinity(plan: &mut Plan, weekly: [u8; 7]) -> Uuid {
     let rule = NewRule {
         id: Uuid::now_v7(),
         start_day: d(2000, 1, 1),
-        kind: RuleKind::Weekly(WeeklySchedule::new(weekly).unwrap()),
+        kind: RuleKind::Weekly(WeeklySchedule::new(weekly)),
     };
     let update = RuleSetUpdate::Rule(Crud::Add(rule));
     plan.apply_update(PlanUpdate::AffinityRules(id, update))
@@ -231,9 +236,9 @@ fn link(plan: &mut Plan, task: Uuid, affinities: &[Uuid]) -> PlinkoResult<()> {
 fn tasks_only_work_on_days_every_linked_affinity_allows() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::PlanStart);
-    let thursdays = add_affinity(&mut plan, [0, 0, 0, 8, 0, 0, 0]);
-    let late_week = add_affinity(&mut plan, [0, 0, 0, 8, 8, 0, 0]);
-    let weekend = add_affinity(&mut plan, [0, 0, 0, 0, 0, 8, 8]);
+    let thursdays = add_affinity(&mut plan, days(&[3]));
+    let late_week = add_affinity(&mut plan, days(&[3, 4]));
+    let weekend = add_affinity(&mut plan, days(&[5, 6]));
 
     let (thursday, friday) = (d(2024, 1, 4), d(2024, 1, 5));
     assert_eq!(plan.task_allows_day(&task, friday), Some(true));
@@ -256,7 +261,7 @@ fn affinities_must_exist_and_cannot_be_removed_while_linked() {
     assert!(link(&mut plan, task, &[Uuid::now_v7()]).is_err());
     assert!(plan.tasks()[&task].affinities().is_empty());
 
-    let affinity = add_affinity(&mut plan, [8; 7]);
+    let affinity = add_affinity(&mut plan, [true; 7]);
     link(&mut plan, task, &[affinity]).unwrap();
     let remove = || PlanUpdate::Affinity(Crud::Remove(affinity));
     assert!(plan.apply_update(remove()).is_err());
@@ -330,4 +335,21 @@ fn tasks_and_milestones_hold_data_blocks() {
         plan.apply_update(PlanUpdate::Data(missing, Crud::Remove(block)))
             .is_err()
     );
+}
+
+#[test]
+fn a_new_affinity_allows_every_day() {
+    let mut plan = new_plan();
+    let affinity = Uuid::now_v7();
+    let new = NewAffinity {
+        id: affinity,
+        name: "Anything".to_string(),
+    };
+    plan.apply_update(PlanUpdate::Affinity(Crud::Add(new)))
+        .unwrap();
+    let task = add_task(&mut plan, Parent::PlanStart);
+    link(&mut plan, task, &[affinity]).unwrap();
+    for day in d(2024, 1, 1).iter_days().take(14) {
+        assert_eq!(plan.task_allows_day(&task, day), Some(true));
+    }
 }

@@ -15,6 +15,7 @@ use crate::{
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
+        workload::Workload,
     },
 };
 // }}}
@@ -28,9 +29,9 @@ pub enum PlanUpdate {
     UserGroup(Crud<NewPlanUserGroup, PlanUserGroupPatch>),
     Tag(Crud<NewTag, TagPatch>),
     Affinity(Crud<NewAffinity, AffinityPatch>),
-    AffinityRules(Uuid, RuleSetUpdate),
+    AffinityRules(Uuid, RuleSetUpdate<bool>),
     /// Data blocks on a task or milestone
     Data(PlanNode, Crud<NewDataBlock, DataBlockPatch>),
-    Availability(RuleSetUpdate),
+    Availability(RuleSetUpdate<Workload>),
     SchedulerData(PlanSchedulerDataPatch),
 }

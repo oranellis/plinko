@@ -23,6 +23,7 @@ use plinko::{
         short_id::ShortId,
         task::NewTask,
         user::{NewPlanUser, NewPlanUserGroup},
+        workload::Workload,
     },
 };
 use uuid::Uuid;
@@ -256,7 +257,7 @@ fn group_members_edit_plans_their_group_is_assigned_to() {
     assert!(apply(&mut tenant, root, remove_user).is_err());
 }
 
-fn holiday(day: NaiveDate) -> RuleSetUpdate {
+fn holiday(day: NaiveDate) -> RuleSetUpdate<Workload> {
     let new = NewRule {
         id: Uuid::now_v7(),
         start_day: day,
@@ -276,20 +277,8 @@ fn availability_is_edited_by_the_user_or_an_admin() {
     let availability = |user, update| TenantUpdateType::Availability(user, update);
 
     apply(&mut tenant, alice, availability(alice, holiday(day))).unwrap();
-    assert_eq!(
-        tenant.users()[&alice]
-            .availability()
-            .availability_on(day)
-            .get(),
-        0
-    );
-    assert_eq!(
-        tenant.users()[&bob]
-            .availability()
-            .availability_on(day)
-            .get(),
-        8
-    );
+    assert_eq!(tenant.users()[&alice].availability().value_on(day).get(), 0);
+    assert_eq!(tenant.users()[&bob].availability().value_on(day).get(), 8);
 
     assert!(apply(&mut tenant, bob, availability(alice, holiday(day))).is_err());
     apply(&mut tenant, root, availability(alice, holiday(day))).unwrap();
@@ -312,7 +301,7 @@ fn plan_default_availability_is_set_through_plan_updates() {
     )
     .unwrap();
     let default = tenant.plans()[&plan].default_availability();
-    assert_eq!(default.availability_on(day).get(), 0);
+    assert_eq!(default.value_on(day).get(), 0);
 }
 
 #[test]

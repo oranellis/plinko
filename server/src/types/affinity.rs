@@ -10,13 +10,13 @@ use crate::{
 };
 // }}}
 
-/// A named set of days that tasks linked to it may be worked on. It reuses the availability
-/// rules, where a day is allowed when it has at least 1h.
+/// A named set of days that tasks linked to it may be worked on, described with the same rules
+/// as availability but with a yes or no for each day. Until rules change it, every day is allowed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Affinity {
     id: Uuid,
     name: String,
-    rules: RuleSet,
+    rules: RuleSet<bool>,
 }
 
 impl Affinity {
@@ -28,15 +28,15 @@ impl Affinity {
         &self.name
     }
 
-    pub fn rules(&self) -> &RuleSet {
+    pub fn rules(&self) -> &RuleSet<bool> {
         &self.rules
     }
 
     pub fn allows(&self, day: NaiveDate) -> bool {
-        self.rules.availability_on(day).get() >= 1
+        self.rules.value_on(day)
     }
 
-    pub fn apply_rule_update(&mut self, update: RuleSetUpdate) -> PlinkoResult<()> {
+    pub fn apply_rule_update(&mut self, update: RuleSetUpdate<bool>) -> PlinkoResult<()> {
         self.rules.apply_update(update)
     }
 }

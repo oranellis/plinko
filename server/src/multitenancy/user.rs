@@ -5,7 +5,7 @@ use crate::{
     availability::{calendar::Calendar, rule_set::RuleSet},
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::error::PlinkoResult,
+    types::{error::PlinkoResult, workload::Workload},
 };
 // }}}
 
@@ -22,7 +22,7 @@ pub struct TenantLoginUser {
     name: String,
     email: String,
     role: Role,
-    pub(super) availability: RuleSet,
+    pub(super) availability: RuleSet<Workload>,
 }
 
 // impl TenantLoginUser{{{
@@ -65,7 +65,7 @@ impl TenantLoginUser {
         self.role
     }
 
-    pub fn availability(&self) -> &RuleSet {
+    pub fn availability(&self) -> &RuleSet<Workload> {
         &self.availability
     }
 }
@@ -91,7 +91,7 @@ impl Patchable<TenantLoginUserPatch> for TenantLoginUser {
 /// own state
 #[derive(Debug, Default)]
 pub struct TenantUserVolatileState {
-    pub calendar: Option<Calendar>,
+    pub calendar: Option<Calendar<Workload>>,
 }
 
 pub struct NewTenantLoginUser {

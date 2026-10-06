@@ -3,6 +3,7 @@ use chrono::{NaiveDate, Weekday};
 use uuid::Uuid;
 
 use crate::{
+    availability::day_value::DayValue,
     helpers::functions::check_id_match,
     traits::patch::Patchable,
     types::{error::PlinkoResult, workload::Workload},
@@ -11,16 +12,16 @@ use crate::{
 
 /// Something that sets availability from `start_day` going forward until `stop_day`
 #[derive(Clone, Debug, PartialEq)]
-pub struct Rule {
+pub struct Rule<V> {
     id: Uuid,
     start_day: NaiveDate,
     /// The first day the rule no longer applies
     stop_day: Option<NaiveDate>,
-    kind: RuleKind,
+    kind: RuleKind<V>,
 }
 
 // impl Rule{{{
-impl Rule {
+impl<V> Rule<V> {
     pub fn id(&self) -> &Uuid {
         &self.id
     }
@@ -33,7 +34,7 @@ impl Rule {
         self.stop_day
     }
 
-    pub fn kind(&self) -> &RuleKind {
+    pub fn kind(&self) -> &RuleKind<V> {
         &self.kind
     }
 
@@ -43,8 +44,8 @@ impl Rule {
     }
 }
 
-impl From<NewRule> for Rule {
-    fn from(new: NewRule) -> Self {
+impl<V> From<NewRule<V>> for Rule<V> {
+    fn from(new: NewRule<V>) -> Self {
         Self {
             id: new.id,
             start_day: new.start_day,
@@ -54,8 +55,8 @@ impl From<NewRule> for Rule {
     }
 }
 
-impl Patchable<RulePatch> for Rule {
-    fn apply_patch(&mut self, patch: RulePatch) -> PlinkoResult<()> {
+impl<V> Patchable<RulePatch<V>> for Rule<V> {
+    fn apply_patch(&mut self, patch: RulePatch<V>) -> PlinkoResult<()> {
         check_id_match(self.id, patch.id)?;
         if let Some(s) = patch.start_day {
             self.start_day = s;
@@ -74,49 +75,56 @@ impl Patchable<RulePatch> for Rule {
 /// In increasing priority: a weekly schedule, special monthly days, a finite run of workdays, and
 /// holidays.
 #[derive(Clone, Debug, PartialEq)]
-pub enum RuleKind {
+pub enum RuleKind<V> {
     /// Replaces the weekly schedule
-    Weekly(WeeklySchedule),
-    Monthly(MonthlyOverride),
-    /// Sets the next `days` days that are working days (at least 1h) under the weekly and monthly
-    /// rules to `hours`, leaving the days between untouched
+    Weekly(WeeklySchedule<V>),
+    Monthly(MonthlyOverride<V>),
+    /// Sets the next `days` days that are working days under the weekly and monthly rules to
+    /// `value`, leaving the days between untouched
     FiniteWorkdays {
         days: u32,
-        hours: Workload,
+        value: V,
     },
-    /// No availability
+    /// Sets the default value: no availability, or no days allowed
     Holiday,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct WeeklySchedule([Workload; 7]);
+pub struct WeeklySchedule<V>([V; 7]);
 
 // impl WeeklySchedule{{{
-impl WeeklySchedule {
-    /// Hours per day, Monday first
-    pub fn new(hours: [u8; 7]) -> PlinkoResult<Self> {
-        let [mon, tue, wed, thu, fri, sat, sun] = hours.map(Workload::new);
-        Ok(Self([mon?, tue?, wed?, thu?, fri?, sat?, sun?]))
+impl<V: DayValue> WeeklySchedule<V> {
+    /// One value per day, Monday first
+    pub fn new(values: [V; 7]) -> Self {
+        Self(values)
     }
 
-    pub fn on(&self, weekday: Weekday) -> Workload {
+    pub fn on(&self, weekday: Weekday) -> V {
         self.0[weekday.num_days_from_monday() as usize]
     }
 }
 
-impl Default for WeeklySchedule {
+impl WeeklySchedule<Workload> {
+    /// Hours per day, Monday first
+    pub fn from_hours(hours: [u8; 7]) -> PlinkoResult<Self> {
+        let [mon, tue, wed, thu, fri, sat, sun] = hours.map(Workload::new);
+        Ok(Self([mon?, tue?, wed?, thu?, fri?, sat?, sun?]))
+    }
+}
+
+impl<V: DayValue> Default for WeeklySchedule<V> {
     fn default() -> Self {
-        Self::new([8, 8, 8, 8, 8, 0, 0]).expect("default hours are valid")
+        Self(V::default_week())
     }
 }
 // }}}
 
-/// Sets `hours` on the days picked by `ordinal` and `target` in every month
+/// Sets `value` on the days picked by `ordinal` and `target` in every month
 #[derive(Clone, Debug, PartialEq)]
-pub struct MonthlyOverride {
+pub struct MonthlyOverride<V> {
     pub ordinal: Ordinal,
     pub target: MonthTarget,
-    pub hours: Workload,
+    pub value: V,
     /// The higher priority wins where monthly rules overlap, then the later start day
     pub priority: u32,
 }
@@ -164,15 +172,15 @@ impl Ordinal {
     }
 }
 
-pub struct NewRule {
+pub struct NewRule<V> {
     pub id: Uuid,
     pub start_day: NaiveDate,
-    pub kind: RuleKind,
+    pub kind: RuleKind<V>,
 }
 
-pub struct RulePatch {
+pub struct RulePatch<V> {
     pub id: Uuid,
     pub start_day: Option<NaiveDate>,
     pub stop_day: Option<Option<NaiveDate>>,
-    pub kind: Option<RuleKind>,
+    pub kind: Option<RuleKind<V>>,
 }
