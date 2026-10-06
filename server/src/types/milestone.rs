@@ -5,20 +5,25 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{error::PlinkoResult, parent::Parent},
+    types::{dependency::Dependency, error::PlinkoResult, parent::Parent},
 };
 // }}}
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Milestone {
     id: Uuid,
     name: String,
     parent: Parent,
+    dependencies: Vec<Dependency>,
     persistent_state: PersistentState,
 }
 
 // impl Milestone{{{
 impl Milestone {
+    pub fn dependencies(&self) -> &Vec<Dependency> {
+        &self.dependencies
+    }
+
     pub fn parent(&self) -> Parent {
         self.parent
     }
@@ -34,6 +39,7 @@ impl From<NewMilestone> for Milestone {
             id: new.id,
             name: new.name,
             parent: new.parent,
+            dependencies: Vec::new(),
             persistent_state: PersistentState::new(),
         }
     }
@@ -48,6 +54,9 @@ impl Patchable<MilestonePatch> for Milestone {
         if let Some(p) = patch.parent {
             self.parent = p
         }
+        if let Some(d) = patch.dependencies {
+            self.dependencies = d;
+        }
         if let Some(p) = patch.persistent_state {
             self.persistent_state = p
         }
@@ -56,7 +65,7 @@ impl Patchable<MilestonePatch> for Milestone {
 }
 // }}}
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PersistentState {
     actual_date: Option<NaiveDate>,
 }
@@ -99,5 +108,6 @@ pub struct MilestonePatch {
     pub id: Uuid,
     pub name: Option<String>,
     pub parent: Option<Parent>,
+    pub dependencies: Option<Vec<Dependency>>,
     pub persistent_state: Option<PersistentState>,
 }

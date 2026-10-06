@@ -14,7 +14,8 @@ pub enum PlinkoError {
     PlanExists(ShortId),
     PlanDoesNotExist(ShortId),
     GroupCycle(Uuid),
-    GroupNotEmpty(Uuid),
+    DependencyCycle(Uuid),
+    ItemInUse(Uuid),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
     IdMismatch(String, String),
@@ -35,8 +36,11 @@ impl std::fmt::Display for PlinkoError {
             PlinkoError::GroupCycle(id) => {
                 write!(f, "task group {} would contain itself", id)
             }
-            PlinkoError::GroupNotEmpty(id) => {
-                write!(f, "task group {} still has members", id)
+            PlinkoError::DependencyCycle(id) => {
+                write!(f, "item {} would create a dependency cycle", id)
+            }
+            PlinkoError::ItemInUse(id) => {
+                write!(f, "item {} is still referenced", id)
             }
             PlinkoError::ItemDoesNotExist(id) => {
                 write!(f, "item {} does not exist", id)

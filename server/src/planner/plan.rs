@@ -5,13 +5,17 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::{
-    planner::plan_update::{
-        MilestoneUpdate, PlanBufferUpdate, PlanUpdate, SchedulerDataUpdate, TagUpdate,
-        TaskGroupUpdate, TaskUpdate, UserUpdate,
+    planner::{
+        graph,
+        plan_item::PlanItem,
+        plan_update::{
+            MilestoneUpdate, PlanBufferUpdate, PlanUpdate, SchedulerDataUpdate, TagUpdate,
+            TaskGroupUpdate, TaskUpdate, UserUpdate,
+        },
     },
     traits::patch::Patchable,
     types::{
-        dependency::PlanNode,
+        dependency::{DependencyNode, PlanNode},
         error::{PlinkoError, PlinkoResult},
         milestone::{self, Milestone},
         parent::Parent,
@@ -19,7 +23,7 @@ use crate::{
         schedule::{CalendarChanges, WeeklySchedule, WeeklySchedules},
         short_id::ShortId,
         tag::Tag,
-        task::{self, Task},
+        task::{self, Task, Worker},
         task_group::TaskGroup,
         user::PlanUserData,
     },
@@ -36,12 +40,12 @@ pub struct NewPlan {
 pub struct Plan {
     id: ShortId,
     name: String,
-    tasks: HashMap<Uuid, Task>,
-    task_groups: HashMap<Uuid, TaskGroup>,
-    milestones: HashMap<Uuid, Milestone>,
-    plan_buffers: HashMap<Uuid, PlanBuffer>,
-    users: HashMap<Uuid, PlanUserData>,
-    tags: HashMap<Uuid, Tag>,
+    pub(super) tasks: HashMap<Uuid, Task>,
+    pub(super) task_groups: HashMap<Uuid, TaskGroup>,
+    pub(super) milestones: HashMap<Uuid, Milestone>,
+    pub(super) plan_buffers: HashMap<Uuid, PlanBuffer>,
+    pub(super) users: HashMap<Uuid, PlanUserData>,
+    pub(super) tags: HashMap<Uuid, Tag>,
     plan_weekly_schedule: WeeklySchedules,
     plan_calendar_changes: CalendarChanges,
     scheduler_data: PlanSchedulerData,
@@ -123,6 +127,16 @@ impl Plan {
             .ok_or(PlinkoError::ItemDoesNotExist(*id))
     }
 
+    fn ensure_worker_exists(&self, worker: &Worker) -> PlinkoResult<()> {
+        let (id, exists) = match worker {
+            Worker::Tag(id) => (id, self.tags.contains_key(id)),
+            Worker::User(id) => (id, self.users.contains_key(id)),
+        };
+        exists
+            .then_some(())
+            .ok_or(PlinkoError::ItemDoesNotExist(*id))
+    }
+
     /// The parent must be an existing group and must not be the item itself or one of its
     /// descendants.
     fn validate_parent(&self, id: Uuid, parent: Parent) -> PlinkoResult<()> {
@@ -140,12 +154,90 @@ impl Plan {
         Ok(())
     }
 
-    fn has_members(&self, group: Uuid) -> bool {
+    /// Checks everything an item refers to exists and that it introduces no dependency cycle
+    fn validate_item<T: PlanItem>(&self, id: Uuid) -> PlinkoResult<()> {
+        let item = T::items(self)
+            .get(&id)
+            .ok_or(PlinkoError::ItemDoesNotExist(id))?;
+        self.validate_parent(id, item.parent())?;
+        for dep in item.dependencies() {
+            if let DependencyNode::Node(node) = &dep.node {
+                self.ensure_node_exists(node)?;
+            }
+        }
+        item.workers()
+            .iter()
+            .try_for_each(|w| self.ensure_worker_exists(w))?;
+        match graph::has_cycle_through(self, T::node(id)) {
+            true => Err(PlinkoError::DependencyCycle(id)),
+            false => Ok(()),
+        }
+    }
+
+    fn node_depended_on<T: PlanItem>(&self, node: PlanNode) -> bool {
+        let target = DependencyNode::Node(node);
+        T::items(self)
+            .values()
+            .any(|i| i.dependencies().iter().any(|d| d.node == target))
+    }
+
+    fn has_members<T: PlanItem>(&self, group: Uuid) -> bool {
         let parent = Parent::Node(group);
-        self.tasks.values().any(|i| i.parent() == parent)
-            || self.milestones.values().any(|i| i.parent() == parent)
-            || self.plan_buffers.values().any(|i| i.parent() == parent)
-            || self.task_groups.values().any(|i| i.parent() == parent)
+        T::items(self).values().any(|i| i.parent() == parent)
+    }
+
+    /// Whether anything still refers to the node: a dependency, a group member or the scheduler
+    fn node_in_use(&self, node: PlanNode) -> bool {
+        let is_group_with_members = match node {
+            PlanNode::TaskGroup(id) => {
+                self.has_members::<Task>(id)
+                    || self.has_members::<Milestone>(id)
+                    || self.has_members::<PlanBuffer>(id)
+                    || self.has_members::<TaskGroup>(id)
+            }
+            _ => false,
+        };
+        is_group_with_members
+            || self.scheduler_data.scheduler_target == Some(node)
+            || self.node_depended_on::<Task>(node)
+            || self.node_depended_on::<Milestone>(node)
+            || self.node_depended_on::<PlanBuffer>(node)
+            || self.node_depended_on::<TaskGroup>(node)
+    }
+
+    fn worker_in_use(&self, worker: Worker) -> bool {
+        self.tasks
+            .values()
+            .any(|t| t.allocations().contains_key(&worker))
+    }
+
+    fn add_checked<T: PlanItem>(&mut self, id: Uuid, item: T) -> PlinkoResult<()> {
+        add_item(T::items_mut(self), id, item)?;
+        self.validate_item::<T>(id).inspect_err(|_| {
+            T::items_mut(self).remove(&id);
+        })
+    }
+
+    fn update_checked<T: PlanItem + Patchable<P>, P>(
+        &mut self,
+        id: Uuid,
+        patch: P,
+    ) -> PlinkoResult<()> {
+        let old = T::items(self)
+            .get(&id)
+            .ok_or(PlinkoError::ItemDoesNotExist(id))?
+            .clone();
+        update_map_item(T::items_mut(self), id, patch)?;
+        self.validate_item::<T>(id).inspect_err(|_| {
+            T::items_mut(self).insert(id, old);
+        })
+    }
+
+    fn remove_checked<T: PlanItem>(&mut self, id: Uuid) -> PlinkoResult<()> {
+        if self.node_in_use(T::node(id)) {
+            return Err(PlinkoError::ItemInUse(id));
+        }
+        remove_item(T::items_mut(self), id)
     }
 
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
@@ -162,54 +254,27 @@ impl Plan {
 
     fn task_update(&mut self, update: TaskUpdate) -> PlinkoResult<()> {
         match update {
-            TaskUpdate::Add(new) => {
-                self.validate_parent(new.id, new.parent)?;
-                add_item(&mut self.tasks, new.id, new.into())
-            }
-            TaskUpdate::Update(task_patch) => {
-                if let Some(parent) = task_patch.parent {
-                    self.validate_parent(task_patch.id, parent)?;
-                }
-                update_map_item(&mut self.tasks, task_patch.id, task_patch)
-            }
-            TaskUpdate::Remove(id) => remove_item(&mut self.tasks, id),
+            TaskUpdate::Add(new) => self.add_checked(new.id, Task::from(new)),
+            TaskUpdate::Update(patch) => self.update_checked::<Task, _>(patch.id, patch),
+            TaskUpdate::Remove(id) => self.remove_checked::<Task>(id),
         }
     }
 
     fn task_group_update(&mut self, update: TaskGroupUpdate) -> PlinkoResult<()> {
         match update {
-            TaskGroupUpdate::Add(new) => {
-                self.validate_parent(new.id, new.parent)?;
-                add_item(&mut self.task_groups, new.id, new.into())
-            }
-            TaskGroupUpdate::Update(patch) => {
-                if let Some(parent) = patch.parent {
-                    self.validate_parent(patch.id, parent)?;
-                }
-                update_map_item(&mut self.task_groups, patch.id, patch)
-            }
-            TaskGroupUpdate::Remove(id) => {
-                if self.has_members(id) {
-                    return Err(PlinkoError::GroupNotEmpty(id));
-                }
-                remove_item(&mut self.task_groups, id)
-            }
+            TaskGroupUpdate::Add(new) => self.add_checked(new.id, TaskGroup::from(new)),
+            TaskGroupUpdate::Update(patch) => self.update_checked::<TaskGroup, _>(patch.id, patch),
+            TaskGroupUpdate::Remove(id) => self.remove_checked::<TaskGroup>(id),
         }
     }
 
     fn plan_buffer_update(&mut self, update: PlanBufferUpdate) -> PlinkoResult<()> {
         match update {
-            PlanBufferUpdate::Add(new) => {
-                self.validate_parent(new.id, new.parent)?;
-                add_item(&mut self.plan_buffers, new.id, new.into())
-            }
+            PlanBufferUpdate::Add(new) => self.add_checked(new.id, PlanBuffer::from(new)),
             PlanBufferUpdate::Update(patch) => {
-                if let Some(parent) = patch.parent {
-                    self.validate_parent(patch.id, parent)?;
-                }
-                update_map_item(&mut self.plan_buffers, patch.id, patch)
+                self.update_checked::<PlanBuffer, _>(patch.id, patch)
             }
-            PlanBufferUpdate::Remove(id) => remove_item(&mut self.plan_buffers, id),
+            PlanBufferUpdate::Remove(id) => self.remove_checked::<PlanBuffer>(id),
         }
     }
 
@@ -219,23 +284,20 @@ impl Plan {
             UserUpdate::Update(user_patch) => {
                 update_map_item(&mut self.users, user_patch.id, user_patch)
             }
-            UserUpdate::Remove(id) => remove_item(&mut self.users, id),
+            UserUpdate::Remove(id) => {
+                if self.worker_in_use(Worker::User(id)) {
+                    return Err(PlinkoError::ItemInUse(id));
+                }
+                remove_item(&mut self.users, id)
+            }
         }
     }
 
     fn milestone_update(&mut self, update: MilestoneUpdate) -> PlinkoResult<()> {
         match update {
-            MilestoneUpdate::Add(new) => {
-                self.validate_parent(new.id, new.parent)?;
-                add_item(&mut self.milestones, new.id, new.into())
-            }
-            MilestoneUpdate::Update(milestone_patch) => {
-                if let Some(parent) = milestone_patch.parent {
-                    self.validate_parent(milestone_patch.id, parent)?;
-                }
-                update_map_item(&mut self.milestones, milestone_patch.id, milestone_patch)
-            }
-            MilestoneUpdate::Remove(id) => remove_item(&mut self.milestones, id),
+            MilestoneUpdate::Add(new) => self.add_checked(new.id, Milestone::from(new)),
+            MilestoneUpdate::Update(patch) => self.update_checked::<Milestone, _>(patch.id, patch),
+            MilestoneUpdate::Remove(id) => self.remove_checked::<Milestone>(id),
         }
     }
 
@@ -245,13 +307,21 @@ impl Plan {
             TagUpdate::Update(tag_patch) => {
                 update_map_item(&mut self.tags, tag_patch.id, tag_patch)
             }
-            TagUpdate::Remove(id) => remove_item(&mut self.tags, id),
+            TagUpdate::Remove(id) => {
+                if self.worker_in_use(Worker::Tag(id)) {
+                    return Err(PlinkoError::ItemInUse(id));
+                }
+                remove_item(&mut self.tags, id)
+            }
         }
     }
 
     fn scheduler_data_update(&mut self, update: SchedulerDataUpdate) -> PlinkoResult<()> {
         match update {
             SchedulerDataUpdate::Update(plan_scheduler_data) => {
+                if let Some(Some(node)) = &plan_scheduler_data.scheduler_target {
+                    self.ensure_node_exists(node)?;
+                }
                 self.scheduler_data.apply_patch(plan_scheduler_data)
             }
         }

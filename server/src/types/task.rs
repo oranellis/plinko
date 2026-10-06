@@ -30,6 +30,14 @@ pub struct Task {
 
 // impl Task {{{
 impl Task {
+    pub fn dependencies(&self) -> &Vec<Dependency> {
+        &self.dependencies
+    }
+
+    pub fn allocations(&self) -> &HashMap<Worker, Days> {
+        &self.allocations
+    }
+
     pub fn parent(&self) -> Parent {
         self.parent
     }

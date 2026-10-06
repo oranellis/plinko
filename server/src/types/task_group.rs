@@ -12,7 +12,7 @@ use crate::{
 /// buffers and nested groups). The group starts when `dependencies` are met, members anchor to that
 /// start with `DependencyNode::ParentStart`, and the group ends once every member has ended. The
 /// end edges are derived by the scheduler.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TaskGroup {
     id: Uuid,
     name: String,

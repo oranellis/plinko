@@ -1,0 +1,218 @@
+use std::collections::HashMap;
+
+use chrono::NaiveDate;
+use plinko::{
+    planner::{
+        plan::*,
+        plan_update::{PlanUpdate, TagUpdate, TaskGroupUpdate, TaskUpdate},
+    },
+    types::{
+        dependency::{Dependency, DependencyNode, PlanNode},
+        error::PlinkoResult,
+        parent::Parent,
+        short_id::ShortId,
+        tag::NewTag,
+        task::{NewTask, TaskPatch, Worker},
+        task_group::{NewTaskGroup, TaskGroupPatch},
+    },
+};
+use uuid::Uuid;
+
+fn new_plan() -> Plan {
+    Plan::from(NewPlan {
+        id: ShortId::new(),
+        name: "My Plan".to_owned(),
+        start_date: NaiveDate::from_ymd_opt(2000, 12, 31).unwrap(),
+    })
+}
+
+fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
+    let id = Uuid::now_v7();
+    let new = NewTask {
+        id,
+        name: "Task".to_string(),
+        parent,
+    };
+    plan.apply_update(PlanUpdate::Task(TaskUpdate::Add(new)))
+        .unwrap();
+    id
+}
+
+fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
+    let id = Uuid::now_v7();
+    let new = NewTaskGroup {
+        id,
+        name: "Group".to_string(),
+        parent,
+    };
+    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Add(new)))
+        .unwrap();
+    id
+}
+
+fn depend(nodes: &[DependencyNode]) -> Vec<Dependency> {
+    nodes
+        .iter()
+        .map(|&node| Dependency { node, lag: 0 })
+        .collect()
+}
+
+fn task_patch(id: Uuid) -> TaskPatch {
+    TaskPatch {
+        id,
+        name: None,
+        parent: None,
+        mode: None,
+        duration: None,
+        time_constraint: None,
+        dependencies: None,
+        allocations: None,
+        description: None,
+        links: None,
+        persistent_state: None,
+    }
+}
+
+fn set_task_deps(plan: &mut Plan, id: Uuid, nodes: &[DependencyNode]) -> PlinkoResult<()> {
+    let patch = TaskPatch {
+        dependencies: Some(depend(nodes)),
+        ..task_patch(id)
+    };
+    plan.apply_update(PlanUpdate::Task(TaskUpdate::Update(patch)))
+}
+
+fn set_task_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> PlinkoResult<()> {
+    let patch = TaskPatch {
+        parent: Some(parent),
+        ..task_patch(id)
+    };
+    plan.apply_update(PlanUpdate::Task(TaskUpdate::Update(patch)))
+}
+
+fn task_node(id: Uuid) -> DependencyNode {
+    DependencyNode::Node(PlanNode::Task(id))
+}
+
+fn group_node(id: Uuid) -> DependencyNode {
+    DependencyNode::Node(PlanNode::TaskGroup(id))
+}
+
+fn remove_task(plan: &mut Plan, id: Uuid) -> PlinkoResult<()> {
+    plan.apply_update(PlanUpdate::Task(TaskUpdate::Remove(id)))
+}
+
+#[test]
+fn dependency_on_missing_node_is_rejected() {
+    let mut plan = new_plan();
+    let task = add_task(&mut plan, Parent::PlanStart);
+    let missing = task_node(Uuid::now_v7());
+    assert!(set_task_deps(&mut plan, task, &[missing]).is_err());
+    assert!(plan.tasks()[&task].dependencies().is_empty());
+}
+
+#[test]
+fn dependency_cycles_are_rejected_and_rolled_back() {
+    let mut plan = new_plan();
+    let (a, b, c) = (
+        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::PlanStart),
+    );
+    set_task_deps(&mut plan, b, &[task_node(a)]).unwrap();
+    set_task_deps(&mut plan, c, &[task_node(b)]).unwrap();
+    assert!(set_task_deps(&mut plan, a, &[task_node(c)]).is_err());
+    assert!(set_task_deps(&mut plan, a, &[task_node(a)]).is_err());
+    assert!(plan.tasks()[&a].dependencies().is_empty());
+    set_task_deps(&mut plan, a, &[DependencyNode::ParentStart]).unwrap();
+}
+
+#[test]
+fn group_end_waits_on_members() {
+    let mut plan = new_plan();
+    let group = add_group(&mut plan, Parent::PlanStart);
+    let member = add_task(&mut plan, Parent::Node(group));
+    let outside = add_task(&mut plan, Parent::PlanStart);
+
+    // a member cannot wait on the end of its own group
+    assert!(set_task_deps(&mut plan, member, &[group_node(group)]).is_err());
+    // the group can wait on outside items, which then cannot wait on it back
+    let patch = TaskGroupPatch {
+        id: group,
+        name: None,
+        dependencies: Some(depend(&[task_node(outside)])),
+        parent: None,
+    };
+    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Update(patch)))
+        .unwrap();
+    // an unanchored member is independent of the group start, an anchored one is not
+    set_task_deps(&mut plan, outside, &[task_node(member)]).unwrap();
+    set_task_deps(&mut plan, outside, &[]).unwrap();
+    set_task_deps(&mut plan, member, &[DependencyNode::ParentStart]).unwrap();
+    assert!(set_task_deps(&mut plan, outside, &[task_node(member)]).is_err());
+    assert!(set_task_deps(&mut plan, outside, &[group_node(group)]).is_err());
+    // moving a dependent of the group end into the group is also a cycle
+    let dependent = add_task(&mut plan, Parent::PlanStart);
+    set_task_deps(&mut plan, dependent, &[group_node(group)]).unwrap();
+    assert!(set_task_parent(&mut plan, dependent, Parent::Node(group)).is_err());
+    assert_eq!(plan.tasks()[&dependent].parent(), Parent::PlanStart);
+}
+
+#[test]
+fn members_anchor_to_group_start() {
+    let mut plan = new_plan();
+    let group = add_group(&mut plan, Parent::PlanStart);
+    let member = add_task(&mut plan, Parent::Node(group));
+    set_task_deps(&mut plan, member, &[DependencyNode::ParentStart]).unwrap();
+
+    // the group start cannot wait on a member that anchors to it
+    let patch = TaskGroupPatch {
+        id: group,
+        name: None,
+        dependencies: Some(depend(&[task_node(member)])),
+        parent: None,
+    };
+    let update = PlanUpdate::TaskGroup(TaskGroupUpdate::Update(patch));
+    assert!(plan.apply_update(update).is_err());
+}
+
+#[test]
+fn referenced_items_cannot_be_removed() {
+    let mut plan = new_plan();
+    let (a, b) = (
+        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::PlanStart),
+    );
+    set_task_deps(&mut plan, b, &[task_node(a)]).unwrap();
+    assert!(remove_task(&mut plan, a).is_err());
+    set_task_deps(&mut plan, b, &[]).unwrap();
+    remove_task(&mut plan, a).unwrap();
+}
+
+#[test]
+fn allocated_tags_must_exist_and_cannot_be_removed() {
+    let mut plan = new_plan();
+    let task = add_task(&mut plan, Parent::PlanStart);
+    let tag = Uuid::now_v7();
+    let allocate = |plan: &mut Plan, workers: HashMap<Worker, u32>| {
+        let patch = TaskPatch {
+            allocations: Some(workers),
+            ..task_patch(task)
+        };
+        plan.apply_update(PlanUpdate::Task(TaskUpdate::Update(patch)))
+    };
+    let tagged = HashMap::from([(Worker::Tag(tag), 1)]);
+    assert!(allocate(&mut plan, tagged.clone()).is_err());
+
+    let new = NewTag {
+        id: tag,
+        name: "Tag".to_string(),
+    };
+    plan.apply_update(PlanUpdate::Tag(TagUpdate::Add(new)))
+        .unwrap();
+    allocate(&mut plan, tagged).unwrap();
+    let remove = PlanUpdate::Tag(TagUpdate::Remove(tag));
+    assert!(plan.apply_update(remove).is_err());
+    allocate(&mut plan, HashMap::new()).unwrap();
+    let remove = PlanUpdate::Tag(TagUpdate::Remove(tag));
+    plan.apply_update(remove).unwrap();
+}
