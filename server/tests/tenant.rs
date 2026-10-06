@@ -9,9 +9,9 @@ use plinko::{
     },
     planner::{
         plan::{NewPlan, Plan},
-        plan_update::{PlanUpdate, TaskUpdate},
+        plan_update::PlanUpdate,
     },
-    types::{parent::Parent, short_id::ShortId, task::NewTask},
+    types::{crud::Crud, parent::Parent, short_id::ShortId, task::NewTask},
 };
 use uuid::Uuid;
 
@@ -64,7 +64,7 @@ fn plan_updates_through_tenant() {
         parent: Parent::PlanStart,
     };
     let task_id = task.id;
-    let inner = PlanUpdate::Task(TaskUpdate::Add(task));
+    let inner = PlanUpdate::Task(Crud::Add(task));
     let change = PlanTenantUpdate::Update(plan_id, inner);
     tenant
         .apply_update(update(TenantUpdateType::Plan(change)))

@@ -14,18 +14,11 @@ use crate::{
 // }}}
 
 pub enum PlanUpdate {
-    Task(TaskUpdate),
-    TaskGroup(TaskGroupUpdate),
-    User(UserUpdate),
-    Milestone(MilestoneUpdate),
-    PlanBuffer(PlanBufferUpdate),
-    Tag(TagUpdate),
+    Task(Crud<NewTask, TaskPatch>),
+    TaskGroup(Crud<NewTaskGroup, TaskGroupPatch>),
+    Milestone(Crud<NewMilestone, MilestonePatch>),
+    PlanBuffer(Crud<NewPlanBuffer, PlanBufferPatch>),
+    User(Crud<NewPlanUser, PlanUserDataPatch>),
+    Tag(Crud<NewTag, TagPatch>),
     SchedulerData(PlanSchedulerDataPatch),
 }
-
-pub type TaskUpdate = Crud<NewTask, TaskPatch>;
-pub type TaskGroupUpdate = Crud<NewTaskGroup, TaskGroupPatch>;
-pub type PlanBufferUpdate = Crud<NewPlanBuffer, PlanBufferPatch>;
-pub type MilestoneUpdate = Crud<NewMilestone, MilestonePatch>;
-pub type UserUpdate = Crud<NewPlanUser, PlanUserDataPatch>;
-pub type TagUpdate = Crud<NewTag, TagPatch>;

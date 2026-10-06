@@ -1,13 +1,8 @@
 use chrono::NaiveDate;
 use plinko::{
-    planner::{
-        plan::*,
-        plan_update::{
-            MilestoneUpdate, PlanBufferUpdate, PlanUpdate, TagUpdate, TaskGroupUpdate, TaskUpdate,
-            UserUpdate,
-        },
-    },
+    planner::{plan::*, plan_update::PlanUpdate},
     types::{
+        crud::Crud,
         error::PlinkoError,
         milestone::NewMilestone,
         parent::Parent,
@@ -50,7 +45,7 @@ fn add_task_to_plan() {
         parent: Parent::PlanStart,
     };
     let task_id = task.id;
-    let update = PlanUpdate::Task(TaskUpdate::Add(task));
+    let update = PlanUpdate::Task(Crud::Add(task));
     plan.apply_update(update).expect("should not error");
     assert!(plan.tasks().contains_key(&task_id));
 }
@@ -70,7 +65,7 @@ fn add_milestone_to_plan() {
         parent: Parent::PlanStart,
     };
     let milestone_id = milestone.id;
-    let update = PlanUpdate::Milestone(MilestoneUpdate::Add(milestone));
+    let update = PlanUpdate::Milestone(Crud::Add(milestone));
     plan.apply_update(update).expect("should not error");
     assert!(plan.milestones().contains_key(&milestone_id));
 }
@@ -85,7 +80,7 @@ fn add_user_to_plan() {
         start_date,
     });
     let user_id = Uuid::now_v7(); // Fake Uuid, would normally match Tenant user Uuid
-    let update = PlanUpdate::User(UserUpdate::Add(NewPlanUser { id: user_id }));
+    let update = PlanUpdate::User(Crud::Add(NewPlanUser { id: user_id }));
     plan.apply_update(update).expect("should not error");
     assert!(plan.users().contains_key(&user_id));
 }
@@ -104,7 +99,7 @@ fn add_tag_to_plan() {
         name: "John Doe".to_string(),
     };
     let tag_id = tag.id;
-    let update = PlanUpdate::Tag(TagUpdate::Add(tag));
+    let update = PlanUpdate::Tag(Crud::Add(tag));
     plan.apply_update(update).expect("should not error");
     assert!(plan.tags().contains_key(&tag_id));
 }
@@ -118,10 +113,10 @@ fn add_task_group_to_plan() {
         parent: Parent::PlanStart,
     };
     let group_id = group.id;
-    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Add(group)))
+    plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(group)))
         .expect("should not error");
     assert!(plan.task_groups().contains_key(&group_id));
-    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Remove(group_id)))
+    plan.apply_update(PlanUpdate::TaskGroup(Crud::Remove(group_id)))
         .expect("should not error");
     assert!(plan.task_groups().is_empty());
 }
@@ -135,7 +130,7 @@ fn add_plan_buffer_to_plan() {
         duration: 5,
     };
     let buffer_id = buffer.id;
-    plan.apply_update(PlanUpdate::PlanBuffer(PlanBufferUpdate::Add(buffer)))
+    plan.apply_update(PlanUpdate::PlanBuffer(Crud::Add(buffer)))
         .expect("should not error");
     assert_eq!(*plan.plan_buffers()[&buffer_id].duration(), 5);
 }
@@ -155,7 +150,7 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
         name: "Group".to_string(),
         parent,
     };
-    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Add(new)))?;
+    plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))?;
     Ok(id)
 }
 
@@ -166,7 +161,7 @@ fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), Pli
         dependencies: None,
         parent: Some(parent),
     };
-    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Update(patch)))
+    plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
 }
 
 #[test]
@@ -199,11 +194,10 @@ fn tasks_move_between_groups_and_block_group_removal() {
         parent: Parent::Node(a),
     };
     let task_id = task.id;
-    plan.apply_update(PlanUpdate::Task(TaskUpdate::Add(task)))
+    plan.apply_update(PlanUpdate::Task(Crud::Add(task)))
         .unwrap();
 
-    let remove =
-        |plan: &mut Plan, id| plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Remove(id)));
+    let remove = |plan: &mut Plan, id| plan.apply_update(PlanUpdate::TaskGroup(Crud::Remove(id)));
     assert!(remove(&mut plan, a).is_err());
 
     let patch = TaskPatch {
@@ -219,7 +213,7 @@ fn tasks_move_between_groups_and_block_group_removal() {
         links: None,
         persistent_state: None,
     };
-    plan.apply_update(PlanUpdate::Task(TaskUpdate::Update(patch)))
+    plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
         .unwrap();
     assert_eq!(plan.tasks()[&task_id].parent(), Parent::Node(b));
     remove(&mut plan, a).unwrap();

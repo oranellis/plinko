@@ -18,13 +18,10 @@ pub struct TenantUpdate {
 }
 
 pub enum TenantUpdateType {
-    User(UserUpdate),
-    UserGroup(UserGroupUpdate),
+    User(Crud<NewTenantLoginUser, TenantLoginUserPatch>),
+    UserGroup(Crud<NewTenantUserGroup, TenantUserGroupPatch>),
     Plan(PlanTenantUpdate),
 }
-
-pub type UserUpdate = Crud<NewTenantLoginUser, TenantLoginUserPatch>;
-pub type UserGroupUpdate = Crud<NewTenantUserGroup, TenantUserGroupPatch>;
 
 pub enum PlanTenantUpdate {
     Add(NewPlan),

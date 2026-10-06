@@ -2,11 +2,9 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use plinko::{
-    planner::{
-        plan::*,
-        plan_update::{PlanUpdate, TagUpdate, TaskGroupUpdate, TaskUpdate},
-    },
+    planner::{plan::*, plan_update::PlanUpdate},
     types::{
+        crud::Crud,
         dependency::{Dependency, DependencyNode, PlanNode},
         error::PlinkoResult,
         parent::Parent,
@@ -33,8 +31,7 @@ fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
         name: "Task".to_string(),
         parent,
     };
-    plan.apply_update(PlanUpdate::Task(TaskUpdate::Add(new)))
-        .unwrap();
+    plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
     id
 }
 
@@ -45,7 +42,7 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
         name: "Group".to_string(),
         parent,
     };
-    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Add(new)))
+    plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
         .unwrap();
     id
 }
@@ -78,7 +75,7 @@ fn set_task_deps(plan: &mut Plan, id: Uuid, nodes: &[DependencyNode]) -> PlinkoR
         dependencies: Some(depend(nodes)),
         ..task_patch(id)
     };
-    plan.apply_update(PlanUpdate::Task(TaskUpdate::Update(patch)))
+    plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
 }
 
 fn set_task_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> PlinkoResult<()> {
@@ -86,7 +83,7 @@ fn set_task_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> PlinkoResult<()
         parent: Some(parent),
         ..task_patch(id)
     };
-    plan.apply_update(PlanUpdate::Task(TaskUpdate::Update(patch)))
+    plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
 }
 
 fn task_node(id: Uuid) -> DependencyNode {
@@ -98,7 +95,7 @@ fn group_node(id: Uuid) -> DependencyNode {
 }
 
 fn remove_task(plan: &mut Plan, id: Uuid) -> PlinkoResult<()> {
-    plan.apply_update(PlanUpdate::Task(TaskUpdate::Remove(id)))
+    plan.apply_update(PlanUpdate::Task(Crud::Remove(id)))
 }
 
 #[test]
@@ -142,7 +139,7 @@ fn group_end_waits_on_members() {
         dependencies: Some(depend(&[task_node(outside)])),
         parent: None,
     };
-    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Update(patch)))
+    plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
         .unwrap();
     // an unanchored member is independent of the group start, an anchored one is not
     set_task_deps(&mut plan, outside, &[task_node(member)]).unwrap();
@@ -171,7 +168,7 @@ fn members_anchor_to_group_start() {
         dependencies: Some(depend(&[task_node(member)])),
         parent: None,
     };
-    let update = PlanUpdate::TaskGroup(TaskGroupUpdate::Update(patch));
+    let update = PlanUpdate::TaskGroup(Crud::Update(patch));
     assert!(plan.apply_update(update).is_err());
 }
 
@@ -198,7 +195,7 @@ fn allocated_tags_must_exist_and_cannot_be_removed() {
             allocations: Some(workers),
             ..task_patch(task)
         };
-        plan.apply_update(PlanUpdate::Task(TaskUpdate::Update(patch)))
+        plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
     };
     let tagged = HashMap::from([(Worker::Tag(tag), 1)]);
     assert!(allocate(&mut plan, tagged.clone()).is_err());
@@ -207,12 +204,11 @@ fn allocated_tags_must_exist_and_cannot_be_removed() {
         id: tag,
         name: "Tag".to_string(),
     };
-    plan.apply_update(PlanUpdate::Tag(TagUpdate::Add(new)))
-        .unwrap();
+    plan.apply_update(PlanUpdate::Tag(Crud::Add(new))).unwrap();
     allocate(&mut plan, tagged).unwrap();
-    let remove = PlanUpdate::Tag(TagUpdate::Remove(tag));
+    let remove = PlanUpdate::Tag(Crud::Remove(tag));
     assert!(plan.apply_update(remove).is_err());
     allocate(&mut plan, HashMap::new()).unwrap();
-    let remove = PlanUpdate::Tag(TagUpdate::Remove(tag));
+    let remove = PlanUpdate::Tag(Crud::Remove(tag));
     plan.apply_update(remove).unwrap();
 }
