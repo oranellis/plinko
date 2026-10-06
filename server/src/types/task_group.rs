@@ -6,6 +6,7 @@ use crate::{
 };
 // }}}
 
+#[derive(Debug, PartialEq)]
 pub struct TaskGroup {
     id: Uuid,
     name: String,
@@ -27,6 +28,16 @@ impl TaskGroup {
     }
 }
 
+impl From<NewTaskGroup> for TaskGroup {
+    fn from(new: NewTaskGroup) -> Self {
+        Self {
+            id: new.id,
+            name: new.name,
+            contained_tasks: Vec::new(),
+        }
+    }
+}
+
 impl Patchable<TaskGroupPatch> for TaskGroup {
     fn apply_patch(&mut self, patch: TaskGroupPatch) -> PlinkoResult<()> {
         check_id_match(*self.id(), patch.id)?;
@@ -41,6 +52,11 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
     }
 }
 // }}}
+
+pub struct NewTaskGroup {
+    pub id: Uuid,
+    pub name: String,
+}
 
 pub struct TaskGroupPatch {
     pub id: Uuid,

@@ -6,17 +6,20 @@ use uuid::Uuid;
 
 use crate::{
     planner::plan_update::{
-        MilestoneUpdate, PlanUpdate, SchedulerDataUpdate, TagUpdate, TaskUpdate, UserUpdate,
+        MilestoneUpdate, PlanBufferUpdate, PlanUpdate, SchedulerDataUpdate, TagUpdate,
+        TaskGroupUpdate, TaskUpdate, UserUpdate,
     },
     traits::patch::Patchable,
     types::{
         dependency::PlanNode,
         error::{PlinkoError, PlinkoResult},
         milestone::{self, Milestone},
+        plan_buffer::PlanBuffer,
         schedule::{CalendarChanges, WeeklySchedule, WeeklySchedules},
         short_id::ShortId,
         tag::Tag,
         task::{self, Task},
+        task_group::TaskGroup,
         user::PlanUserData,
     },
 };
@@ -33,7 +36,9 @@ pub struct Plan {
     id: ShortId,
     name: String,
     tasks: HashMap<Uuid, Task>,
+    task_groups: HashMap<Uuid, TaskGroup>,
     milestones: HashMap<Uuid, Milestone>,
+    plan_buffers: HashMap<Uuid, PlanBuffer>,
     users: HashMap<Uuid, PlanUserData>,
     tags: HashMap<Uuid, Tag>,
     plan_weekly_schedule: WeeklySchedules,
@@ -48,7 +53,9 @@ impl From<NewPlan> for Plan {
             id: new.id,
             name: new.name,
             tasks: HashMap::new(),
+            task_groups: HashMap::new(),
             milestones: HashMap::new(),
+            plan_buffers: HashMap::new(),
             users: HashMap::new(),
             tags: HashMap::new(),
             plan_weekly_schedule: WeeklySchedules::new(WeeklySchedule::new_initial_schedule()),
@@ -69,6 +76,14 @@ impl Plan {
 
     pub fn tasks(&self) -> &HashMap<Uuid, Task> {
         &self.tasks
+    }
+
+    pub fn task_groups(&self) -> &HashMap<Uuid, TaskGroup> {
+        &self.task_groups
+    }
+
+    pub fn plan_buffers(&self) -> &HashMap<Uuid, PlanBuffer> {
+        &self.plan_buffers
     }
 
     pub fn milestones(&self) -> &HashMap<Uuid, Milestone> {
@@ -103,6 +118,11 @@ impl Plan {
                 .contains_key(id)
                 .then_some(())
                 .ok_or(PlinkoError::ItemDoesNotExist(*id)),
+            PlanNode::PlanBuffer(id) => self
+                .plan_buffers
+                .contains_key(id)
+                .then_some(())
+                .ok_or(PlinkoError::ItemDoesNotExist(*id)),
             PlanNode::Milestone(id) => self
                 .milestones
                 .contains_key(id)
@@ -114,8 +134,10 @@ impl Plan {
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
         match u {
             PlanUpdate::Task(update) => self.task_update(update),
+            PlanUpdate::TaskGroup(update) => self.task_group_update(update),
             PlanUpdate::User(update) => self.user_update(update),
             PlanUpdate::Milestone(update) => self.milestone_update(update),
+            PlanUpdate::PlanBuffer(update) => self.plan_buffer_update(update),
             PlanUpdate::Tag(update) => self.tag_update(update),
             PlanUpdate::SchedulerData(update) => self.scheduler_data_update(update),
         }
@@ -128,6 +150,26 @@ impl Plan {
                 update_map_item(&mut self.tasks, task_patch.id, task_patch)
             }
             TaskUpdate::Remove(id) => remove_item(&mut self.tasks, id),
+        }
+    }
+
+    fn task_group_update(&mut self, update: TaskGroupUpdate) -> PlinkoResult<()> {
+        match update {
+            TaskGroupUpdate::Add(new) => add_item(&mut self.task_groups, new.id, new.into()),
+            TaskGroupUpdate::Update(patch) => {
+                update_map_item(&mut self.task_groups, patch.id, patch)
+            }
+            TaskGroupUpdate::Remove(id) => remove_item(&mut self.task_groups, id),
+        }
+    }
+
+    fn plan_buffer_update(&mut self, update: PlanBufferUpdate) -> PlinkoResult<()> {
+        match update {
+            PlanBufferUpdate::Add(new) => add_item(&mut self.plan_buffers, new.id, new.into()),
+            PlanBufferUpdate::Update(patch) => {
+                update_map_item(&mut self.plan_buffers, patch.id, patch)
+            }
+            PlanBufferUpdate::Remove(id) => remove_item(&mut self.plan_buffers, id),
         }
     }
 

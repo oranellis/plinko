@@ -36,11 +36,22 @@ impl PlanBuffer {
     }
 }
 
+impl From<NewPlanBuffer> for PlanBuffer {
+    fn from(new: NewPlanBuffer) -> Self {
+        Self {
+            id: new.id,
+            dependencies: Vec::new(),
+            set_start_day: None,
+            duration: new.duration,
+        }
+    }
+}
+
 impl Patchable<PlanBufferPatch> for PlanBuffer {
     fn apply_patch(&mut self, patch: PlanBufferPatch) -> PlinkoResult<()> {
         check_id_match(*self.id(), patch.id)?;
 
-        if let Some(p) = patch.dependancies {
+        if let Some(p) = patch.dependencies {
             self.dependencies = p;
         }
         if let Some(p) = patch.set_start_day {
@@ -59,10 +70,15 @@ pub struct VolatileState {
     pub date_range: Option<DateRange>,
 }
 
+pub struct NewPlanBuffer {
+    pub id: Uuid,
+    pub duration: u32,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanBufferPatch {
     pub id: Uuid,
-    pub dependancies: Option<Vec<Dependency>>,
+    pub dependencies: Option<Vec<Dependency>>,
     pub set_start_day: Option<Option<NaiveDate>>,
     pub duration: Option<u32>,
 }

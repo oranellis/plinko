@@ -5,8 +5,10 @@ use crate::{
     planner::plan::PlanSchedulerDataPatch,
     types::{
         milestone::{MilestonePatch, NewMilestone},
+        plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         tag::{NewTag, TagPatch},
         task::{NewTask, TaskPatch},
+        task_group::{NewTaskGroup, TaskGroupPatch},
         user::PlanUserDataPatch,
     },
 };
@@ -14,8 +16,10 @@ use crate::{
 
 pub enum PlanUpdate {
     Task(TaskUpdate),
+    TaskGroup(TaskGroupUpdate),
     User(UserUpdate),
     Milestone(MilestoneUpdate),
+    PlanBuffer(PlanBufferUpdate),
     Tag(TagUpdate),
     SchedulerData(SchedulerDataUpdate),
 }
@@ -23,6 +27,18 @@ pub enum PlanUpdate {
 pub enum TaskUpdate {
     Add(NewTask),
     Update(TaskPatch),
+    Remove(Uuid),
+}
+
+pub enum TaskGroupUpdate {
+    Add(NewTaskGroup),
+    Update(TaskGroupPatch),
+    Remove(Uuid),
+}
+
+pub enum PlanBufferUpdate {
+    Add(NewPlanBuffer),
+    Update(PlanBufferPatch),
     Remove(Uuid),
 }
 
