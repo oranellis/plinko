@@ -3,7 +3,9 @@ use std::collections::HashSet;
 // modules {{{
 use uuid::Uuid;
 
-use crate::traits::patch::Patchable;
+use crate::{
+    helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
+};
 
 // }}}
 
@@ -29,11 +31,15 @@ impl TenantUserGroup {
 }
 
 impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
-    fn apply_patch(
-        &mut self,
-        patch: TenantUserGroupPatch,
-    ) -> crate::types::error::PlinkoResult<()> {
-        todo!()
+    fn apply_patch(&mut self, patch: TenantUserGroupPatch) -> PlinkoResult<()> {
+        check_id_match(self.id, patch.id)?;
+        if let Some(n) = patch.name {
+            self.name = n;
+        }
+        if let Some(u) = patch.users {
+            self.users = u;
+        }
+        Ok(())
     }
 }
 // }}}
