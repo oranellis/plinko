@@ -13,6 +13,8 @@ pub enum PlinkoError {
     InvalidShortId(String),
     PlanExists(ShortId),
     PlanDoesNotExist(ShortId),
+    GroupCycle(Uuid),
+    AlreadyInGroup(Uuid),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
     IdMismatch(String, String),
@@ -29,6 +31,12 @@ impl std::fmt::Display for PlinkoError {
             }
             PlinkoError::PlanDoesNotExist(short_id) => {
                 write!(f, "plan {} does not exist in tenant", short_id)
+            }
+            PlinkoError::GroupCycle(id) => {
+                write!(f, "task group {} cannot contain itself", id)
+            }
+            PlinkoError::AlreadyInGroup(id) => {
+                write!(f, "item {} is already in a task group", id)
             }
             PlinkoError::ItemDoesNotExist(id) => {
                 write!(f, "item {} does not exist", id)

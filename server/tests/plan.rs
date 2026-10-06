@@ -8,8 +8,13 @@ use plinko::{
         },
     },
     types::{
-        milestone::NewMilestone, plan_buffer::NewPlanBuffer, short_id::ShortId, tag::NewTag,
-        task::NewTask, task_group::NewTaskGroup,
+        error::PlinkoError,
+        milestone::NewMilestone,
+        plan_buffer::NewPlanBuffer,
+        short_id::ShortId,
+        tag::NewTag,
+        task::NewTask,
+        task_group::{GroupMember, NewTaskGroup, TaskGroupPatch},
     },
 };
 use uuid::Uuid;
@@ -135,4 +140,38 @@ fn new_plan() -> Plan {
         name: "My Plan".to_owned(),
         start_date: NaiveDate::from_ymd_opt(2000, 12, 31).unwrap(),
     })
+}
+
+fn add_group(plan: &mut Plan) -> Uuid {
+    let id = Uuid::now_v7();
+    let new = NewTaskGroup {
+        id,
+        name: "Group".to_string(),
+    };
+    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Add(new)))
+        .expect("should not error");
+    id
+}
+
+fn set_contents(plan: &mut Plan, id: Uuid, contents: Vec<GroupMember>) -> Result<(), PlinkoError> {
+    let patch = TaskGroupPatch {
+        id,
+        name: None,
+        dependencies: None,
+        contents: Some(contents),
+    };
+    plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Update(patch)))
+}
+
+#[test]
+fn nested_groups_reject_cycles_and_double_membership() {
+    let mut plan = new_plan();
+    let (outer, inner) = (add_group(&mut plan), add_group(&mut plan));
+    set_contents(&mut plan, outer, vec![GroupMember::TaskGroup(inner)]).unwrap();
+    assert!(set_contents(&mut plan, inner, vec![GroupMember::TaskGroup(outer)]).is_err());
+    assert!(set_contents(&mut plan, inner, vec![GroupMember::TaskGroup(inner)]).is_err());
+
+    let other = add_group(&mut plan);
+    assert!(set_contents(&mut plan, other, vec![GroupMember::TaskGroup(inner)]).is_err());
+    assert!(set_contents(&mut plan, other, vec![GroupMember::Task(Uuid::now_v7())]).is_err());
 }

@@ -2,15 +2,27 @@
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
+    helpers::functions::check_id_match,
+    traits::patch::Patchable,
+    types::{dependency::Dependency, error::PlinkoResult},
 };
 // }}}
 
+/// A zero duration start and end node around a set of tasks and nested groups. The group
+/// start depends on `dependencies`, every member implicitly depends on the start and the end
+/// implicitly depends on every member. Those implicit edges are derived by the scheduler.
 #[derive(Debug, PartialEq)]
 pub struct TaskGroup {
     id: Uuid,
     name: String,
-    contained_tasks: Vec<Uuid>,
+    dependencies: Vec<Dependency>,
+    contents: Vec<GroupMember>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GroupMember {
+    Task(Uuid),
+    TaskGroup(Uuid),
 }
 
 // impl TaskGroup {{{
@@ -23,8 +35,12 @@ impl TaskGroup {
         &self.name
     }
 
-    pub fn contained_tasks(&self) -> &Vec<Uuid> {
-        &self.contained_tasks
+    pub fn dependencies(&self) -> &Vec<Dependency> {
+        &self.dependencies
+    }
+
+    pub fn contents(&self) -> &Vec<GroupMember> {
+        &self.contents
     }
 }
 
@@ -33,7 +49,8 @@ impl From<NewTaskGroup> for TaskGroup {
         Self {
             id: new.id,
             name: new.name,
-            contained_tasks: Vec::new(),
+            dependencies: Vec::new(),
+            contents: Vec::new(),
         }
     }
 }
@@ -45,8 +62,11 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
         if let Some(n) = patch.name {
             self.name = n;
         }
-        if let Some(c) = patch.contained_tasks {
-            self.contained_tasks = c;
+        if let Some(d) = patch.dependencies {
+            self.dependencies = d;
+        }
+        if let Some(c) = patch.contents {
+            self.contents = c;
         }
         Ok(())
     }
@@ -61,7 +81,8 @@ pub struct NewTaskGroup {
 pub struct TaskGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
-    pub contained_tasks: Option<Vec<Uuid>>,
+    pub dependencies: Option<Vec<Dependency>>,
+    pub contents: Option<Vec<GroupMember>>,
 }
 
 pub struct VolatileState {}

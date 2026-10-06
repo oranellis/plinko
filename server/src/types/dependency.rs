@@ -17,4 +17,6 @@ pub enum PlanNode {
     Task(Uuid),
     Milestone(Uuid),
     PlanBuffer(Uuid),
+    TaskGroupStart(Uuid),
+    TaskGroupEnd(Uuid),
 }

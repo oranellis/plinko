@@ -1,5 +1,5 @@
 // modules{{{
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 
 use chrono::NaiveDate;
 use uuid::Uuid;
@@ -19,7 +19,7 @@ use crate::{
         short_id::ShortId,
         tag::Tag,
         task::{self, Task},
-        task_group::TaskGroup,
+        task_group::{GroupMember, TaskGroup},
         user::PlanUserData,
     },
 };
@@ -111,24 +111,56 @@ impl Plan {
     }
 
     pub fn ensure_node_exists(&self, node: &PlanNode) -> PlinkoResult<()> {
-        match node {
-            PlanNode::PlanStart => Ok(()),
-            PlanNode::Task(id) => self
-                .tasks
-                .contains_key(id)
-                .then_some(())
-                .ok_or(PlinkoError::ItemDoesNotExist(*id)),
-            PlanNode::PlanBuffer(id) => self
-                .plan_buffers
-                .contains_key(id)
-                .then_some(())
-                .ok_or(PlinkoError::ItemDoesNotExist(*id)),
-            PlanNode::Milestone(id) => self
-                .milestones
-                .contains_key(id)
-                .then_some(())
-                .ok_or(PlinkoError::ItemDoesNotExist(*id)),
+        let (id, exists) = match node {
+            PlanNode::PlanStart => return Ok(()),
+            PlanNode::Task(id) => (id, self.tasks.contains_key(id)),
+            PlanNode::Milestone(id) => (id, self.milestones.contains_key(id)),
+            PlanNode::PlanBuffer(id) => (id, self.plan_buffers.contains_key(id)),
+            PlanNode::TaskGroupStart(id) | PlanNode::TaskGroupEnd(id) => {
+                (id, self.task_groups.contains_key(id))
+            }
+        };
+        exists
+            .then_some(())
+            .ok_or(PlinkoError::ItemDoesNotExist(*id))
+    }
+
+    /// Members must exist, belong to one group only and not nest a group inside itself.
+    fn validate_group_contents(&self, group: Uuid, contents: &[GroupMember]) -> PlinkoResult<()> {
+        let mut seen = HashSet::new();
+        for member in contents {
+            let id = match *member {
+                GroupMember::Task(id) => {
+                    self.ensure_node_exists(&PlanNode::Task(id))?;
+                    id
+                }
+                GroupMember::TaskGroup(id) => {
+                    self.ensure_node_exists(&PlanNode::TaskGroupStart(id))?;
+                    if id == group || self.group_nests(id, group) {
+                        return Err(PlinkoError::GroupCycle(group));
+                    }
+                    id
+                }
+            };
+            let in_other_group = self
+                .task_groups
+                .iter()
+                .any(|(gid, g)| *gid != group && g.contents().contains(member));
+            if in_other_group || !seen.insert(member) {
+                return Err(PlinkoError::AlreadyInGroup(id));
+            }
         }
+        Ok(())
+    }
+
+    /// Whether `target` is nested anywhere below group `root`
+    fn group_nests(&self, root: Uuid, target: Uuid) -> bool {
+        self.task_groups.get(&root).is_some_and(|g| {
+            g.contents().iter().any(|m| match *m {
+                GroupMember::TaskGroup(id) => id == target || self.group_nests(id, target),
+                GroupMember::Task(_) => false,
+            })
+        })
     }
 
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
@@ -157,6 +189,9 @@ impl Plan {
         match update {
             TaskGroupUpdate::Add(new) => add_item(&mut self.task_groups, new.id, new.into()),
             TaskGroupUpdate::Update(patch) => {
+                if let Some(contents) = &patch.contents {
+                    self.validate_group_contents(patch.id, contents)?;
+                }
                 update_map_item(&mut self.task_groups, patch.id, patch)
             }
             TaskGroupUpdate::Remove(id) => remove_item(&mut self.task_groups, id),
