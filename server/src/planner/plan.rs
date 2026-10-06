@@ -14,6 +14,7 @@ use crate::{
         dependency::PlanNode,
         error::{PlinkoError, PlinkoResult},
         milestone::{self, Milestone},
+        parent::Parent,
         plan_buffer::PlanBuffer,
         schedule::{CalendarChanges, WeeklySchedule, WeeklySchedules},
         short_id::ShortId,
@@ -124,9 +125,9 @@ impl Plan {
 
     /// The parent must be an existing group and must not be the item itself or one of its
     /// descendants.
-    fn validate_parent(&self, id: Uuid, parent: Option<Uuid>) -> PlinkoResult<()> {
+    fn validate_parent(&self, id: Uuid, parent: Parent) -> PlinkoResult<()> {
         let mut next = parent;
-        while let Some(group) = next {
+        while let Parent::Node(group) = next {
             if group == id {
                 return Err(PlinkoError::GroupCycle(id));
             }
@@ -140,7 +141,7 @@ impl Plan {
     }
 
     fn has_members(&self, group: Uuid) -> bool {
-        let parent = Some(group);
+        let parent = Parent::Node(group);
         self.tasks.values().any(|i| i.parent() == parent)
             || self.milestones.values().any(|i| i.parent() == parent)
             || self.plan_buffers.values().any(|i| i.parent() == parent)

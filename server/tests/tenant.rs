@@ -11,7 +11,7 @@ use plinko::{
         plan::{NewPlan, Plan},
         plan_update::{PlanUpdate, TaskUpdate},
     },
-    types::{short_id::ShortId, task::NewTask},
+    types::{parent::Parent, short_id::ShortId, task::NewTask},
 };
 use uuid::Uuid;
 
@@ -61,7 +61,7 @@ fn plan_updates_through_tenant() {
     let task = NewTask {
         id: Uuid::now_v7(),
         name: "Task".to_string(),
-        parent: None,
+        parent: Parent::PlanStart,
     };
     let task_id = task.id;
     let inner = PlanUpdate::Task(TaskUpdate::Add(task));

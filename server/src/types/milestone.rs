@@ -3,7 +3,9 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
+    helpers::functions::check_id_match,
+    traits::patch::Patchable,
+    types::{error::PlinkoResult, parent::Parent},
 };
 // }}}
 
@@ -11,13 +13,13 @@ use crate::{
 pub struct Milestone {
     id: Uuid,
     name: String,
-    parent: Option<Uuid>,
+    parent: Parent,
     persistent_state: PersistentState,
 }
 
 // impl Milestone{{{
 impl Milestone {
-    pub fn parent(&self) -> Option<Uuid> {
+    pub fn parent(&self) -> Parent {
         self.parent
     }
 
@@ -90,12 +92,12 @@ pub enum Status {
 pub struct NewMilestone {
     pub id: Uuid,
     pub name: String,
-    pub parent: Option<Uuid>,
+    pub parent: Parent,
 }
 
 pub struct MilestonePatch {
     pub id: Uuid,
     pub name: Option<String>,
-    pub parent: Option<Option<Uuid>>,
+    pub parent: Option<Parent>,
     pub persistent_state: Option<PersistentState>,
 }

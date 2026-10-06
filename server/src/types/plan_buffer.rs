@@ -5,14 +5,14 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{common::DateRange, dependency::Dependency, error::PlinkoResult},
+    types::{common::DateRange, dependency::Dependency, error::PlinkoResult, parent::Parent},
 };
 // }}}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanBuffer {
     id: Uuid,
-    parent: Option<Uuid>,
+    parent: Parent,
     dependencies: Vec<Dependency>,
     set_start_day: Option<NaiveDate>,
     duration: u32,
@@ -20,7 +20,7 @@ pub struct PlanBuffer {
 
 // impl PlanBuffer {{{
 impl PlanBuffer {
-    pub fn parent(&self) -> Option<Uuid> {
+    pub fn parent(&self) -> Parent {
         self.parent
     }
 
@@ -81,14 +81,14 @@ pub struct VolatileState {
 
 pub struct NewPlanBuffer {
     pub id: Uuid,
-    pub parent: Option<Uuid>,
+    pub parent: Parent,
     pub duration: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanBufferPatch {
     pub id: Uuid,
-    pub parent: Option<Option<Uuid>>,
+    pub parent: Option<Parent>,
     pub dependencies: Option<Vec<Dependency>>,
     pub set_start_day: Option<Option<NaiveDate>>,
     pub duration: Option<u32>,

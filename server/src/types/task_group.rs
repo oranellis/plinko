@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{dependency::Dependency, error::PlinkoResult},
+    types::{dependency::Dependency, error::PlinkoResult, parent::Parent},
 };
 // }}}
 
@@ -17,7 +17,7 @@ pub struct TaskGroup {
     id: Uuid,
     name: String,
     dependencies: Vec<Dependency>,
-    parent: Option<Uuid>,
+    parent: Parent,
 }
 
 // impl TaskGroup {{{
@@ -34,7 +34,7 @@ impl TaskGroup {
         &self.dependencies
     }
 
-    pub fn parent(&self) -> Option<Uuid> {
+    pub fn parent(&self) -> Parent {
         self.parent
     }
 }
@@ -71,14 +71,14 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
 pub struct NewTaskGroup {
     pub id: Uuid,
     pub name: String,
-    pub parent: Option<Uuid>,
+    pub parent: Parent,
 }
 
 pub struct TaskGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
     pub dependencies: Option<Vec<Dependency>>,
-    pub parent: Option<Option<Uuid>>,
+    pub parent: Option<Parent>,
 }
 
 pub struct VolatileState {}

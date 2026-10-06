@@ -7,7 +7,8 @@ use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
     types::{
-        Days, common::DateRange, dependency::Dependency, error::PlinkoResult, workload::Workload,
+        Days, common::DateRange, dependency::Dependency, error::PlinkoResult, parent::Parent,
+        workload::Workload,
     },
 };
 // }}}
@@ -16,7 +17,7 @@ use crate::{
 pub struct Task {
     id: Uuid,
     name: String,
-    parent: Option<Uuid>,
+    parent: Parent,
     mode: ScheduleMode,
     duration: u32,
     time_constraint: TimeConstraint,
@@ -29,7 +30,7 @@ pub struct Task {
 
 // impl Task {{{
 impl Task {
-    pub fn parent(&self) -> Option<Uuid> {
+    pub fn parent(&self) -> Parent {
         self.parent
     }
 
@@ -155,13 +156,13 @@ pub enum TimeConstraint {
 pub struct NewTask {
     pub id: Uuid,
     pub name: String,
-    pub parent: Option<Uuid>,
+    pub parent: Parent,
 }
 
 pub struct TaskPatch {
     pub id: Uuid,
     pub name: Option<String>,
-    pub parent: Option<Option<Uuid>>,
+    pub parent: Option<Parent>,
     pub mode: Option<ScheduleMode>,
     pub duration: Option<u32>,
     pub time_constraint: Option<TimeConstraint>,

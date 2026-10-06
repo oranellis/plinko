@@ -10,6 +10,7 @@ use plinko::{
     types::{
         error::PlinkoError,
         milestone::NewMilestone,
+        parent::Parent,
         plan_buffer::NewPlanBuffer,
         short_id::ShortId,
         tag::NewTag,
@@ -45,7 +46,7 @@ fn add_task_to_plan() {
     let task = NewTask {
         id: Uuid::now_v7(),
         name: "Task Name".to_string(),
-        parent: None,
+        parent: Parent::PlanStart,
     };
     let task_id = task.id;
     let update = PlanUpdate::Task(TaskUpdate::Add(task));
@@ -65,7 +66,7 @@ fn add_milestone_to_plan() {
     let milestone = NewMilestone {
         id: Uuid::now_v7(),
         name: "Milestone Name".to_string(),
-        parent: None,
+        parent: Parent::PlanStart,
     };
     let milestone_id = milestone.id;
     let update = PlanUpdate::Milestone(MilestoneUpdate::Add(milestone));
@@ -113,7 +114,7 @@ fn add_task_group_to_plan() {
     let group = NewTaskGroup {
         id: Uuid::now_v7(),
         name: "Group".to_string(),
-        parent: None,
+        parent: Parent::PlanStart,
     };
     let group_id = group.id;
     plan.apply_update(PlanUpdate::TaskGroup(TaskGroupUpdate::Add(group)))
@@ -129,7 +130,7 @@ fn add_plan_buffer_to_plan() {
     let mut plan = new_plan();
     let buffer = NewPlanBuffer {
         id: Uuid::now_v7(),
-        parent: None,
+        parent: Parent::PlanStart,
         duration: 5,
     };
     let buffer_id = buffer.id;
@@ -146,7 +147,7 @@ fn new_plan() -> Plan {
     })
 }
 
-fn add_group(plan: &mut Plan, parent: Option<Uuid>) -> Result<Uuid, PlinkoError> {
+fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
     let id = Uuid::now_v7();
     let new = NewTaskGroup {
         id,
@@ -157,7 +158,7 @@ fn add_group(plan: &mut Plan, parent: Option<Uuid>) -> Result<Uuid, PlinkoError>
     Ok(id)
 }
 
-fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Option<Uuid>) -> Result<(), PlinkoError> {
+fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), PlinkoError> {
     let patch = TaskGroupPatch {
         id,
         name: None,
@@ -170,31 +171,31 @@ fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Option<Uuid>) -> Result<(
 #[test]
 fn group_parents_reject_cycles_and_missing_groups() {
     let mut plan = new_plan();
-    let outer = add_group(&mut plan, None).unwrap();
-    let inner = add_group(&mut plan, Some(outer)).unwrap();
-    let leaf = add_group(&mut plan, Some(inner)).unwrap();
-    assert_eq!(plan.task_groups()[&inner].parent(), Some(outer));
+    let outer = add_group(&mut plan, Parent::PlanStart).unwrap();
+    let inner = add_group(&mut plan, Parent::Node(outer)).unwrap();
+    let leaf = add_group(&mut plan, Parent::Node(inner)).unwrap();
+    assert_eq!(plan.task_groups()[&inner].parent(), Parent::Node(outer));
 
-    assert!(set_group_parent(&mut plan, outer, Some(leaf)).is_err());
-    assert!(set_group_parent(&mut plan, inner, Some(inner)).is_err());
-    assert!(add_group(&mut plan, Some(Uuid::now_v7())).is_err());
+    assert!(set_group_parent(&mut plan, outer, Parent::Node(leaf)).is_err());
+    assert!(set_group_parent(&mut plan, inner, Parent::Node(inner)).is_err());
+    assert!(add_group(&mut plan, Parent::Node(Uuid::now_v7())).is_err());
 
     // moving is a single parent change
-    set_group_parent(&mut plan, leaf, Some(outer)).unwrap();
-    assert_eq!(plan.task_groups()[&leaf].parent(), Some(outer));
+    set_group_parent(&mut plan, leaf, Parent::Node(outer)).unwrap();
+    assert_eq!(plan.task_groups()[&leaf].parent(), Parent::Node(outer));
 }
 
 #[test]
 fn tasks_move_between_groups_and_block_group_removal() {
     let mut plan = new_plan();
     let (a, b) = (
-        add_group(&mut plan, None).unwrap(),
-        add_group(&mut plan, None).unwrap(),
+        add_group(&mut plan, Parent::PlanStart).unwrap(),
+        add_group(&mut plan, Parent::PlanStart).unwrap(),
     );
     let task = NewTask {
         id: Uuid::now_v7(),
         name: "Task".to_string(),
-        parent: Some(a),
+        parent: Parent::Node(a),
     };
     let task_id = task.id;
     plan.apply_update(PlanUpdate::Task(TaskUpdate::Add(task)))
@@ -207,7 +208,7 @@ fn tasks_move_between_groups_and_block_group_removal() {
     let patch = TaskPatch {
         id: task_id,
         name: None,
-        parent: Some(Some(b)),
+        parent: Some(Parent::Node(b)),
         mode: None,
         duration: None,
         time_constraint: None,
@@ -219,7 +220,7 @@ fn tasks_move_between_groups_and_block_group_removal() {
     };
     plan.apply_update(PlanUpdate::Task(TaskUpdate::Update(patch)))
         .unwrap();
-    assert_eq!(plan.tasks()[&task_id].parent(), Some(b));
+    assert_eq!(plan.tasks()[&task_id].parent(), Parent::Node(b));
     remove(&mut plan, a).unwrap();
     assert!(remove(&mut plan, b).is_err());
 }
