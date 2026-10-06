@@ -7,6 +7,7 @@ use crate::{
     planner::plan::Plan,
     traits::entity::Entity,
     types::{
+        affinity::{Affinity, AffinityPatch, NewAffinity},
         dependency::{Dependency, PlanNode},
         error::PlinkoResult,
         milestone::{Milestone, MilestonePatch, NewMilestone},
@@ -31,10 +32,14 @@ pub trait PlanItem: Entity<Plan> {
     fn workers(&self) -> Vec<Worker> {
         Vec::new()
     }
+    fn affinities(&self) -> Vec<Uuid> {
+        Vec::new()
+    }
 }
 
 macro_rules! plan_item {
-    ($ty:ident, $node:ident, $new:ty, $patch:ty, $field:ident $(, workers: $workers:expr)?) => {
+    ($ty:ident, $node:ident, $new:ty, $patch:ty, $field:ident
+     $(, workers: $workers:expr, affinities: $affinities:expr)?) => {
         impl Entity<Plan> for $ty {
             type New = $new;
             type Patch = $patch;
@@ -65,13 +70,17 @@ macro_rules! plan_item {
             }
             $(fn workers(&self) -> Vec<Worker> {
                 $workers(self)
+            }
+            fn affinities(&self) -> Vec<Uuid> {
+                $affinities(self)
             })?
         }
     };
 }
 
 plan_item!(Task, Task, NewTask, TaskPatch, tasks,
-    workers: |t: &Task| t.allocations().keys().copied().collect());
+    workers: |t: &Task| t.allocations().keys().copied().collect(),
+    affinities: |t: &Task| t.affinities().iter().copied().collect());
 plan_item!(
     Milestone,
     Milestone,
@@ -136,5 +145,20 @@ impl Entity<Plan> for PlanUserGroupData {
     }
     fn in_use(plan: &Plan, id: Uuid) -> bool {
         plan.worker_in_use(Worker::UserGroup(id))
+    }
+}
+
+impl Entity<Plan> for Affinity {
+    type New = NewAffinity;
+    type Patch = AffinityPatch;
+
+    fn entities(plan: &Plan) -> &HashMap<Uuid, Self> {
+        &plan.affinities
+    }
+    fn entities_mut(plan: &mut Plan) -> &mut HashMap<Uuid, Self> {
+        &mut plan.affinities
+    }
+    fn in_use(plan: &Plan, id: Uuid) -> bool {
+        plan.tasks.values().any(|t| t.affinities().contains(&id))
     }
 }

@@ -7,6 +7,8 @@ use crate::{
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
     types::{
+        affinity::{AffinityPatch, NewAffinity},
+        data_block::{DataBlockPatch, NewDataBlock},
         milestone::{MilestonePatch, NewMilestone},
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         tag::{NewTag, TagPatch},
@@ -32,6 +34,10 @@ macro_rules! identified {
 }
 
 identified!(
+    NewAffinity,
+    AffinityPatch,
+    NewDataBlock,
+    DataBlockPatch,
     NewRule,
     RulePatch,
     NewTask,

@@ -1,9 +1,14 @@
 // modules{{{
+use uuid::Uuid;
+
 use crate::{
     availability::rule_set::RuleSetUpdate,
     planner::plan::PlanSchedulerDataPatch,
     types::{
+        affinity::{AffinityPatch, NewAffinity},
         crud::Crud,
+        data_block::{DataBlockPatch, NewDataBlock},
+        dependency::PlanNode,
         milestone::{MilestonePatch, NewMilestone},
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         tag::{NewTag, TagPatch},
@@ -22,6 +27,10 @@ pub enum PlanUpdate {
     User(Crud<NewPlanUser, PlanUserDataPatch>),
     UserGroup(Crud<NewPlanUserGroup, PlanUserGroupPatch>),
     Tag(Crud<NewTag, TagPatch>),
+    Affinity(Crud<NewAffinity, AffinityPatch>),
+    AffinityRules(Uuid, RuleSetUpdate),
+    /// Data blocks on a task or milestone
+    Data(PlanNode, Crud<NewDataBlock, DataBlockPatch>),
     Availability(RuleSetUpdate),
     SchedulerData(PlanSchedulerDataPatch),
 }

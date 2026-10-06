@@ -18,6 +18,17 @@ pub enum DependencyNode {
     Node(PlanNode),
 }
 
+impl PlanNode {
+    pub fn id(&self) -> Uuid {
+        match *self {
+            PlanNode::Task(id)
+            | PlanNode::Milestone(id)
+            | PlanNode::PlanBuffer(id)
+            | PlanNode::TaskGroup(id) => id,
+        }
+    }
+}
+
 /// A schedulable node. A task group is a single node that ends when all of its members end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PlanNode {

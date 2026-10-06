@@ -1,5 +1,7 @@
+pub mod affinity;
 pub mod common;
 pub mod crud;
+pub mod data_block;
 pub mod dependency;
 pub mod error;
 pub mod milestone;
@@ -11,5 +13,3 @@ pub mod task;
 pub mod task_group;
 pub mod user;
 pub mod workload;
-
-pub type Days = u32;

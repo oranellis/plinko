@@ -12,6 +12,7 @@ use plinko::{
         tag::NewTag,
         task::{NewTask, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroupPatch},
+        workload::Workload,
     },
 };
 use uuid::Uuid;
@@ -65,7 +66,7 @@ fn task_patch(id: Uuid) -> TaskPatch {
         dependencies: None,
         allocations: None,
         description: None,
-        links: None,
+        affinities: None,
         persistent_state: None,
     }
 }
@@ -190,14 +191,14 @@ fn allocated_tags_must_exist_and_cannot_be_removed() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::PlanStart);
     let tag = Uuid::now_v7();
-    let allocate = |plan: &mut Plan, workers: HashMap<Worker, u32>| {
+    let allocate = |plan: &mut Plan, workers: HashMap<Worker, Workload>| {
         let patch = TaskPatch {
             allocations: Some(workers),
             ..task_patch(task)
         };
         plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
     };
-    let tagged = HashMap::from([(Worker::Tag(tag), 1)]);
+    let tagged = HashMap::from([(Worker::Tag(tag), Workload::new(1).unwrap())]);
     assert!(allocate(&mut plan, tagged.clone()).is_err());
 
     let new = NewTag {

@@ -1,14 +1,14 @@
 // modules {{{
 use chrono::NaiveDate;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
     types::{
-        Days, common::DateRange, dependency::Dependency, error::PlinkoResult, parent::Parent,
-        workload::Workload,
+        common::DateRange, data_block::DataBlocks, dependency::Dependency, error::PlinkoResult,
+        parent::Parent, workload::Workload,
     },
 };
 // }}}
@@ -22,9 +22,12 @@ pub struct Task {
     duration: u32,
     time_constraint: TimeConstraint,
     dependencies: Vec<Dependency>,
-    allocations: HashMap<Worker, Days>, // Days
+    /// Hours per day each worker spends on the task for its duration
+    allocations: HashMap<Worker, Workload>,
+    /// Linked affinities, the task is only worked on days that every one of them allows
+    affinities: HashSet<Uuid>,
     description: Option<String>,
-    links: Vec<String>,
+    data: DataBlocks,
     persistent_state: PersistentState,
 }
 
@@ -34,8 +37,20 @@ impl Task {
         &self.dependencies
     }
 
-    pub fn allocations(&self) -> &HashMap<Worker, Days> {
+    pub fn allocations(&self) -> &HashMap<Worker, Workload> {
         &self.allocations
+    }
+
+    pub fn affinities(&self) -> &HashSet<Uuid> {
+        &self.affinities
+    }
+
+    pub fn data(&self) -> &DataBlocks {
+        &self.data
+    }
+
+    pub(crate) fn data_mut(&mut self) -> &mut DataBlocks {
+        &mut self.data
     }
 
     pub fn parent(&self) -> Parent {
@@ -58,8 +73,9 @@ impl From<NewTask> for Task {
             time_constraint: TimeConstraint::None,
             dependencies: Vec::new(),
             allocations: HashMap::new(),
+            affinities: HashSet::new(),
             description: None,
-            links: Vec::new(),
+            data: DataBlocks::default(),
             persistent_state: PersistentState::new(),
         }
     }
@@ -90,11 +106,11 @@ impl Patchable<TaskPatch> for Task {
         if let Some(a) = patch.allocations {
             self.allocations = a
         }
+        if let Some(a) = patch.affinities {
+            self.affinities = a
+        }
         if let Some(d) = patch.description {
             self.description = d
-        }
-        if let Some(l) = patch.links {
-            self.links = l
         }
         if let Some(p) = patch.persistent_state {
             self.persistent_state = p
@@ -151,6 +167,9 @@ pub enum Worker {
     Tag(Uuid),
     User(Uuid),
     UserGroup(Uuid),
+    /// An unnamed stand in for whoever will do the work, always free and available per the plan
+    /// default availability
+    Placeholder,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -176,8 +195,8 @@ pub struct TaskPatch {
     pub duration: Option<u32>,
     pub time_constraint: Option<TimeConstraint>,
     pub dependencies: Option<Vec<Dependency>>,
-    pub allocations: Option<HashMap<Worker, Days>>,
+    pub allocations: Option<HashMap<Worker, Workload>>,
+    pub affinities: Option<HashSet<Uuid>>,
     pub description: Option<Option<String>>,
-    pub links: Option<Vec<String>>,
     pub persistent_state: Option<PersistentState>,
 }

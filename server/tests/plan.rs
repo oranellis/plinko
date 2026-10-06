@@ -210,7 +210,7 @@ fn tasks_move_between_groups_and_block_group_removal() {
         dependencies: None,
         allocations: None,
         description: None,
-        links: None,
+        affinities: None,
         persistent_state: None,
     };
     plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))

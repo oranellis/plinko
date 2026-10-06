@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{dependency::Dependency, error::PlinkoResult, parent::Parent},
+    types::{data_block::DataBlocks, dependency::Dependency, error::PlinkoResult, parent::Parent},
 };
 // }}}
 
@@ -15,11 +15,20 @@ pub struct Milestone {
     name: String,
     parent: Parent,
     dependencies: Vec<Dependency>,
+    data: DataBlocks,
     persistent_state: PersistentState,
 }
 
 // impl Milestone{{{
 impl Milestone {
+    pub fn data(&self) -> &DataBlocks {
+        &self.data
+    }
+
+    pub(crate) fn data_mut(&mut self) -> &mut DataBlocks {
+        &mut self.data
+    }
+
     pub fn dependencies(&self) -> &Vec<Dependency> {
         &self.dependencies
     }
@@ -40,6 +49,7 @@ impl From<NewMilestone> for Milestone {
             name: new.name,
             parent: new.parent,
             dependencies: Vec::new(),
+            data: DataBlocks::default(),
             persistent_state: PersistentState::new(),
         }
     }

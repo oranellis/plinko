@@ -48,13 +48,18 @@ impl<'a> Graph<'a> {
 
     /// The vertices that `v` waits on
     fn waits_on(&self, v: Vertex) -> Vec<Vertex> {
+        self.edges(v).into_iter().flatten().collect()
+    }
+
+    /// What `v` waits on, where `None` is the plan start
+    fn edges(&self, v: Vertex) -> Vec<Option<Vertex>> {
         match v {
             Vertex::GroupStart(id) => self.item_edges::<TaskGroup>(id),
             Vertex::Node(PlanNode::TaskGroup(id)) => {
                 let members = self.members.get(&id).into_iter().flatten();
                 members
-                    .map(|n| Vertex::Node(*n))
-                    .chain([Vertex::GroupStart(id)])
+                    .map(|n| Some(Vertex::Node(*n)))
+                    .chain([Some(Vertex::GroupStart(id))])
                     .collect()
             }
             Vertex::Node(PlanNode::Task(id)) => self.item_edges::<Task>(id),
@@ -63,14 +68,14 @@ impl<'a> Graph<'a> {
         }
     }
 
-    fn item_edges<T: PlanItem>(&self, id: Uuid) -> Vec<Vertex> {
+    fn item_edges<T: PlanItem>(&self, id: Uuid) -> Vec<Option<Vertex>> {
         let Some(item) = T::entities(self.plan).get(&id) else {
             return Vec::new();
         };
         let parent = item.parent();
         item.dependencies()
             .iter()
-            .filter_map(|d| resolve(d, parent))
+            .map(|d| resolve(d, parent))
             .collect()
     }
 }
@@ -83,7 +88,7 @@ fn collect_members<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<Pla
     }
 }
 
-/// `ParentStart` is the enclosing group's start, or the plan start (no vertex) at top level
+/// `ParentStart` is the enclosing group's start, or the plan start (`None`) at top level
 fn resolve(dep: &Dependency, parent: Parent) -> Option<Vertex> {
     match (dep.node, parent) {
         (DependencyNode::Node(n), _) => Some(n.into()),
@@ -118,4 +123,51 @@ impl Graph<'_> {
         }
         false
     }
+}
+
+fn nodes<T: PlanItem>(plan: &Plan) -> Vec<PlanNode> {
+    T::entities(plan).keys().map(|id| T::node(*id)).collect()
+}
+
+/// Nodes with no chain of dependencies back to the plan start. A node is anchored if any of its
+/// dependencies is the plan start or an anchored node.
+pub fn unscheduled(plan: &Plan) -> HashSet<PlanNode> {
+    let graph = Graph::new(plan);
+    let all_nodes: Vec<PlanNode> = [
+        nodes::<Task>(plan),
+        nodes::<Milestone>(plan),
+        nodes::<PlanBuffer>(plan),
+        nodes::<TaskGroup>(plan),
+    ]
+    .concat();
+    let group_starts = plan.task_groups().keys().map(|id| Vertex::GroupStart(*id));
+    let vertices: Vec<Vertex> = all_nodes
+        .iter()
+        .map(|n| Vertex::Node(*n))
+        .chain(group_starts)
+        .collect();
+
+    let mut dependents: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
+    let mut anchored = HashSet::new();
+    let mut pending = Vec::new();
+    for v in &vertices {
+        let edges = graph.edges(*v);
+        if edges.contains(&None) && anchored.insert(*v) {
+            pending.push(*v);
+        }
+        for dependency in edges.into_iter().flatten() {
+            dependents.entry(dependency).or_default().push(*v);
+        }
+    }
+    while let Some(v) = pending.pop() {
+        for dependent in dependents.get(&v).into_iter().flatten() {
+            if anchored.insert(*dependent) {
+                pending.push(*dependent);
+            }
+        }
+    }
+    all_nodes
+        .into_iter()
+        .filter(|n| !anchored.contains(&Vertex::Node(*n)))
+        .collect()
 }

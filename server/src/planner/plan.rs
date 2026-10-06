@@ -1,5 +1,5 @@
 // modules{{{
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 use uuid::Uuid;
@@ -9,6 +9,8 @@ use crate::{
     planner::{graph, plan_entity::PlanItem, plan_update::PlanUpdate},
     traits::{entity::Entity, patch::Patchable},
     types::{
+        affinity::Affinity,
+        data_block::DataBlock,
         dependency::{DependencyNode, PlanNode},
         error::{PlinkoError, PlinkoResult},
         milestone::{self, Milestone},
@@ -40,6 +42,7 @@ pub struct Plan {
     pub(super) users: HashMap<Uuid, PlanUserData>,
     pub(super) user_groups: HashMap<Uuid, PlanUserGroupData>,
     pub(super) tags: HashMap<Uuid, Tag>,
+    pub(super) affinities: HashMap<Uuid, Affinity>,
     default_availability: RuleSet,
     scheduler_data: PlanSchedulerData,
 }
@@ -57,6 +60,7 @@ impl From<NewPlan> for Plan {
             users: HashMap::new(),
             user_groups: HashMap::new(),
             tags: HashMap::new(),
+            affinities: HashMap::new(),
             default_availability: RuleSet::default(),
             scheduler_data: PlanSchedulerData::new(new.start_date),
         }
@@ -96,6 +100,10 @@ impl Plan {
         &self.user_groups
     }
 
+    pub fn affinities(&self) -> &HashMap<Uuid, Affinity> {
+        &self.affinities
+    }
+
     pub fn tags(&self) -> &HashMap<Uuid, Tag> {
         &self.tags
     }
@@ -107,6 +115,21 @@ impl Plan {
 
     pub fn scheduler_data(&self) -> &PlanSchedulerData {
         &self.scheduler_data
+    }
+
+    /// Items that no dependency chain connects to the plan start, so cannot be scheduled
+    pub fn unscheduled(&self) -> HashSet<PlanNode> {
+        graph::unscheduled(self)
+    }
+
+    /// Whether every affinity linked to the task allows `day`, `None` if there is no such task
+    pub fn task_allows_day(&self, task: &Uuid, day: NaiveDate) -> Option<bool> {
+        let task = self.tasks.get(task)?;
+        let mut affinities = task
+            .affinities()
+            .iter()
+            .filter_map(|a| self.affinities.get(a));
+        Some(affinities.all(|a| a.allows(day)))
     }
 
     pub fn ensure_node_exists(&self, node: &PlanNode) -> PlinkoResult<()> {
@@ -126,6 +149,7 @@ impl Plan {
             Worker::Tag(id) => (id, self.tags.contains_key(id)),
             Worker::User(id) => (id, self.users.contains_key(id)),
             Worker::UserGroup(id) => (id, self.user_groups.contains_key(id)),
+            Worker::Placeholder => return Ok(()),
         };
         exists
             .then_some(())
@@ -163,6 +187,11 @@ impl Plan {
         item.workers()
             .iter()
             .try_for_each(|w| self.ensure_worker_exists(w))?;
+        for affinity in item.affinities() {
+            if !self.affinities.contains_key(&affinity) {
+                return Err(PlinkoError::ItemDoesNotExist(affinity));
+            }
+        }
         match graph::has_cycle_through(self, T::node(id)) {
             true => Err(PlinkoError::DependencyCycle(id)),
             false => Ok(()),
@@ -215,6 +244,23 @@ impl Plan {
             PlanUpdate::User(update) => PlanUserData::apply_crud(self, update),
             PlanUpdate::UserGroup(update) => PlanUserGroupData::apply_crud(self, update),
             PlanUpdate::Tag(update) => Tag::apply_crud(self, update),
+            PlanUpdate::Affinity(update) => Affinity::apply_crud(self, update),
+            PlanUpdate::AffinityRules(id, update) => self
+                .affinities
+                .get_mut(&id)
+                .ok_or(PlinkoError::ItemDoesNotExist(id))?
+                .apply_rule_update(update),
+            PlanUpdate::Data(node, update) => {
+                let data = match node {
+                    PlanNode::Task(id) => self.tasks.get_mut(&id).map(Task::data_mut),
+                    PlanNode::Milestone(id) => {
+                        self.milestones.get_mut(&id).map(Milestone::data_mut)
+                    }
+                    _ => return Err("only tasks and milestones hold data blocks".into()),
+                };
+                let data = data.ok_or_else(|| PlinkoError::ItemDoesNotExist(node.id()))?;
+                DataBlock::apply_crud(data, update)
+            }
             PlanUpdate::Availability(update) => self.default_availability.apply_update(update),
             PlanUpdate::SchedulerData(patch) => {
                 if let Some(Some(node)) = &patch.scheduler_target {
@@ -230,6 +276,8 @@ impl Plan {
 #[derive(Debug, PartialEq)]
 pub struct PlanSchedulerData {
     start_date: NaiveDate,
+    /// The current day, which only moves forward by updates from the server runner
+    today: NaiveDate,
     scheduler_target: Option<PlanNode>,
 }
 
@@ -238,12 +286,17 @@ impl PlanSchedulerData {
     fn new(start_date: NaiveDate) -> Self {
         Self {
             start_date,
+            today: start_date,
             scheduler_target: None,
         }
     }
 
     pub fn start_date(&self) -> &NaiveDate {
         &self.start_date
+    }
+
+    pub fn today(&self) -> &NaiveDate {
+        &self.today
     }
 
     pub fn scheduler_target(&self) -> &Option<PlanNode> {
@@ -256,6 +309,9 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
         if let Some(s) = patch.start_date {
             self.start_date = s;
         }
+        if let Some(t) = patch.today {
+            self.today = t;
+        }
         if let Some(t) = patch.scheduler_target {
             self.scheduler_target = t
         }
@@ -267,6 +323,7 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 #[derive(Debug)]
 pub struct PlanSchedulerDataPatch {
     pub start_date: Option<NaiveDate>,
+    pub today: Option<NaiveDate>,
     pub scheduler_target: Option<Option<PlanNode>>,
 }
 
