@@ -114,6 +114,14 @@ impl Tenant {
                 allow(is_admin, u.actor)?;
                 TenantUserGroup::apply_crud(self, update)
             }
+            TenantUpdateType::Availability(user, update) => {
+                allow(is_admin || user == u.actor, u.actor)?;
+                self.users
+                    .get_mut(&user)
+                    .ok_or(PlinkoError::ItemDoesNotExist(user))?
+                    .availability
+                    .apply_update(update)
+            }
             TenantUpdateType::Plan(update) => self.plan_update(u.actor, is_admin, update),
         }
     }

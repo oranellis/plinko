@@ -1,5 +1,6 @@
 // modules{{{
 use crate::{
+    availability::rule_set::RuleSetUpdate,
     planner::plan::PlanSchedulerDataPatch,
     types::{
         crud::Crud,
@@ -21,5 +22,6 @@ pub enum PlanUpdate {
     User(Crud<NewPlanUser, PlanUserDataPatch>),
     UserGroup(Crud<NewPlanUserGroup, PlanUserGroupPatch>),
     Tag(Crud<NewTag, TagPatch>),
+    Availability(RuleSetUpdate),
     SchedulerData(PlanSchedulerDataPatch),
 }

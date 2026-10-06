@@ -5,6 +5,7 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::{
+    availability::rule_set::RuleSet,
     planner::{graph, plan_entity::PlanItem, plan_update::PlanUpdate},
     traits::{entity::Entity, patch::Patchable},
     types::{
@@ -13,7 +14,6 @@ use crate::{
         milestone::{self, Milestone},
         parent::Parent,
         plan_buffer::PlanBuffer,
-        schedule::{CalendarChanges, WeeklySchedule, WeeklySchedules},
         short_id::ShortId,
         tag::Tag,
         task::{self, Task, Worker},
@@ -40,8 +40,7 @@ pub struct Plan {
     pub(super) users: HashMap<Uuid, PlanUserData>,
     pub(super) user_groups: HashMap<Uuid, PlanUserGroupData>,
     pub(super) tags: HashMap<Uuid, Tag>,
-    plan_weekly_schedule: WeeklySchedules,
-    plan_calendar_changes: CalendarChanges,
+    default_availability: RuleSet,
     scheduler_data: PlanSchedulerData,
 }
 
@@ -58,8 +57,7 @@ impl From<NewPlan> for Plan {
             users: HashMap::new(),
             user_groups: HashMap::new(),
             tags: HashMap::new(),
-            plan_weekly_schedule: WeeklySchedules::new(WeeklySchedule::new_initial_schedule()),
-            plan_calendar_changes: CalendarChanges::new(),
+            default_availability: RuleSet::default(),
             scheduler_data: PlanSchedulerData::new(new.start_date),
         }
     }
@@ -102,12 +100,9 @@ impl Plan {
         &self.tags
     }
 
-    pub fn weekly_schedules(&self) -> &WeeklySchedules {
-        &self.plan_weekly_schedule
-    }
-
-    pub fn calendar_changes(&self) -> &CalendarChanges {
-        &self.plan_calendar_changes
+    /// Availability of placeholder users
+    pub fn default_availability(&self) -> &RuleSet {
+        &self.default_availability
     }
 
     pub fn scheduler_data(&self) -> &PlanSchedulerData {
@@ -220,6 +215,7 @@ impl Plan {
             PlanUpdate::User(update) => PlanUserData::apply_crud(self, update),
             PlanUpdate::UserGroup(update) => PlanUserGroupData::apply_crud(self, update),
             PlanUpdate::Tag(update) => Tag::apply_crud(self, update),
+            PlanUpdate::Availability(update) => self.default_availability.apply_update(update),
             PlanUpdate::SchedulerData(patch) => {
                 if let Some(Some(node)) = &patch.scheduler_target {
                     self.ensure_node_exists(node)?;

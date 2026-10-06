@@ -2,7 +2,8 @@
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
+    availability::rule_set::RuleSet, helpers::functions::check_id_match, traits::patch::Patchable,
+    types::error::PlinkoResult,
 };
 // }}}
 
@@ -19,6 +20,7 @@ pub struct TenantLoginUser {
     name: String,
     email: String,
     role: Role,
+    pub(super) availability: RuleSet,
 }
 
 // impl TenantLoginUser{{{
@@ -29,6 +31,7 @@ impl From<NewTenantLoginUser> for TenantLoginUser {
             name: new.name,
             email: new.email,
             role: new.role,
+            availability: RuleSet::default(),
         }
     }
 }
@@ -40,6 +43,7 @@ impl TenantLoginUser {
             name,
             email,
             role,
+            availability: RuleSet::default(),
         }
     }
 
@@ -57,6 +61,10 @@ impl TenantLoginUser {
 
     pub fn role(&self) -> Role {
         self.role
+    }
+
+    pub fn availability(&self) -> &RuleSet {
+        &self.availability
     }
 }
 

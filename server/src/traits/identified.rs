@@ -1,6 +1,7 @@
 use uuid::Uuid;
 
 use crate::{
+    availability::rule::{NewRule, RulePatch},
     multitenancy::{
         user::{NewTenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
@@ -31,6 +32,8 @@ macro_rules! identified {
 }
 
 identified!(
+    NewRule,
+    RulePatch,
     NewTask,
     TaskPatch,
     NewTaskGroup,

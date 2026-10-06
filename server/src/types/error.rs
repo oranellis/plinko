@@ -16,6 +16,7 @@ pub enum PlinkoError {
     GroupCycle(Uuid),
     DependencyCycle(Uuid),
     ItemInUse(Uuid),
+    InvalidRule(Uuid),
     Forbidden(Uuid),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
@@ -42,6 +43,9 @@ impl std::fmt::Display for PlinkoError {
             }
             PlinkoError::Forbidden(id) => {
                 write!(f, "user {} is not allowed to make this change", id)
+            }
+            PlinkoError::InvalidRule(id) => {
+                write!(f, "availability rule {} is invalid", id)
             }
             PlinkoError::ItemInUse(id) => {
                 write!(f, "item {} is still referenced", id)

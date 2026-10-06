@@ -2,6 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, NaiveDate};
 use plinko::{
+    availability::{
+        rule::{NewRule, RuleKind},
+        rule_set::RuleSetUpdate,
+    },
     multitenancy::{
         tenant::*,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
@@ -250,4 +254,63 @@ fn group_members_edit_plans_their_group_is_assigned_to() {
     assert!(apply(&mut tenant, root, remove_group).is_err());
     let remove_user = TenantUpdateType::User(Crud::Remove(root));
     assert!(apply(&mut tenant, root, remove_user).is_err());
+}
+
+fn holiday(day: NaiveDate) -> RuleSetUpdate {
+    let new = NewRule {
+        id: Uuid::now_v7(),
+        start_day: day,
+        kind: RuleKind::Holiday,
+    };
+    RuleSetUpdate::Rule(Crud::Add(new))
+}
+
+#[test]
+fn availability_is_edited_by_the_user_or_an_admin() {
+    let (mut tenant, root) = new_tenant();
+    let (alice, bob) = (
+        add_user(&mut tenant, root, Role::Member),
+        add_user(&mut tenant, root, Role::Member),
+    );
+    let day = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap(); // a Wednesday
+    let availability = |user, update| TenantUpdateType::Availability(user, update);
+
+    apply(&mut tenant, alice, availability(alice, holiday(day))).unwrap();
+    assert_eq!(
+        tenant.users()[&alice]
+            .availability()
+            .availability_on(day)
+            .get(),
+        0
+    );
+    assert_eq!(
+        tenant.users()[&bob]
+            .availability()
+            .availability_on(day)
+            .get(),
+        8
+    );
+
+    assert!(apply(&mut tenant, bob, availability(alice, holiday(day))).is_err());
+    apply(&mut tenant, root, availability(alice, holiday(day))).unwrap();
+    assert_eq!(tenant.users()[&alice].availability().rules().len(), 2);
+
+    let missing = availability(Uuid::now_v7(), holiday(day));
+    assert!(apply(&mut tenant, root, missing).is_err());
+}
+
+#[test]
+fn plan_default_availability_is_set_through_plan_updates() {
+    let (mut tenant, root) = new_tenant();
+    let plan = add_plan(&mut tenant, root).unwrap();
+    let day = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
+    plan_update(
+        &mut tenant,
+        root,
+        plan,
+        PlanUpdate::Availability(holiday(day)),
+    )
+    .unwrap();
+    let default = tenant.plans()[&plan].default_availability();
+    assert_eq!(default.availability_on(day).get(), 0);
 }

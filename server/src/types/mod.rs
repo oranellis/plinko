@@ -5,7 +5,6 @@ pub mod error;
 pub mod milestone;
 pub mod parent;
 pub mod plan_buffer;
-pub mod schedule;
 pub mod short_id;
 pub mod tag;
 pub mod task;

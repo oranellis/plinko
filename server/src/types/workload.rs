@@ -1,6 +1,6 @@
 use crate::types::error::{PlinkoError, PlinkoResult};
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Workload {
     value: u8,
 }
@@ -12,10 +12,6 @@ impl Workload {
         } else {
             Err(PlinkoError::InvalidWorkload)
         }
-    }
-
-    pub(crate) fn new_unchecked(value: u8) -> Self {
-        Self { value }
     }
 
     pub fn get(&self) -> u8 {

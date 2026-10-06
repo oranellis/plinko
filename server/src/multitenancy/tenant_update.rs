@@ -1,5 +1,6 @@
 // modules{{{
 use crate::{
+    availability::rule_set::RuleSetUpdate,
     multitenancy::{
         user::{NewTenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
@@ -23,6 +24,8 @@ pub struct TenantUpdate {
 pub enum TenantUpdateType {
     User(Crud<NewTenantLoginUser, TenantLoginUserPatch>),
     UserGroup(Crud<NewTenantUserGroup, TenantUserGroupPatch>),
+    /// Change one user's availability, which only they or an admin may do
+    Availability(Uuid, RuleSetUpdate),
     Plan(PlanTenantUpdate),
 }
 
