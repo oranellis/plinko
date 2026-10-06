@@ -8,9 +8,9 @@ use crate::{
 };
 // }}}
 
-/// A zero duration start and end node around a set of tasks and nested groups. The group
-/// start depends on `dependencies`, every member implicitly depends on the start and the end
-/// implicitly depends on every member. Those implicit edges are derived by the scheduler.
+/// A single zero duration node around a set of tasks and nested groups. The group starts when
+/// `dependencies` are met, members anchor to that start with `DependencyNode::ParentStart`, and
+/// the group ends once every member has ended. The end edges are derived by the scheduler.
 #[derive(Debug, PartialEq)]
 pub struct TaskGroup {
     id: Uuid,

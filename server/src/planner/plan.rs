@@ -112,13 +112,10 @@ impl Plan {
 
     pub fn ensure_node_exists(&self, node: &PlanNode) -> PlinkoResult<()> {
         let (id, exists) = match node {
-            PlanNode::PlanStart => return Ok(()),
             PlanNode::Task(id) => (id, self.tasks.contains_key(id)),
             PlanNode::Milestone(id) => (id, self.milestones.contains_key(id)),
             PlanNode::PlanBuffer(id) => (id, self.plan_buffers.contains_key(id)),
-            PlanNode::TaskGroupStart(id) | PlanNode::TaskGroupEnd(id) => {
-                (id, self.task_groups.contains_key(id))
-            }
+            PlanNode::TaskGroup(id) => (id, self.task_groups.contains_key(id)),
         };
         exists
             .then_some(())
@@ -135,7 +132,7 @@ impl Plan {
                     id
                 }
                 GroupMember::TaskGroup(id) => {
-                    self.ensure_node_exists(&PlanNode::TaskGroupStart(id))?;
+                    self.ensure_node_exists(&PlanNode::TaskGroup(id))?;
                     if id == group || self.group_nests(id, group) {
                         return Err(PlinkoError::GroupCycle(group));
                     }
@@ -279,7 +276,7 @@ fn remove_item<T>(map: &mut HashMap<Uuid, T>, id: Uuid) -> PlinkoResult<()> {
 #[derive(Debug, PartialEq)]
 pub struct PlanSchedulerData {
     start_date: NaiveDate,
-    scheduler_target: PlanNode,
+    scheduler_target: Option<PlanNode>,
 }
 
 // impl PlanSchedulerData{{{
@@ -287,7 +284,7 @@ impl PlanSchedulerData {
     fn new(start_date: NaiveDate) -> Self {
         Self {
             start_date,
-            scheduler_target: PlanNode::PlanStart,
+            scheduler_target: None,
         }
     }
 
@@ -295,7 +292,7 @@ impl PlanSchedulerData {
         &self.start_date
     }
 
-    pub fn scheduler_target(&self) -> &PlanNode {
+    pub fn scheduler_target(&self) -> &Option<PlanNode> {
         &self.scheduler_target
     }
 }
@@ -316,7 +313,7 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 #[derive(Debug)]
 pub struct PlanSchedulerDataPatch {
     pub start_date: Option<NaiveDate>,
-    pub scheduler_target: Option<PlanNode>,
+    pub scheduler_target: Option<Option<PlanNode>>,
 }
 
 #[derive(Debug, PartialEq)]
