@@ -19,6 +19,12 @@ pub struct PlanUserData {
 }
 
 // impl User{{{
+impl Default for PlanUserData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlanUserData {
     pub fn new() -> Self {
         Self {
