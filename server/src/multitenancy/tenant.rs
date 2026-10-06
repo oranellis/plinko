@@ -45,7 +45,7 @@ impl Tenant {
         Self {
             id,
             name,
-            users: HashMap::new(),
+            users,
             plans: HashMap::new(),
         }
     }
