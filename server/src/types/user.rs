@@ -51,6 +51,30 @@ impl Patchable<PlanUserDataPatch> for PlanUserData {
 }
 // }}}
 
+/// A tenant user group assigned to a plan, so anyone in it can be allocated tasks
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PlanUserGroupData;
+
+impl From<NewPlanUserGroup> for PlanUserGroupData {
+    fn from(_: NewPlanUserGroup) -> Self {
+        Self
+    }
+}
+
+impl Patchable<PlanUserGroupPatch> for PlanUserGroupData {
+    fn apply_patch(&mut self, _patch: PlanUserGroupPatch) -> PlinkoResult<()> {
+        Ok(())
+    }
+}
+
+pub struct NewPlanUserGroup {
+    pub id: Uuid,
+}
+
+pub struct PlanUserGroupPatch {
+    pub id: Uuid,
+}
+
 pub struct NewPlanUser {
     pub id: Uuid,
 }

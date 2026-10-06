@@ -150,6 +150,7 @@ pub enum ScheduleMode {
 pub enum Worker {
     Tag(Uuid),
     User(Uuid),
+    UserGroup(Uuid),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

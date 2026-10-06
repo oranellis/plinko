@@ -8,7 +8,7 @@ use crate::{
         tag::{NewTag, TagPatch},
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
-        user::{NewPlanUser, PlanUserDataPatch},
+        user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
     },
 };
 // }}}
@@ -19,6 +19,7 @@ pub enum PlanUpdate {
     Milestone(Crud<NewMilestone, MilestonePatch>),
     PlanBuffer(Crud<NewPlanBuffer, PlanBufferPatch>),
     User(Crud<NewPlanUser, PlanUserDataPatch>),
+    UserGroup(Crud<NewPlanUserGroup, PlanUserGroupPatch>),
     Tag(Crud<NewTag, TagPatch>),
     SchedulerData(PlanSchedulerDataPatch),
 }

@@ -16,6 +16,7 @@ pub enum PlinkoError {
     GroupCycle(Uuid),
     DependencyCycle(Uuid),
     ItemInUse(Uuid),
+    Forbidden(Uuid),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
     IdMismatch(String, String),
@@ -38,6 +39,9 @@ impl std::fmt::Display for PlinkoError {
             }
             PlinkoError::DependencyCycle(id) => {
                 write!(f, "item {} would create a dependency cycle", id)
+            }
+            PlinkoError::Forbidden(id) => {
+                write!(f, "user {} is not allowed to make this change", id)
             }
             PlinkoError::ItemInUse(id) => {
                 write!(f, "item {} is still referenced", id)

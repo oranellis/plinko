@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     planner::plan::Plan,
-    traits::{identified::Identified, patch::Patchable},
+    traits::entity::Entity,
     types::{
         dependency::{Dependency, PlanNode},
         error::PlinkoResult,
@@ -15,32 +15,16 @@ use crate::{
         tag::{NewTag, Tag, TagPatch},
         task::{NewTask, Task, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroup, TaskGroupPatch},
-        user::{NewPlanUser, PlanUserData, PlanUserDataPatch},
+        user::{
+            NewPlanUser, NewPlanUserGroup, PlanUserData, PlanUserDataPatch, PlanUserGroupData,
+            PlanUserGroupPatch,
+        },
     },
 };
 // }}}
 
-/// A collection of things stored in a plan and changed with `Crud` updates
-pub trait PlanEntity: Sized + Clone + Patchable<Self::Patch> {
-    type New: Identified + Into<Self>;
-    type Patch: Identified;
-
-    fn entities(plan: &Plan) -> &HashMap<Uuid, Self>;
-    fn entities_mut(plan: &mut Plan) -> &mut HashMap<Uuid, Self>;
-
-    /// Checked after every add or update, a failure reverts the change
-    fn validate(_plan: &Plan, _id: Uuid) -> PlinkoResult<()> {
-        Ok(())
-    }
-
-    /// Whether something else still refers to the entity, which blocks removal
-    fn in_use(_plan: &Plan, _id: Uuid) -> bool {
-        false
-    }
-}
-
 /// A schedulable entity with a parent and dependencies, and so a place in the dependency graph
-pub trait PlanItem: PlanEntity {
+pub trait PlanItem: Entity<Plan> {
     fn node(id: Uuid) -> PlanNode;
     fn parent(&self) -> Parent;
     fn dependencies(&self) -> &[Dependency];
@@ -51,7 +35,7 @@ pub trait PlanItem: PlanEntity {
 
 macro_rules! plan_item {
     ($ty:ident, $node:ident, $new:ty, $patch:ty, $field:ident $(, workers: $workers:expr)?) => {
-        impl PlanEntity for $ty {
+        impl Entity<Plan> for $ty {
             type New = $new;
             type Patch = $patch;
 
@@ -110,7 +94,7 @@ plan_item!(
     task_groups
 );
 
-impl PlanEntity for Tag {
+impl Entity<Plan> for Tag {
     type New = NewTag;
     type Patch = TagPatch;
 
@@ -125,7 +109,7 @@ impl PlanEntity for Tag {
     }
 }
 
-impl PlanEntity for PlanUserData {
+impl Entity<Plan> for PlanUserData {
     type New = NewPlanUser;
     type Patch = PlanUserDataPatch;
 
@@ -137,5 +121,20 @@ impl PlanEntity for PlanUserData {
     }
     fn in_use(plan: &Plan, id: Uuid) -> bool {
         plan.worker_in_use(Worker::User(id))
+    }
+}
+
+impl Entity<Plan> for PlanUserGroupData {
+    type New = NewPlanUserGroup;
+    type Patch = PlanUserGroupPatch;
+
+    fn entities(plan: &Plan) -> &HashMap<Uuid, Self> {
+        &plan.user_groups
+    }
+    fn entities_mut(plan: &mut Plan) -> &mut HashMap<Uuid, Self> {
+        &mut plan.user_groups
+    }
+    fn in_use(plan: &Plan, id: Uuid) -> bool {
+        plan.worker_in_use(Worker::UserGroup(id))
     }
 }

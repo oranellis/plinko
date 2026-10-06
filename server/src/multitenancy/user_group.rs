@@ -9,9 +9,13 @@ use crate::{
 
 // }}}
 
+/// A team of users. A group's parent makes teams hierarchical, so anyone in a subgroup is also
+/// in every group above it.
+#[derive(Clone, Debug, PartialEq)]
 pub struct TenantUserGroup {
     id: Uuid,
     name: String,
+    parent: Option<Uuid>,
     users: HashSet<Uuid>,
 }
 
@@ -25,6 +29,10 @@ impl TenantUserGroup {
         &self.name
     }
 
+    pub fn parent(&self) -> Option<Uuid> {
+        self.parent
+    }
+
     pub fn users(&self) -> &HashSet<Uuid> {
         &self.users
     }
@@ -35,6 +43,7 @@ impl From<NewTenantUserGroup> for TenantUserGroup {
         Self {
             id: new.id,
             name: new.name,
+            parent: new.parent,
             users: new.users,
         }
     }
@@ -45,6 +54,9 @@ impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
         check_id_match(self.id, patch.id)?;
         if let Some(n) = patch.name {
             self.name = n;
+        }
+        if let Some(p) = patch.parent {
+            self.parent = p;
         }
         if let Some(u) = patch.users {
             self.users = u;
@@ -57,11 +69,13 @@ impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
 pub struct NewTenantUserGroup {
     pub id: Uuid,
     pub name: String,
+    pub parent: Option<Uuid>,
     pub users: HashSet<Uuid>,
 }
 
 pub struct TenantUserGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
+    pub parent: Option<Option<Uuid>>,
     pub users: Option<HashSet<Uuid>>,
 }

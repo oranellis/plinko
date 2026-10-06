@@ -1,18 +1,13 @@
 // modules{{{
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::{
-    planner::{
-        graph,
-        plan_entity::{PlanEntity, PlanItem},
-        plan_update::PlanUpdate,
-    },
-    traits::{identified::Identified, patch::Patchable},
+    planner::{graph, plan_entity::PlanItem, plan_update::PlanUpdate},
+    traits::{entity::Entity, patch::Patchable},
     types::{
-        crud::Crud,
         dependency::{DependencyNode, PlanNode},
         error::{PlinkoError, PlinkoResult},
         milestone::{self, Milestone},
@@ -23,7 +18,7 @@ use crate::{
         tag::Tag,
         task::{self, Task, Worker},
         task_group::TaskGroup,
-        user::PlanUserData,
+        user::{PlanUserData, PlanUserGroupData},
     },
 };
 // }}}
@@ -43,6 +38,7 @@ pub struct Plan {
     pub(super) milestones: HashMap<Uuid, Milestone>,
     pub(super) plan_buffers: HashMap<Uuid, PlanBuffer>,
     pub(super) users: HashMap<Uuid, PlanUserData>,
+    pub(super) user_groups: HashMap<Uuid, PlanUserGroupData>,
     pub(super) tags: HashMap<Uuid, Tag>,
     plan_weekly_schedule: WeeklySchedules,
     plan_calendar_changes: CalendarChanges,
@@ -60,6 +56,7 @@ impl From<NewPlan> for Plan {
             milestones: HashMap::new(),
             plan_buffers: HashMap::new(),
             users: HashMap::new(),
+            user_groups: HashMap::new(),
             tags: HashMap::new(),
             plan_weekly_schedule: WeeklySchedules::new(WeeklySchedule::new_initial_schedule()),
             plan_calendar_changes: CalendarChanges::new(),
@@ -97,6 +94,10 @@ impl Plan {
         &self.users
     }
 
+    pub fn user_groups(&self) -> &HashMap<Uuid, PlanUserGroupData> {
+        &self.user_groups
+    }
+
     pub fn tags(&self) -> &HashMap<Uuid, Tag> {
         &self.tags
     }
@@ -129,6 +130,7 @@ impl Plan {
         let (id, exists) = match worker {
             Worker::Tag(id) => (id, self.tags.contains_key(id)),
             Worker::User(id) => (id, self.users.contains_key(id)),
+            Worker::UserGroup(id) => (id, self.user_groups.contains_key(id)),
         };
         exists
             .then_some(())
@@ -211,56 +213,18 @@ impl Plan {
 
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
         match u {
-            PlanUpdate::Task(update) => self.apply_crud::<Task>(update),
-            PlanUpdate::TaskGroup(update) => self.apply_crud::<TaskGroup>(update),
-            PlanUpdate::Milestone(update) => self.apply_crud::<Milestone>(update),
-            PlanUpdate::PlanBuffer(update) => self.apply_crud::<PlanBuffer>(update),
-            PlanUpdate::User(update) => self.apply_crud::<PlanUserData>(update),
-            PlanUpdate::Tag(update) => self.apply_crud::<Tag>(update),
+            PlanUpdate::Task(update) => Task::apply_crud(self, update),
+            PlanUpdate::TaskGroup(update) => TaskGroup::apply_crud(self, update),
+            PlanUpdate::Milestone(update) => Milestone::apply_crud(self, update),
+            PlanUpdate::PlanBuffer(update) => PlanBuffer::apply_crud(self, update),
+            PlanUpdate::User(update) => PlanUserData::apply_crud(self, update),
+            PlanUpdate::UserGroup(update) => PlanUserGroupData::apply_crud(self, update),
+            PlanUpdate::Tag(update) => Tag::apply_crud(self, update),
             PlanUpdate::SchedulerData(patch) => {
                 if let Some(Some(node)) = &patch.scheduler_target {
                     self.ensure_node_exists(node)?;
                 }
                 self.scheduler_data.apply_patch(patch)
-            }
-        }
-    }
-
-    /// Applies the change then validates it, putting the entity back as it was on failure
-    fn apply_crud<T: PlanEntity>(&mut self, update: Crud<T::New, T::Patch>) -> PlinkoResult<()> {
-        match update {
-            Crud::Add(new) => {
-                let id = new.id();
-                match T::entities_mut(self).entry(id) {
-                    Entry::Occupied(_) => return Err(PlinkoError::ItemExists(id)),
-                    Entry::Vacant(entry) => entry.insert(new.into()),
-                };
-                T::validate(self, id).inspect_err(|_| {
-                    T::entities_mut(self).remove(&id);
-                })
-            }
-            Crud::Update(patch) => {
-                let id = patch.id();
-                let entity = T::entities_mut(self)
-                    .get_mut(&id)
-                    .ok_or(PlinkoError::ItemDoesNotExist(id))?;
-                let old = entity.clone();
-                let result = entity
-                    .apply_patch(patch)
-                    .and_then(|()| T::validate(self, id));
-                if result.is_err() {
-                    T::entities_mut(self).insert(id, old);
-                }
-                result
-            }
-            Crud::Remove(id) => {
-                if T::in_use(self, id) {
-                    return Err(PlinkoError::ItemInUse(id));
-                }
-                T::entities_mut(self)
-                    .remove(&id)
-                    .map(drop)
-                    .ok_or(PlinkoError::ItemDoesNotExist(id))
             }
         }
     }

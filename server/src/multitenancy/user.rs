@@ -1,11 +1,24 @@
 // modules{{{
 use uuid::Uuid;
+
+use crate::{
+    helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
+};
 // }}}
 
+/// Admins see and edit everything, members create plans and edit the plans they are part of
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Role {
+    Admin,
+    Member,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct TenantLoginUser {
     id: Uuid,
     name: String,
     email: String,
+    role: Role,
 }
 
 // impl TenantLoginUser{{{
@@ -15,16 +28,18 @@ impl From<NewTenantLoginUser> for TenantLoginUser {
             id: new.id,
             name: new.name,
             email: new.email,
+            role: new.role,
         }
     }
 }
 
 impl TenantLoginUser {
-    pub fn new(name: String, email: String) -> Self {
+    pub fn new(name: String, email: String, role: Role) -> Self {
         Self {
             id: Uuid::now_v7(),
             name,
             email,
+            role,
         }
     }
 
@@ -40,12 +55,24 @@ impl TenantLoginUser {
         &self.email
     }
 
-    pub fn set_name(&mut self, name: String) {
-        self.name = name;
+    pub fn role(&self) -> Role {
+        self.role
     }
+}
 
-    pub fn set_email(&mut self, email: String) {
-        self.email = email;
+impl Patchable<TenantLoginUserPatch> for TenantLoginUser {
+    fn apply_patch(&mut self, patch: TenantLoginUserPatch) -> PlinkoResult<()> {
+        check_id_match(self.id, patch.id)?;
+        if let Some(n) = patch.name {
+            self.name = n;
+        }
+        if let Some(e) = patch.email {
+            self.email = e;
+        }
+        if let Some(r) = patch.role {
+            self.role = r;
+        }
+        Ok(())
     }
 }
 // }}}
@@ -54,10 +81,12 @@ pub struct NewTenantLoginUser {
     pub id: Uuid,
     pub name: String,
     pub email: String,
+    pub role: Role,
 }
 
 pub struct TenantLoginUserPatch {
     pub id: Uuid,
     pub name: Option<String>,
     pub email: Option<String>,
+    pub role: Option<Role>,
 }

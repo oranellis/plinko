@@ -11,7 +11,7 @@ use crate::{
         tag::{NewTag, TagPatch},
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
-        user::{NewPlanUser, PlanUserDataPatch},
+        user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
     },
 };
 
@@ -43,6 +43,8 @@ identified!(
     TagPatch,
     NewPlanUser,
     PlanUserDataPatch,
+    NewPlanUserGroup,
+    PlanUserGroupPatch,
     NewTenantLoginUser,
     TenantLoginUserPatch,
     NewTenantUserGroup,
