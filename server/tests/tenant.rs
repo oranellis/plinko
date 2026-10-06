@@ -314,3 +314,39 @@ fn plan_default_availability_is_set_through_plan_updates() {
     let default = tenant.plans()[&plan].default_availability();
     assert_eq!(default.availability_on(day).get(), 0);
 }
+
+#[test]
+fn calendars_are_rebuilt_only_when_availability_changes() {
+    let (mut tenant, root) = new_tenant();
+    let alice = add_user(&mut tenant, root, Role::Member);
+    let (from, until) = (
+        NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2024, 1, 31).unwrap(),
+    );
+    assert!(tenant.calendar(&alice).is_none());
+    tenant.refresh_calendars(from, until);
+    let day = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
+    assert_eq!(tenant.calendar(&alice).unwrap().on(day).unwrap().get(), 8);
+
+    // unrelated updates keep the calendar, availability updates clear it until the next refresh
+    add_plan(&mut tenant, root).unwrap();
+    assert!(tenant.calendar(&alice).is_some());
+    let update = TenantUpdateType::Availability(alice, holiday(day));
+    apply(&mut tenant, alice, update).unwrap();
+    assert!(tenant.calendar(&alice).is_none());
+    assert!(tenant.calendar(&root).is_some());
+    tenant.refresh_calendars(from, until);
+    assert_eq!(tenant.calendar(&alice).unwrap().on(day).unwrap().get(), 0);
+
+    // a wider range forces a rebuild, and removing a user drops theirs
+    let wider = NaiveDate::from_ymd_opt(2024, 2, 29).unwrap();
+    tenant.refresh_calendars(from, wider);
+    assert_eq!(tenant.calendar(&alice).unwrap().end(), wider);
+    apply(
+        &mut tenant,
+        root,
+        TenantUpdateType::User(Crud::Remove(alice)),
+    )
+    .unwrap();
+    assert!(tenant.calendar(&alice).is_none());
+}

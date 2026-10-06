@@ -1,12 +1,14 @@
 // modules{{{
 use std::collections::{HashMap, HashSet};
 
+use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::{
+    availability::calendar::Calendar,
     multitenancy::{
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
-        user::{Role, TenantLoginUser},
+        user::{Role, TenantLoginUser, TenantUserVolatileState},
         user_group::TenantUserGroup,
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
@@ -25,26 +27,19 @@ pub struct Tenant {
     name: String,
     pub(super) users: HashMap<Uuid, TenantLoginUser>,
     pub(super) user_groups: HashMap<Uuid, TenantUserGroup>,
+    volatile: HashMap<Uuid, TenantUserVolatileState>,
     pub(super) plans: HashMap<ShortId, Plan>,
 }
 
 // impl Tenant{{{
 impl Tenant {
     pub fn new(id: ShortId, name: String) -> Self {
-        let mut users = HashMap::new();
         let root_user = TenantLoginUser::new(
             "Root User".to_string(),
             "root@localhost".to_string(),
             Role::Admin,
         );
-        users.insert(*root_user.id(), root_user);
-        Self {
-            id,
-            name,
-            users,
-            user_groups: HashMap::new(),
-            plans: HashMap::new(),
-        }
+        Self::new_with_login(id, name, root_user)
     }
 
     /// Create a new tenant with a specific initial login
@@ -60,6 +55,7 @@ impl Tenant {
             name,
             users,
             user_groups: HashMap::new(),
+            volatile: HashMap::new(),
             plans: HashMap::new(),
         }
     }
@@ -108,7 +104,13 @@ impl Tenant {
                 let own_profile =
                     matches!(&update, Crud::Update(p) if p.id == u.actor && p.role.is_none());
                 allow(is_admin || own_profile, u.actor)?;
-                TenantLoginUser::apply_crud(self, update)
+                let removed = match &update {
+                    Crud::Remove(id) => Some(*id),
+                    _ => None,
+                };
+                TenantLoginUser::apply_crud(self, update)?;
+                removed.map(|id| self.volatile.remove(&id));
+                Ok(())
             }
             TenantUpdateType::UserGroup(update) => {
                 allow(is_admin, u.actor)?;
@@ -120,7 +122,9 @@ impl Tenant {
                     .get_mut(&user)
                     .ok_or(PlinkoError::ItemDoesNotExist(user))?
                     .availability
-                    .apply_update(update)
+                    .apply_update(update)?;
+                self.volatile.remove(&user);
+                Ok(())
             }
             TenantUpdateType::Plan(update) => self.plan_update(u.actor, is_admin, update),
         }
@@ -182,6 +186,26 @@ impl Tenant {
         exists
             .then_some(())
             .ok_or(PlinkoError::ItemDoesNotExist(id))
+    }
+
+    /// A user's availability calendar, as of the last `refresh_calendars`
+    pub fn calendar(&self, user: &Uuid) -> Option<&Calendar> {
+        self.volatile.get(user)?.calendar.as_ref()
+    }
+
+    /// Makes sure every user has a calendar covering `from..=until`, rebuilding only those whose
+    /// rules changed since or that do not cover the range
+    pub fn refresh_calendars(&mut self, from: NaiveDate, until: NaiveDate) {
+        for (id, user) in &self.users {
+            let state = self.volatile.entry(*id).or_default();
+            let covers = state
+                .calendar
+                .as_ref()
+                .is_some_and(|c| c.start() <= from && until <= c.end());
+            if !covers {
+                state.calendar = Some(user.availability().calendar(from, until));
+            }
+        }
     }
 
     /// Everyone in the group or any group below it

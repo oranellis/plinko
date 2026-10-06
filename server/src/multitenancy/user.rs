@@ -2,7 +2,9 @@
 use uuid::Uuid;
 
 use crate::{
-    availability::rule_set::RuleSet, helpers::functions::check_id_match, traits::patch::Patchable,
+    availability::{calendar::Calendar, rule_set::RuleSet},
+    helpers::functions::check_id_match,
+    traits::patch::Patchable,
     types::error::PlinkoResult,
 };
 // }}}
@@ -84,6 +86,13 @@ impl Patchable<TenantLoginUserPatch> for TenantLoginUser {
     }
 }
 // }}}
+
+/// Derived from a user's rules and rebuilt when they change, so it is never part of the user's
+/// own state
+#[derive(Debug, Default)]
+pub struct TenantUserVolatileState {
+    pub calendar: Option<Calendar>,
+}
 
 pub struct NewTenantLoginUser {
     pub id: Uuid,
