@@ -8,21 +8,16 @@ use crate::{
 };
 // }}}
 
-/// A single zero duration node around a set of tasks and nested groups. The group starts when
-/// `dependencies` are met, members anchor to that start with `DependencyNode::ParentStart`, and
-/// the group ends once every member has ended. The end edges are derived by the scheduler.
+/// A single zero duration node around the items whose `parent` is this group (tasks, milestones,
+/// buffers and nested groups). The group starts when `dependencies` are met, members anchor to that
+/// start with `DependencyNode::ParentStart`, and the group ends once every member has ended. The
+/// end edges are derived by the scheduler.
 #[derive(Debug, PartialEq)]
 pub struct TaskGroup {
     id: Uuid,
     name: String,
     dependencies: Vec<Dependency>,
-    contents: Vec<GroupMember>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum GroupMember {
-    Task(Uuid),
-    TaskGroup(Uuid),
+    parent: Option<Uuid>,
 }
 
 // impl TaskGroup {{{
@@ -39,8 +34,8 @@ impl TaskGroup {
         &self.dependencies
     }
 
-    pub fn contents(&self) -> &Vec<GroupMember> {
-        &self.contents
+    pub fn parent(&self) -> Option<Uuid> {
+        self.parent
     }
 }
 
@@ -50,7 +45,7 @@ impl From<NewTaskGroup> for TaskGroup {
             id: new.id,
             name: new.name,
             dependencies: Vec::new(),
-            contents: Vec::new(),
+            parent: new.parent,
         }
     }
 }
@@ -65,8 +60,8 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
         if let Some(d) = patch.dependencies {
             self.dependencies = d;
         }
-        if let Some(c) = patch.contents {
-            self.contents = c;
+        if let Some(p) = patch.parent {
+            self.parent = p;
         }
         Ok(())
     }
@@ -76,13 +71,14 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
 pub struct NewTaskGroup {
     pub id: Uuid,
     pub name: String,
+    pub parent: Option<Uuid>,
 }
 
 pub struct TaskGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
     pub dependencies: Option<Vec<Dependency>>,
-    pub contents: Option<Vec<GroupMember>>,
+    pub parent: Option<Option<Uuid>>,
 }
 
 pub struct VolatileState {}

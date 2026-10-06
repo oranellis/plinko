@@ -1,5 +1,5 @@
 // modules{{{
-use std::collections::{HashMap, HashSet, hash_map::Entry};
+use std::collections::{HashMap, hash_map::Entry};
 
 use chrono::NaiveDate;
 use uuid::Uuid;
@@ -19,7 +19,7 @@ use crate::{
         short_id::ShortId,
         tag::Tag,
         task::{self, Task},
-        task_group::{GroupMember, TaskGroup},
+        task_group::TaskGroup,
         user::PlanUserData,
     },
 };
@@ -122,42 +122,29 @@ impl Plan {
             .ok_or(PlinkoError::ItemDoesNotExist(*id))
     }
 
-    /// Members must exist, belong to one group only and not nest a group inside itself.
-    fn validate_group_contents(&self, group: Uuid, contents: &[GroupMember]) -> PlinkoResult<()> {
-        let mut seen = HashSet::new();
-        for member in contents {
-            let id = match *member {
-                GroupMember::Task(id) => {
-                    self.ensure_node_exists(&PlanNode::Task(id))?;
-                    id
-                }
-                GroupMember::TaskGroup(id) => {
-                    self.ensure_node_exists(&PlanNode::TaskGroup(id))?;
-                    if id == group || self.group_nests(id, group) {
-                        return Err(PlinkoError::GroupCycle(group));
-                    }
-                    id
-                }
-            };
-            let in_other_group = self
-                .task_groups
-                .iter()
-                .any(|(gid, g)| *gid != group && g.contents().contains(member));
-            if in_other_group || !seen.insert(member) {
-                return Err(PlinkoError::AlreadyInGroup(id));
+    /// The parent must be an existing group and must not be the item itself or one of its
+    /// descendants.
+    fn validate_parent(&self, id: Uuid, parent: Option<Uuid>) -> PlinkoResult<()> {
+        let mut next = parent;
+        while let Some(group) = next {
+            if group == id {
+                return Err(PlinkoError::GroupCycle(id));
             }
+            next = self
+                .task_groups
+                .get(&group)
+                .ok_or(PlinkoError::ItemDoesNotExist(group))?
+                .parent();
         }
         Ok(())
     }
 
-    /// Whether `target` is nested anywhere below group `root`
-    fn group_nests(&self, root: Uuid, target: Uuid) -> bool {
-        self.task_groups.get(&root).is_some_and(|g| {
-            g.contents().iter().any(|m| match *m {
-                GroupMember::TaskGroup(id) => id == target || self.group_nests(id, target),
-                GroupMember::Task(_) => false,
-            })
-        })
+    fn has_members(&self, group: Uuid) -> bool {
+        let parent = Some(group);
+        self.tasks.values().any(|i| i.parent() == parent)
+            || self.milestones.values().any(|i| i.parent() == parent)
+            || self.plan_buffers.values().any(|i| i.parent() == parent)
+            || self.task_groups.values().any(|i| i.parent() == parent)
     }
 
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
@@ -174,8 +161,14 @@ impl Plan {
 
     fn task_update(&mut self, update: TaskUpdate) -> PlinkoResult<()> {
         match update {
-            TaskUpdate::Add(new) => add_item(&mut self.tasks, new.id, new.into()),
+            TaskUpdate::Add(new) => {
+                self.validate_parent(new.id, new.parent)?;
+                add_item(&mut self.tasks, new.id, new.into())
+            }
             TaskUpdate::Update(task_patch) => {
+                if let Some(parent) = task_patch.parent {
+                    self.validate_parent(task_patch.id, parent)?;
+                }
                 update_map_item(&mut self.tasks, task_patch.id, task_patch)
             }
             TaskUpdate::Remove(id) => remove_item(&mut self.tasks, id),
@@ -184,21 +177,35 @@ impl Plan {
 
     fn task_group_update(&mut self, update: TaskGroupUpdate) -> PlinkoResult<()> {
         match update {
-            TaskGroupUpdate::Add(new) => add_item(&mut self.task_groups, new.id, new.into()),
+            TaskGroupUpdate::Add(new) => {
+                self.validate_parent(new.id, new.parent)?;
+                add_item(&mut self.task_groups, new.id, new.into())
+            }
             TaskGroupUpdate::Update(patch) => {
-                if let Some(contents) = &patch.contents {
-                    self.validate_group_contents(patch.id, contents)?;
+                if let Some(parent) = patch.parent {
+                    self.validate_parent(patch.id, parent)?;
                 }
                 update_map_item(&mut self.task_groups, patch.id, patch)
             }
-            TaskGroupUpdate::Remove(id) => remove_item(&mut self.task_groups, id),
+            TaskGroupUpdate::Remove(id) => {
+                if self.has_members(id) {
+                    return Err(PlinkoError::GroupNotEmpty(id));
+                }
+                remove_item(&mut self.task_groups, id)
+            }
         }
     }
 
     fn plan_buffer_update(&mut self, update: PlanBufferUpdate) -> PlinkoResult<()> {
         match update {
-            PlanBufferUpdate::Add(new) => add_item(&mut self.plan_buffers, new.id, new.into()),
+            PlanBufferUpdate::Add(new) => {
+                self.validate_parent(new.id, new.parent)?;
+                add_item(&mut self.plan_buffers, new.id, new.into())
+            }
             PlanBufferUpdate::Update(patch) => {
+                if let Some(parent) = patch.parent {
+                    self.validate_parent(patch.id, parent)?;
+                }
                 update_map_item(&mut self.plan_buffers, patch.id, patch)
             }
             PlanBufferUpdate::Remove(id) => remove_item(&mut self.plan_buffers, id),
@@ -217,8 +224,14 @@ impl Plan {
 
     fn milestone_update(&mut self, update: MilestoneUpdate) -> PlinkoResult<()> {
         match update {
-            MilestoneUpdate::Add(new) => add_item(&mut self.milestones, new.id, new.into()),
+            MilestoneUpdate::Add(new) => {
+                self.validate_parent(new.id, new.parent)?;
+                add_item(&mut self.milestones, new.id, new.into())
+            }
             MilestoneUpdate::Update(milestone_patch) => {
+                if let Some(parent) = milestone_patch.parent {
+                    self.validate_parent(milestone_patch.id, parent)?;
+                }
                 update_map_item(&mut self.milestones, milestone_patch.id, milestone_patch)
             }
             MilestoneUpdate::Remove(id) => remove_item(&mut self.milestones, id),

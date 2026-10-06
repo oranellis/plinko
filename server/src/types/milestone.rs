@@ -11,11 +11,16 @@ use crate::{
 pub struct Milestone {
     id: Uuid,
     name: String,
+    parent: Option<Uuid>,
     persistent_state: PersistentState,
 }
 
 // impl Milestone{{{
 impl Milestone {
+    pub fn parent(&self) -> Option<Uuid> {
+        self.parent
+    }
+
     pub fn id(&self) -> &Uuid {
         &self.id
     }
@@ -26,6 +31,7 @@ impl From<NewMilestone> for Milestone {
         Self {
             id: new.id,
             name: new.name,
+            parent: new.parent,
             persistent_state: PersistentState::new(),
         }
     }
@@ -36,6 +42,9 @@ impl Patchable<MilestonePatch> for Milestone {
         check_id_match(*self.id(), patch.id)?;
         if let Some(n) = patch.name {
             self.name = n;
+        }
+        if let Some(p) = patch.parent {
+            self.parent = p
         }
         if let Some(p) = patch.persistent_state {
             self.persistent_state = p
@@ -81,10 +90,12 @@ pub enum Status {
 pub struct NewMilestone {
     pub id: Uuid,
     pub name: String,
+    pub parent: Option<Uuid>,
 }
 
 pub struct MilestonePatch {
     pub id: Uuid,
     pub name: Option<String>,
+    pub parent: Option<Option<Uuid>>,
     pub persistent_state: Option<PersistentState>,
 }

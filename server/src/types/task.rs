@@ -16,6 +16,7 @@ use crate::{
 pub struct Task {
     id: Uuid,
     name: String,
+    parent: Option<Uuid>,
     mode: ScheduleMode,
     duration: u32,
     time_constraint: TimeConstraint,
@@ -28,6 +29,10 @@ pub struct Task {
 
 // impl Task {{{
 impl Task {
+    pub fn parent(&self) -> Option<Uuid> {
+        self.parent
+    }
+
     pub fn id(&self) -> &Uuid {
         &self.id
     }
@@ -38,6 +43,7 @@ impl From<NewTask> for Task {
         Self {
             id: new.id,
             name: new.name,
+            parent: new.parent,
             mode: ScheduleMode::Strict,
             duration: 0,
             time_constraint: TimeConstraint::None,
@@ -56,6 +62,9 @@ impl Patchable<TaskPatch> for Task {
 
         if let Some(n) = patch.name {
             self.name = n;
+        }
+        if let Some(p) = patch.parent {
+            self.parent = p
         }
         if let Some(m) = patch.mode {
             self.mode = m
@@ -146,11 +155,13 @@ pub enum TimeConstraint {
 pub struct NewTask {
     pub id: Uuid,
     pub name: String,
+    pub parent: Option<Uuid>,
 }
 
 pub struct TaskPatch {
     pub id: Uuid,
     pub name: Option<String>,
+    pub parent: Option<Option<Uuid>>,
     pub mode: Option<ScheduleMode>,
     pub duration: Option<u32>,
     pub time_constraint: Option<TimeConstraint>,

@@ -12,6 +12,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanBuffer {
     id: Uuid,
+    parent: Option<Uuid>,
     dependencies: Vec<Dependency>,
     set_start_day: Option<NaiveDate>,
     duration: u32,
@@ -19,6 +20,10 @@ pub struct PlanBuffer {
 
 // impl PlanBuffer {{{
 impl PlanBuffer {
+    pub fn parent(&self) -> Option<Uuid> {
+        self.parent
+    }
+
     pub fn id(&self) -> &Uuid {
         &self.id
     }
@@ -40,6 +45,7 @@ impl From<NewPlanBuffer> for PlanBuffer {
     fn from(new: NewPlanBuffer) -> Self {
         Self {
             id: new.id,
+            parent: new.parent,
             dependencies: Vec::new(),
             set_start_day: None,
             duration: new.duration,
@@ -51,6 +57,9 @@ impl Patchable<PlanBufferPatch> for PlanBuffer {
     fn apply_patch(&mut self, patch: PlanBufferPatch) -> PlinkoResult<()> {
         check_id_match(*self.id(), patch.id)?;
 
+        if let Some(p) = patch.parent {
+            self.parent = p;
+        }
         if let Some(p) = patch.dependencies {
             self.dependencies = p;
         }
@@ -72,12 +81,14 @@ pub struct VolatileState {
 
 pub struct NewPlanBuffer {
     pub id: Uuid,
+    pub parent: Option<Uuid>,
     pub duration: u32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanBufferPatch {
     pub id: Uuid,
+    pub parent: Option<Option<Uuid>>,
     pub dependencies: Option<Vec<Dependency>>,
     pub set_start_day: Option<Option<NaiveDate>>,
     pub duration: Option<u32>,

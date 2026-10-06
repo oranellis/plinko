@@ -61,6 +61,7 @@ fn plan_updates_through_tenant() {
     let task = NewTask {
         id: Uuid::now_v7(),
         name: "Task".to_string(),
+        parent: None,
     };
     let task_id = task.id;
     let inner = PlanUpdate::Task(TaskUpdate::Add(task));
