@@ -4,10 +4,10 @@ use uuid::Uuid;
 use crate::{
     planner::plan::PlanSchedulerDataPatch,
     types::{
-        milestone::{Milestone, MilestonePatch},
-        tag::{Tag, TagPatch},
-        task::{Task, TaskPatch},
-        user::{PlanUserData, PlanUserDataPatch},
+        milestone::{MilestonePatch, NewMilestone},
+        tag::{NewTag, TagPatch},
+        task::{NewTask, TaskPatch},
+        user::PlanUserDataPatch,
     },
 };
 // }}}
@@ -21,25 +21,25 @@ pub enum PlanUpdate {
 }
 
 pub enum TaskUpdate {
-    Add(Task),
+    Add(NewTask),
     Update(TaskPatch),
     Remove(Uuid),
 }
 
 pub enum MilestoneUpdate {
-    Add(Milestone),
+    Add(NewMilestone),
     Update(MilestonePatch),
     Remove(Uuid),
 }
 
 pub enum UserUpdate {
-    Add(Uuid, PlanUserData),
+    Add(Uuid),
     Update(PlanUserDataPatch),
     Remove(Uuid),
 }
 
 pub enum TagUpdate {
-    Add(Tag),
+    Add(NewTag),
     Update(TagPatch),
     Remove(Uuid),
 }

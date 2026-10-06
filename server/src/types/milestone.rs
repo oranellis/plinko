@@ -16,15 +16,18 @@ pub struct Milestone {
 
 // impl Milestone{{{
 impl Milestone {
-    pub fn new(name: String) -> Self {
-        Self {
-            id: Uuid::now_v7(),
-            name,
-            persistent_state: PersistentState::new(),
-        }
-    }
     pub fn id(&self) -> &Uuid {
         &self.id
+    }
+}
+
+impl From<NewMilestone> for Milestone {
+    fn from(new: NewMilestone) -> Self {
+        Self {
+            id: new.id,
+            name: new.name,
+            persistent_state: PersistentState::new(),
+        }
     }
 }
 
@@ -73,6 +76,11 @@ pub enum Status {
     NotStarted,
     InProgress,
     Completed,
+}
+
+pub struct NewMilestone {
+    pub id: Uuid,
+    pub name: String,
 }
 
 pub struct MilestonePatch {

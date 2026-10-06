@@ -69,7 +69,7 @@ impl Tenant {
         &self.plans
     }
 
-    pub fn insert_plan(&mut self, plan: Plan) -> PlinkoResult<()> {
+    fn insert_plan(&mut self, plan: Plan) -> PlinkoResult<()> {
         match self.plans.entry(*plan.id()) {
             std::collections::hash_map::Entry::Occupied(occupied_entry) => {
                 Err(PlinkoError::PlanExists(*occupied_entry.get().id()))
@@ -91,7 +91,7 @@ impl Tenant {
 
     fn plan_update(&mut self, update: PlanTenantUpdate) -> PlinkoResult<()> {
         match update {
-            PlanTenantUpdate::Add(plan) => self.insert_plan(*plan),
+            PlanTenantUpdate::Add(plan) => self.insert_plan(plan.into()),
             PlanTenantUpdate::Remove(id) => self
                 .plans
                 .remove(&id)

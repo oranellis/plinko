@@ -4,10 +4,10 @@ use uuid::Uuid;
 
 use crate::{
     multitenancy::{
-        user::{TenantLoginUser, TenantLoginUserPatch},
-        user_group::{TenantUserGroup, TenantUserGroupPatch},
+        user::{NewTenantLoginUser, TenantLoginUserPatch},
+        user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
-    planner::{plan::Plan, plan_update::PlanUpdate},
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
     types::short_id::ShortId,
 };
 // }}}
@@ -26,19 +26,19 @@ pub enum TenantUpdateType {
 }
 
 pub enum UserUpdate {
-    Add(TenantLoginUser),
+    Add(NewTenantLoginUser),
     Update(TenantLoginUserPatch),
     Remove(Uuid),
 }
 
 pub enum UserGroupUpdate {
-    Add(TenantUserGroup),
+    Add(NewTenantUserGroup),
     Update(TenantUserGroupPatch),
     Remove(Uuid),
 }
 
 pub enum PlanTenantUpdate {
-    Add(Box<Plan>),
+    Add(NewPlan),
     Remove(ShortId),
     /// Mutate the contents of an existing plan
     Update(ShortId, PlanUpdate),

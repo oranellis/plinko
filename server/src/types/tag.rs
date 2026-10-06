@@ -12,14 +12,17 @@ pub struct Tag {
 
 // impl Tag{{{
 impl Tag {
-    pub fn new(name: String) -> Self {
-        Self {
-            id: Uuid::now_v7(),
-            name,
-        }
-    }
     pub fn id(&self) -> &Uuid {
         &self.id
+    }
+}
+
+impl From<NewTag> for Tag {
+    fn from(new: NewTag) -> Self {
+        Self {
+            id: new.id,
+            name: new.name,
+        }
     }
 }
 
@@ -33,6 +36,11 @@ impl Patchable<TagPatch> for Tag {
     }
 }
 // }}}
+
+pub struct NewTag {
+    pub id: Uuid,
+    pub name: String,
+}
 
 // Bit weaksauce because there is only one thing you can change, maybe later I'll add groups or
 // something which will make this worth it

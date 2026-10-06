@@ -30,6 +30,16 @@ impl TenantUserGroup {
     }
 }
 
+impl From<NewTenantUserGroup> for TenantUserGroup {
+    fn from(new: NewTenantUserGroup) -> Self {
+        Self {
+            id: new.id,
+            name: new.name,
+            users: new.users,
+        }
+    }
+}
+
 impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
     fn apply_patch(&mut self, patch: TenantUserGroupPatch) -> PlinkoResult<()> {
         check_id_match(self.id, patch.id)?;
@@ -44,8 +54,14 @@ impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
 }
 // }}}
 
+pub struct NewTenantUserGroup {
+    pub id: Uuid,
+    pub name: String,
+    pub users: HashSet<Uuid>,
+}
+
 pub struct TenantUserGroupPatch {
-    id: Uuid,
-    name: Option<String>,
-    users: Option<HashSet<Uuid>>,
+    pub id: Uuid,
+    pub name: Option<String>,
+    pub users: Option<HashSet<Uuid>>,
 }

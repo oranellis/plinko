@@ -22,6 +22,12 @@ use crate::{
 };
 // }}}
 
+pub struct NewPlan {
+    pub id: ShortId,
+    pub name: String,
+    pub start_date: NaiveDate,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Plan {
     id: ShortId,
@@ -36,6 +42,22 @@ pub struct Plan {
 }
 
 // impl Plan{{{
+impl From<NewPlan> for Plan {
+    fn from(new: NewPlan) -> Self {
+        Self {
+            id: new.id,
+            name: new.name,
+            tasks: HashMap::new(),
+            milestones: HashMap::new(),
+            users: HashMap::new(),
+            tags: HashMap::new(),
+            plan_weekly_schedule: WeeklySchedules::new(WeeklySchedule::new_initial_schedule()),
+            plan_calendar_changes: CalendarChanges::new(),
+            scheduler_data: PlanSchedulerData::new(new.start_date),
+        }
+    }
+}
+
 impl Plan {
     pub fn id(&self) -> &ShortId {
         &self.id
@@ -73,20 +95,6 @@ impl Plan {
         &self.scheduler_data
     }
 
-    pub fn new(id: ShortId, name: String, start_date: NaiveDate) -> Self {
-        Self {
-            id,
-            name,
-            tasks: HashMap::new(),
-            milestones: HashMap::new(),
-            users: HashMap::new(),
-            tags: HashMap::new(),
-            plan_weekly_schedule: WeeklySchedules::new(WeeklySchedule::new_initial_schedule()),
-            plan_calendar_changes: CalendarChanges::new(),
-            scheduler_data: PlanSchedulerData::new(start_date),
-        }
-    }
-
     pub fn ensure_node_exists(&self, node: &PlanNode) -> PlinkoResult<()> {
         match node {
             PlanNode::PlanStart => Ok(()),
@@ -115,7 +123,7 @@ impl Plan {
 
     fn task_update(&mut self, update: TaskUpdate) -> PlinkoResult<()> {
         match update {
-            TaskUpdate::Add(task) => add_item(&mut self.tasks, *task.id(), task),
+            TaskUpdate::Add(new) => add_item(&mut self.tasks, new.id, new.into()),
             TaskUpdate::Update(task_patch) => {
                 update_map_item(&mut self.tasks, task_patch.id, task_patch)
             }
@@ -125,7 +133,7 @@ impl Plan {
 
     fn user_update(&mut self, update: UserUpdate) -> PlinkoResult<()> {
         match update {
-            UserUpdate::Add(id, user) => add_item(&mut self.users, id, user),
+            UserUpdate::Add(id) => add_item(&mut self.users, id, PlanUserData::default()),
             UserUpdate::Update(user_patch) => {
                 update_map_item(&mut self.users, user_patch.id, user_patch)
             }
@@ -135,9 +143,7 @@ impl Plan {
 
     fn milestone_update(&mut self, update: MilestoneUpdate) -> PlinkoResult<()> {
         match update {
-            MilestoneUpdate::Add(milestone) => {
-                add_item(&mut self.milestones, *milestone.id(), milestone)
-            }
+            MilestoneUpdate::Add(new) => add_item(&mut self.milestones, new.id, new.into()),
             MilestoneUpdate::Update(milestone_patch) => {
                 update_map_item(&mut self.milestones, milestone_patch.id, milestone_patch)
             }
@@ -147,7 +153,7 @@ impl Plan {
 
     fn tag_update(&mut self, update: TagUpdate) -> PlinkoResult<()> {
         match update {
-            TagUpdate::Add(tag) => add_item(&mut self.tags, *tag.id(), tag),
+            TagUpdate::Add(new) => add_item(&mut self.tags, new.id, new.into()),
             TagUpdate::Update(tag_patch) => {
                 update_map_item(&mut self.tags, tag_patch.id, tag_patch)
             }
@@ -208,14 +214,6 @@ impl PlanSchedulerData {
         }
     }
 
-    pub fn set_start_date(&mut self, date: NaiveDate) {
-        self.start_date = date;
-    }
-
-    pub fn set_scheduler_target(&mut self, node: PlanNode) {
-        self.scheduler_target = node;
-    }
-
     pub fn start_date(&self) -> &NaiveDate {
         &self.start_date
     }
@@ -240,8 +238,8 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 
 #[derive(Debug)]
 pub struct PlanSchedulerDataPatch {
-    start_date: Option<NaiveDate>,
-    scheduler_target: Option<PlanNode>,
+    pub start_date: Option<NaiveDate>,
+    pub scheduler_target: Option<PlanNode>,
 }
 
 #[derive(Debug, PartialEq)]

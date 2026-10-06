@@ -9,6 +9,16 @@ pub struct TenantLoginUser {
 }
 
 // impl TenantLoginUser{{{
+impl From<NewTenantLoginUser> for TenantLoginUser {
+    fn from(new: NewTenantLoginUser) -> Self {
+        Self {
+            id: new.id,
+            name: new.name,
+            email: new.email,
+        }
+    }
+}
+
 impl TenantLoginUser {
     pub fn new(name: String, email: String) -> Self {
         Self {
@@ -39,6 +49,12 @@ impl TenantLoginUser {
     }
 }
 // }}}
+
+pub struct NewTenantLoginUser {
+    pub id: Uuid,
+    pub name: String,
+    pub email: String,
+}
 
 pub struct TenantLoginUserPatch {
     pub id: Uuid,

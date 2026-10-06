@@ -14,7 +14,7 @@ impl Workload {
         }
     }
 
-    pub fn new_unchecked(value: u8) -> Self {
+    pub(crate) fn new_unchecked(value: u8) -> Self {
         Self { value }
     }
 

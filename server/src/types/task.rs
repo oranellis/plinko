@@ -28,10 +28,16 @@ pub struct Task {
 
 // impl Task {{{
 impl Task {
-    pub fn new(name: String) -> Self {
+    pub fn id(&self) -> &Uuid {
+        &self.id
+    }
+}
+
+impl From<NewTask> for Task {
+    fn from(new: NewTask) -> Self {
         Self {
-            id: Uuid::now_v7(),
-            name,
+            id: new.id,
+            name: new.name,
             mode: ScheduleMode::Strict,
             duration: 0,
             time_constraint: TimeConstraint::None,
@@ -41,10 +47,6 @@ impl Task {
             links: Vec::new(),
             persistent_state: PersistentState::new(),
         }
-    }
-
-    pub fn id(&self) -> &Uuid {
-        &self.id
     }
 }
 
@@ -139,6 +141,11 @@ pub enum TimeConstraint {
     Earliest(NaiveDate),
     Latest(NaiveDate),
     Fixed(NaiveDate),
+}
+
+pub struct NewTask {
+    pub id: Uuid,
+    pub name: String,
 }
 
 pub struct TaskPatch {

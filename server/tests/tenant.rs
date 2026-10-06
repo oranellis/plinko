@@ -8,11 +8,12 @@ use plinko::{
         user::TenantLoginUser,
     },
     planner::{
-        plan::Plan,
+        plan::{NewPlan, Plan},
         plan_update::{PlanUpdate, TaskUpdate},
     },
-    types::{short_id::ShortId, task::Task},
+    types::{short_id::ShortId, task::NewTask},
 };
+use uuid::Uuid;
 
 #[test]
 fn create_tenant_with_root_user() {
@@ -48,18 +49,20 @@ fn update(update_type: TenantUpdateType) -> TenantUpdate {
 fn plan_updates_through_tenant() {
     let mut tenant = Tenant::new(ShortId::new(), "Example Tenant".to_string());
     let plan_id = ShortId::new();
-    let plan = Plan::new(
-        plan_id,
-        "My Plan".to_string(),
-        NaiveDate::from_ymd_opt(2000, 12, 31).unwrap(),
-    );
-    let add = PlanTenantUpdate::Add(Box::new(plan));
+    let add = PlanTenantUpdate::Add(NewPlan {
+        id: plan_id,
+        name: "My Plan".to_string(),
+        start_date: NaiveDate::from_ymd_opt(2000, 12, 31).unwrap(),
+    });
     tenant
         .apply_update(update(TenantUpdateType::Plan(add)))
         .unwrap();
 
-    let task = Task::new("Task".to_string());
-    let task_id = *task.id();
+    let task = NewTask {
+        id: Uuid::now_v7(),
+        name: "Task".to_string(),
+    };
+    let task_id = task.id;
     let inner = PlanUpdate::Task(TaskUpdate::Add(task));
     let change = PlanTenantUpdate::Update(plan_id, inner);
     tenant
