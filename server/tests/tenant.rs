@@ -350,3 +350,38 @@ fn calendars_are_rebuilt_only_when_availability_changes() {
     .unwrap();
     assert!(tenant.calendar(&alice).is_none());
 }
+
+#[test]
+fn plan_default_calendars_are_cached_until_their_rules_change() {
+    let (mut tenant, root) = new_tenant();
+    let plan = add_plan(&mut tenant, root).unwrap();
+    let other = add_plan(&mut tenant, root).unwrap();
+    let day = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap();
+    let (from, until) = (day, NaiveDate::from_ymd_opt(2024, 1, 31).unwrap());
+    tenant.refresh_calendars(from, until);
+    assert_eq!(
+        tenant.plan_calendar(&plan).unwrap().on(day).unwrap().get(),
+        8
+    );
+
+    plan_update(
+        &mut tenant,
+        root,
+        plan,
+        PlanUpdate::Availability(holiday(day)),
+    )
+    .unwrap();
+    assert!(tenant.plan_calendar(&plan).is_none());
+    assert!(tenant.plan_calendar(&other).is_some());
+    tenant.refresh_calendars(from, until);
+    assert_eq!(
+        tenant.plan_calendar(&plan).unwrap().on(day).unwrap().get(),
+        0
+    );
+
+    add_task(&mut tenant, root, plan).unwrap();
+    assert!(tenant.plan_calendar(&plan).is_some());
+    let remove = TenantUpdateType::Plan(PlanTenantUpdate::Remove(plan));
+    apply(&mut tenant, root, remove).unwrap();
+    assert!(tenant.plan_calendar(&plan).is_none());
+}

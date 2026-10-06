@@ -29,6 +29,10 @@ impl Calendar {
         self.start + chrono::Days::new(self.hours.len().saturating_sub(1) as u64)
     }
 
+    pub fn covers(&self, from: NaiveDate, until: NaiveDate) -> bool {
+        self.start <= from && until <= self.end()
+    }
+
     pub fn on(&self, day: NaiveDate) -> Option<Workload> {
         let offset = usize::try_from((day - self.start).num_days()).ok()?;
         self.hours.get(offset).copied()

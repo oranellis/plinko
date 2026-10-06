@@ -28,6 +28,7 @@ pub struct Tenant {
     pub(super) users: HashMap<Uuid, TenantLoginUser>,
     pub(super) user_groups: HashMap<Uuid, TenantUserGroup>,
     volatile: HashMap<Uuid, TenantUserVolatileState>,
+    plan_calendars: HashMap<ShortId, Calendar>,
     pub(super) plans: HashMap<ShortId, Plan>,
 }
 
@@ -56,6 +57,7 @@ impl Tenant {
             users,
             user_groups: HashMap::new(),
             volatile: HashMap::new(),
+            plan_calendars: HashMap::new(),
             plans: HashMap::new(),
         }
     }
@@ -144,6 +146,7 @@ impl Tenant {
             }
             PlanTenantUpdate::Remove(id) => {
                 self.authorize_plan(actor, is_admin, &id)?;
+                self.plan_calendars.remove(&id);
                 self.plans
                     .remove(&id)
                     .map(drop)
@@ -152,10 +155,15 @@ impl Tenant {
             PlanTenantUpdate::Update(id, update) => {
                 self.authorize_plan(actor, is_admin, &id)?;
                 self.ensure_plan_refs_exist(&update)?;
+                let changes_availability = matches!(update, PlanUpdate::Availability(_));
                 self.plans
                     .get_mut(&id)
                     .ok_or(PlinkoError::PlanDoesNotExist(id))?
-                    .apply_update(update)
+                    .apply_update(update)?;
+                if changes_availability {
+                    self.plan_calendars.remove(&id);
+                }
+                Ok(())
             }
         }
     }
@@ -193,17 +201,29 @@ impl Tenant {
         self.volatile.get(user)?.calendar.as_ref()
     }
 
-    /// Makes sure every user has a calendar covering `from..=until`, rebuilding only those whose
-    /// rules changed since or that do not cover the range
+    /// A plan's default availability calendar, as of the last `refresh_calendars`
+    pub fn plan_calendar(&self, plan: &ShortId) -> Option<&Calendar> {
+        self.plan_calendars.get(plan)
+    }
+
+    /// Makes sure every user and plan default has a calendar covering `from..=until`, rebuilding
+    /// only those whose rules changed since or that do not cover the range
     pub fn refresh_calendars(&mut self, from: NaiveDate, until: NaiveDate) {
         for (id, user) in &self.users {
             let state = self.volatile.entry(*id).or_default();
-            let covers = state
+            if !state
                 .calendar
                 .as_ref()
-                .is_some_and(|c| c.start() <= from && until <= c.end());
-            if !covers {
+                .is_some_and(|c| c.covers(from, until))
+            {
                 state.calendar = Some(user.availability().calendar(from, until));
+            }
+        }
+        for (id, plan) in &self.plans {
+            let calendar = self.plan_calendars.get(id);
+            if !calendar.is_some_and(|c| c.covers(from, until)) {
+                let calendar = plan.default_availability().calendar(from, until);
+                self.plan_calendars.insert(*id, calendar);
             }
         }
     }
