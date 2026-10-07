@@ -37,12 +37,13 @@ Everything is read from `Tenant` and its plans.
   horizon, `from` the earliest day any plan needs.
 - **Placeholder availability:** `Plan.default_availability` through `Tenant::plan_calendar(plan)`.
   It is also the "plan calendar" for working-day arithmetic on that plan (task durations with no
-  workers, buffers, landing milestones on working days).
+  workers, buffers, group placeholders).
 - **Groups:** `Tenant::group_members(group)` (a group and all subgroups) for `Worker::UserGroup`.
 - **Plan membership and tags:** `Plan.users` (and each user's tag ids) for `Worker::Tag`.
 - **Plan state:** tasks, milestones, buffers, task groups, affinities, `PlanSchedulerData`
-  (`start_date`, `today`), targets and priorities (see section 10).
-- **Today:** per plan, `scheduler_data.today`, moved only by updates from the server runner.
+  (`start_date`), targets and priorities (see section 10).
+- **Today:** `Tenant::today()`, one clock for every plan, moved only by `SetToday` updates (admin
+  only, sent by the server runner).
 
 ## 3. Output
 
@@ -91,14 +92,17 @@ Everything is read from `Tenant` and its plans.
 ### Tasks
 
 - **Effort:** each worker slot works `allocation` hours per day for `duration` days, so the
-  effort per worker is `hours * duration`. Duration 0 is a zero-length node. A task with no workers
-  lasts `duration` working days of the plan calendar and has no assignments.
+  effort per worker is `hours * duration`. A duration is at least 1 day (the default, enforced by
+  updates), there are no zero-length tasks. A task with no workers lasts `duration` working days of
+  the plan calendar and has no assignments.
 - **Workers:** `Worker::User(id)` is that person. `Worker::Tag(tag)` is any plan user holding the
   tag. `Worker::UserGroup(group)` is any member of the group, including subgroups, whether or not
   they are plan users. `Worker::Placeholder` is unlimited and never conflicts, but its hours per
   day are bounded by the plan default calendar's hours that day.
-- **Start:** first working day on or after the computed start (plan calendar), so a task never
-  begins on a weekend or holiday. Earliest constraints raise the start.
+- **Start:** the first day on or after the computed start on which work is placed, using the
+  workers' own availability (a Saturday override can start work, and nobody working Sunday means a
+  task that could start Sunday starts Monday). A task with no workers starts on the first working
+  day of the plan calendar. Earliest constraints raise the start.
 - **End:** the day after the later of the last assignment day and `duration` working days from the
   start (`Calendar::end_after_workdays`).
 - **Affinities:** a task works only on days every linked affinity allows (`Plan::task_allows_day`).
@@ -116,9 +120,8 @@ Everything is read from `Tenant` and its plans.
 - **Time constraints** (against the start): Earliest raises the start, never violated. Latest and
   Fixed are violated when dependencies push the start past the date, then the item is placed at
   the earliest start and a `ConstraintViolation` records the constraint and landing date. Fixed
-  starts exactly on its date when dependencies allow. After landing on a working day and applying
-  worker availability, re-check the constraint against the real start, and overwrite any earlier
-  violation with the accurate date.
+  starts exactly on its date when dependencies allow. After applying worker availability, re-check
+  the constraint against the real start, and overwrite any earlier violation with the accurate date.
 
 ### Statuses
 
@@ -144,8 +147,10 @@ Everything is read from `Tenant` and its plans.
 ### Milestones
 
 - No user status, only a derived one. A zero-time event that lands on the last day of all its
-  dependencies, including other milestones (see date conventions). It must land on a working day of
-  the plan calendar, and is re-checked against its constraint after landing.
+  dependencies, including other milestones (see date conventions). It does not move to a working day:
+  if someone works a Saturday to finish a dependency, the milestone lands on that Saturday, and a
+  task after it could start Sunday, which in practice means the first day anyone works. It is
+  re-checked against its constraint on its landing date.
 - Derived status: complete when every dependency is done, in progress when any task it depends on
   is in progress, otherwise not started. Done means: the plan start; a task Completed or Dropped;
   a milestone derived complete; a task group whose own dependencies and all members are done; a
@@ -162,7 +167,7 @@ plan start, exactly like a task. The group then
 covers the first member's start to the last member's end (`TaskGroup::place`), so it begins
 overlapping its first task and its end falls on the last day a member runs. Milestone members count
 as their one day. With no members the group lasts `placeholder_duration` working days of the plan
-calendar from that date; the placeholder stops applying as soon as a member is added (the value is
+calendar (default 1, at least 1) from that date; the placeholder stops applying as soon as a member is added (the value is
 kept, so it applies again if the group empties). A group whose members are all unscheduled is
 unscheduled. External items depend on the group as a whole, on its end. A group with no
 dependencies never starts, so it and its members are unscheduled. Groups nest. They have no time
@@ -277,7 +282,7 @@ rest layer is ordered by plan priority, then its plan-alone whole-plan urgency.
 Remaining work to a target uses the longest dependency path of planned durations plus non-negative
 lags (milestones 0, buffers their duration).
 
-Insertion mechanics (Plinko 1): earliest start from dependencies, apply Earliest and landing rules,
+Insertion mechanics (Plinko 1): earliest start from dependencies, apply Earliest,
 resolve workers, fill the ledger per worker (strict consecutive or relaxed), set the range and
 constraint violations, then propagate: any dependent already placed whose earliest start moved
 later is removed (capacity returned) and re-inserted. Never move anchored tasks. A node that is
@@ -342,10 +347,12 @@ plans move and by how many days. Not part of the first solver.
    (**Assumed**)
 5. **Output:** per-target forecast and delay against the baseline, and per-person bottleneck
    load, in the volatile state.
-6. **Buffer shrink for hard-constrained dependents** (section 4): a `limit` argument on
+6. **Tenant clock** (done): `Tenant::today()`, `TenantUpdateType::SetToday`. Putting a task on hold
+   uses it for the end date. Task duration and group placeholder default to 1 and cannot be 0.
+7. **Buffer shrink for hard-constrained dependents** (section 4): a `limit` argument on
    `PlanBuffer::place`.
-7. **Accessors the scheduler needs:** `Task` has no `duration()`, `mode()` or `time_constraint()`
-   yet. Check the other entities as the engine is written.
+8. **Accessors the scheduler needs:** `Task::duration`, `mode` and `time_constraint` exist now.
+   Check the other entities as the engine is written.
 
 ## 11. Code layout
 
@@ -367,7 +374,9 @@ Port Plinko 1's scheduler scenarios, then add:
 - A target milestone lands after all its predecessors.
 - A dropped middle task is transparent; an on-hold task ends at its hold date, not complete.
 - Negative lag starts a dependent before its predecessor ends.
-- Fixed and Latest constraints, violations, and the post-landing recheck.
+- Fixed and Latest constraints, violations, and the recheck against the real start.
+- A milestone lands on a non-working day when a dependency finishes on one, and a task after it
+  starts on the first day anyone works.
 - Constraint chains outrank target chains, which outrank the rest.
 - A rest task fills an early gap but never delays a target's forecast.
 - Two plans contending for one person end with delays spread by priority; a plan priority offset
@@ -378,10 +387,48 @@ Port Plinko 1's scheduler scenarios, then add:
 - Determinism: shuffling insertion order of map entries gives identical results.
 - Plan-alone baselines are lower bounds checked against combined forecasts.
 
+## 13. Build order
+
+Each step is testable on its own before the next starts. Steps 1 to 3 give a working single-plan
+scheduler early.
+
+1. **Prerequisites.**
+   - Targets: replace `PlanSchedulerData.scheduler_target` with a list of `{ id, node, priority }`
+     with `Crud`, validation, and in-use blocking of the node.
+   - `Plan.priority: i32` with its patch.
+   - Volatile outputs: per-target forecast and delay, per-person bottleneck load.
+   - `PlanBuffer::place` takes an optional `limit` for the shrink rule.
+   - Check the other entities for the accessors the engine needs.
+2. **Capacity ledger.** Remaining hours per person per day as arrays over the horizon, built from
+   `Tenant::refresh_calendars` and the plan calendar. Support take, return, and undo of a run.
+   Anchors and in-progress tasks deduct future hours from it.
+3. **Single-plan insertion (port of Plinko 1).** For one plan alone: anchors, in-progress, constrained
+   nodes, target chain, rest, in that order, with CPM ordering. Earliest start from dependencies
+   (the date conventions in section 3), strict (consecutive, synchronised) and relaxed fills,
+   worker resolution by first finisher, constraints and violations, propagation and re-insertion,
+   compaction. Milestone, group and buffer dates and derived milestone status. Unscheduled reasons.
+   Tests: Plinko 1's scenarios (section 12).
+4. **Baselines and solo slack.** Run step 3 per plan alone, record each target's forecast, and
+   compute solo slack on dependency plus resource edges. Cache per plan with invalidation when the
+   plan or its people's availability changes.
+5. **Combined insertion.** One shared ledger. The hard tier, target-chain and rest layers across
+   plans, the eligibility queue, dynamic urgency with priority offsets, and the plan-alone solo
+   assignments as defaults. Tests: contention, priority, a rest task never delaying a target.
+6. **Compaction** across all plans.
+7. **Repair rounds.** The objective (worst effective delay, then total), temporary priority bumps,
+   alternative assignees for bottleneck people, checkpointing, and the round cap. Then the spreading
+   rule for tag and group slots.
+8. **Outputs and integration.** `TenantVolatileState::from_plans`, forecasts, delays and
+   bottleneck loads, the runner calling `solve_tenant` then `Tenant::store_schedule` after every
+   update and `Tenant::fill_defaults` in the handler. Impact preview afterwards (section 9).
+
+At each step keep the determinism test (shuffled map order gives identical results) green.
+
 ## Open items and assumptions
 
 - Hard tier margin (3 working days), spread tolerance (1 day, half the load), repair round cap (8).
 - Unstarted tasks start no sooner than tomorrow (Plinko 1).
+- A task starts on the first day work is placed, not on the plan calendar's first working day.
 - Unscheduled dependencies are ignored, dropped ones transparent (Plinko 1).
 - Dependents of an on-hold task use its hold date as the end.
 - Defaulting actual dates on in progress and completed.
