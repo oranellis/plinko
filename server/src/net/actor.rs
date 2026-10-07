@@ -43,6 +43,8 @@ pub enum Command {
         user: Uuid,
         reply: oneshot::Sender<Option<Profile>>,
     },
+    /// Time to see whether the day has changed
+    Tick,
     /// From the scheduling thread
     Scheduled {
         seq: u64,
@@ -117,6 +119,18 @@ pub fn start(store: Arc<Store>) -> crate::types::error::PlinkoResult<Handle> {
         scheduler,
     };
     tokio::spawn(actor.run(receiver));
+    let ticks = commands.clone();
+    tokio::spawn(async move {
+        let minute = std::time::Duration::from_secs(60);
+        let mut every_minute =
+            tokio::time::interval_at(tokio::time::Instant::now() + minute, minute);
+        loop {
+            every_minute.tick().await;
+            if ticks.send(Command::Tick).is_err() {
+                return;
+            }
+        }
+    });
     Ok(Handle { commands, store })
 }
 
@@ -150,6 +164,7 @@ impl Actor {
                     });
                     let _ = reply.send(profile);
                 }
+                Command::Tick => self.tick(),
                 Command::Scheduled { seq, schedule } => self.scheduled(seq, schedule),
             }
         }
@@ -195,9 +210,25 @@ impl Actor {
             return;
         };
         let (user, out) = (connection.user, connection.out.clone());
-        let rejected = |error: String| ServerMessage::Rejected { request, error };
+        let answer = match self.apply(user, update_type) {
+            Ok((seq, created)) => ServerMessage::Ack {
+                request,
+                seq,
+                created,
+            },
+            Err(error) => ServerMessage::Rejected { request, error },
+        };
+        let _ = out.send(answer);
+    }
+
+    /// Makes an update as `actor`: stages it, saves it, and tells everyone who may see it
+    fn apply(
+        &mut self,
+        actor: Uuid,
+        update_type: TenantUpdateType,
+    ) -> Result<(u64, Option<Created>), String> {
         let last = self.schedule.as_ref().map(|(_, s)| s);
-        let staged = self.tenant.stage_from(last, Utc::now(), user, update_type);
+        let staged = self.tenant.stage_from(last, Utc::now(), actor, update_type);
         let plan = plan_of(&staged);
         let before: HashMap<Subscriber, _> = self
             .connections
@@ -206,13 +237,10 @@ impl Actor {
             .collect();
         let copy = staged.clone();
         let created = Created::by(&staged.update_type);
-        let seq = match self.store.commit(&mut self.tenant, self.seq, staged) {
-            Ok(seq) => seq,
-            Err(error) => {
-                let _ = out.send(rejected(error.to_string()));
-                return;
-            }
-        };
+        let seq = self
+            .store
+            .commit(&mut self.tenant, self.seq, staged)
+            .map_err(|e| e.to_string())?;
         self.seq = seq;
         for (id, connection) in &self.connections {
             let visible = self.tenant.visible_plans(&connection.user);
@@ -228,12 +256,24 @@ impl Actor {
             };
             let _ = connection.out.send(message);
         }
-        let _ = out.send(ServerMessage::Ack {
-            request,
-            seq,
-            created,
-        });
         let _ = self.scheduler.send(Applied { seq, update: copy });
+        Ok((seq, created))
+    }
+
+    /// Moves the tenant's clock on when the day has changed, as the first admin
+    fn tick(&mut self) {
+        let today = Utc::now().date_naive();
+        let users = self.tenant.users().iter();
+        let admin = users
+            .filter(|(_, u)| u.role() == Role::Admin)
+            .map(|(id, _)| *id)
+            .min();
+        let (true, Some(admin)) = (today > self.tenant.today(), admin) else {
+            return;
+        };
+        if let Err(error) = self.apply(admin, TenantUpdateType::SetToday(today)) {
+            eprintln!("the clock did not move on: {error}");
+        }
     }
 
     fn scheduled(&mut self, seq: u64, schedule: TenantVolatileState) {

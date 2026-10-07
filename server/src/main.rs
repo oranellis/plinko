@@ -43,6 +43,8 @@ async fn main() {
             .expect("the password saves");
     }
     let handle = actor::start(store).expect("the tenant loads");
+    // a tenant that was down over midnight catches up on its clock
+    let _ = handle.commands.send(actor::Command::Tick);
     let files = PathBuf::from(setting("PLINKO_FILES").unwrap_or("client/dist".to_string()));
     let secure = setting("PLINKO_INSECURE_COOKIES").is_none();
     let app = http::router(handle, files.is_dir().then_some(files), secure);

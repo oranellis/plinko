@@ -1,6 +1,9 @@
 use leptos::{prelude::*, task::spawn_local};
 
-use crate::{api, ui::{Field, Text, use_sync}};
+use crate::{
+    api,
+    ui::{Field, Text, use_sync},
+};
 
 #[component]
 pub fn Login() -> impl IntoView {

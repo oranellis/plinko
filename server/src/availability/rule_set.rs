@@ -155,6 +155,7 @@ mod tests {
     fn add(set: &mut RuleSet<Workload>, start_day: NaiveDate, kind: RuleKind<Workload>) -> Uuid {
         let id = Uuid::now_v7();
         let new = NewRule {
+            stop_day: None,
             id,
             start_day,
             kind,
@@ -362,6 +363,7 @@ mod tests {
         let mut set = RuleSet::<Workload>::default();
         let add = |set: &mut RuleSet<Workload>, start_day| {
             let new = NewRule {
+                stop_day: None,
                 id: Uuid::now_v7(),
                 start_day,
                 kind: RuleKind::Holiday,
@@ -387,6 +389,7 @@ mod tests {
             value: Workload::new(2).unwrap(),
         };
         let new = NewRule {
+            stop_day: None,
             id: Uuid::now_v7(),
             start_day: d(2024, 1, 1),
             kind: empty,
@@ -406,6 +409,7 @@ mod tests {
 
         let add = |set: &mut RuleSet<bool>, start_day, kind| {
             let new = NewRule {
+                stop_day: None,
                 id: Uuid::now_v7(),
                 start_day,
                 kind,

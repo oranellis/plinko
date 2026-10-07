@@ -156,16 +156,31 @@ mod tests {
         ] {
             assert_eq!(parse_node(&node_value(node)), Some(node));
         }
-        for worker in [Worker::User(id()), Worker::Tag(id()), Worker::UserGroup(id()), Worker::Placeholder] {
+        for worker in [
+            Worker::User(id()),
+            Worker::Tag(id()),
+            Worker::UserGroup(id()),
+            Worker::Placeholder,
+        ] {
             assert_eq!(parse_worker(&worker_value(worker)), Some(worker));
         }
-        for assignee in [None, Some(Assignee::Placeholder), Some(Assignee::User(id()))] {
+        for assignee in [
+            None,
+            Some(Assignee::Placeholder),
+            Some(Assignee::User(id())),
+        ] {
             assert_eq!(parse_assignee(&assignee_value(assignee)), Some(assignee));
         }
         for parent in [Parent::PlanStart, Parent::Node(id())] {
             assert_eq!(parse_parent(&parent_value(parent)), Some(parent));
         }
-        for status in [Status::NotStarted, Status::InProgress, Status::OnHold, Status::Completed, Status::Dropped] {
+        for status in [
+            Status::NotStarted,
+            Status::InProgress,
+            Status::OnHold,
+            Status::Completed,
+            Status::Dropped,
+        ] {
             assert_eq!(parse_status(status_value(status)), Some(status));
         }
     }

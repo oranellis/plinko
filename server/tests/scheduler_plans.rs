@@ -504,6 +504,7 @@ fn someone_much_less_booked_is_worth_finishing_a_day_later() {
     let tag = plans.tag(plan, &[alice, bob]);
     // bob does not work Mondays, so finishes a day after alice, who has a day booked
     let rule = plinko::availability::rule::NewRule {
+        stop_day: None,
         id: Uuid::now_v7(),
         start_day: day(2000, 1, 3),
         kind: plinko::availability::rule::RuleKind::Weekly(

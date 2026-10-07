@@ -6,12 +6,7 @@ use chrono::NaiveDate;
 use plinko::{
     planner::plan::Plan,
     scheduler::state::{PlanVolatileState, UnscheduledReason},
-    types::{
-        dependency::PlanNode,
-        milestone::DerivedStatus,
-        parent::Parent,
-        task::Status,
-    },
+    types::{dependency::PlanNode, milestone::DerivedStatus, parent::Parent, task::Status},
 };
 use uuid::Uuid;
 
@@ -64,7 +59,10 @@ pub fn node_name(plan: &Plan, node: PlanNode) -> String {
         PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.name().to_string()),
         PlanNode::Milestone(id) => plan.milestones().get(&id).map(|m| m.name().to_string()),
         PlanNode::TaskGroup(id) => plan.task_groups().get(&id).map(|g| g.name().to_string()),
-        PlanNode::PlanBuffer(id) => plan.plan_buffers().get(&id).map(|b| format!("Buffer {}d", b.duration())),
+        PlanNode::PlanBuffer(id) => plan
+            .plan_buffers()
+            .get(&id)
+            .map(|b| format!("Buffer {}d", b.duration())),
     }
     .unwrap_or_else(|| "Missing".to_string())
 }
@@ -84,14 +82,24 @@ pub fn nodes(plan: &Plan) -> Vec<PlanNode> {
     let tasks = plan.tasks().keys().map(|id| PlanNode::Task(*id));
     let milestones = plan.milestones().keys().map(|id| PlanNode::Milestone(*id));
     let groups = plan.task_groups().keys().map(|id| PlanNode::TaskGroup(*id));
-    let buffers = plan.plan_buffers().keys().map(|id| PlanNode::PlanBuffer(*id));
-    tasks.chain(milestones).chain(groups).chain(buffers).collect()
+    let buffers = plan
+        .plan_buffers()
+        .keys()
+        .map(|id| PlanNode::PlanBuffer(*id));
+    tasks
+        .chain(milestones)
+        .chain(groups)
+        .chain(buffers)
+        .collect()
 }
 
 fn span_of(state: Option<&PlanVolatileState>, node: PlanNode) -> Option<(NaiveDate, NaiveDate)> {
     let state = state?;
     match node {
-        PlanNode::Task(id) => state.tasks.get(&id).map(|t| (t.date_range.start(), t.date_range.end())),
+        PlanNode::Task(id) => state
+            .tasks
+            .get(&id)
+            .map(|t| (t.date_range.start(), t.date_range.end())),
         PlanNode::Milestone(id) => state.milestones.get(&id).map(|m| (m.date, m.end())),
         PlanNode::TaskGroup(id) => state
             .task_groups
@@ -137,7 +145,14 @@ fn add_level(
         .into_iter()
         .filter(|n| parent_of(plan, *n) == parent)
         .collect();
-    level.sort_by_key(|n| (span_of(state, *n).map(|s| s.0).is_none(), span_of(state, *n).map(|s| s.0), node_name(plan, *n), n.id()));
+    level.sort_by_key(|n| {
+        (
+            span_of(state, *n).map(|s| s.0).is_none(),
+            span_of(state, *n).map(|s| s.0),
+            node_name(plan, *n),
+            n.id(),
+        )
+    });
     for node in level {
         let has_members = matches!(node, PlanNode::TaskGroup(id) if nodes(plan).iter().any(|n| parent_of(plan, *n) == Parent::Node(id)));
         let is_collapsed = matches!(node, PlanNode::TaskGroup(id) if collapsed.contains(&id));
@@ -152,10 +167,8 @@ fn add_level(
             has_members,
             collapsed: is_collapsed,
         });
-        if let PlanNode::TaskGroup(id) = node {
-            if !is_collapsed {
-                add_level(plan, state, collapsed, Parent::Node(id), depth + 1, rows);
-            }
+        if let (PlanNode::TaskGroup(id), false) = (node, is_collapsed) {
+            add_level(plan, state, collapsed, Parent::Node(id), depth + 1, rows);
         }
     }
 }

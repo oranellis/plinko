@@ -262,7 +262,9 @@ async fn answer(socket: &mut Socket, request: u32) -> (Result<u64, String>, Vec<
     let mut before = Vec::new();
     loop {
         match next(socket).await {
-            ServerMessage::Ack { request: r, seq, .. } if r == request => return (Ok(seq), before),
+            ServerMessage::Ack {
+                request: r, seq, ..
+            } if r == request => return (Ok(seq), before),
             ServerMessage::Rejected { request: r, error } if r == request => {
                 return (Err(error), before);
             }
@@ -384,4 +386,28 @@ async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
         next(&mut socket).await,
         ServerMessage::Schedule { seq: 10, .. }
     ) {}
+}
+
+#[tokio::test]
+async fn the_clock_moves_on_by_itself_when_the_day_changes() {
+    let server = server().await;
+    let address = listen(&server).await;
+    let token = server.handle.store.start_session(server.admin).unwrap();
+    let mut socket = connect(address, &token).await.unwrap();
+    assert!(matches!(
+        next(&mut socket).await,
+        ServerMessage::Snapshot { .. }
+    ));
+    server.handle.commands.send(actor::Command::Tick).unwrap();
+    loop {
+        if let ServerMessage::Update { seq, update } = next(&mut socket).await {
+            assert_eq!(seq, 1);
+            let TenantUpdateType::SetToday(day) = update.update_type else {
+                panic!("the clock moves");
+            };
+            assert_eq!(day, chrono::Utc::now().date_naive());
+            assert_eq!(update.actor, server.admin);
+            break;
+        }
+    }
 }

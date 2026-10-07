@@ -70,7 +70,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         Route::Plan(_, _, open) => open,
         _ => None,
     });
-    let exists = Memo::new(move |_| sync.tenant.with(|t| t.as_ref().is_some_and(|t| t.plans().contains_key(&plan))));
+    let exists = Memo::new(move |_| {
+        sync.tenant
+            .with(|t| t.as_ref().is_some_and(|t| t.plans().contains_key(&plan)))
+    });
     let collapsed = RwSignal::new(HashSet::<Uuid>::new());
     let rows = Memo::new(move |_| {
         let schedule = sync.schedule.get();
@@ -100,20 +103,30 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         })
     });
     let today = Signal::derive(move || {
-        sync.tenant.with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
+        sync.tenant
+            .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
     });
     let range = Signal::derive(move || {
-        let spans: Vec<(NaiveDate, NaiveDate)> = rows.with(|r| r.iter().filter_map(|r| r.span).collect());
+        let spans: Vec<(NaiveDate, NaiveDate)> =
+            rows.with(|r| r.iter().filter_map(|r| r.span).collect());
         let first = spans.iter().map(|s| s.0).min()?.min(today.get());
         let last = spans.iter().map(|s| s.1).max()?.max(today.get());
         Some((first, last))
     });
     let problems = Memo::new(move |_| {
-        rows.with(|r| (r.iter().filter(|r| r.unscheduled.is_some()).count(), r.iter().filter(|r| r.violated).count()))
+        rows.with(|r| {
+            (
+                r.iter().filter(|r| r.unscheduled.is_some()).count(),
+                r.iter().filter(|r| r.violated).count(),
+            )
+        })
     });
     let finish = Memo::new(move |_| {
-        sync.schedule
-            .with(|s| s.as_ref().and_then(|(_, s)| s.plans.get(&plan)).and_then(|s| s.plan_end))
+        sync.schedule.with(|s| {
+            s.as_ref()
+                .and_then(|(_, s)| s.plans.get(&plan))
+                .and_then(|s| s.plan_end)
+        })
     });
 
     let go = move |tab: PlanTab, open: Option<Uuid>| navigate(Route::Plan(plan, tab, open));
@@ -147,14 +160,25 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         let nil = Uuid::nil();
         let (update, depends): (PlanUpdate, Anchor) = match kind {
             Kind::Task => (
-                PlanUpdate::Task(Crud::Add(NewTask { id: nil, name: "New task".to_string(), parent })),
+                PlanUpdate::Task(Crud::Add(NewTask {
+                    id: nil,
+                    name: "New task".to_string(),
+                    parent,
+                })),
                 |id, plan, sync, then| {
-                    let patch = TaskPatch { dependencies: Some(vec![Dependency::default()]), ..task_patch(id) };
+                    let patch = TaskPatch {
+                        dependencies: Some(vec![Dependency::default()]),
+                        ..task_patch(id)
+                    };
                     sync.plan_then(plan, PlanUpdate::Task(Crud::Update(patch)), then);
                 },
             ),
             Kind::Milestone => (
-                PlanUpdate::Milestone(Crud::Add(NewMilestone { id: nil, name: "New milestone".to_string(), parent })),
+                PlanUpdate::Milestone(Crud::Add(NewMilestone {
+                    id: nil,
+                    name: "New milestone".to_string(),
+                    parent,
+                })),
                 |id, plan, sync, then| {
                     let patch = plinko::types::milestone::MilestonePatch {
                         id,
@@ -168,7 +192,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 },
             ),
             Kind::Group => (
-                PlanUpdate::TaskGroup(Crud::Add(NewTaskGroup { id: nil, name: "New group".to_string(), parent })),
+                PlanUpdate::TaskGroup(Crud::Add(NewTaskGroup {
+                    id: nil,
+                    name: "New group".to_string(),
+                    parent,
+                })),
                 |id, plan, sync, then| {
                     let patch = plinko::types::task_group::TaskGroupPatch {
                         id,
@@ -181,7 +209,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 },
             ),
             Kind::Buffer => (
-                PlanUpdate::PlanBuffer(Crud::Add(NewPlanBuffer { id: nil, parent, duration: 3 })),
+                PlanUpdate::PlanBuffer(Crud::Add(NewPlanBuffer {
+                    id: nil,
+                    parent,
+                    duration: 3,
+                })),
                 |id, plan, sync, then| {
                     let patch = plinko::types::plan_buffer::PlanBufferPatch {
                         id,

@@ -3,9 +3,9 @@
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
-    protocol::Created,
-    planner::plan::NewPlan,
     multitenancy::tenant_update::{PlanTenantUpdate, TenantUpdateType},
+    planner::plan::NewPlan,
+    protocol::Created,
     types::short_id::ShortId,
 };
 
@@ -49,9 +49,8 @@ pub fn Plans() -> impl IntoView {
                         forecast: state
                             .and_then(|s| s.plan_end)
                             .map(|e| (e.forecast, e.delay())),
-                        problems: state.map_or(0, |s| {
-                            s.unscheduled.len() + s.constraint_violations.len()
-                        }),
+                        problems: state
+                            .map_or(0, |s| s.unscheduled.len() + s.constraint_violations.len()),
                     }
                 })
                 .collect();
@@ -99,7 +98,11 @@ pub fn Plans() -> impl IntoView {
 fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
     let name = RwSignal::new(String::new());
-    let start = RwSignal::new(sync.tenant.with(|t| t.as_ref().map(|t| t.today())).unwrap_or_default());
+    let start = RwSignal::new(
+        sync.tenant
+            .with(|t| t.as_ref().map(|t| t.today()))
+            .unwrap_or_default(),
+    );
     let make = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
         let new = NewPlan {

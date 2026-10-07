@@ -106,7 +106,8 @@ pub fn use_route() -> RwSignal<Route> {
     let route = RwSignal::new(read());
     let listener = Closure::<dyn FnMut()>::new(move || route.set(read()));
     if let Some(window) = web_sys::window() {
-        let _ = window.add_event_listener_with_callback("hashchange", listener.as_ref().unchecked_ref());
+        let _ = window
+            .add_event_listener_with_callback("hashchange", listener.as_ref().unchecked_ref());
     }
     listener.forget();
     route

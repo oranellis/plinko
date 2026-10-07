@@ -15,7 +15,7 @@ use web_sys::{CanvasRenderingContext2d, PointerEvent, WheelEvent};
 use crate::{
     gantt::{
         draw::{LABEL_WIDTH, LABEL_WIDTH_NARROW, Scene, paint},
-        layout::{View, ROW_HEIGHT},
+        layout::{ROW_HEIGHT, View},
     },
     model::Row,
 };
@@ -35,7 +35,11 @@ struct Gesture {
 }
 
 fn label_width(width: f64) -> f64 {
-    if width < 600.0 { LABEL_WIDTH_NARROW } else { LABEL_WIDTH }
+    if width < 600.0 {
+        LABEL_WIDTH_NARROW
+    } else {
+        LABEL_WIDTH
+    }
 }
 
 #[component]
@@ -62,12 +66,16 @@ pub fn Gantt(
     let measure = move || {
         if let Some(canvas) = canvas.get_untracked() {
             let element: &web_sys::Element = canvas.as_ref();
-            size.set((f64::from(element.client_width()), f64::from(element.client_height())));
+            size.set((
+                f64::from(element.client_width()),
+                f64::from(element.client_height()),
+            ));
         }
     };
     let on_resize = Closure::<dyn FnMut()>::new(measure);
     if let Some(window) = web_sys::window() {
-        let _ = window.add_event_listener_with_callback("resize", on_resize.as_ref().unchecked_ref());
+        let _ =
+            window.add_event_listener_with_callback("resize", on_resize.as_ref().unchecked_ref());
     }
     on_resize.forget();
     Effect::new(move |_| {
@@ -124,7 +132,13 @@ pub fn Gantt(
             if g.touches.is_empty() {
                 g.travelled = 0.0;
             }
-            g.touches.insert(ev.pointer_id(), Touch { x: f64::from(ev.client_x()), y: f64::from(ev.client_y()) });
+            g.touches.insert(
+                ev.pointer_id(),
+                Touch {
+                    x: f64::from(ev.client_x()),
+                    y: f64::from(ev.client_y()),
+                },
+            );
         });
     };
 
@@ -132,7 +146,10 @@ pub fn Gantt(
         let (width, height) = size.get_untracked();
         let count = rows.with_untracked(Vec::len);
         let label = label_width(width);
-        let now = Touch { x: f64::from(ev.client_x()), y: f64::from(ev.client_y()) };
+        let now = Touch {
+            x: f64::from(ev.client_x()),
+            y: f64::from(ev.client_y()),
+        };
         gesture.update_value(|g| {
             let Some(before) = g.touches.get(&ev.pointer_id()).copied() else {
                 return;

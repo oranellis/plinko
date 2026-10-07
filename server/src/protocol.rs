@@ -74,6 +74,8 @@ impl Created {
     /// What the update adds, if it adds a plan or an item of one
     pub fn by(update: &TenantUpdateType) -> Option<Self> {
         match update {
+            TenantUpdateType::User(Crud::Add(new)) => Some(Created::Item(new.id)),
+            TenantUpdateType::UserGroup(Crud::Add(new)) => Some(Created::Item(new.id)),
             TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => Some(Created::Plan(new.id)),
             TenantUpdateType::Plan(PlanTenantUpdate::Update(_, inner)) => match &**inner {
                 PlanUpdate::Task(Crud::Add(new)) => Some(Created::Item(new.id)),

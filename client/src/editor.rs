@@ -22,7 +22,7 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
-    forms, format,
+    format, forms,
     model::{self, node_name},
     ui::{Field, Number, Select, Text, options, use_sync},
 };
@@ -78,6 +78,10 @@ pub fn ItemEditor(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
 #[component]
 fn Info(plan: ShortId, node: PlanNode) -> impl IntoView {
     let sync = use_sync();
+    let task_id = match node {
+        PlanNode::Task(id) => Some(id),
+        _ => None,
+    };
     let lines = move || {
         let schedule = sync.schedule.get();
         let state = schedule.as_ref().and_then(|(_, s)| s.plans.get(&plan));
@@ -89,17 +93,26 @@ fn Info(plan: ShortId, node: PlanNode) -> impl IntoView {
             lines.push(format!("Not scheduled: {}", model::reason(*reason)));
         }
         if let Some(v) = state.constraint_violations.get(&node) {
-            lines.push(format!("Starts {}, which misses its date", format::day(v.scheduled)));
+            lines.push(format!(
+                "Starts {}, which misses its date",
+                format::day(v.scheduled)
+            ));
         }
-        if let PlanNode::Task(id) = node {
-            if let Some(task) = state.tasks.get(&id) {
-                let range = task.date_range;
-                let last = range.end().pred_opt().unwrap_or(range.start());
-                lines.push(format!("{} to {}", format::day(range.start()), format::day(last)));
-                for (who, days) in &task.assignments {
-                    let hours: u32 = days.values().map(|h| u32::from(h.get())).sum();
-                    lines.push(format!("{}: {hours} hours over {} days", who_name(*who), days.len()));
-                }
+        if let Some(task) = task_id.and_then(|id| state.tasks.get(&id)) {
+            let range = task.date_range;
+            let last = range.end().pred_opt().unwrap_or(range.start());
+            lines.push(format!(
+                "{} to {}",
+                format::day(range.start()),
+                format::day(last)
+            ));
+            for (who, days) in &task.assignments {
+                let hours: u32 = days.values().map(|h| u32::from(h.get())).sum();
+                lines.push(format!(
+                    "{}: {hours} hours over {} days",
+                    who_name(*who),
+                    days.len()
+                ));
             }
         }
         lines
@@ -127,14 +140,22 @@ fn who_name(who: Assignee) -> String {
 /// Every item of the plan that something can depend on, other than `except`
 fn depends_options(plan: ShortId, except: PlanNode) -> Signal<Vec<(String, String)>> {
     Signal::derive(move || {
-        let mut options = vec![("start".to_string(), "Start of the group or plan".to_string())];
+        let mut options = vec![(
+            "start".to_string(),
+            "Start of the group or plan".to_string(),
+        )];
         let mut nodes = read(plan, |p| Some(model::nodes(p))).unwrap_or_default();
         nodes.retain(|n| *n != except);
         let mut named: Vec<(String, String)> = read(plan, |p| {
             Some(
                 nodes
                     .iter()
-                    .map(|n| (forms::node_value(DependencyNode::Node(*n)), node_name(p, *n)))
+                    .map(|n| {
+                        (
+                            forms::node_value(DependencyNode::Node(*n)),
+                            node_name(p, *n),
+                        )
+                    })
                     .collect(),
             )
         })
@@ -197,7 +218,12 @@ fn ParentPicker(plan: ShortId, me: PlanNode, parent: RwSignal<Parent>) -> impl I
                 .task_groups()
                 .values()
                 .filter(|g| PlanNode::TaskGroup(*g.id()) != me)
-                .map(|g| (forms::parent_value(Parent::Node(*g.id())), g.name().to_string()))
+                .map(|g| {
+                    (
+                        forms::parent_value(Parent::Node(*g.id())),
+                        g.name().to_string(),
+                    )
+                })
                 .collect();
             groups.sort();
             Some(groups)
@@ -284,11 +310,17 @@ fn worker_options(plan: ShortId) -> Signal<Vec<(String, String)>> {
                 named.push((forms::worker_value(Worker::User(*id)), name.to_string()));
             }
             for (id, tag) in p.tags() {
-                named.push((forms::worker_value(Worker::Tag(*id)), format!("Anyone tagged {}", tag.name())));
+                named.push((
+                    forms::worker_value(Worker::Tag(*id)),
+                    format!("Anyone tagged {}", tag.name()),
+                ));
             }
             for id in p.user_groups().keys() {
                 let name = t.user_groups().get(id).map_or("A group", |g| g.name());
-                named.push((forms::worker_value(Worker::UserGroup(*id)), format!("Anyone in {name}")));
+                named.push((
+                    forms::worker_value(Worker::UserGroup(*id)),
+                    format!("Anyone in {name}"),
+                ));
             }
             named.sort_by(|a, b| a.1.cmp(&b.1));
             Some(named)
@@ -302,8 +334,15 @@ fn worker_options(plan: ShortId) -> Signal<Vec<(String, String)>> {
 fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl IntoView {
     let choices = worker_options(plan);
     let hours = options([
-        ("0", "0 h"), ("1", "1 h"), ("2", "2 h"), ("3", "3 h"), ("4", "4 h"),
-        ("5", "5 h"), ("6", "6 h"), ("7", "7 h"), ("8", "8 h"),
+        ("0", "0 h"),
+        ("1", "1 h"),
+        ("2", "2 h"),
+        ("3", "3 h"),
+        ("4", "4 h"),
+        ("5", "5 h"),
+        ("6", "6 h"),
+        ("7", "7 h"),
+        ("8", "8 h"),
     ]);
     view! {
         <fieldset class="list">
@@ -360,18 +399,32 @@ fn TaskForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
     let Some(task) = read(plan, |p| p.tasks().get(&id).cloned()) else {
         return view! { <p>"This task has been removed."</p> }.into_any();
     };
-    let today = sync.tenant.with_untracked(|t| t.as_ref().map(|t| t.today())).unwrap_or_default();
+    let today = sync
+        .tenant
+        .with_untracked(|t| t.as_ref().map(|t| t.today()))
+        .unwrap_or_default();
     let node = PlanNode::Task(id);
     let name = RwSignal::new(task.name().to_string());
     let description = RwSignal::new(task.description().unwrap_or_default().to_string());
     let duration = RwSignal::new(i64::from(task.duration()));
-    let mode = RwSignal::new(if task.mode() == ScheduleMode::Strict { "strict" } else { "relaxed" }.to_string());
+    let mode = RwSignal::new(
+        if task.mode() == ScheduleMode::Strict {
+            "strict"
+        } else {
+            "relaxed"
+        }
+        .to_string(),
+    );
     let (constraint_kind, constraint_day) = forms::constraint_parts(task.time_constraint());
     let kind = RwSignal::new(constraint_kind.to_string());
     let day = RwSignal::new(constraint_day.unwrap_or(today));
     let parent = RwSignal::new(task.parent());
     let deps = RwSignal::new(task.dependencies().clone());
-    let mut asked: Vec<(Worker, u8)> = task.allocations().iter().map(|(w, h)| (*w, h.get())).collect();
+    let mut asked: Vec<(Worker, u8)> = task
+        .allocations()
+        .iter()
+        .map(|(w, h)| (*w, h.get()))
+        .collect();
     asked.sort_by_key(|(w, _)| forms::worker_value(*w));
     let allocations = RwSignal::new(asked);
     let affinities = RwSignal::new(task.affinities().clone());
@@ -389,7 +442,11 @@ fn TaskForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
             .into_iter()
             .filter_map(|(w, h)| Some((w, Workload::new(h).ok()?)))
             .collect();
-        let new_mode = if mode.get_untracked() == "relaxed" { ScheduleMode::Relaxed } else { ScheduleMode::Strict };
+        let new_mode = if mode.get_untracked() == "relaxed" {
+            ScheduleMode::Relaxed
+        } else {
+            ScheduleMode::Strict
+        };
         let new_state = PersistentState {
             status: status.get_untracked(),
             actual_start_date: started.get_untracked(),
@@ -401,7 +458,10 @@ fn TaskForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
             name: changed(&old.name().to_string(), name.get_untracked()),
             parent: changed(&old.parent(), parent.get_untracked()),
             mode: changed(&old.mode(), new_mode),
-            duration: changed(&old.duration(), duration.get_untracked().clamp(1, 3650) as u32),
+            duration: changed(
+                &old.duration(),
+                duration.get_untracked().clamp(1, 3650) as u32,
+            ),
             time_constraint: changed(
                 &old.time_constraint(),
                 forms::constraint_from(&kind.get_untracked(), day.get_untracked()),
@@ -545,7 +605,11 @@ fn worker_label(plan: ShortId, worker: Worker) -> String {
 fn Affinities(plan: ShortId, chosen: RwSignal<HashSet<Uuid>>) -> impl IntoView {
     let all = Signal::derive(move || {
         read(plan, |p| {
-            let mut all: Vec<(Uuid, String)> = p.affinities().iter().map(|(id, a)| (*id, a.name().to_string())).collect();
+            let mut all: Vec<(Uuid, String)> = p
+                .affinities()
+                .iter()
+                .map(|(id, a)| (*id, a.name().to_string()))
+                .collect();
             all.sort_by(|a, b| a.1.cmp(&b.1));
             Some(all)
         })
@@ -586,7 +650,10 @@ fn MilestoneForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoVi
     let Some(milestone) = read(plan, |p| p.milestones().get(&id).cloned()) else {
         return view! { <p>"This milestone has been removed."</p> }.into_any();
     };
-    let today = sync.tenant.with_untracked(|t| t.as_ref().map(|t| t.today())).unwrap_or_default();
+    let today = sync
+        .tenant
+        .with_untracked(|t| t.as_ref().map(|t| t.today()))
+        .unwrap_or_default();
     let node = PlanNode::Milestone(id);
     let name = RwSignal::new(milestone.name().to_string());
     let (constraint_kind, constraint_day) = forms::constraint_parts(milestone.time_constraint());
@@ -644,7 +711,10 @@ fn BufferForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView 
             parent: changed(&old.parent(), parent.get_untracked()),
             dependencies: changed(old.dependencies(), deps.get_untracked()),
             set_start_day: changed(old.set_start_day(), set.get_untracked()),
-            duration: changed(old.duration(), duration.get_untracked().clamp(0, 3650) as u32),
+            duration: changed(
+                old.duration(),
+                duration.get_untracked().clamp(0, 3650) as u32,
+            ),
         };
         sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
         on_close.run(());

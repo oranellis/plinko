@@ -67,8 +67,6 @@ pub fn paint(ctx: &CanvasRenderingContext2d, scene: &Scene) {
         width,
         height,
         label_width,
-        view,
-        rows,
         ..
     } = *scene;
     rect(ctx, BACKGROUND, 0.0, 0.0, width, height);
@@ -87,7 +85,6 @@ pub fn paint(ctx: &CanvasRenderingContext2d, scene: &Scene) {
     paint_today(ctx, scene);
     ctx.restore();
     paint_labels(ctx, scene);
-    let _ = (rows, height);
 }
 
 fn paint_header(ctx: &CanvasRenderingContext2d, scene: &Scene, timeline: f64) {
@@ -102,7 +99,13 @@ fn paint_header(ctx: &CanvasRenderingContext2d, scene: &Scene, timeline: f64) {
         let x = view.x(day as f64);
         let first_of_month = date.day() == 1;
         if first_of_month || (day as f64 - view.origin.floor()).abs() < 0.5 {
-            text(ctx, TEXT, &format!("{} {}", format::month(date), date.year()), x.max(2.0) + 4.0, 12.0);
+            text(
+                ctx,
+                TEXT,
+                &format!("{} {}", format::month(date), date.year()),
+                x.max(2.0) + 4.0,
+                12.0,
+            );
         }
         if first_of_month {
             line(ctx, MUTED, x, 0.0, x, HEADER_HEIGHT);
@@ -197,7 +200,14 @@ fn paint_bar(
             ctx.stroke_rect(x, top + 8.0, width, ROW_HEIGHT - 16.0);
         }
         PlanNode::Task(_) => {
-            rect(ctx, colour(row.look), x, top + 6.0, width, ROW_HEIGHT - 12.0);
+            rect(
+                ctx,
+                colour(row.look),
+                x,
+                top + 6.0,
+                width,
+                ROW_HEIGHT - 12.0,
+            );
             if row.violated {
                 ctx.set_stroke_style_str(PROBLEM);
                 ctx.set_line_width(2.0);
@@ -205,7 +215,13 @@ fn paint_bar(
                 ctx.set_line_width(1.0);
             }
             if width > 60.0 {
-                text(ctx, "#ffffff", &clip(ctx, &row.name, width - 8.0), x + 5.0, middle);
+                text(
+                    ctx,
+                    "#ffffff",
+                    &clip(ctx, &row.name, width - 8.0),
+                    x + 5.0,
+                    middle,
+                );
             }
         }
     }
@@ -240,17 +256,44 @@ fn paint_labels(ctx: &CanvasRenderingContext2d, scene: &Scene) {
         let indent = 8.0 + f64::from(row.depth) * INDENT;
         let mut x = indent;
         if row.has_members {
-            text(ctx, MUTED, if row.collapsed { "▸" } else { "▾" }, x, top + ROW_HEIGHT / 2.0);
+            text(
+                ctx,
+                MUTED,
+                if row.collapsed { "▸" } else { "▾" },
+                x,
+                top + ROW_HEIGHT / 2.0,
+            );
             x += 12.0;
         }
         let problem = row.unscheduled.is_some() || row.violated;
-        let name = clip(ctx, &row.name, label_width - x - if problem { 26.0 } else { 8.0 });
-        let style = if row.unscheduled.is_some() { MUTED } else { TEXT };
+        let name = clip(
+            ctx,
+            &row.name,
+            label_width - x - if problem { 26.0 } else { 8.0 },
+        );
+        let style = if row.unscheduled.is_some() {
+            MUTED
+        } else {
+            TEXT
+        };
         text(ctx, style, &name, x, top + ROW_HEIGHT / 2.0);
         if problem {
-            text(ctx, PROBLEM, "⚠", label_width - 20.0, top + ROW_HEIGHT / 2.0);
+            text(
+                ctx,
+                PROBLEM,
+                "⚠",
+                label_width - 20.0,
+                top + ROW_HEIGHT / 2.0,
+            );
         }
-        line(ctx, GRID, 0.0, top + ROW_HEIGHT, label_width, top + ROW_HEIGHT);
+        line(
+            ctx,
+            GRID,
+            0.0,
+            top + ROW_HEIGHT,
+            label_width,
+            top + ROW_HEIGHT,
+        );
     }
     rect(ctx, BACKGROUND, 0.0, 0.0, label_width, HEADER_HEIGHT);
     text(ctx, MUTED, "Name", 8.0, 22.0);

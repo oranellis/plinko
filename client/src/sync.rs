@@ -19,9 +19,8 @@ use plinko::{
     planner::plan_update::PlanUpdate,
     protocol::{ClientMessage, Created, Profile, ServerMessage},
     scheduler::state::TenantVolatileState,
-    types::{crud::Crud, short_id::ShortId},
+    types::short_id::ShortId,
 };
-use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Link {
@@ -73,7 +72,11 @@ impl Sync {
 
     /// Asks the server to make a change. `then` is called with what it created, or `None` if
     /// it made nothing or was refused.
-    pub fn send_then(&self, update: TenantUpdateType, then: impl FnOnce(Option<Created>) + 'static) {
+    pub fn send_then(
+        &self,
+        update: TenantUpdateType,
+        then: impl FnOnce(Option<Created>) + 'static,
+    ) {
         let request = self.next_request.try_update_value(|n| {
             *n += 1;
             *n
@@ -82,16 +85,18 @@ impl Sync {
             return;
         };
         let sent = self.outbox.with_value(|outbox| {
-            outbox
-                .as_ref()
-                .is_some_and(|o| o.unbounded_send(ClientMessage::Update { request, update }).is_ok())
+            outbox.as_ref().is_some_and(|o| {
+                o.unbounded_send(ClientMessage::Update { request, update })
+                    .is_ok()
+            })
         });
         if sent {
             self.pending.update_value(|p| {
                 p.insert(request, Box::new(then));
             });
         } else {
-            self.notice.set(Some("Not connected, the change was not made".to_string()));
+            self.notice
+                .set(Some("Not connected, the change was not made".to_string()));
             then(None);
         }
     }
@@ -102,7 +107,10 @@ impl Sync {
 
     /// A change to a plan
     pub fn plan(&self, plan: ShortId, update: PlanUpdate) {
-        self.send(TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, Box::new(update))));
+        self.send(TenantUpdateType::Plan(PlanTenantUpdate::Update(
+            plan,
+            Box::new(update),
+        )));
     }
 
     pub fn plan_then(
@@ -119,8 +127,15 @@ impl Sync {
         match message {
             ServerMessage::Snapshot { seq, user, tenant } => {
                 let name = tenant.users().get(&user).map(|u| u.name().to_string());
-                let admin = tenant.users().get(&user).is_some_and(|u| u.role() == Role::Admin);
-                self.me.set(name.map(|name| Profile { id: user, name, admin }));
+                let admin = tenant
+                    .users()
+                    .get(&user)
+                    .is_some_and(|u| u.role() == Role::Admin);
+                self.me.set(name.map(|name| Profile {
+                    id: user,
+                    name,
+                    admin,
+                }));
                 self.tenant.set(Some(*tenant));
                 self.seq.set(seq);
                 self.link.set(Link::Live);
@@ -136,14 +151,24 @@ impl Sync {
                 self.seq.set(seq);
             }
             ServerMessage::Schedule { seq, schedule } => self.schedule.set(Some((seq, *schedule))),
-            ServerMessage::Ack { request, created, .. } => {
-                if let Some(then) = self.pending.try_update_value(|p| p.remove(&request)).flatten() {
+            ServerMessage::Ack {
+                request, created, ..
+            } => {
+                if let Some(then) = self
+                    .pending
+                    .try_update_value(|p| p.remove(&request))
+                    .flatten()
+                {
                     then(created);
                 }
             }
             ServerMessage::Rejected { request, error } => {
                 self.notice.set(Some(error));
-                if let Some(then) = self.pending.try_update_value(|p| p.remove(&request)).flatten() {
+                if let Some(then) = self
+                    .pending
+                    .try_update_value(|p| p.remove(&request))
+                    .flatten()
+                {
                     then(None);
                 }
             }

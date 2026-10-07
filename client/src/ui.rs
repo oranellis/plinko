@@ -47,7 +47,11 @@ pub fn Text(
     #[prop(optional, into)] placeholder: String,
     #[prop(optional, into)] kind: String,
 ) -> impl IntoView {
-    let kind = if kind.is_empty() { "text".to_string() } else { kind };
+    let kind = if kind.is_empty() {
+        "text".to_string()
+    } else {
+        kind
+    };
     view! {
         <input
             type=kind
@@ -107,7 +111,10 @@ pub fn Select(
 }
 
 pub fn options<const N: usize>(pairs: [(&str, &str); N]) -> Signal<Vec<(String, String)>> {
-    let pairs: Vec<(String, String)> = pairs.iter().map(|(v, l)| (v.to_string(), l.to_string())).collect();
+    let pairs: Vec<(String, String)> = pairs
+        .iter()
+        .map(|(v, l)| (v.to_string(), l.to_string()))
+        .collect();
     Signal::stored(pairs)
 }
 

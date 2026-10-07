@@ -51,7 +51,7 @@ impl View {
     /// Moves the view so what was under the pointer moves with it
     pub fn pan(&mut self, dx: f64, dy: f64, rows: usize, height: f64) {
         self.origin -= dx / self.day_width;
-        self.scroll_y = self.scroll_y - dy;
+        self.scroll_y += dy;
         self.clamp(rows, height);
     }
 
@@ -150,7 +150,10 @@ mod tests {
     #[test]
     fn only_rows_that_show_are_visible() {
         let mut view = View::fit(d(1), d(30), 900.0);
-        assert_eq!(view.visible_rows(HEADER_HEIGHT + ROW_HEIGHT * 3.0, 100), 0..4);
+        assert_eq!(
+            view.visible_rows(HEADER_HEIGHT + ROW_HEIGHT * 3.0, 100),
+            0..4
+        );
         view.pan(0.0, -ROW_HEIGHT * 10.0, 100, 400.0);
         assert!(view.visible_rows(400.0, 100).start >= 10);
         assert_eq!(view.visible_rows(400.0, 5), 5..5);

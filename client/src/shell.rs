@@ -39,7 +39,10 @@ pub fn Shell() -> impl IntoView {
         Route::People => Page::People,
         Route::Availability(of) => Page::Availability(of),
     });
-    let name = move || sync.tenant.with(|t| t.as_ref().map(|t| t.name().to_string()).unwrap_or_default());
+    let name = move || {
+        sync.tenant
+            .with(|t| t.as_ref().map(|t| t.name().to_string()).unwrap_or_default())
+    };
     let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
     let _ = Role::Admin;
     let logout = move |_| {
@@ -56,9 +59,8 @@ pub fn Shell() -> impl IntoView {
     };
     let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
     let on_work = Signal::derive(move || route.get() == Route::Work);
-    let on_resources = Signal::derive(move || {
-        matches!(route.get(), Route::Resources | Route::Availability(_))
-    });
+    let on_resources =
+        Signal::derive(move || matches!(route.get(), Route::Resources | Route::Availability(_)));
     let on_people = Signal::derive(move || route.get() == Route::People);
     view! {
         <div class="shell">

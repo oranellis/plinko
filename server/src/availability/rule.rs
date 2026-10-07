@@ -55,7 +55,7 @@ impl<V> From<NewRule<V>> for Rule<V> {
         Self {
             id: new.id,
             start_day: new.start_day,
-            stop_day: None,
+            stop_day: new.stop_day,
             kind: new.kind,
         }
     }
@@ -182,6 +182,9 @@ impl Ordinal {
 pub struct NewRule<V> {
     pub id: Uuid,
     pub start_day: NaiveDate,
+    /// The first day the rule no longer applies on, if it ends
+    #[serde(default)]
+    pub stop_day: Option<NaiveDate>,
     pub kind: RuleKind<V>,
 }
 

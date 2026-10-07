@@ -38,14 +38,6 @@ pub fn delay(days: i64) -> String {
     }
 }
 
-/// `1 day`, `5 days`
-pub fn days(count: i64) -> String {
-    match count {
-        1 => "1 day".to_string(),
-        n => format!("{n} days"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,7 +59,5 @@ mod tests {
         assert_eq!(delay(0), "on time");
         assert_eq!(delay(1), "1 day late");
         assert_eq!(delay(5), "5 days late");
-        assert_eq!(days(1), "1 day");
-        assert_eq!(days(2), "2 days");
     }
 }

@@ -265,6 +265,7 @@ fn group_members_edit_plans_their_group_is_assigned_to() {
 
 fn holiday(day: NaiveDate) -> RuleSetUpdate<Workload> {
     let new = NewRule {
+        stop_day: None,
         id: Uuid::now_v7(),
         start_day: day,
         kind: RuleKind::Holiday,
