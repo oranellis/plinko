@@ -76,6 +76,11 @@ impl Ledger {
         self.start
     }
 
+    /// The first day after the window
+    pub fn end(&self) -> NaiveDate {
+        self.start + Days::new(self.days as u64)
+    }
+
     fn index(&self, day: NaiveDate) -> Option<usize> {
         usize::try_from((day - self.start).num_days())
             .ok()

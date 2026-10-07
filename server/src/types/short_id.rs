@@ -2,7 +2,7 @@ use nanoid::nanoid;
 
 use crate::types::error::{PlinkoError, PlinkoResult};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ShortId([u8; 8]);
 
 impl ShortId {

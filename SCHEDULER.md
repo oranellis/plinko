@@ -6,9 +6,10 @@ in a tenant together, because people work across plans. Plinko 1's scheduler
 records what is settled and what carries over from it, and lists the changes still needed in the
 data model.
 
-Status: the output state, availability calendars, affinities, groups (placement and placeholder
-duration), recorded workers, buffer placement,
-`ScheduleMode`, `TimeConstraint::apply` and the unscheduled check exist. The solver is `todo!()`.
+Status: the output state, availability calendars, affinities, groups, recorded workers, buffers,
+`ScheduleMode`, `TimeConstraint::apply`, the ledger and the single-plan solver exist. Plans are
+scheduled one after another into the shared ledger (by plan id), which the combined insertion of
+step 5 replaces. Call `scheduler::prepare` to cache calendars, then `solve_tenant`.
 Items marked **Assumed** were not explicitly confirmed and are collected at the end.
 
 ## 1. Principles
@@ -104,8 +105,8 @@ Everything is read from `Tenant` and its plans.
   workers' own availability (a Saturday override can start work, and nobody working Sunday means a
   task that could start Sunday starts Monday). A task with no workers starts on the first working
   day of the plan calendar. Earliest constraints raise the start.
-- **End:** the day after the later of the last assignment day and `duration` working days from the
-  start (`Calendar::end_after_workdays`).
+- **End:** the day after the last assignment day. A task with no workers works `duration` days of
+  the plan calendar, and affinity days still apply.
 - **Affinities:** a task works only on days every linked affinity allows (`Plan::task_allows_day`).
   A person must also be available that day. Days an affinity disallows behave like calendar gaps,
   not blocks: they do not restart a strict run (**Assumed**). A task that can never be placed (no allowed days,
@@ -115,7 +116,9 @@ Everything is read from `Tenant` and its plans.
     tasks run **consecutively**: on a working day where the block cannot be claimed (someone else
     holds hours) the run restarts from the next day, undoing hours already taken. Calendar gaps
     (the person has 0 hours that day) do not break the run. With several workers all of them must
-    have their full block on the same days, in step, else the run restarts.
+    have their full block on the same days, in step, else the run restarts. A day where someone has
+    fewer hours than the block is a calendar gap too, and if anyone has a gap the day is skipped for
+    all of them without a restart (**Assumed**).
   - Relaxed: any day with free time, using what is free up to the block, until the effort is done.
     It can take longer than `duration` and may skip days.
 - **Time constraints** (against the start): Earliest raises the start, never violated. Latest and
@@ -217,6 +220,8 @@ another anchored path (the unscheduled dependency is ignored when computing its 
 - `NoCapacity`: the workers exist but cannot provide the allocation (availability, affinities, or
   the horizon). An allocation shortfall counts as unscheduled.
 - `Dropped`.
+- `DependsOnUnscheduled`: every dependency was left out, by a failure rather than by having no path.
+- `NoScheduledMembers`: a task group none of whose members could be scheduled.
 
 ## 6. Cross-plan model
 
@@ -284,10 +289,12 @@ Remaining work to a target uses the longest dependency path of planned durations
 lags (milestones 0, buffers their duration).
 
 Insertion mechanics (Plinko 1): earliest start from dependencies, apply Earliest,
-resolve workers, fill the ledger per worker (strict consecutive or relaxed), set the range and
-constraint violations, then propagate: any dependent already placed whose earliest start moved
-later is removed (capacity returned) and re-inserted. Never move anchored tasks. A node that is
-the protected target is not moved by propagation from later insertions.
+resolve workers, fill the ledger per worker (strict consecutive or relaxed), set the range.
+Constraint violations are read off the final placement. A node goes in only once everything it
+depends on is settled (placed or left out), so a later insertion never moves one already placed.
+Plinko 1's propagation and protected target are not needed (**Assumed**). Nodes that follow from
+their dependencies alone (milestones, groups, buffers, dropped tasks) are placed as soon as they
+are ready, and recomputed after compaction moves a task.
 
 Choosing a person for a tag or group slot: the eligible person who finishes first (simulate the fill
 without taking hours). Among candidates, accept one finishing up to one day later if their load in
@@ -342,9 +349,9 @@ plans move and by how many days. Not part of the first solver.
 2. **Plan priority** (done): `PlanSchedulerData::priority()` with its patch.
 3. **Recorded workers** (done): `Task.actual_workers`, `TaskPatch.actual_workers`,
    `task::VolatileState.workers`, `Tenant::fill_defaults`. See section 4.
-4. **Actual dates:** default `actual_start_date` to today when moving to in progress, and
-   `actual_end_date` to today when completing, if not supplied (on hold already does this).
-   (**Assumed**)
+4. **Actual dates** (done): a task that starts, goes on hold or completes without an
+   `actual_start_date` begins today, and one completed without an end ends today
+   (`Tenant::set_status_dates`).
 5. **Output** (done): `TargetForecast` and `UserSchedule::bottleneck`, see section 3.
 6. **Tenant clock** (done): `Tenant::today()`, `TenantUpdateType::SetToday`. Putting a task on hold
    uses it for the end date. Task duration and group placeholder default to 1 and cannot be 0.
@@ -358,8 +365,11 @@ plans move and by how many days. Not part of the first solver.
 - `scheduler/mod.rs`: `solve_tenant` and the phases.
 - `scheduler/state.rs`: output types (exists).
 - `scheduler/ledger.rs`: capacity ledger (exists).
-- Planned: baselines and solo slack, the insertion engine
-  (fill, propagate, compact), and repair rounds, in separate files.
+- `scheduler/fill.rs`: strict and relaxed placement of slots against `Hours` (exists).
+- `scheduler/network.rs`: dependency graph order and remaining work (exists). `status.rs`:
+  derived milestone statuses (exists).
+- `scheduler/plan_solver.rs`: stages, task placement, worker choice, compaction (exists).
+- Planned: baselines and solo slack, combined insertion, and repair rounds, in separate files.
 - Reuse `availability::calendar::Calendar`, `Plan::unscheduled`, `Plan::task_allows_day`,
   `PlanBuffer::place`, `ScheduleMode::hours_on`, `TimeConstraint::apply`, `Dependency::start_after`.
 
@@ -404,7 +414,7 @@ scheduler early.
    taken atomically (`Ledger::claim`) and given back (`release`), `Clone` checkpoints it. Claims on
    days before the window are ignored, so anchors and in-progress tasks deduct only future hours.
    `load` gives the bottleneck share.
-3. **Single-plan insertion (port of Plinko 1).** For one plan alone: anchors, in-progress, constrained
+3. **Single-plan insertion (port of Plinko 1)** (done, `scheduler/plan_solver.rs`). For one plan alone: anchors, in-progress, constrained
    nodes, target chain, rest, in that order, with CPM ordering. Earliest start from dependencies
    (the date conventions in section 3), strict (consecutive, synchronised) and relaxed fills,
    worker resolution by first finisher, constraints and violations, propagation and re-insertion,
@@ -430,6 +440,7 @@ At each step keep the determinism test (shuffled map order gives identical resul
 
 - Hard tier margin (3 working days), spread tolerance (1 day, half the load), repair round cap (8).
 - Unstarted tasks start no sooner than tomorrow (Plinko 1).
+- Strict days with fewer hours than the block are gaps, anyone having a gap skips the day for all.
 - A task starts on the first day work is placed, not on the plan calendar's first working day.
 - Unscheduled dependencies are ignored, dropped ones transparent (Plinko 1).
 - Dependents of an on-hold task use its hold date as the end.

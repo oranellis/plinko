@@ -128,6 +128,22 @@ fn putting_a_task_on_hold_ends_it_today_and_resuming_clears_the_end() {
 }
 
 #[test]
+fn started_and_completed_tasks_default_their_dates_to_today() {
+    let mut s = setup();
+    set_today(&mut s, 3);
+    set_state(&mut s, with(Status::InProgress, None, None));
+    assert_eq!(state(&s), with(Status::InProgress, Some(3), None));
+
+    set_today(&mut s, 6);
+    set_state(&mut s, with(Status::Completed, None, None));
+    assert_eq!(state(&s), with(Status::Completed, Some(3), Some(6)));
+
+    // dates that come with the update are kept
+    set_state(&mut s, with(Status::Completed, Some(2), Some(4)));
+    assert_eq!(state(&s), with(Status::Completed, Some(2), Some(4)));
+}
+
+#[test]
 fn an_end_date_sent_with_the_hold_is_kept() {
     let mut s = setup();
     set_today(&mut s, 5);

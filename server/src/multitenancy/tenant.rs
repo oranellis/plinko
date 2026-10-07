@@ -211,7 +211,8 @@ impl Tenant {
     }
 
     /// Putting a task on hold ends it on the day that happens (today), unless an end date came with the
-    /// update, and an update that leaves it on hold keeps that end. Resuming clears it again.
+    /// update, and an update that leaves it on hold keeps that end. Resuming clears it again. A task
+    /// that has started begins today unless it has a start, and one completed ends today likewise.
     fn set_status_dates(&self, plan: &ShortId, update: &mut PlanUpdate) {
         let PlanUpdate::Task(Crud::Update(patch)) = update else {
             return;
@@ -234,6 +235,14 @@ impl Tenant {
                 state.actual_end_date = None;
             }
             _ => {}
+        }
+        if state.status != Status::NotStarted {
+            let start = state.actual_start_date.or(was.actual_start_date);
+            state.actual_start_date = start.or(Some(self.today));
+        }
+        if state.status == Status::Completed {
+            let end = state.actual_end_date.or(was.actual_end_date);
+            state.actual_end_date = end.or(Some(self.today));
         }
     }
 

@@ -68,7 +68,7 @@ pub struct PlanVolatileState {
     pub milestones: HashMap<Uuid, milestone::VolatileState>,
     pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
     pub unscheduled: HashMap<PlanNode, UnscheduledReason>,
-    /// Forecast of each of the plan's targets, or of the whole plan end when it has none
+    /// Forecast of each of the plan's targets
     pub targets: HashMap<Uuid, TargetForecast>,
     /// Tasks and milestones that landed on a date their time constraint does not allow
     pub constraint_violations: HashMap<PlanNode, ConstraintViolation>,
@@ -96,6 +96,10 @@ pub enum UnscheduledReason {
     NoPathToPlanStart,
     /// The workers the task asks for resolve to nobody, like a tag no one has or an empty group
     NoEligibleWorkers,
+    /// Every dependency of the item could not be scheduled, so there is nothing to start it from
+    DependsOnUnscheduled,
+    /// A task group none of whose members could be scheduled
+    NoScheduledMembers,
     /// The workers exist but cannot provide the allocation within the scheduling horizon, from a
     /// lack of availability or allowed days
     NoCapacity,
