@@ -97,7 +97,11 @@ pub fn default_tab() -> PlanTab {
         .and_then(|w| w.inner_width().ok())
         .and_then(|w| w.as_f64())
         .unwrap_or(1024.0);
-    if width < 720.0 { PlanTab::List } else { PlanTab::Gantt }
+    if width < 720.0 {
+        PlanTab::List
+    } else {
+        PlanTab::Gantt
+    }
 }
 
 pub fn navigate(route: Route) {

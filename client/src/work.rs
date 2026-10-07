@@ -3,11 +3,7 @@
 use chrono::{Days, NaiveDate};
 use leptos::prelude::*;
 
-use crate::{
-    format,
-    nav::Route,
-    ui::use_sync,
-};
+use crate::{format, nav::Route, ui::use_sync};
 
 const STEP: u64 = 14;
 

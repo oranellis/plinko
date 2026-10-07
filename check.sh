@@ -5,3 +5,4 @@ cd "$(dirname "$0")"
 cargo clippy --workspace --all-targets
 cargo test --workspace
 cargo build -p plinko --lib --no-default-features --target wasm32-unknown-unknown
+cargo build -p plinko-client --target wasm32-unknown-unknown

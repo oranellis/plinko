@@ -36,7 +36,8 @@ fn read<R>(plan: ShortId, f: impl FnOnce(&Plan) -> Option<R>) -> Option<R> {
 /// `read` for starting values, which are taken once and not followed
 fn snapshot<R>(plan: ShortId, f: impl FnOnce(&Plan) -> Option<R>) -> Option<R> {
     let sync = use_sync();
-    sync.tenant.with_untracked(|t| f(t.as_ref()?.plans().get(&plan)?))
+    sync.tenant
+        .with_untracked(|t| f(t.as_ref()?.plans().get(&plan)?))
 }
 
 fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {

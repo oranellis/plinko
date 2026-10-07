@@ -184,3 +184,125 @@ pub fn reason(reason: UnscheduledReason) -> &'static str {
         UnscheduledReason::NoCapacity => "The people available cannot fit the work",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use plinko::{
+        planner::{plan::NewPlan, plan_update::PlanUpdate},
+        scheduler::state::{PlanVolatileState, UnscheduledReason},
+        types::{
+            common::DateRange,
+            crud::Crud,
+            short_id::ShortId,
+            task::{self, NewTask},
+            task_group::NewTaskGroup,
+        },
+    };
+
+    use super::*;
+
+    fn d(day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2024, 1, day).unwrap()
+    }
+
+    fn plan() -> Plan {
+        let new = NewPlan {
+            id: ShortId::new(),
+            name: "Plan".to_string(),
+            start_date: d(1),
+        };
+        Plan::from(new)
+    }
+
+    fn task(plan: &mut Plan, id: u128, name: &str, parent: Parent) -> PlanNode {
+        let id = Uuid::from_u128(id);
+        let new = NewTask {
+            id,
+            name: name.to_string(),
+            parent,
+        };
+        plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
+        PlanNode::Task(id)
+    }
+
+    fn scheduled(state: &mut PlanVolatileState, node: PlanNode, from: u32, to: u32) {
+        let PlanNode::Task(id) = node else {
+            panic!("a task");
+        };
+        state.tasks.insert(
+            id,
+            task::VolatileState {
+                date_range: DateRange::new(d(from), d(to)).unwrap(),
+                assignments: Default::default(),
+                workers: Default::default(),
+            },
+        );
+    }
+
+    #[test]
+    fn rows_go_by_start_with_the_unscheduled_last_and_groups_hold_their_members() {
+        let mut plan = plan();
+        let late = task(&mut plan, 1, "Late", Parent::PlanStart);
+        let early = task(&mut plan, 2, "Early", Parent::PlanStart);
+        let loose = task(&mut plan, 3, "Loose", Parent::PlanStart);
+        let group = Uuid::from_u128(10);
+        let new = NewTaskGroup {
+            id: group,
+            name: "Group".to_string(),
+            parent: Parent::PlanStart,
+        };
+        plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
+            .unwrap();
+        let inside = task(&mut plan, 4, "Inside", Parent::Node(group));
+
+        let mut state = PlanVolatileState::default();
+        scheduled(&mut state, late, 8, 10);
+        scheduled(&mut state, early, 2, 4);
+        scheduled(&mut state, inside, 3, 5);
+        state
+            .unscheduled
+            .insert(loose, UnscheduledReason::NoPathToPlanStart);
+
+        let names = |collapsed: &HashSet<Uuid>| -> Vec<(String, u32)> {
+            rows(&plan, Some(&state), collapsed)
+                .into_iter()
+                .map(|r| (r.name, r.depth))
+                .collect()
+        };
+        // the group has no span of its own here so it goes with the unscheduled
+        let open = names(&HashSet::new());
+        assert_eq!(open[0].0, "Early");
+        assert_eq!(open[1].0, "Late");
+        let group_at = open.iter().position(|(n, _)| n == "Group").unwrap();
+        assert_eq!(open[group_at + 1], ("Inside".to_string(), 1));
+        assert_eq!(open.last().unwrap().0, "Loose");
+
+        let collapsed = names(&HashSet::from([group]));
+        assert!(collapsed.iter().all(|(n, _)| n != "Inside"));
+        let row = rows(&plan, Some(&state), &HashSet::from([group]))
+            .into_iter()
+            .find(|r| r.name == "Group")
+            .unwrap();
+        assert!(row.has_members && row.collapsed);
+        let loose_row = rows(&plan, Some(&state), &HashSet::new())
+            .into_iter()
+            .find(|r| r.node == loose)
+            .unwrap();
+        assert_eq!(
+            loose_row.unscheduled,
+            Some(UnscheduledReason::NoPathToPlanStart)
+        );
+        assert_eq!(loose_row.span, None);
+    }
+
+    #[test]
+    fn items_are_named_by_kind() {
+        let mut plan = plan();
+        let task = task(&mut plan, 1, "Write", Parent::PlanStart);
+        assert_eq!(node_name(&plan, task), "Write");
+        assert_eq!(
+            node_name(&plan, PlanNode::Task(Uuid::from_u128(99))),
+            "Missing"
+        );
+    }
+}
