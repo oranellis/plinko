@@ -81,6 +81,8 @@ Everything is read from `Tenant` and its plans.
   milestones alike, plus lag (`Dependency::milestone_date_after`): milestones are zero time events
   at the trailing edge of their real work, and share a day with milestones they depend on.
   `ParentStart` is a date, not a node, so `start_after` applies to it for milestones as well.
+  So task, milestone, task starts the second task the day after the first finishes, exactly as
+  task, task does: the milestone is a zero cost marker on the last day of the first task's work.
 - Dropped predecessors are transparent: they add no duration and hold no capacity, so dependents
   start as if the dropped task ended where it would have started.
 

@@ -77,4 +77,43 @@ mod tests {
             NaiveDate::from_ymd_opt(2024, 1, 3).unwrap()
         );
     }
+
+    #[test]
+    fn milestones_land_on_the_last_day_of_what_they_depend_on() {
+        let d = |day| NaiveDate::from_ymd_opt(2024, 1, day).unwrap();
+        let dependency = |lag| Dependency {
+            node: DependencyNode::ParentStart,
+            lag,
+        };
+        // a task running to Friday the 5th ends (exclusive) on Saturday the 6th
+        assert_eq!(dependency(0).milestone_date_after(d(6)), d(5));
+        assert_eq!(dependency(2).milestone_date_after(d(6)), d(7));
+        assert_eq!(dependency(-1).milestone_date_after(d(6)), d(4));
+    }
+
+    #[test]
+    fn a_milestone_between_two_tasks_does_not_delay_the_second() {
+        use crate::types::milestone::{DerivedStatus, VolatileState};
+        let d = |day| NaiveDate::from_ymd_opt(2024, 1, day).unwrap();
+        let link = Dependency {
+            node: DependencyNode::ParentStart,
+            lag: 0,
+        };
+        // the first task works Monday the 1st to Friday the 5th, so it ends (exclusive) on the 6th
+        let first_end = d(6);
+        let direct_start = link.start_after(first_end);
+
+        // the milestone lands on the 5th, the last day work is done, and takes just that day
+        let milestone = VolatileState {
+            derived_status: DerivedStatus::NotStarted,
+            date: link.milestone_date_after(first_end),
+        };
+        assert_eq!(milestone.date, d(5));
+        // so the second task starts the day after the first finished, with or without it
+        assert_eq!(link.start_after(milestone.end()), d(6));
+        assert_eq!(link.start_after(milestone.end()), direct_start);
+
+        // and a milestone after the milestone shares its day
+        assert_eq!(link.milestone_date_after(milestone.end()), d(5));
+    }
 }
