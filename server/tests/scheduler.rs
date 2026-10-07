@@ -14,7 +14,7 @@ use plinko::{
     planner::{plan::NewPlan, plan_update::PlanUpdate},
     scheduler::{
         prepare, solve_tenant,
-        state::{PlanVolatileState, UnscheduledReason},
+        state::{Baseline, PlanVolatileState, UnscheduledReason},
     },
     types::{
         affinity::NewAffinity,
@@ -274,6 +274,11 @@ impl World {
         };
         self.plan_update(PlanUpdate::Target(Crud::Add(new)));
         id
+    }
+
+    fn baseline(&mut self) -> Baseline {
+        prepare(&mut self.tenant);
+        self.tenant.baseline(&self.plan).expect("prepared").clone()
     }
 
     fn solve(&mut self) -> PlanVolatileState {
@@ -847,4 +852,72 @@ fn the_same_updates_give_the_same_schedule() {
     let (first, second) = (build(&mut a), build(&mut b));
     assert_eq!(first, second);
     assert_eq!(first.tasks.len(), 12);
+}
+
+#[test]
+fn slack_is_how_much_later_a_node_can_finish_before_the_plan_does() {
+    let mut world = World::new();
+    let (alice, bob) = (world.user(), world.user());
+    let first = world.task(2, &[(user(alice), 8)], &[start()]);
+    let second = world.task(2, &[(user(alice), 8)], &[after(node(first))]);
+    let aside = world.task(1, &[(user(bob), 8)], &[start()]);
+    let slack = world.baseline().slack;
+    assert_eq!(slack[&node(first)], 0);
+    assert_eq!(slack[&node(second)], 0);
+    // it ends on the 2nd and the plan on the 5th
+    assert_eq!(slack[&node(aside)], 3);
+}
+
+#[test]
+fn slack_counts_the_order_people_work_in() {
+    let mut world = World::new();
+    let (alice, bob, carol) = (world.user(), world.user(), world.user());
+    let one = world.task(1, &[(user(alice), 8)], &[start()]);
+    let two = world.task(1, &[(user(alice), 8)], &[start()]);
+    let apart = world.task(1, &[(user(carol), 8)], &[start()]);
+    world.task(2, &[(user(bob), 8)], &[start()]);
+    let state = world.solve();
+    let slack = world.baseline().slack;
+    let (first, second) = if span(&state, one).0 < span(&state, two).0 {
+        (one, two)
+    } else {
+        (two, one)
+    };
+    // the first has to be done for the second to be on time, the one on her own has a day
+    assert_eq!(slack[&node(first)], 0);
+    assert_eq!(slack[&node(second)], 0);
+    assert_eq!(slack[&node(apart)], 1);
+}
+
+#[test]
+fn slack_follows_targets_and_hard_dates() {
+    let mut world = World::new();
+    let chain = world.task(1, &[], &[start()]);
+    let goal = world.milestone(&[after(node(chain))]);
+    world.target(PlanNode::Milestone(goal));
+    let dated = world.task(1, &[], &[start()]);
+    world.patch(dated, |p| {
+        p.time_constraint = Some(TimeConstraint::Latest(d(10)))
+    });
+    let rest = world.task(1, &[], &[start()]);
+    let slack = world.baseline().slack;
+    assert_eq!(slack[&node(chain)], 0);
+    assert_eq!(slack[&PlanNode::Milestone(goal)], 0);
+    // it may start on the 10th, so end on the 11th, having ended on the 2nd
+    assert_eq!(slack[&node(dated)], 9);
+    assert!(!slack.contains_key(&node(rest)));
+}
+
+#[test]
+fn slack_is_negative_once_a_hard_date_is_missed() {
+    let mut world = World::new();
+    let first = world.task(3, &[], &[start()]);
+    let late = world.task(1, &[], &[after(node(first))]);
+    world.patch(late, |p| {
+        p.time_constraint = Some(TimeConstraint::Latest(d(2)))
+    });
+    let slack = world.baseline().slack;
+    // it starts on the 4th and ends on the 5th, but could end on the 3rd
+    assert_eq!(slack[&node(late)], -2);
+    assert_eq!(slack[&node(first)], -2);
 }

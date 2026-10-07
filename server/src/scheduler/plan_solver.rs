@@ -16,7 +16,10 @@ use crate::{
         fill::{Filled, Hours, Slot, Spec, fill},
         ledger::{Claim, Ledger, MAX_FILL_DAYS, Run},
         network::Network,
-        state::{ConstraintViolation, PlanVolatileState, TargetForecast, UnscheduledReason},
+        slack::late_ends,
+        state::{
+            Baseline, ConstraintViolation, PlanVolatileState, TargetForecast, UnscheduledReason,
+        },
         status::milestone_statuses,
     },
     types::{
@@ -150,6 +153,21 @@ impl<'a> PlanSolver<'a> {
 
     /// Schedules the plan, taking its hours from the ledger
     pub fn solve(mut self, ledger: &mut Ledger) -> PlanVolatileState {
+        self.run(ledger);
+        self.finish()
+    }
+
+    /// Schedules the plan with the ledger to itself, and works out how much slack each node has
+    pub fn solve_alone(mut self, ledger: &mut Ledger) -> Baseline {
+        self.run(ledger);
+        let slack = self.slack();
+        Baseline {
+            state: self.finish(),
+            slack,
+        }
+    }
+
+    fn run(&mut self, ledger: &mut Ledger) {
         self.place_status(ledger, |s| matches!(s, Status::Completed | Status::OnHold));
         self.place_status(ledger, |s| s == Status::InProgress);
         for node in self.hard_dated() {
@@ -165,7 +183,6 @@ impl<'a> PlanSolver<'a> {
         let everything = self.order.iter().copied().collect();
         self.stage(&everything, ledger);
         self.compact(ledger);
-        self.finish()
     }
 
     fn status(&self, v: &Vertex) -> Option<Status> {
@@ -617,6 +634,89 @@ impl<'a> PlanSolver<'a> {
     // }}}
 
     // result {{{
+    /// Pairs of tasks where one person works the second after the first and not alongside it,
+    /// following each person's work in order
+    fn resource_order(&self) -> Vec<(Vertex, Vertex)> {
+        let mut by_person: HashMap<Uuid, Vec<(NaiveDate, NaiveDate, Vertex)>> = HashMap::new();
+        for (v, placement) in &self.placed {
+            let assignments = placement.work.iter().flat_map(|w| &w.assignments);
+            for (who, days) in assignments {
+                let (Assignee::User(user), Some(first), Some(last)) =
+                    (who, days.keys().next(), days.keys().next_back())
+                else {
+                    continue;
+                };
+                by_person
+                    .entry(*user)
+                    .or_default()
+                    .push((*first, *last, *v));
+            }
+        }
+        let mut pairs = Vec::new();
+        for work in by_person.values_mut() {
+            work.sort_by_key(|(first, _, v)| (*first, v.key()));
+            let follows = work.windows(2).filter(|w| w[0].1 < w[1].0);
+            pairs.extend(follows.map(|w| (w[0].2, w[1].2)));
+        }
+        pairs
+    }
+
+    /// Days each visible node can finish later, see `Baseline::slack`
+    fn slack(&self) -> HashMap<PlanNode, i64> {
+        let ranges: HashMap<Vertex, DateRange> =
+            self.placed.iter().map(|(v, p)| (*v, p.range)).collect();
+        let mut late: HashMap<Vertex, NaiveDate> = HashMap::new();
+        let goals: Vec<Vertex> = self
+            .plan
+            .targets()
+            .values()
+            .map(|t| Vertex::Node(t.node()))
+            .filter(|v| ranges.contains_key(v))
+            .collect();
+        if goals.is_empty() {
+            let end = ranges.values().map(DateRange::end).max();
+            late.extend(
+                end.into_iter()
+                    .flat_map(|e| ranges.keys().map(move |v| (*v, e))),
+            );
+        }
+        late.extend(goals.iter().map(|v| (*v, ranges[v].end())));
+        let hard = self
+            .order
+            .iter()
+            .filter(|v| self.is_open(v) || matches!(v, Vertex::Node(PlanNode::Milestone(_))));
+        for v in hard {
+            let (Some(range), Some(constraint)) = (ranges.get(v), self.constraint_of(v)) else {
+                continue;
+            };
+            if let TimeConstraint::Fixed(date) | TimeConstraint::Latest(date) = constraint {
+                let length = (range.end() - range.start()).num_days().unsigned_abs();
+                let limit = date + Days::new(length);
+                let slot = late.entry(*v).or_insert(limit);
+                *slot = (*slot).min(limit);
+            }
+        }
+        let late = late_ends(&self.net, &ranges, &self.resource_order(), late);
+        late.into_iter()
+            .filter_map(|(v, end)| match v {
+                Vertex::Node(node) if self.visible(&node) => {
+                    Some((node, (end - ranges[&v].end()).num_days()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn constraint_of(&self, v: &Vertex) -> Option<TimeConstraint> {
+        match v {
+            Vertex::Node(PlanNode::Task(id)) => Some(self.plan.tasks()[id].time_constraint()),
+            Vertex::Node(PlanNode::Milestone(id)) => {
+                Some(self.plan.milestones()[id].time_constraint())
+            }
+            _ => None,
+        }
+    }
+
     fn finish(self) -> PlanVolatileState {
         let mut out = PlanVolatileState::default();
         for (v, placement) in &self.placed {
@@ -676,13 +776,20 @@ impl<'a> PlanSolver<'a> {
                 .pred_opt()
                 .filter(|d| *d >= range.start())
                 .unwrap_or(range.start());
-            // on its own the plan is its own baseline
+            // the baseline is set by comparing with the plan on its own
             let forecast = TargetForecast {
                 forecast: last,
                 baseline: last,
             };
             out.targets.insert(*id, forecast);
         }
+        out.plan_end = out.end().map(|end| {
+            let last = end.pred_opt().expect("a day before");
+            TargetForecast {
+                forecast: last,
+                baseline: last,
+            }
+        });
         out.unscheduled = self.unscheduled;
         out
     }

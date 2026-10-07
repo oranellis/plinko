@@ -12,7 +12,7 @@ use crate::{
         user_group::TenantUserGroup,
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
-    scheduler::state::TenantVolatileState,
+    scheduler::state::{Baseline, TenantVolatileState},
     traits::entity::Entity,
     types::{
         crud::Crud,
@@ -35,6 +35,7 @@ pub struct Tenant {
     volatile: HashMap<Uuid, TenantUserVolatileState>,
     plan_calendars: HashMap<ShortId, Calendar<Workload>>,
     schedule: Option<TenantVolatileState>,
+    baselines: HashMap<ShortId, Baseline>,
     pub(super) plans: HashMap<ShortId, Plan>,
 }
 
@@ -72,6 +73,7 @@ impl Tenant {
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),
             schedule: None,
+            baselines: HashMap::new(),
             plans: HashMap::new(),
         }
     }
@@ -121,10 +123,32 @@ impl Tenant {
         self.schedule = Some(schedule);
     }
 
+    /// The plan on its own, as of the last `scheduler::prepare`. An update that changes a plan
+    /// drops its baseline, and one that changes anything else (people, availability, the clock)
+    /// drops them all.
+    pub fn baseline(&self, plan: &ShortId) -> Option<&Baseline> {
+        self.baselines.get(plan)
+    }
+
+    pub fn store_baseline(&mut self, plan: ShortId, baseline: Baseline) {
+        self.baselines.insert(plan, baseline);
+    }
+
     pub fn apply_update(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
+        let plan = match &u.update_type {
+            TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => Some(new.id),
+            TenantUpdateType::Plan(
+                PlanTenantUpdate::Remove(id) | PlanTenantUpdate::Update(id, _),
+            ) => Some(*id),
+            _ => None,
+        };
         let result = self.apply_update_unscheduled(u);
         if result.is_ok() {
             self.schedule = None;
+            match plan {
+                Some(plan) => drop(self.baselines.remove(&plan)),
+                None => self.baselines.clear(),
+            }
         }
         result
     }

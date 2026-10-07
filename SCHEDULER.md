@@ -62,7 +62,8 @@ Everything is read from `Tenant` and its plans.
   assignments, so a user's view across plans (past, present, upcoming) cannot disagree. Placeholders
   have no schedule.
 - `Assignee` is the concrete person (`User(id)` or `Placeholder`), never a tag or group.
-- `plans[plan].targets[target]: TargetForecast { forecast, baseline }` with `delay()` in days, and
+- `plans[plan].targets[target]` and `plans[plan].plan_end` (the last day of the plan, the forecast of
+  a plan with no explicit target): `TargetForecast { forecast, baseline }` with `delay()` in days, and
   `users[user].bottleneck`: booked hours over available hours from their first to last assigned day,
   set by the solver after `from_plans` (it knows availability).
 
@@ -242,8 +243,13 @@ stages. This gives:
 - the solo slack of each node, from a backward pass over dependency edges plus resource edges
   (task X precedes task Y on the same person in the solo schedule), so float is realistic.
 
-Solo results are cached per plan and recomputed only when that plan, or the availability of its
-people, changes. Delay is the combined forecast minus the baseline, and is the metric for everything
+A solo run is a `Baseline { state, slack }`, slack in calendar days (negative once a hard date is
+missed). Slack works back from each target's solo end (or the plan end with none) and from hard
+dates, over dependency edges and the order each person works their tasks in (a task follows the
+previous one when their days do not overlap). Nodes feeding no target with no hard date have none.
+Baselines are cached on the tenant by `scheduler::prepare`, dropped for a plan when it is updated
+and for all plans on any other update (people, availability, the clock). `solve_tenant` sets each
+forecast's baseline from them. Delay is the combined forecast minus the baseline, and is the metric for everything
 below.
 
 ## 7. Algorithm
@@ -368,8 +374,9 @@ plans move and by how many days. Not part of the first solver.
 - `scheduler/fill.rs`: strict and relaxed placement of slots against `Hours` (exists).
 - `scheduler/network.rs`: dependency graph order and remaining work (exists). `status.rs`:
   derived milestone statuses (exists).
+- `scheduler/slack.rs`: late ends and slack from the dependency and resource edges (exists).
 - `scheduler/plan_solver.rs`: stages, task placement, worker choice, compaction (exists).
-- Planned: baselines and solo slack, combined insertion, and repair rounds, in separate files.
+- Planned: combined insertion, and repair rounds, in separate files.
 - Reuse `availability::calendar::Calendar`, `Plan::unscheduled`, `Plan::task_allows_day`,
   `PlanBuffer::place`, `ScheduleMode::hours_on`, `TimeConstraint::apply`, `Dependency::start_after`.
 
@@ -420,7 +427,7 @@ scheduler early.
    worker resolution by first finisher, constraints and violations, propagation and re-insertion,
    compaction. Milestone, group and buffer dates and derived milestone status. Unscheduled reasons.
    Tests: Plinko 1's scenarios (section 12).
-4. **Baselines and solo slack.** Run step 3 per plan alone, record each target's forecast, and
+4. **Baselines and solo slack** (done, `scheduler/slack.rs`). Run step 3 per plan alone, record each target's forecast, and
    compute solo slack on dependency plus resource edges. Cache per plan with invalidation when the
    plan or its people's availability changes.
 5. **Combined insertion.** One shared ledger. The hard tier, target-chain and rest layers across
@@ -438,6 +445,7 @@ At each step keep the determinism test (shuffled map order gives identical resul
 
 ## Open items and assumptions
 
+- Slack is in calendar days, so the hard tier margin is 3 calendar days until step 5 says otherwise.
 - Hard tier margin (3 working days), spread tolerance (1 day, half the load), repair round cap (8).
 - Unstarted tasks start no sooner than tomorrow (Plinko 1).
 - Strict days with fewer hours than the block are gaps, anyone having a gap skips the day for all.

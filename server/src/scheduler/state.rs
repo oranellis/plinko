@@ -59,7 +59,30 @@ impl TenantVolatileState {
 }
 // }}}
 
+/// A plan scheduled on its own, with no other plan wanting its people: what other results are
+/// measured against
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Baseline {
+    pub state: PlanVolatileState,
+    /// Days each node could finish later without moving a target or passing a hard date, counting
+    /// the people it shares with other work in the plan. Nodes that feed no target and have no
+    /// hard date of their own are left out. Negative when a hard date is already passed.
+    pub slack: HashMap<PlanNode, i64>,
+}
+
 impl PlanVolatileState {
+    /// Sets each forecast's baseline from the plan scheduled on its own
+    pub fn compare_to(&mut self, alone: &PlanVolatileState) {
+        for (id, forecast) in &mut self.targets {
+            if let Some(solo) = alone.targets.get(id) {
+                forecast.baseline = solo.forecast;
+            }
+        }
+        if let (Some(forecast), Some(solo)) = (&mut self.plan_end, &alone.plan_end) {
+            forecast.baseline = solo.forecast;
+        }
+    }
+
     /// The day after the last day anything in the plan is scheduled, `None` if nothing is
     pub fn end(&self) -> Option<NaiveDate> {
         let tasks = self.tasks.values().map(|t| t.date_range.end());
@@ -81,6 +104,8 @@ pub struct PlanVolatileState {
     pub unscheduled: HashMap<PlanNode, UnscheduledReason>,
     /// Forecast of each of the plan's targets
     pub targets: HashMap<Uuid, TargetForecast>,
+    /// Forecast of the plan's last day, the target of a plan that has none of its own
+    pub plan_end: Option<TargetForecast>,
     /// Tasks and milestones that landed on a date their time constraint does not allow
     pub constraint_violations: HashMap<PlanNode, ConstraintViolation>,
 }

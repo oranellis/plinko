@@ -144,3 +144,49 @@ fn equal_ends_go_by_the_earlier_start_date_then_id() {
     assert_eq!(first_day(&state, low.0, low.1), day(2024, 1, 1));
     assert_eq!(first_day(&state, high.0, high.1), day(2024, 1, 2));
 }
+
+#[test]
+fn forecasts_are_compared_with_the_plan_on_its_own() {
+    let mut plans = Plans::new();
+    let start = day(2023, 12, 1);
+    let (short, _) = plans.plan(start, 1);
+    let (long, _) = plans.plan(start, 3);
+    let state = plans.solve();
+    let delay = |plan| state.plans[&plan].plan_end.unwrap().delay();
+    assert_eq!(delay(long), 0);
+    // it waits for the long plan's three days
+    assert_eq!(delay(short), 3);
+    assert_eq!(
+        state.plans[&short].plan_end.unwrap().baseline,
+        day(2024, 1, 1)
+    );
+}
+
+#[test]
+fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
+    let mut plans = Plans::new();
+    let start = day(2023, 12, 1);
+    let ((one, _), (two, _)) = (plans.plan(start, 1), plans.plan(start, 1));
+    assert!(plans.tenant.baseline(&one).is_none());
+    plans.solve();
+    assert!(plans.tenant.baseline(&one).is_some());
+    assert!(plans.tenant.baseline(&two).is_some());
+
+    // changing a plan only drops its own
+    let new = NewTask {
+        id: Uuid::now_v7(),
+        name: "More".to_string(),
+        parent: Parent::PlanStart,
+    };
+    plans.update(one, PlanUpdate::Task(Crud::Add(new)));
+    assert!(plans.tenant.baseline(&one).is_none());
+    assert!(plans.tenant.baseline(&two).is_some());
+
+    // the clock, or anything about people, drops them all
+    plans.solve();
+    plans.apply(TenantUpdateType::SetToday(day(2024, 1, 2)));
+    assert!(plans.tenant.baseline(&one).is_none());
+    assert!(plans.tenant.baseline(&two).is_none());
+    plans.solve();
+    assert!(plans.tenant.baseline(&two).is_some());
+}
