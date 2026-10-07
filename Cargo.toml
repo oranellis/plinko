@@ -1,5 +1,5 @@
 [workspace]
-members = ["server"]
+members = ["server", "client"]
 resolver = "3"
 
 # password hashing is deliberately slow, which is too slow for tests unless optimised

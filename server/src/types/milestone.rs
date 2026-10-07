@@ -26,6 +26,14 @@ pub struct Milestone {
 
 // impl Milestone{{{
 impl Milestone {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn persistent_state(&self) -> &PersistentState {
+        &self.persistent_state
+    }
+
     pub fn data(&self) -> &DataBlocks {
         &self.data
     }

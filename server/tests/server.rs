@@ -262,7 +262,7 @@ async fn answer(socket: &mut Socket, request: u32) -> (Result<u64, String>, Vec<
     let mut before = Vec::new();
     loop {
         match next(socket).await {
-            ServerMessage::Ack { request: r, seq } if r == request => return (Ok(seq), before),
+            ServerMessage::Ack { request: r, seq, .. } if r == request => return (Ok(seq), before),
             ServerMessage::Rejected { request: r, error } if r == request => {
                 return (Err(error), before);
             }

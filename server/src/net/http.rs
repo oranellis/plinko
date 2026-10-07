@@ -22,8 +22,8 @@ use uuid::Uuid;
 
 use crate::{
     codec,
-    net::actor::{Command, Handle, Profile},
-    protocol::ClientMessage,
+    net::actor::{Command, Handle},
+    protocol::{ClientMessage, Profile},
     store::{Store, auth::SESSION_LIFETIME},
 };
 

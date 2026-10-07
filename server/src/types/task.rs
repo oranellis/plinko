@@ -44,6 +44,14 @@ pub struct Task {
 
 // impl Task {{{
 impl Task {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
     /// Days, at least 1
     pub fn duration(&self) -> u32 {
         self.duration

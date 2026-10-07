@@ -7,9 +7,11 @@ use uuid::Uuid;
 use crate::{
     multitenancy::{
         tenant::Tenant,
-        tenant_update::{TenantUpdate, TenantUpdateType},
+        tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
     },
+    planner::plan_update::PlanUpdate,
     scheduler::state::TenantVolatileState,
+    types::{crud::Crud, short_id::ShortId},
 };
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -41,13 +43,46 @@ pub enum ServerMessage {
         seq: u64,
         schedule: Box<TenantVolatileState>,
     },
-    /// The client's update was applied as update `seq`
+    /// The client's update was applied as update `seq`, making `created` if it added something
     Ack {
         request: u32,
         seq: u64,
+        created: Option<Created>,
     },
     Rejected {
         request: u32,
         error: String,
     },
+}
+
+/// Who is logged in, from `/api/login` and `/api/me`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Profile {
+    pub id: Uuid,
+    pub name: String,
+    pub admin: bool,
+}
+
+/// What an update made, so a client can go straight to it
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Created {
+    Plan(ShortId),
+    Item(Uuid),
+}
+
+impl Created {
+    /// What the update adds, if it adds a plan or an item of one
+    pub fn by(update: &TenantUpdateType) -> Option<Self> {
+        match update {
+            TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => Some(Created::Plan(new.id)),
+            TenantUpdateType::Plan(PlanTenantUpdate::Update(_, inner)) => match &**inner {
+                PlanUpdate::Task(Crud::Add(new)) => Some(Created::Item(new.id)),
+                PlanUpdate::Milestone(Crud::Add(new)) => Some(Created::Item(new.id)),
+                PlanUpdate::TaskGroup(Crud::Add(new)) => Some(Created::Item(new.id)),
+                PlanUpdate::PlanBuffer(Crud::Add(new)) => Some(Created::Item(new.id)),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }

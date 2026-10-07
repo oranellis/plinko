@@ -14,7 +14,7 @@ use crate::{
         user::Role,
     },
     net::worker::{self, Applied},
-    protocol::ServerMessage,
+    protocol::{Created, Profile, ServerMessage},
     scheduler::state::TenantVolatileState,
     store::Store,
     types::short_id::ShortId,
@@ -48,13 +48,6 @@ pub enum Command {
         seq: u64,
         schedule: TenantVolatileState,
     },
-}
-
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub struct Profile {
-    pub id: Uuid,
-    pub name: String,
-    pub admin: bool,
 }
 
 /// How to reach the actor
@@ -212,6 +205,7 @@ impl Actor {
             .map(|(id, c)| (*id, self.tenant.visible_plans(&c.user)))
             .collect();
         let copy = staged.clone();
+        let created = Created::by(&staged.update_type);
         let seq = match self.store.commit(&mut self.tenant, self.seq, staged) {
             Ok(seq) => seq,
             Err(error) => {
@@ -234,7 +228,11 @@ impl Actor {
             };
             let _ = connection.out.send(message);
         }
-        let _ = out.send(ServerMessage::Ack { request, seq });
+        let _ = out.send(ServerMessage::Ack {
+            request,
+            seq,
+            created,
+        });
         let _ = self.scheduler.send(Applied { seq, update: copy });
     }
 
