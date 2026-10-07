@@ -22,49 +22,70 @@ type Rank = (u8, i64, i64, usize, (u8, Uuid));
 
 /// What is known about a plan between placements, only the plan that just placed changes
 struct View {
-    slips: HashMap<Vertex, i64>,
     chains: Vec<(Vertex, NaiveDate, HashSet<Vertex>)>,
-    ready: Vec<Vertex>,
+    /// The next task of the plan to place and how it ranks
+    best: Option<(Rank, Vertex)>,
 }
 
 impl View {
-    fn new(solver: &mut PlanSolver) -> Self {
+    fn new(index: usize, solver: &mut PlanSolver) -> Self {
         let mut view = Self {
-            slips: HashMap::new(),
             chains: solver.hard_chains(),
-            ready: Vec::new(),
+            best: None,
         };
-        view.refresh(solver);
+        view.refresh(index, solver);
         view
     }
 
-    fn refresh(&mut self, solver: &mut PlanSolver) {
-        self.ready = solver.advance();
-        self.slips = solver.slips();
+    fn refresh(&mut self, index: usize, solver: &mut PlanSolver) {
+        let ready = solver.advance();
+        // working out the slip of everything is only needed to see how close hard dates are
+        let slips = if self.chains.is_empty() {
+            HashMap::new()
+        } else {
+            solver.slips()
+        };
+        let slip = |v: &Vertex| {
+            slips
+                .get(v)
+                .copied()
+                .unwrap_or_else(|| solver.ready_slip(v))
+        };
+        self.best = ready
+            .iter()
+            .map(|v| (self.rank(index, solver, &slips, slip(v), *v), *v))
+            .min_by_key(|(rank, _)| *rank);
     }
-}
 
-/// Where a ready task goes in the order of placing across plans, in strict layers:
-/// 0. chains to a hard date that is close, the closest first
-/// 1. chains to targets, the most behind its plan on its own first, counting priorities
-/// 2. the rest, by plan priority and then how critical it is in its plan
-fn rank(index: usize, solver: &PlanSolver, view: &View, v: Vertex) -> Rank {
-    let key = v.key();
-    let close = view
-        .chains
-        .iter()
-        .filter(|(_, _, chain)| chain.contains(&v))
-        .filter_map(|(hard, date, _)| Some((solver.hard_slack(hard, *date, &view.slips)?, *date)))
-        .filter(|(slack, _)| *slack <= HARD_MARGIN_DAYS)
-        .min();
-    if let Some((slack, date)) = close {
-        return (0, slack, i64::from(date.num_days_from_ce()), index, key);
+    /// Where a ready task goes in the order of placing across plans, in strict layers:
+    /// 0. chains to a hard date that is close, the closest first
+    /// 1. chains to targets, the most behind its plan on its own first, counting priorities
+    /// 2. the rest, by plan priority and then how critical it is in its plan
+    fn rank(
+        &self,
+        index: usize,
+        solver: &PlanSolver,
+        slips: &HashMap<Vertex, i64>,
+        slip: i64,
+        v: Vertex,
+    ) -> Rank {
+        let key = v.key();
+        let close = self
+            .chains
+            .iter()
+            .filter(|(_, _, chain)| chain.contains(&v))
+            .filter_map(|(hard, date, _)| Some((solver.hard_slack(hard, *date, slips)?, *date)))
+            .filter(|(slack, _)| *slack <= HARD_MARGIN_DAYS)
+            .min();
+        if let Some((slack, date)) = close {
+            return (0, slack, i64::from(date.num_days_from_ce()), index, key);
+        }
+        if let Some((urgency, leads)) = solver.urgency(&v, slip) {
+            return (1, -urgency, -(leads as i64), index, key);
+        }
+        let (priority, slack) = solver.rest_rank(&v);
+        (2, priority, slack, index, key)
     }
-    if let Some((urgency, leads)) = solver.urgency(&v, &view.slips) {
-        return (1, -urgency, -(leads as i64), index, key);
-    }
-    let (priority, slack) = solver.rest_rank(&v);
-    (2, priority, slack, index, key)
 }
 
 /// Schedules the plans together against one ledger, in the order they are given, which settles
@@ -77,19 +98,20 @@ pub fn solve(mut solvers: Vec<PlanSolver>, ledger: &mut Ledger) -> Vec<PlanVolat
             solver.claim_history(ledger, in_progress);
         }
     }
-    let mut views: Vec<View> = solvers.iter_mut().map(View::new).collect();
-    loop {
-        let ranked = views.iter().enumerate().flat_map(|(i, view)| {
-            let solver = &solvers[i];
-            view.ready
-                .iter()
-                .map(move |v| (rank(i, solver, view, *v), i, *v))
-        });
-        let Some((_, i, v)) = ranked.min_by_key(|(rank, _, _)| *rank) else {
-            break;
-        };
+    let mut views: Vec<View> = solvers
+        .iter_mut()
+        .enumerate()
+        .map(|(i, solver)| View::new(i, solver))
+        .collect();
+    while let Some((i, v)) = views
+        .iter()
+        .enumerate()
+        .filter_map(|(i, view)| Some((view.best?, i)))
+        .min_by_key(|((rank, _), _)| *rank)
+        .map(|((_, v), i)| (i, v))
+    {
         solvers[i].place_open(v, ledger);
-        views[i].refresh(&mut solvers[i]);
+        views[i].refresh(i, &mut solvers[i]);
     }
     for solver in &mut solvers {
         solver.sweep_stuck();
@@ -130,6 +152,5 @@ fn compact(solvers: &mut [PlanSolver], views: &[View], ledger: &mut Ledger) {
 
 /// Whether a node leads to a hard date or a target
 fn on_chain(solver: &PlanSolver, view: &View, v: &Vertex) -> bool {
-    view.chains.iter().any(|(_, _, chain)| chain.contains(v))
-        || solver.urgency(v, &HashMap::new()).is_some()
+    view.chains.iter().any(|(_, _, chain)| chain.contains(v)) || solver.urgency(v, 0).is_some()
 }

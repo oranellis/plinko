@@ -28,7 +28,7 @@ use crate::{
         dependency::{Dependency, PlanNode},
         milestone::{self, DerivedStatus},
         plan_buffer,
-        task::{self, Assignee, Status, Task, Worker},
+        task::{self, Assignee, ScheduleMode, Status, Task, Worker},
         task_group,
         workload::Workload,
     },
@@ -659,7 +659,13 @@ impl<'a> PlanSolver<'a> {
         };
         let task = &self.plan.tasks()[&id];
         let old = self.placed[&v].clone();
-        let Some(start) = self.open_start(&v, task).filter(|s| *s < old.range.end()) else {
+        // a strict run already at the earliest start can only end sooner by starting later
+        let earliest = self.open_start(&v, task);
+        let tight = |s: &NaiveDate| match task.mode() {
+            ScheduleMode::Strict => old.range.start() > *s,
+            ScheduleMode::Relaxed => *s < old.range.end(),
+        };
+        let Some(start) = earliest.filter(tight) else {
             return false;
         };
         let old_run = old.work.map(|w| w.run).unwrap_or_default();
@@ -740,31 +746,49 @@ impl<'a> PlanSolver<'a> {
             let (false, Some(alone)) = (self.settled.contains(v), solo.get(v)) else {
                 continue;
             };
-            let milestone = matches!(v, Vertex::Node(PlanNode::Milestone(_)));
-            let group = matches!(v, Vertex::Node(PlanNode::TaskGroup(_)));
-            let dates = self.net.deps(v).iter().filter_map(|e| {
-                let from_end = *end.get(&e.from?)?;
-                let dep = Dependency {
-                    lag: e.lag,
-                    ..Default::default()
-                };
-                Some(match (group, milestone) {
-                    (true, _) => from_end,
-                    (_, true) => dep.milestone_date_after(from_end),
-                    _ => dep.start_after(from_end),
-                })
-            });
-            let slip = match dates.max() {
-                // a group ends when its members do
-                Some(latest) if group => (latest - alone.end()).num_days(),
-                Some(latest) => (latest - alone.start()).num_days(),
-                None => 0,
-            }
-            .max(0);
+            let slip = self.slip_with(v, alone, |u| end.get(u).copied());
             end.insert(*v, alone.end() + Days::new(slip as u64));
             slips.insert(*v, slip);
         }
         slips
+    }
+
+    /// The slip of a task whose dependencies are all placed, without working out the rest
+    pub fn ready_slip(&self, v: &Vertex) -> i64 {
+        let alone = self.baseline.and_then(|b| b.ranges.get(v));
+        alone.map_or(0, |a| {
+            self.slip_with(v, a, |u| Some(self.placed.get(u)?.range.end()))
+        })
+    }
+
+    /// Days later than `alone` the node starts given where what it depends on ends
+    fn slip_with(
+        &self,
+        v: &Vertex,
+        alone: &DateRange,
+        end: impl Fn(&Vertex) -> Option<NaiveDate>,
+    ) -> i64 {
+        let milestone = matches!(v, Vertex::Node(PlanNode::Milestone(_)));
+        let group = matches!(v, Vertex::Node(PlanNode::TaskGroup(_)));
+        let dates = self.net.deps(v).iter().filter_map(|e| {
+            let from_end = end(&e.from?)?;
+            let dep = Dependency {
+                lag: e.lag,
+                ..Default::default()
+            };
+            Some(match (group, milestone) {
+                (true, _) => from_end,
+                (_, true) => dep.milestone_date_after(from_end),
+                _ => dep.start_after(from_end),
+            })
+        });
+        let slip = match dates.max() {
+            // a group ends when its members do
+            Some(latest) if group => (latest - alone.end()).num_days(),
+            Some(latest) => (latest - alone.start()).num_days(),
+            None => 0,
+        };
+        slip.max(0)
     }
 
     /// The nodes with a hard date, with the date, and everything they wait on
@@ -792,11 +816,10 @@ impl<'a> PlanSolver<'a> {
 
     /// How late the plan's targets get through this node, the worst of them, and how many it
     /// leads to, `None` for a node that leads to none. Priorities count as days late.
-    pub fn urgency(&self, v: &Vertex, slips: &HashMap<Vertex, i64>) -> Option<(i64, usize)> {
+    pub fn urgency(&self, v: &Vertex, slip: i64) -> Option<(i64, usize)> {
         let Vertex::Node(node) = v else {
             return None;
         };
-        let slip = slips.get(v).copied().unwrap_or(0);
         let plan_priority = i64::from(self.plan.scheduler_data().priority());
         let leads = self.baseline?.by_target.iter().filter_map(|t| {
             let slack = t.slack.get(node)?;

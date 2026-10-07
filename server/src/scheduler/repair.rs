@@ -216,11 +216,25 @@ pub fn solve(
             Some(bump(&worst, &repairs)),
             reassign(tenant, ids, baselines, &best, &worst, &repairs),
         ];
-        let tried = moves.into_iter().flatten().map(|next| {
-            let outcome = run(tenant, ids, baselines, &next);
-            (outcome, next)
+        // the changes are independent, so each is scheduled on its own thread
+        let tried: Vec<(Outcome, Repairs)> = std::thread::scope(|scope| {
+            let running: Vec<_> = moves
+                .into_iter()
+                .flatten()
+                .map(|next| {
+                    scope.spawn(|| {
+                        let outcome = run(tenant, ids, baselines, &next);
+                        (outcome, next)
+                    })
+                })
+                .collect();
+            running
+                .into_iter()
+                .map(|r| r.join().expect("a schedule does not panic"))
+                .collect()
         });
         let better = tried
+            .into_iter()
             .filter(|(outcome, _)| outcome.objective() < best.objective())
             .min_by_key(|(outcome, _)| outcome.objective());
         let Some((outcome, next)) = better else {

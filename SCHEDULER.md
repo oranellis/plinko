@@ -469,6 +469,13 @@ scheduler early.
 
 At each step keep the determinism test (shuffled map order gives identical results) green.
 
+## Performance
+
+`cargo run --release --example bench` schedules 5 plans of 200 tasks with 20 people: 80 ms to
+prepare, 0.9 s to solve (a run of about 170 ms, repair rounds run their two changes on separate
+threads), and a 324 KiB schedule on the wire. Most of a run is working out slips for plans with hard
+dates, which could be made incremental.
+
 ## Open items and assumptions
 
 - Slack and the hard tier margin (3) are in calendar days. Spread tolerance (1 day, half the load), repair round cap (8).

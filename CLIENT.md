@@ -74,8 +74,8 @@ Decisions for the web client and the server it talks to. The scheduler is in `SC
 ## Order of work
 
 1. Serde across the core types, and a `wasm32` build check.
-2. Benchmark the scheduler on a thousand task, multi plan tenant (repair rounds cost up to about
-   16 full solves per update).
+2. Benchmark the scheduler on a thousand task, multi plan tenant (done, under a second, see
+   `SCHEDULER.md`).
 3. Update log, snapshots and replay in SQLite.
 4. Server: auth, tenant actor, WebSocket protocol, coalescing scheduler.
 5. Client: sync and state, then Gantt, then forms and the mobile views.
