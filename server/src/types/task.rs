@@ -165,11 +165,27 @@ pub enum Status {
     Dropped,
 }
 
+/// How a task fills the days it is worked on
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScheduleMode {
+    /// Only days where the whole daily block of hours is free
     #[default]
     Strict,
-    Flexible,
+    /// Any day with free time, using whatever is free up to the daily block
+    Relaxed,
+}
+
+impl ScheduleMode {
+    /// The hours worked on a day when `wanted` are asked for and `available` are free
+    pub fn hours_on(self, wanted: Workload, available: Workload) -> Workload {
+        match self {
+            ScheduleMode::Strict if available.get() >= wanted.get() => wanted,
+            ScheduleMode::Strict => Workload::default(),
+            ScheduleMode::Relaxed => {
+                Workload::new(wanted.get().min(available.get())).expect("at most the wanted hours")
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -200,4 +216,24 @@ pub struct TaskPatch {
     pub affinities: Option<HashSet<Uuid>>,
     pub description: Option<Option<String>>,
     pub persistent_state: Option<PersistentState>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hours(h: u8) -> Workload {
+        Workload::new(h).unwrap()
+    }
+
+    #[test]
+    fn strict_needs_the_whole_block_and_relaxed_takes_what_is_free() {
+        let (strict, relaxed) = (ScheduleMode::Strict, ScheduleMode::Relaxed);
+        assert_eq!(strict.hours_on(hours(4), hours(8)), hours(4));
+        assert_eq!(strict.hours_on(hours(4), hours(4)), hours(4));
+        assert_eq!(strict.hours_on(hours(4), hours(3)), hours(0));
+        assert_eq!(relaxed.hours_on(hours(4), hours(8)), hours(4));
+        assert_eq!(relaxed.hours_on(hours(4), hours(3)), hours(3));
+        assert_eq!(relaxed.hours_on(hours(4), hours(0)), hours(0));
+    }
 }

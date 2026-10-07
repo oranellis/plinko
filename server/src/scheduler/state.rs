@@ -74,6 +74,8 @@ pub struct PlanVolatileState {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UnscheduledReason {
+    /// The task was dropped, so it is out of the plan
+    Dropped,
     /// No chain of dependencies leads back to the plan start
     NoPathToPlanStart,
     /// The workers the task asks for resolve to nobody, like a tag no one has or an empty group
