@@ -17,6 +17,7 @@ use plinko::{
         parent::Parent,
         plan_buffer::NewPlanBuffer,
         short_id::ShortId,
+        target::{NewTarget, TargetPatch},
         task::{Assignee, NewTask, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroupPatch},
         workload::Workload,
@@ -268,6 +269,71 @@ fn affinities_must_exist_and_cannot_be_removed_while_linked() {
         plan.apply_update(PlanUpdate::AffinityRules(affinity, rules))
             .is_err()
     );
+}
+
+fn add_target(plan: &mut Plan, node: PlanNode, priority: i32) -> PlinkoResult<Uuid> {
+    let id = Uuid::now_v7();
+    let new = NewTarget { id, node, priority };
+    plan.apply_update(PlanUpdate::Target(Crud::Add(new)))
+        .map(|()| id)
+}
+
+#[test]
+fn targets_must_name_existing_nodes_and_block_their_removal() {
+    let mut plan = new_plan();
+    assert!(plan.targets().is_empty());
+    assert!(add_target(&mut plan, PlanNode::Task(Uuid::now_v7()), 0).is_err());
+    assert!(plan.targets().is_empty());
+
+    let task = add_task(&mut plan, Parent::PlanStart);
+    let milestone = Uuid::now_v7();
+    let new = NewMilestone {
+        id: milestone,
+        name: "Done".to_string(),
+        parent: Parent::PlanStart,
+    };
+    plan.apply_update(PlanUpdate::Milestone(Crud::Add(new)))
+        .unwrap();
+    let target = add_target(&mut plan, PlanNode::Task(task), -2).unwrap();
+    assert_eq!(plan.targets()[&target].priority(), -2);
+
+    let remove_task = || PlanUpdate::Task(Crud::Remove(task));
+    assert!(plan.apply_update(remove_task()).is_err());
+
+    // moving the target to another node frees the task, and the node must exist
+    let patch = |node, priority| TargetPatch {
+        id: target,
+        node,
+        priority,
+    };
+    let bad = patch(Some(PlanNode::Task(Uuid::now_v7())), None);
+    assert!(
+        plan.apply_update(PlanUpdate::Target(Crud::Update(bad)))
+            .is_err()
+    );
+    assert_eq!(plan.targets()[&target].node(), PlanNode::Task(task));
+    let moved = patch(Some(PlanNode::Milestone(milestone)), Some(5));
+    plan.apply_update(PlanUpdate::Target(Crud::Update(moved)))
+        .unwrap();
+    assert_eq!(plan.targets()[&target].priority(), 5);
+    plan.apply_update(remove_task()).unwrap();
+
+    plan.apply_update(PlanUpdate::Target(Crud::Remove(target)))
+        .unwrap();
+    assert!(plan.targets().is_empty());
+}
+
+#[test]
+fn plan_priority_defaults_to_zero_and_is_patched() {
+    let mut plan = new_plan();
+    assert_eq!(plan.scheduler_data().priority(), 0);
+    let patch = PlanSchedulerDataPatch {
+        start_date: None,
+        priority: Some(-3),
+    };
+    plan.apply_update(PlanUpdate::SchedulerData(patch)).unwrap();
+    assert_eq!(plan.scheduler_data().priority(), -3);
+    assert_eq!(*plan.scheduler_data().start_date(), d(2024, 1, 1));
 }
 
 fn todo(items: &[(&str, bool)]) -> BlockContent {

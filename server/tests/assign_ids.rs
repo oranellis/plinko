@@ -20,6 +20,7 @@ use plinko::{
         plan_buffer::NewPlanBuffer,
         short_id::ShortId,
         tag::NewTag,
+        target::NewTarget,
         task::NewTask,
         task_group::NewTaskGroup,
         user::{NewPlanUser, NewPlanUserGroup},
@@ -53,6 +54,7 @@ fn plan_update_ids(mut update: PlanUpdate) -> Uuid {
         PlanUpdate::Milestone(Crud::Add(new)) => new.id,
         PlanUpdate::PlanBuffer(Crud::Add(new)) => new.id,
         PlanUpdate::Tag(Crud::Add(new)) => new.id,
+        PlanUpdate::Target(Crud::Add(new)) => new.id,
         PlanUpdate::Affinity(Crud::Add(new)) => new.id,
         PlanUpdate::AffinityRules(_, update) => rule_id(&update),
         PlanUpdate::Data(_, Crud::Add(new)) => new.id,
@@ -92,6 +94,11 @@ fn plan_adds_get_fresh_ids() {
         PlanUpdate::Tag(Crud::Add(NewTag {
             id: CLIENT_ID,
             name: name(),
+        })),
+        PlanUpdate::Target(Crud::Add(NewTarget {
+            id: CLIENT_ID,
+            node: PlanNode::Task(CLIENT_ID),
+            priority: 0,
         })),
         PlanUpdate::Affinity(Crud::Add(NewAffinity {
             id: CLIENT_ID,

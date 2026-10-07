@@ -51,12 +51,20 @@ impl PlanBuffer {
     /// ends where it would if it had started on `set_start_day`, so it shrinks when `start` is
     /// later and grows when it is earlier, down to nothing once `start` passes that end. `None`
     /// if the calendar does not reach far enough, it must cover `set_start_day` when that is set.
-    pub fn place(&self, start: NaiveDate, calendar: &Calendar<Workload>) -> Option<DateRange> {
+    ///
+    /// `limit` is the latest the buffer may end, set by dependents that cannot move later. It
+    /// shrinks the buffer, set or not, but never below `start`.
+    pub fn place(
+        &self,
+        start: NaiveDate,
+        calendar: &Calendar<Workload>,
+        limit: Option<NaiveDate>,
+    ) -> Option<DateRange> {
         let end = match self.set_start_day {
             None => calendar.end_after_workdays(start, self.duration)?,
             Some(set) => calendar.end_after_workdays(set, self.duration)?.max(start),
         };
-        DateRange::new(start, end)
+        DateRange::new(start, end.min(limit.unwrap_or(end)).max(start))
     }
 }
 
@@ -139,7 +147,7 @@ mod tests {
     }
 
     fn placed(buffer: &PlanBuffer, start: NaiveDate) -> (NaiveDate, NaiveDate) {
-        let range = buffer.place(start, &calendar()).unwrap();
+        let range = buffer.place(start, &calendar(), None).unwrap();
         (range.start(), range.end())
     }
 
@@ -173,6 +181,29 @@ mod tests {
     }
 
     #[test]
+    fn limits_shrink_set_and_unset_buffers_but_not_below_their_start() {
+        let limit = Some(d(2024, 1, 4));
+        let cut = |b: &PlanBuffer, start| {
+            let range = b.place(start, &calendar(), limit).unwrap();
+            (range.start(), range.end())
+        };
+        assert_eq!(
+            cut(&buffer(None, 5), d(2024, 1, 1)),
+            (d(2024, 1, 1), d(2024, 1, 4))
+        );
+        let set = buffer(Some(d(2024, 1, 1)), 5);
+        assert_eq!(cut(&set, d(2024, 1, 2)), (d(2024, 1, 2), d(2024, 1, 4)));
+        // already past the limit, so it is empty and the dependent is late
+        assert_eq!(cut(&set, d(2024, 1, 8)), (d(2024, 1, 8), d(2024, 1, 8)));
+        // a limit beyond the natural end changes nothing
+        let far = Some(d(2024, 2, 1));
+        let range = buffer(None, 5)
+            .place(d(2024, 1, 1), &calendar(), far)
+            .unwrap();
+        assert_eq!(range.end(), d(2024, 1, 6));
+    }
+
+    #[test]
     fn empty_buffers_and_short_calendars() {
         let empty = buffer(None, 0);
         assert_eq!(
@@ -180,8 +211,8 @@ mod tests {
             (d(2024, 1, 3), d(2024, 1, 3))
         );
         let long = buffer(None, 100);
-        assert_eq!(long.place(d(2024, 1, 3), &calendar()), None);
+        assert_eq!(long.place(d(2024, 1, 3), &calendar(), None), None);
         let set_outside = buffer(Some(d(2030, 1, 1)), 5);
-        assert_eq!(set_outside.place(d(2024, 1, 3), &calendar()), None);
+        assert_eq!(set_outside.place(d(2024, 1, 3), &calendar(), None), None);
     }
 }

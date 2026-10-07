@@ -9,6 +9,7 @@ pub mod parent;
 pub mod plan_buffer;
 pub mod short_id;
 pub mod tag;
+pub mod target;
 pub mod task;
 pub mod task_group;
 pub mod user;

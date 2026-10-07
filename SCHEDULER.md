@@ -61,8 +61,9 @@ Everything is read from `Tenant` and its plans.
   assignments, so a user's view across plans (past, present, upcoming) cannot disagree. Placeholders
   have no schedule.
 - `Assignee` is the concrete person (`User(id)` or `Placeholder`), never a tag or group.
-- Still to add (section 10): per-target forecast and delay against the plan-alone baseline, and a
-  per-person bottleneck load.
+- `plans[plan].targets[target]: TargetForecast { forecast, baseline }` with `delay()` in days, and
+  `users[user].bottleneck`: booked hours over available hours from their first to last assigned day,
+  set by the solver after `from_plans` (it knows availability).
 
 ### Date conventions
 
@@ -202,8 +203,8 @@ below zero length. A task or milestone that cannot move later (Fixed or Latest c
 and depends on a buffer shrinks the buffer to fit, set or unset: the buffer ends no later than
 `limit = X - lag` for a task (`X - lag + 1` for a milestone), the smallest limit over such
 dependents, so its end becomes `max(start, min(natural end, limit))` (**Assumed**). Only when the
-buffer is already zero length and `start` is past the limit is the constraint violated. This is
-not in `PlanBuffer::place` yet, which needs an optional `limit` argument.
+buffer is already zero length and `start` is past the limit is the constraint violated. That is
+the `limit` argument of `PlanBuffer::place`.
 
 ## 5. Unscheduled items
 
@@ -336,21 +337,19 @@ plans move and by how many days. Not part of the first solver.
 
 ## 10. Data model work needed
 
-1. **Targets:** replace `PlanSchedulerData.scheduler_target: Option<PlanNode>` with a list of
-   targets `{ id, node, priority }` (an entity with `Crud`, validated, blocking removal of the
-   node). No targets means the whole plan end.
-2. **Plan priority:** an i32 on the plan (with its patch).
+1. **Targets** (done): `Plan::targets()`, `Target { id, node, priority }` with `Crud`, validated,
+   blocking removal of the node. No targets means the whole plan end.
+2. **Plan priority** (done): `PlanSchedulerData::priority()` with its patch.
 3. **Recorded workers** (done): `Task.actual_workers`, `TaskPatch.actual_workers`,
    `task::VolatileState.workers`, `Tenant::fill_defaults`. See section 4.
 4. **Actual dates:** default `actual_start_date` to today when moving to in progress, and
    `actual_end_date` to today when completing, if not supplied (on hold already does this).
    (**Assumed**)
-5. **Output:** per-target forecast and delay against the baseline, and per-person bottleneck
-   load, in the volatile state.
+5. **Output** (done): `TargetForecast` and `UserSchedule::bottleneck`, see section 3.
 6. **Tenant clock** (done): `Tenant::today()`, `TenantUpdateType::SetToday`. Putting a task on hold
    uses it for the end date. Task duration and group placeholder default to 1 and cannot be 0.
-7. **Buffer shrink for hard-constrained dependents** (section 4): a `limit` argument on
-   `PlanBuffer::place`.
+7. **Buffer shrink for hard-constrained dependents** (done): `limit` argument on
+   `PlanBuffer::place`, the latest end the buffer may take.
 8. **Accessors the scheduler needs:** `Task::duration`, `mode` and `time_constraint` exist now.
    Check the other entities as the engine is written.
 
@@ -392,7 +391,7 @@ Port Plinko 1's scheduler scenarios, then add:
 Each step is testable on its own before the next starts. Steps 1 to 3 give a working single-plan
 scheduler early.
 
-1. **Prerequisites.**
+1. **Prerequisites** (done).
    - Targets: replace `PlanSchedulerData.scheduler_target` with a list of `{ id, node, priority }`
      with `Crud`, validation, and in-use blocking of the node.
    - `Plan.priority: i32` with its patch.

@@ -68,8 +68,24 @@ pub struct PlanVolatileState {
     pub milestones: HashMap<Uuid, milestone::VolatileState>,
     pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
     pub unscheduled: HashMap<PlanNode, UnscheduledReason>,
+    /// Forecast of each of the plan's targets, or of the whole plan end when it has none
+    pub targets: HashMap<Uuid, TargetForecast>,
     /// Tasks and milestones that landed on a date their time constraint does not allow
     pub constraint_violations: HashMap<PlanNode, ConstraintViolation>,
+}
+
+/// When a target lands as scheduled, against when its plan would land it with no other plans
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TargetForecast {
+    pub forecast: NaiveDate,
+    pub baseline: NaiveDate,
+}
+
+impl TargetForecast {
+    /// Days the target is later than the plan alone, never negative
+    pub fn delay(&self) -> i64 {
+        (self.forecast - self.baseline).num_days().max(0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,6 +113,9 @@ pub struct ConstraintViolation {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct UserSchedule {
     pub assignments: BTreeMap<NaiveDate, Vec<UserAssignment>>,
+    /// Booked hours as a share of available hours from their first to last assigned day, set by
+    /// the solver which knows availability. Near 1 or above marks a bottleneck.
+    pub bottleneck: f32,
 }
 
 impl UserSchedule {
@@ -111,4 +130,24 @@ pub struct UserAssignment {
     pub plan: ShortId,
     pub task: Uuid,
     pub hours: Workload,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn delay_is_days_after_the_baseline_and_never_negative() {
+        let d = |day| NaiveDate::from_ymd_opt(2024, 1, day).unwrap();
+        let late = TargetForecast {
+            forecast: d(9),
+            baseline: d(5),
+        };
+        assert_eq!(late.delay(), 4);
+        let early = TargetForecast {
+            forecast: d(3),
+            baseline: d(5),
+        };
+        assert_eq!(early.delay(), 0);
+    }
 }

@@ -12,6 +12,7 @@ use crate::{
         milestone::{MilestonePatch, NewMilestone},
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         tag::{NewTag, TagPatch},
+        target::{NewTarget, TargetPatch},
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
@@ -28,6 +29,7 @@ pub enum PlanUpdate {
     User(Crud<NewPlanUser, PlanUserDataPatch>),
     UserGroup(Crud<NewPlanUserGroup, PlanUserGroupPatch>),
     Tag(Crud<NewTag, TagPatch>),
+    Target(Crud<NewTarget, TargetPatch>),
     Affinity(Crud<NewAffinity, AffinityPatch>),
     AffinityRules(Uuid, RuleSetUpdate<bool>),
     /// Data blocks on a task or milestone
@@ -46,6 +48,7 @@ impl PlanUpdate {
             PlanUpdate::Milestone(update) => update.assign_id(),
             PlanUpdate::PlanBuffer(update) => update.assign_id(),
             PlanUpdate::Tag(update) => update.assign_id(),
+            PlanUpdate::Target(update) => update.assign_id(),
             PlanUpdate::Affinity(update) => update.assign_id(),
             PlanUpdate::AffinityRules(_, update) => update.assign_ids(),
             PlanUpdate::Data(_, update) => update.assign_id(),

@@ -18,6 +18,7 @@ use crate::{
         plan_buffer::PlanBuffer,
         short_id::ShortId,
         tag::Tag,
+        target::Target,
         task::{Assignee, Task, Worker},
         task_group::TaskGroup,
         user::{PlanUserData, PlanUserGroupData},
@@ -44,6 +45,7 @@ pub struct Plan {
     pub(super) user_groups: HashMap<Uuid, PlanUserGroupData>,
     pub(super) tags: HashMap<Uuid, Tag>,
     pub(super) affinities: HashMap<Uuid, Affinity>,
+    pub(super) targets: HashMap<Uuid, Target>,
     default_availability: RuleSet<Workload>,
     scheduler_data: PlanSchedulerData,
 }
@@ -62,6 +64,7 @@ impl From<NewPlan> for Plan {
             user_groups: HashMap::new(),
             tags: HashMap::new(),
             affinities: HashMap::new(),
+            targets: HashMap::new(),
             default_availability: RuleSet::default(),
             scheduler_data: PlanSchedulerData::new(new.start_date),
         }
@@ -103,6 +106,11 @@ impl Plan {
 
     pub fn affinities(&self) -> &HashMap<Uuid, Affinity> {
         &self.affinities
+    }
+
+    /// Nodes the scheduler brings forward, none means the whole plan end
+    pub fn targets(&self) -> &HashMap<Uuid, Target> {
+        &self.targets
     }
 
     pub fn tags(&self) -> &HashMap<Uuid, Tag> {
@@ -227,7 +235,7 @@ impl Plan {
             _ => false,
         };
         is_group_with_members
-            || self.scheduler_data.scheduler_target == Some(node)
+            || self.targets.values().any(|t| t.node() == node)
             || self.node_depended_on::<Task>(node)
             || self.node_depended_on::<Milestone>(node)
             || self.node_depended_on::<PlanBuffer>(node)
@@ -255,6 +263,7 @@ impl Plan {
             PlanUpdate::User(update) => PlanUserData::apply_crud(self, update),
             PlanUpdate::UserGroup(update) => PlanUserGroupData::apply_crud(self, update),
             PlanUpdate::Tag(update) => Tag::apply_crud(self, update),
+            PlanUpdate::Target(update) => Target::apply_crud(self, update),
             PlanUpdate::Affinity(update) => Affinity::apply_crud(self, update),
             PlanUpdate::AffinityRules(id, update) => self
                 .affinities
@@ -273,12 +282,7 @@ impl Plan {
                 DataBlock::apply_crud(data, update)
             }
             PlanUpdate::Availability(update) => self.default_availability.apply_update(update),
-            PlanUpdate::SchedulerData(patch) => {
-                if let Some(Some(node)) = &patch.scheduler_target {
-                    self.ensure_node_exists(node)?;
-                }
-                self.scheduler_data.apply_patch(patch)
-            }
+            PlanUpdate::SchedulerData(patch) => self.scheduler_data.apply_patch(patch),
         }
     }
 }
@@ -287,7 +291,7 @@ impl Plan {
 #[derive(Debug, PartialEq)]
 pub struct PlanSchedulerData {
     start_date: NaiveDate,
-    scheduler_target: Option<PlanNode>,
+    priority: i32,
 }
 
 // impl PlanSchedulerData{{{
@@ -295,7 +299,7 @@ impl PlanSchedulerData {
     fn new(start_date: NaiveDate) -> Self {
         Self {
             start_date,
-            scheduler_target: None,
+            priority: 0,
         }
     }
 
@@ -303,8 +307,9 @@ impl PlanSchedulerData {
         &self.start_date
     }
 
-    pub fn scheduler_target(&self) -> &Option<PlanNode> {
-        &self.scheduler_target
+    /// Added to each target's priority, positive treats the plan as further behind
+    pub fn priority(&self) -> i32 {
+        self.priority
     }
 }
 
@@ -313,8 +318,8 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
         if let Some(s) = patch.start_date {
             self.start_date = s;
         }
-        if let Some(t) = patch.scheduler_target {
-            self.scheduler_target = t
+        if let Some(p) = patch.priority {
+            self.priority = p;
         }
         Ok(())
     }
@@ -324,5 +329,5 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 #[derive(Debug)]
 pub struct PlanSchedulerDataPatch {
     pub start_date: Option<NaiveDate>,
-    pub scheduler_target: Option<Option<PlanNode>>,
+    pub priority: Option<i32>,
 }

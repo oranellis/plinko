@@ -14,6 +14,7 @@ use crate::{
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
         tag::{NewTag, Tag, TagPatch},
+        target::{NewTarget, Target, TargetPatch},
         task::{Assignee, NewTask, Task, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroup, TaskGroupPatch},
         user::{
@@ -178,5 +179,20 @@ impl Entity<Plan> for Affinity {
     }
     fn in_use(plan: &Plan, id: Uuid) -> bool {
         plan.tasks.values().any(|t| t.affinities().contains(&id))
+    }
+}
+
+impl Entity<Plan> for Target {
+    type New = NewTarget;
+    type Patch = TargetPatch;
+
+    fn entities(plan: &Plan) -> &HashMap<Uuid, Self> {
+        &plan.targets
+    }
+    fn entities_mut(plan: &mut Plan) -> &mut HashMap<Uuid, Self> {
+        &mut plan.targets
+    }
+    fn validate(plan: &Plan, id: Uuid) -> PlinkoResult<()> {
+        plan.ensure_node_exists(&plan.targets[&id].node())
     }
 }
