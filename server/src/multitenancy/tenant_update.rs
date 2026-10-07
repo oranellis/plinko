@@ -35,3 +35,26 @@ pub enum PlanTenantUpdate {
     /// Mutate the contents of an existing plan
     Update(ShortId, PlanUpdate),
 }
+
+impl TenantUpdateType {
+    /// Gives everything the update creates a fresh id, replacing whatever a client sent. A server
+    /// handler calls this before building the `TenantUpdate` it applies and logs.
+    pub fn assign_ids(&mut self) {
+        match self {
+            TenantUpdateType::User(update) => update.assign_id(),
+            TenantUpdateType::UserGroup(update) => update.assign_id(),
+            TenantUpdateType::Availability(_, update) => update.assign_ids(),
+            TenantUpdateType::Plan(update) => update.assign_ids(),
+        }
+    }
+}
+
+impl PlanTenantUpdate {
+    fn assign_ids(&mut self) {
+        match self {
+            PlanTenantUpdate::Add(new) => new.id = ShortId::new(),
+            PlanTenantUpdate::Update(_, update) => update.assign_ids(),
+            PlanTenantUpdate::Remove(_) => {}
+        }
+    }
+}

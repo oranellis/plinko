@@ -30,6 +30,16 @@ pub enum RuleSetUpdate<V> {
     WeekStart(Weekday),
 }
 
+impl<V> RuleSetUpdate<V> {
+    /// Gives any new rule a fresh id, see `Crud::assign_id`
+    pub fn assign_ids(&mut self) {
+        match self {
+            RuleSetUpdate::Rule(update) => update.assign_id(),
+            RuleSetUpdate::WeekStart(_) => {}
+        }
+    }
+}
+
 // impl RuleSet{{{
 impl<V> Default for RuleSet<V> {
     fn default() -> Self {

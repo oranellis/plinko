@@ -21,6 +21,7 @@ use crate::{
 /// Update payloads that name the item they apply to
 pub trait Identified {
     fn id(&self) -> Uuid;
+    fn set_id(&mut self, id: Uuid);
 }
 
 macro_rules! identified {
@@ -28,6 +29,9 @@ macro_rules! identified {
         $(impl Identified for $ty {
             fn id(&self) -> Uuid {
                 self.id
+            }
+            fn set_id(&mut self, id: Uuid) {
+                self.id = id;
             }
         })*
     };
@@ -62,10 +66,16 @@ impl<V> Identified for NewRule<V> {
     fn id(&self) -> Uuid {
         self.id
     }
+    fn set_id(&mut self, id: Uuid) {
+        self.id = id;
+    }
 }
 
 impl<V> Identified for RulePatch<V> {
     fn id(&self) -> Uuid {
         self.id
+    }
+    fn set_id(&mut self, id: Uuid) {
+        self.id = id;
     }
 }
