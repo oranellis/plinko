@@ -14,6 +14,7 @@ use crate::{
 };
 // }}}
 
+mod combined;
 pub mod fill;
 pub mod ledger;
 mod network;
@@ -55,15 +56,15 @@ pub fn prepare(tenant: &mut Tenant) {
 /// The plan scheduled with every person's hours to itself
 fn baseline(tenant: &Tenant, plan: &ShortId) -> Baseline {
     let mut ledger = Ledger::from_tenant(tenant, tenant.today());
-    PlanSolver::new(tenant, &tenant.plans()[plan]).solve_alone(&mut ledger)
+    PlanSolver::new(tenant, &tenant.plans()[plan], None).solve_alone(&mut ledger)
 }
 
 /// Schedules every plan in the tenant, from what `prepare` cached.
 ///
-/// Plans share one ledger of people's hours and go in one after another, so an earlier plan takes
-/// what it needs before the next sees what is left. The plan that finishes last when scheduled
-/// alone goes first, then the one with the earlier start date, then the lower id. Each forecast
-/// is compared with the plan on its own.
+/// Plans share one ledger of people's hours and are placed together, see `combined::solve`. Where
+/// nothing else decides, the plan that finishes last when scheduled alone goes first, then the
+/// one with the earlier start date, then the lower id. Each forecast is compared with the plan on
+/// its own.
 pub fn solve_tenant(tenant: &Tenant) -> TenantVolatileState {
     let baselines: HashMap<ShortId, Cow<Baseline>> = tenant
         .plans()
@@ -90,10 +91,13 @@ pub fn solve_tenant(tenant: &Tenant) -> TenantVolatileState {
         .collect();
     order.sort();
     let mut ledger = Ledger::from_tenant(tenant, tenant.today());
+    let ids: Vec<ShortId> = order.iter().map(|(_, _, id)| *id).collect();
+    let solvers = ids
+        .iter()
+        .map(|id| PlanSolver::new(tenant, &tenant.plans()[id], Some(&*baselines[id])))
+        .collect();
     let mut plans = HashMap::new();
-    for (_, _, id) in order {
-        let plan = &tenant.plans()[&id];
-        let mut state = PlanSolver::new(tenant, plan).solve(&mut ledger);
+    for (id, mut state) in ids.into_iter().zip(combined::solve(solvers, &mut ledger)) {
         state.compare_to(&baselines[&id].state);
         plans.insert(id, state);
     }

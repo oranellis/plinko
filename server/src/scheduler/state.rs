@@ -4,8 +4,9 @@ use std::collections::{BTreeMap, HashMap};
 use chrono::NaiveDate;
 use uuid::Uuid;
 
+use crate::planner::graph::Vertex;
 use crate::types::{
-    common::TimeConstraint,
+    common::{DateRange, TimeConstraint},
     dependency::PlanNode,
     milestone, plan_buffer,
     short_id::ShortId,
@@ -67,6 +68,20 @@ pub struct Baseline {
     /// Days each node could finish later without moving a target or passing a hard date, counting
     /// the people it shares with other work in the plan. Nodes that feed no target and have no
     /// hard date of their own are left out. Negative when a hard date is already passed.
+    pub slack: HashMap<PlanNode, i64>,
+    /// The same against each target on its own, or the plan end alone when there are none
+    pub by_target: Vec<TargetSlack>,
+    /// The same against the plan end for every node, including ones feeding no target
+    pub plan_slack: HashMap<PlanNode, i64>,
+    /// Where every vertex of the plan sits when it is on its own
+    pub(crate) ranges: HashMap<Vertex, DateRange>,
+}
+
+/// Slack of the nodes that lead to one target, `id` is `None` for the end of the plan
+#[derive(Clone, Debug, PartialEq)]
+pub struct TargetSlack {
+    pub id: Option<Uuid>,
+    pub priority: i32,
     pub slack: HashMap<PlanNode, i64>,
 }
 

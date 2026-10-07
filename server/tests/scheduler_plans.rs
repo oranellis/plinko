@@ -5,14 +5,20 @@ use plinko::{
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
+    planner::{
+        plan::{NewPlan, PlanSchedulerDataPatch},
+        plan_update::PlanUpdate,
+    },
     scheduler::{prepare, solve_tenant, state::TenantVolatileState},
     types::{
+        common::TimeConstraint,
         crud::Crud,
-        dependency::{Dependency, DependencyNode},
+        dependency::{Dependency, DependencyNode, PlanNode},
+        milestone::NewMilestone,
         parent::Parent,
         short_id::ShortId,
-        task::{NewTask, TaskPatch, Worker},
+        target::NewTarget,
+        task::{NewTask, PersistentState, Status, TaskPatch, Worker},
         user::NewPlanUser,
         workload::Workload,
     },
@@ -62,9 +68,9 @@ impl Plans {
         self.apply(TenantUpdateType::Plan(update));
     }
 
-    /// A plan starting on `start` with one task of `days` days for the shared person
-    fn plan(&mut self, start: NaiveDate, days: u32) -> (ShortId, Uuid) {
-        let (plan, task) = (ShortId::new(), Uuid::now_v7());
+    /// A plan starting on `start` with no tasks
+    fn empty(&mut self, start: NaiveDate) -> ShortId {
+        let plan = ShortId::new();
         let new = NewPlan {
             id: plan,
             name: "Plan".to_string(),
@@ -73,31 +79,97 @@ impl Plans {
         self.apply(TenantUpdateType::Plan(PlanTenantUpdate::Add(new)));
         let new = NewPlanUser { id: self.shared };
         self.update(plan, PlanUpdate::User(Crud::Add(new)));
+        plan
+    }
+
+    /// A task of `days` days for the shared person, after the tasks and milestones in `after`
+    fn task(&mut self, plan: ShortId, days: u32, after: &[PlanNode]) -> Uuid {
+        let task = Uuid::now_v7();
         let new = NewTask {
             id: task,
             name: "Task".to_string(),
             parent: Parent::PlanStart,
         };
         self.update(plan, PlanUpdate::Task(Crud::Add(new)));
-        let patch = TaskPatch {
+        let after: Vec<Dependency> = match after {
+            [] => vec![DependencyNode::ParentStart],
+            nodes => nodes.iter().map(|n| DependencyNode::Node(*n)).collect(),
+        }
+        .into_iter()
+        .map(|node| Dependency { node, lag: 0 })
+        .collect();
+        let who = [(Worker::User(self.shared), Workload::new(8).unwrap())];
+        self.patch(plan, task, |p| {
+            p.duration = Some(days);
+            p.dependencies = Some(after);
+            p.allocations = Some(who.into());
+        });
+        task
+    }
+
+    fn patch(&mut self, plan: ShortId, task: Uuid, change: impl FnOnce(&mut TaskPatch)) {
+        let mut patch = TaskPatch {
             id: task,
             name: None,
             parent: None,
             mode: None,
-            duration: Some(days),
+            duration: None,
             time_constraint: None,
-            dependencies: Some(vec![Dependency {
-                node: DependencyNode::ParentStart,
-                lag: 0,
-            }]),
-            allocations: Some([(Worker::User(self.shared), Workload::new(8).unwrap())].into()),
+            dependencies: None,
+            allocations: None,
             affinities: None,
             actual_workers: None,
             description: None,
             persistent_state: None,
         };
+        change(&mut patch);
         self.update(plan, PlanUpdate::Task(Crud::Update(patch)));
-        (plan, task)
+    }
+
+    fn milestone(&mut self, plan: ShortId, after: PlanNode) -> PlanNode {
+        let id = Uuid::now_v7();
+        let new = NewMilestone {
+            id,
+            name: "Milestone".to_string(),
+            parent: Parent::PlanStart,
+        };
+        self.update(plan, PlanUpdate::Milestone(Crud::Add(new)));
+        let patch = plinko::types::milestone::MilestonePatch {
+            id,
+            name: None,
+            parent: None,
+            time_constraint: None,
+            dependencies: Some(vec![Dependency {
+                node: DependencyNode::Node(after),
+                lag: 0,
+            }]),
+            persistent_state: None,
+        };
+        self.update(plan, PlanUpdate::Milestone(Crud::Update(patch)));
+        PlanNode::Milestone(id)
+    }
+
+    fn target(&mut self, plan: ShortId, node: PlanNode) {
+        let new = NewTarget {
+            id: Uuid::now_v7(),
+            node,
+            priority: 0,
+        };
+        self.update(plan, PlanUpdate::Target(Crud::Add(new)));
+    }
+
+    fn priority(&mut self, plan: ShortId, priority: i32) {
+        let patch = PlanSchedulerDataPatch {
+            start_date: None,
+            priority: Some(priority),
+        };
+        self.update(plan, PlanUpdate::SchedulerData(patch));
+    }
+
+    /// A plan starting on `start` with one task of `days` days for the shared person
+    fn plan(&mut self, start: NaiveDate, days: u32) -> (ShortId, Uuid) {
+        let plan = self.empty(start);
+        (plan, self.task(plan, days, &[]))
     }
 
     fn solve(&mut self) -> TenantVolatileState {
@@ -189,4 +261,103 @@ fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
     assert!(plans.tenant.baseline(&two).is_none());
     plans.solve();
     assert!(plans.tenant.baseline(&two).is_some());
+}
+
+fn start() -> NaiveDate {
+    day(2023, 12, 1)
+}
+
+/// A plan of one task for each of the given days, one after the other, with a target at the end
+fn chain(plans: &mut Plans, days: &[u32]) -> (ShortId, Vec<Uuid>) {
+    let plan = plans.empty(start());
+    let mut tasks: Vec<Uuid> = Vec::new();
+    for d in days {
+        let after: Vec<PlanNode> = tasks
+            .last()
+            .map(|t| PlanNode::Task(*t))
+            .into_iter()
+            .collect();
+        tasks.push(plans.task(plan, *d, &after));
+    }
+    let last = PlanNode::Task(*tasks.last().unwrap());
+    let end = plans.milestone(plan, last);
+    plans.target(plan, end);
+    (plan, tasks)
+}
+
+#[test]
+fn plan_priority_decides_who_gets_contended_hours() {
+    for favoured in [0, 1] {
+        let mut plans = Plans::new();
+        let made = [chain(&mut plans, &[1, 1]), chain(&mut plans, &[1, 1])];
+        plans.priority(made[favoured].0, 5);
+        let state = plans.solve();
+        let first = |i: usize| first_day(&state, made[i].0, made[i].1[0]);
+        assert_eq!(first(favoured), day(2024, 1, 1));
+        assert_eq!(first(1 - favoured), day(2024, 1, 3));
+        let plan = &state.plans[&made[1 - favoured].0];
+        assert_eq!(plan.plan_end.unwrap().delay(), 2);
+        assert_eq!(plan.targets.values().next().unwrap().delay(), 2);
+    }
+}
+
+#[test]
+fn target_priority_counts_beside_plan_priority() {
+    let mut plans = Plans::new();
+    let made = [chain(&mut plans, &[1]), chain(&mut plans, &[1])];
+    let plan = made[1].0;
+    let target = *plans.tenant.plans()[&plan].targets().keys().next().unwrap();
+    let patch = plinko::types::target::TargetPatch {
+        id: target,
+        node: None,
+        priority: Some(3),
+    };
+    plans.update(plan, PlanUpdate::Target(Crud::Update(patch)));
+    plans.priority(made[0].0, 2);
+    let state = plans.solve();
+    // 3 beats 2 whichever plan is first by the usual order
+    assert_eq!(first_day(&state, plan, made[1].1[0]), day(2024, 1, 1));
+}
+
+#[test]
+fn work_off_the_target_chain_waits_for_every_chain() {
+    let mut plans = Plans::new();
+    let (long, _) = chain(&mut plans, &[3]);
+    let rest = plans.task(long, 1, &[]);
+    let (short, short_chain) = chain(&mut plans, &[1]);
+    let state = plans.solve();
+    // the long plan is first, but its loose task still goes after the short plan's target chain
+    assert_eq!(first_day(&state, short, short_chain[0]), day(2024, 1, 4));
+    assert_eq!(first_day(&state, long, rest), day(2024, 1, 5));
+}
+
+#[test]
+fn chains_to_close_hard_dates_go_before_target_chains() {
+    let mut plans = Plans::new();
+    let (hard_plan, hard) = plans.plan(start(), 1);
+    plans.patch(hard_plan, hard, |p| {
+        p.time_constraint = Some(TimeConstraint::Fixed(day(2024, 1, 3)));
+    });
+    let (long, long_chain) = chain(&mut plans, &[3]);
+    let state = plans.solve();
+    assert_eq!(first_day(&state, hard_plan, hard), day(2024, 1, 3));
+    assert!(state.plans[&hard_plan].constraint_violations.is_empty());
+    // a three day run cannot straddle the day taken, so it starts after it
+    assert_eq!(first_day(&state, long, long_chain[0]), day(2024, 1, 4));
+}
+
+#[test]
+fn work_in_progress_in_any_plan_claims_hours_first() {
+    let mut plans = Plans::new();
+    let (first, first_chain) = chain(&mut plans, &[4]);
+    let (active, active_task) = plans.plan(start(), 3);
+    let state = PersistentState {
+        status: Status::InProgress,
+        actual_start_date: Some(day(2024, 1, 1)),
+        actual_end_date: None,
+    };
+    plans.patch(active, active_task, |p| p.persistent_state = Some(state));
+    let state = plans.solve();
+    assert_eq!(first_day(&state, active, active_task), day(2024, 1, 1));
+    assert_eq!(first_day(&state, first, first_chain[0]), day(2024, 1, 4));
 }

@@ -7,9 +7,9 @@ records what is settled and what carries over from it, and lists the changes sti
 data model.
 
 Status: the output state, availability calendars, affinities, groups, recorded workers, buffers,
-`ScheduleMode`, `TimeConstraint::apply`, the ledger and the single-plan solver exist. Plans are
-scheduled one after another into the shared ledger, the plan that ends last when alone first, then
-the earlier start date, then the lower id, which the combined insertion of step 5 replaces. Call `scheduler::prepare` to cache calendars, then `solve_tenant`.
+`ScheduleMode`, `TimeConstraint::apply`, the ledger, baselines, the single-plan solver and the
+combined insertion across plans exist. Call `scheduler::prepare` to cache calendars and baselines,
+then `solve_tenant`. Compaction runs plan by plan for now (step 6).
 Items marked **Assumed** were not explicitly confirmed and are collected at the end.
 
 ## 1. Principles
@@ -273,11 +273,14 @@ Solo runs per plan as above.
 
 Insert all remaining nodes into one ledger, in strict layers:
 
-1. **Hard tier:** ancestors of Fixed or Latest constrained nodes whose slack to the hard date is at
-   or below a margin (violated ones too). Order by hard slack ascending (most violated first),
-   ties by earlier date. Chains with more slack compete in the target layer until their slack falls
-   to the margin (**Assumed** margin: 3 working days, a tunable constant).
-2. **Target chain:** every node that is an ancestor of some plan's explicit targets.
+1. **Hard tier:** ancestors of Fixed or Latest nodes that are close to their date, `date - start`
+   at or below a margin of 3 calendar days (a tunable constant, `HARD_MARGIN_DAYS`), violated ones
+   too. That start is the later of the node's plan-alone start and where its dependencies now
+   allow it (its slip, below), so a chain enters the tier as contention pushes it towards its date.
+   Order by that slack ascending (most violated first), ties by earlier date. Chains further
+   away compete in the target layer until they get close.
+2. **Target chain:** every node that is an ancestor of some plan's explicit targets, or of the plan
+   end for a plan with none.
 3. **Rest:** nodes feeding no explicit target. They are placed after every chain node, so they can
    only use hours the targets cannot, which keeps them from restricting a target, while still
    filling earlier gaps where it costs nothing. The layers apply across plans.
@@ -286,13 +289,19 @@ Within a layer, repeatedly take the most urgent node among those whose dependenc
 placed. Plain slack ordering is not topological (a predecessor can have more slack than its
 successor), so never sort the whole list by slack.
 
-Urgency of a node is the maximum over the targets it feeds of `proj + plan priority + target
-priority` where `proj = (earliest feasible finish of the target through this node, from the current
-ledger) - baseline forecast`. It is recomputed at every step, so a plan that keeps losing
-contention rises and the impact spreads. Ties: the node feeding more targets, then lowest id. The
-rest layer is ordered by plan priority, then its plan-alone whole-plan urgency.
-Remaining work to a target uses the longest dependency path of planned durations plus non-negative
-lags (milestones 0, buffers their duration).
+The **slip** of a node not yet placed is how many days later than in the plan-alone schedule its
+dependencies now let it start, carried on to what follows as a shift of its solo range. Placed work
+counts at its real dates, so a plan that lost contention shows it in everything after.
+
+Urgency of a node is the maximum over the targets it feeds of `slip - solo slack to that target +
+plan priority + target priority` (`Baseline::by_target`). This is the spec's "earliest finish of
+the target through the node minus its baseline" without simulating placements, which would cost a
+search per candidate per step. It is recomputed after every placement in the plan. Ties: the node
+feeding more targets, then plan order (the latest solo end, then earlier start date, then plan id),
+then lowest id. The rest layer is ordered by higher plan priority, then least solo slack against
+the plan end (`Baseline::plan_slack`).
+Impact is not spread within a plan yet: a task is only urgent once its own dependencies are late, so
+one plan can take a contended person's hours until it is done. Step 7 spreads it.
 
 Insertion mechanics (Plinko 1): earliest start from dependencies, apply Earliest,
 resolve workers, fill the ledger per worker (strict consecutive or relaxed), set the range.
@@ -306,8 +315,9 @@ Choosing a person for a tag or group slot: the eligible person who finishes firs
 without taking hours). Among candidates, accept one finishing up to one day later if their load in
 the task's window is much lower, to avoid piling on a bottleneck (**Assumed** parameters: tolerance
 1 day, and the candidate's booked hours at most half the best finisher's; tune with tests). Remaining
-ties go to the lowest id. A task keeps its person for its whole run. Solo choices are the default in
-the combined run and change only when the person is overbooked, for stability.
+ties go to the lowest id. A task keeps its person for its whole run. In the combined run an equal
+finish goes to the person the plan chose on its own, for stability, and a strictly earlier finish
+for another person wins.
 
 ### Phase 4: compaction
 
@@ -376,7 +386,8 @@ plans move and by how many days. Not part of the first solver.
   derived milestone statuses (exists).
 - `scheduler/slack.rs`: late ends and slack from the dependency and resource edges (exists).
 - `scheduler/plan_solver.rs`: stages, task placement, worker choice, compaction (exists).
-- Planned: combined insertion, and repair rounds, in separate files.
+- `scheduler/combined.rs`: layers, urgency and the order of placing across plans (exists).
+- Planned: repair rounds.
 - Reuse `availability::calendar::Calendar`, `Plan::unscheduled`, `Plan::task_allows_day`,
   `PlanBuffer::place`, `ScheduleMode::hours_on`, `TimeConstraint::apply`, `Dependency::start_after`.
 
@@ -430,7 +441,7 @@ scheduler early.
 4. **Baselines and solo slack** (done, `scheduler/slack.rs`). Run step 3 per plan alone, record each target's forecast, and
    compute solo slack on dependency plus resource edges. Cache per plan with invalidation when the
    plan or its people's availability changes.
-5. **Combined insertion.** One shared ledger. The hard tier, target-chain and rest layers across
+5. **Combined insertion** (done, `scheduler/combined.rs`). One shared ledger. The hard tier, target-chain and rest layers across
    plans, the eligibility queue, dynamic urgency with priority offsets, and the plan-alone solo
    assignments as defaults. Tests: contention, priority, a rest task never delaying a target.
 6. **Compaction** across all plans.
@@ -445,8 +456,7 @@ At each step keep the determinism test (shuffled map order gives identical resul
 
 ## Open items and assumptions
 
-- Slack is in calendar days, so the hard tier margin is 3 calendar days until step 5 says otherwise.
-- Hard tier margin (3 working days), spread tolerance (1 day, half the load), repair round cap (8).
+- Slack and the hard tier margin (3) are in calendar days. Spread tolerance (1 day, half the load), repair round cap (8).
 - Unstarted tasks start no sooner than tomorrow (Plinko 1).
 - Strict days with fewer hours than the block are gaps, anyone having a gap skips the day for all.
 - A task starts on the first day work is placed, not on the plan calendar's first working day.
