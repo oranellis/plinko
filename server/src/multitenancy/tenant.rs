@@ -12,6 +12,7 @@ use crate::{
         user_group::TenantUserGroup,
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
+    scheduler::state::TenantVolatileState,
     traits::entity::Entity,
     types::{
         crud::Crud,
@@ -30,6 +31,7 @@ pub struct Tenant {
     pub(super) user_groups: HashMap<Uuid, TenantUserGroup>,
     volatile: HashMap<Uuid, TenantUserVolatileState>,
     plan_calendars: HashMap<ShortId, Calendar<Workload>>,
+    schedule: Option<TenantVolatileState>,
     pub(super) plans: HashMap<ShortId, Plan>,
 }
 
@@ -59,6 +61,7 @@ impl Tenant {
             user_groups: HashMap::new(),
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),
+            schedule: None,
             plans: HashMap::new(),
         }
     }
@@ -95,7 +98,24 @@ impl Tenant {
         }
     }
 
+    /// The last scheduler result, which any successful update clears until the next run
+    pub fn schedule(&self) -> Option<&TenantVolatileState> {
+        self.schedule.as_ref()
+    }
+
+    pub fn store_schedule(&mut self, schedule: TenantVolatileState) {
+        self.schedule = Some(schedule);
+    }
+
     pub fn apply_update(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
+        let result = self.apply_update_unscheduled(u);
+        if result.is_ok() {
+            self.schedule = None;
+        }
+        result
+    }
+
+    fn apply_update_unscheduled(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
         let is_admin = self
             .users
             .get(&u.actor)

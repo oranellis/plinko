@@ -7,8 +7,12 @@ use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
     types::{
-        common::DateRange, data_block::DataBlocks, dependency::Dependency, error::PlinkoResult,
-        parent::Parent, workload::Workload,
+        common::{DateRange, TimeConstraint},
+        data_block::DataBlocks,
+        dependency::Dependency,
+        error::PlinkoResult,
+        parent::Parent,
+        workload::Workload,
     },
 };
 // }}}
@@ -139,10 +143,22 @@ impl PersistentState {
 }
 // }}}
 
-#[derive(Debug, Default, PartialEq)]
+/// Written by the scheduler for every task it could schedule, the others are unscheduled
+#[derive(Clone, Debug, PartialEq)]
 pub struct VolatileState {
-    pub date_range: Option<DateRange>,
-    pub assigned_allocations: HashMap<Uuid, BTreeMap<NaiveDate, Workload>>,
+    pub date_range: DateRange,
+    /// Hours per day each person works on the task, including days before today for work already
+    /// done and for in progress tasks that overran their duration
+    pub assignments: HashMap<Assignee, BTreeMap<NaiveDate, Workload>>,
+}
+
+/// Who actually does the work, as opposed to the `Worker` a task asks for, which can be a tag or
+/// a user group that the scheduler resolves to people
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Assignee {
+    User(Uuid),
+    /// Unlimited, never conflicts with other work
+    Placeholder,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -170,15 +186,6 @@ pub enum Worker {
     /// An unnamed stand in for whoever will do the work, always free and available per the plan
     /// default availability
     Placeholder,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub enum TimeConstraint {
-    #[default]
-    None,
-    Earliest(NaiveDate),
-    Latest(NaiveDate),
-    Fixed(NaiveDate),
 }
 
 pub struct NewTask {

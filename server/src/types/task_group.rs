@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{dependency::Dependency, error::PlinkoResult, parent::Parent},
+    types::{common::DateRange, dependency::Dependency, error::PlinkoResult, parent::Parent},
 };
 // }}}
 
@@ -81,4 +81,9 @@ pub struct TaskGroupPatch {
     pub parent: Option<Parent>,
 }
 
-pub struct VolatileState {}
+/// Written by the scheduler for every group it could schedule: from the group start to the end of
+/// its last member
+#[derive(Clone, Debug, PartialEq)]
+pub struct VolatileState {
+    pub date_range: DateRange,
+}

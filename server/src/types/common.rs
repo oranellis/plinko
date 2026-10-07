@@ -21,3 +21,12 @@ impl DateRange {
         self.end
     }
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum TimeConstraint {
+    #[default]
+    None,
+    Earliest(NaiveDate),
+    Latest(NaiveDate),
+    Fixed(NaiveDate),
+}

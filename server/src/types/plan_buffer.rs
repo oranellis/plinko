@@ -93,9 +93,10 @@ impl Patchable<PlanBufferPatch> for PlanBuffer {
 }
 // }}}
 
-#[derive(Clone, Debug, Default, PartialEq)]
+/// Written by the scheduler for every buffer it could schedule, see `PlanBuffer::place`
+#[derive(Clone, Debug, PartialEq)]
 pub struct VolatileState {
-    pub date_range: Option<DateRange>,
+    pub date_range: DateRange,
 }
 
 pub struct NewPlanBuffer {

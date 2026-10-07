@@ -13,12 +13,12 @@ use crate::{
         data_block::DataBlock,
         dependency::{DependencyNode, PlanNode},
         error::{PlinkoError, PlinkoResult},
-        milestone::{self, Milestone},
+        milestone::Milestone,
         parent::Parent,
-        plan_buffer::{self, PlanBuffer},
+        plan_buffer::PlanBuffer,
         short_id::ShortId,
         tag::Tag,
-        task::{self, Task, Worker},
+        task::{Task, Worker},
         task_group::TaskGroup,
         user::{PlanUserData, PlanUserGroupData},
         workload::Workload,
@@ -327,25 +327,3 @@ pub struct PlanSchedulerDataPatch {
     pub today: Option<NaiveDate>,
     pub scheduler_target: Option<Option<PlanNode>>,
 }
-
-#[derive(Debug, PartialEq)]
-pub struct PlanVolatileState {
-    pub tasks: HashMap<Uuid, task::VolatileState>,
-    pub milestones: HashMap<Uuid, milestone::VolatileState>,
-    pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
-}
-
-// impl PlanVolatileState{{{
-impl PlanVolatileState {
-    pub fn new(
-        tasks: HashMap<Uuid, task::VolatileState>,
-        milestones: HashMap<Uuid, milestone::VolatileState>,
-        plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
-    ) -> Self {
-        Self {
-            tasks,
-            milestones,
-            plan_buffers,
-        }
-    }
-} // }}}

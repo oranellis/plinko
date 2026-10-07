@@ -5,7 +5,10 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{data_block::DataBlocks, dependency::Dependency, error::PlinkoResult, parent::Parent},
+    types::{
+        common::TimeConstraint, data_block::DataBlocks, dependency::Dependency,
+        error::PlinkoResult, parent::Parent,
+    },
 };
 // }}}
 
@@ -14,6 +17,7 @@ pub struct Milestone {
     id: Uuid,
     name: String,
     parent: Parent,
+    time_constraint: TimeConstraint,
     dependencies: Vec<Dependency>,
     data: DataBlocks,
     persistent_state: PersistentState,
@@ -33,6 +37,10 @@ impl Milestone {
         &self.dependencies
     }
 
+    pub fn time_constraint(&self) -> TimeConstraint {
+        self.time_constraint
+    }
+
     pub fn parent(&self) -> Parent {
         self.parent
     }
@@ -48,6 +56,7 @@ impl From<NewMilestone> for Milestone {
             id: new.id,
             name: new.name,
             parent: new.parent,
+            time_constraint: TimeConstraint::None,
             dependencies: Vec::new(),
             data: DataBlocks::default(),
             persistent_state: PersistentState::new(),
@@ -63,6 +72,9 @@ impl Patchable<MilestonePatch> for Milestone {
         }
         if let Some(p) = patch.parent {
             self.parent = p
+        }
+        if let Some(t) = patch.time_constraint {
+            self.time_constraint = t;
         }
         if let Some(d) = patch.dependencies {
             self.dependencies = d;
@@ -94,14 +106,16 @@ impl PersistentState {
 }
 // }}}
 
-#[derive(Debug, PartialEq)]
+/// Written by the scheduler for every milestone it could schedule
+#[derive(Clone, Debug, PartialEq)]
 pub struct VolatileState {
-    derived_status: Status,
-    date: NaiveDate,
+    pub derived_status: DerivedStatus,
+    pub date: NaiveDate,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub enum Status {
+/// Milestones have no status of their own, it comes from what they depend on
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DerivedStatus {
     #[default]
     NotStarted,
     InProgress,
@@ -118,6 +132,7 @@ pub struct MilestonePatch {
     pub id: Uuid,
     pub name: Option<String>,
     pub parent: Option<Parent>,
+    pub time_constraint: Option<TimeConstraint>,
     pub dependencies: Option<Vec<Dependency>>,
     pub persistent_state: Option<PersistentState>,
 }
