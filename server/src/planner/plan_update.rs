@@ -22,7 +22,7 @@ use crate::{
 };
 // }}}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum PlanUpdate {
     Task(Crud<NewTask, TaskPatch>),
     TaskGroup(Crud<NewTaskGroup, TaskGroupPatch>),

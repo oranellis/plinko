@@ -109,7 +109,7 @@ pub struct VolatileState {
     pub date_range: DateRange,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewPlanBuffer {
     pub id: Uuid,
     pub parent: Parent,

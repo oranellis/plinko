@@ -112,14 +112,14 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
 }
 // }}}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewTaskGroup {
     pub id: Uuid,
     pub name: String,
     pub parent: Parent,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TaskGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,

@@ -28,14 +28,14 @@ use crate::{
 };
 // }}}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewPlan {
     pub id: ShortId,
     pub name: String,
     pub start_date: NaiveDate,
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
     id: ShortId,
     name: String,
@@ -290,7 +290,7 @@ impl Plan {
 }
 // }}}
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanSchedulerData {
     start_date: NaiveDate,
     priority: i32,
@@ -328,7 +328,7 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 }
 // }}}
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlanSchedulerDataPatch {
     pub start_date: Option<NaiveDate>,
     pub priority: Option<i32>,

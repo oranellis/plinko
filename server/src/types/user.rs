@@ -52,22 +52,22 @@ impl Patchable<PlanUserGroupPatch> for PlanUserGroupData {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewPlanUserGroup {
     pub id: Uuid,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PlanUserGroupPatch {
     pub id: Uuid,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewPlanUser {
     pub id: Uuid,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PlanUserDataPatch {
     pub id: Uuid,
     pub tags: Option<HashSet<Uuid>>,

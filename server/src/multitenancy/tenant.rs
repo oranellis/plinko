@@ -287,12 +287,50 @@ impl Tenant {
             .plans
             .get(id)
             .ok_or(PlinkoError::PlanDoesNotExist(*id))?;
-        let in_plan = plan.users().contains_key(&actor)
+        allow(is_admin || self.in_plan(plan, &actor), actor)
+    }
+
+    fn in_plan(&self, plan: &Plan, user: &Uuid) -> bool {
+        plan.users().contains_key(user)
             || plan
                 .user_groups()
                 .keys()
-                .any(|g| self.group_members(*g).contains(&actor));
-        allow(is_admin || in_plan, actor)
+                .any(|g| self.group_members(*g).contains(user))
+    }
+
+    /// The plans a user may see and change: all of them for an admin, otherwise the ones they
+    /// are in
+    pub fn visible_plans(&self, user: &Uuid) -> HashSet<ShortId> {
+        let is_admin = self
+            .users
+            .get(user)
+            .is_some_and(|u| u.role() == Role::Admin);
+        let plans = self.plans.iter();
+        let visible = plans.filter(|(_, p)| is_admin || self.in_plan(p, user));
+        visible.map(|(id, _)| *id).collect()
+    }
+
+    /// The tenant as a user may see it: everyone and every group, and their plans. It has no
+    /// schedule, which a client is sent separately.
+    pub fn visible_to(&self, user: &Uuid) -> Tenant {
+        let visible = self.visible_plans(user);
+        Tenant {
+            id: self.id,
+            name: self.name.clone(),
+            today: self.today,
+            users: self.users.clone(),
+            user_groups: self.user_groups.clone(),
+            volatile: HashMap::new(),
+            plan_calendars: HashMap::new(),
+            schedule: None,
+            baselines: HashMap::new(),
+            plans: self
+                .plans
+                .iter()
+                .filter(|(id, _)| visible.contains(id))
+                .map(|(id, plan)| (*id, plan.clone()))
+                .collect(),
+        }
     }
 
     /// Plans only know ids, so users and groups added to one must exist in the tenant
@@ -324,10 +362,22 @@ impl Tenant {
         &self,
         time: DateTime<Utc>,
         actor: Uuid,
+        update_type: TenantUpdateType,
+    ) -> TenantUpdate {
+        self.stage_from(self.schedule.as_ref(), time, actor, update_type)
+    }
+
+    /// `stage` with a schedule that is not the stored one, for a server whose schedule trails
+    /// its updates
+    pub fn stage_from(
+        &self,
+        schedule: Option<&TenantVolatileState>,
+        time: DateTime<Utc>,
+        actor: Uuid,
         mut update_type: TenantUpdateType,
     ) -> TenantUpdate {
         update_type.assign_ids();
-        self.fill_defaults(&mut update_type);
+        self.fill_defaults_from(schedule, &mut update_type);
         TenantUpdate {
             time,
             actor,
@@ -348,6 +398,14 @@ impl Tenant {
     /// goes in progress, on hold or completed with no one recorded, the people last scheduled
     /// for it are recorded. `stage` does it with `TenantUpdateType::assign_ids`.
     pub fn fill_defaults(&self, update: &mut TenantUpdateType) {
+        self.fill_defaults_from(self.schedule.as_ref(), update);
+    }
+
+    pub fn fill_defaults_from(
+        &self,
+        schedule: Option<&TenantVolatileState>,
+        update: &mut TenantUpdateType,
+    ) {
         let TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, inner)) = update else {
             return;
         };
@@ -365,9 +423,7 @@ impl Tenant {
         if !started || !unrecorded || patch.actual_workers.is_some() {
             return;
         }
-        let scheduled = self
-            .schedule
-            .as_ref()
+        let scheduled = schedule
             .and_then(|s| s.plans.get(plan))
             .and_then(|p| p.tasks.get(&patch.id));
         if let Some(scheduled) = scheduled.filter(|s| !s.workers.is_empty()) {

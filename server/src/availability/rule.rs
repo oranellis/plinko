@@ -178,14 +178,14 @@ impl Ordinal {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewRule<V> {
     pub id: Uuid,
     pub start_day: NaiveDate,
     pub kind: RuleKind<V>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RulePatch<V> {
     pub id: Uuid,
     pub start_day: Option<NaiveDate>,

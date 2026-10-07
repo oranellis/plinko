@@ -2,7 +2,10 @@ pub mod availability;
 pub mod codec;
 pub mod helpers;
 pub mod multitenancy;
+#[cfg(feature = "server")]
+pub mod net;
 pub mod planner;
+pub mod protocol;
 pub mod scheduler;
 #[cfg(feature = "server")]
 pub mod store;

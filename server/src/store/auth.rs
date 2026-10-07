@@ -59,6 +59,10 @@ impl Store {
             )
             .optional()?;
         let Some(hash) = hash else {
+            // take as long as for a real user, so the time does not say who has an account
+            let salt = SaltString::encode_b64(Uuid::nil().as_bytes())
+                .map_err(|e| PlinkoError::Store(e.to_string()))?;
+            let _ = Argon2::default().hash_password(password.as_bytes(), &salt);
             return Ok(false);
         };
         let parsed = PasswordHash::new(&hash).map_err(|e| PlinkoError::Store(e.to_string()))?;

@@ -95,7 +95,7 @@ pub struct TenantUserVolatileState {
     pub calendar: Option<Calendar<Workload>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewTenantLoginUser {
     pub id: Uuid,
     pub name: String,
@@ -103,7 +103,7 @@ pub struct NewTenantLoginUser {
     pub role: Role,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TenantLoginUserPatch {
     pub id: Uuid,
     pub name: Option<String>,

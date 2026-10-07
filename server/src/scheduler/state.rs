@@ -1,6 +1,6 @@
 // modules{{{
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::NaiveDate;
 use uuid::Uuid;
@@ -27,6 +27,29 @@ pub struct TenantVolatileState {
 
 // impl TenantVolatileState{{{
 impl TenantVolatileState {
+    /// The part of the schedule for a user who may see the given plans. Work on the others still
+    /// takes people's hours, so it stays in their schedules with no plan or task named.
+    pub fn visible_to(&self, plans: &HashSet<ShortId>) -> Self {
+        let mut users = self.users.clone();
+        for schedule in users.values_mut() {
+            for assignment in schedule.assignments.values_mut().flatten() {
+                if !plans.contains(&assignment.plan) {
+                    assignment.plan = ShortId::default();
+                    assignment.task = Uuid::nil();
+                }
+            }
+        }
+        Self {
+            plans: self
+                .plans
+                .iter()
+                .filter(|(id, _)| plans.contains(id))
+                .map(|(id, plan)| (*id, plan.clone()))
+                .collect(),
+            users,
+        }
+    }
+
     /// Builds the result from each plan's, deriving every user's schedule across plans from the
     /// task assignments so the two cannot disagree
     pub fn from_plans(plans: HashMap<ShortId, PlanVolatileState>) -> Self {

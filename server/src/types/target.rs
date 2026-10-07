@@ -53,14 +53,14 @@ impl Patchable<TargetPatch> for Target {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewTarget {
     pub id: Uuid,
     pub node: PlanNode,
     pub priority: i32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TargetPatch {
     pub id: Uuid,
     pub node: Option<PlanNode>,

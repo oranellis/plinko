@@ -106,14 +106,14 @@ pub struct Budget {
     pub currency: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewDataBlock {
     pub id: Uuid,
     pub title: String,
     pub content: BlockContent,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DataBlockPatch {
     pub id: Uuid,
     pub title: Option<String>,

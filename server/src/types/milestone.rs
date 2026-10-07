@@ -117,14 +117,14 @@ pub enum DerivedStatus {
     Completed,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewMilestone {
     pub id: Uuid,
     pub name: String,
     pub parent: Parent,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MilestonePatch {
     pub id: Uuid,
     pub name: Option<String>,

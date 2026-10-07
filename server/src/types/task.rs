@@ -231,14 +231,14 @@ pub enum Worker {
     Placeholder,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewTask {
     pub id: Uuid,
     pub name: String,
     pub parent: Parent,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TaskPatch {
     pub id: Uuid,
     pub name: Option<String>,

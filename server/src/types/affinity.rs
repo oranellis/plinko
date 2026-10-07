@@ -62,13 +62,13 @@ impl Patchable<AffinityPatch> for Affinity {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewAffinity {
     pub id: Uuid,
     pub name: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AffinityPatch {
     pub id: Uuid,
     pub name: Option<String>,

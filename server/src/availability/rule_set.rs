@@ -26,7 +26,7 @@ pub struct RuleSet<V> {
     pub(super) rules: HashMap<Uuid, Rule<V>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum RuleSetUpdate<V> {
     Rule(Crud<NewRule<V>, RulePatch<V>>),
     WeekStart(Weekday),

@@ -38,7 +38,7 @@ impl Patchable<TagPatch> for Tag {
 }
 // }}}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewTag {
     pub id: Uuid,
     pub name: String,
@@ -46,7 +46,7 @@ pub struct NewTag {
 
 // Bit weaksauce because there is only one thing you can change, maybe later I'll add groups or
 // something which will make this worth it
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TagPatch {
     pub id: Uuid,
     pub name: Option<String>,

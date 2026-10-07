@@ -68,7 +68,7 @@ impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
 }
 // }}}
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NewTenantUserGroup {
     pub id: Uuid,
     pub name: String,
@@ -76,7 +76,7 @@ pub struct NewTenantUserGroup {
     pub users: HashSet<Uuid>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TenantUserGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
