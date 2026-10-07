@@ -41,6 +41,9 @@ type Reason = UnscheduledReason;
 /// The most compaction passes, each can only move things earlier
 const MAX_COMPACT_PASSES: usize = 50;
 
+/// Days later a person may finish a task for being much less booked than the first to finish
+const SPREAD_DAYS: u64 = 1;
+
 #[derive(Clone, Debug)]
 struct Placement {
     range: DateRange,
@@ -72,6 +75,15 @@ struct Availability<'a> {
     tenant: &'a Tenant,
     plan_calendar: &'a Calendar<Workload>,
     ledger: &'a Ledger,
+}
+
+impl Availability<'_> {
+    /// Hours the person has booked from `from` up to `to`
+    fn booked(&self, user: Uuid, from: NaiveDate, to: NaiveDate) -> u32 {
+        let days = from.iter_days().take_while(|d| *d < to);
+        let booked = |d| self.ledger.capacity(&user, d) - self.ledger.free(&user, d);
+        days.map(|d| u32::from(booked(d))).sum()
+    }
 }
 
 impl Hours for Availability<'_> {
@@ -113,6 +125,10 @@ pub struct PlanSolver<'a> {
     /// Placed, or out of the schedule for good
     settled: HashSet<Vertex>,
     unscheduled: HashMap<PlanNode, Reason>,
+    /// Days added to the urgency of a target, `None` for the plan end, by repair rounds
+    bumps: HashMap<Option<Uuid>, i64>,
+    /// People forced on a task's tag or group slot by repair rounds
+    forced: HashMap<(Uuid, Worker), Uuid>,
 }
 
 // impl PlanSolver {{{
@@ -139,6 +155,8 @@ impl<'a> PlanSolver<'a> {
             placed: HashMap::new(),
             settled: HashSet::new(),
             unscheduled: HashMap::new(),
+            bumps: HashMap::new(),
+            forced: HashMap::new(),
         };
         for v in solver.order.clone() {
             if !anchored.contains(&v) {
@@ -153,6 +171,16 @@ impl<'a> PlanSolver<'a> {
             }
         }
         solver
+    }
+
+    /// Applies what a repair round changes: days of urgency for targets and people for slots
+    pub fn repair(
+        &mut self,
+        bumps: HashMap<Option<Uuid>, i64>,
+        forced: HashMap<(Uuid, Worker), Uuid>,
+    ) {
+        self.bumps = bumps;
+        self.forced = forced;
     }
 
     /// Schedules the plan with the ledger to itself, and works out how much slack each node has
@@ -333,22 +361,6 @@ impl<'a> PlanSolver<'a> {
     // }}}
 
     // tasks {{{
-    fn candidates(&self, worker: &Worker) -> Vec<Uuid> {
-        let mut people: Vec<Uuid> = match worker {
-            Worker::Tag(tag) => {
-                let users = self.plan.users().iter();
-                users
-                    .filter(|(_, u)| u.tags().contains(tag))
-                    .map(|(id, _)| *id)
-                    .collect()
-            }
-            Worker::UserGroup(group) => self.tenant.group_members(*group).into_iter().collect(),
-            Worker::User(_) | Worker::Placeholder => Vec::new(),
-        };
-        people.sort();
-        people
-    }
-
     /// The people for each worker the task asks for. A recorded person is used as is, as is the
     /// named user. For a tag or group it is whoever finishes first, in a fixed order of workers,
     /// never someone already on the task.
@@ -369,7 +381,15 @@ impl<'a> PlanSolver<'a> {
                 Worker::Placeholder => Some(Assignee::Placeholder),
                 Worker::Tag(_) | Worker::UserGroup(_) => None,
             };
-            match task.actual_workers().get(&worker).copied().or(named) {
+            let forced = self.forced.get(&(*task.id(), worker));
+            let forced = forced.map(|user| Assignee::User(*user));
+            match task
+                .actual_workers()
+                .get(&worker)
+                .copied()
+                .or(named)
+                .or(forced)
+            {
                 Some(who) => {
                     workers.insert(worker, who);
                     slots.push(Slot { who, hours });
@@ -385,8 +405,7 @@ impl<'a> PlanSolver<'a> {
             })
             .collect();
         for (worker, hours) in pending {
-            let candidates: Vec<Uuid> = self
-                .candidates(&worker)
+            let candidates: Vec<Uuid> = eligible(self.tenant, self.plan, &worker)
                 .into_iter()
                 .filter(|u| !used.contains(u))
                 .collect();
@@ -408,12 +427,21 @@ impl<'a> PlanSolver<'a> {
                     .then(|| filled.last().map_or(spec.start, |l| l + Days::new(1)))
             };
             let kept = self.kept_choice(task, &worker);
-            let best = candidates
+            let finishes: Vec<(NaiveDate, bool, Uuid)> = candidates
                 .into_iter()
                 .filter_map(|user| Some((finish(user)?, Some(user) != kept, user)))
-                .min()
-                .map(|(end, _, user)| (end, user))
-                .ok_or(Reason::NoCapacity)?;
+                .collect();
+            let (best_end, _, best_user) = *finishes.iter().min().ok_or(Reason::NoCapacity)?;
+            // someone much less booked is worth finishing a little later for
+            let window = (spec.start, best_end + Days::new(SPREAD_DAYS));
+            let booked = |user: Uuid| avail.booked(user, window.0, window.1);
+            let spared = finishes
+                .iter()
+                .filter(|(end, _, _)| *end <= window.1)
+                .map(|(end, _, user)| (booked(*user), *end, *user))
+                .filter(|(load, _, _)| load * 2 <= booked(best_user) && *load < booked(best_user))
+                .min();
+            let best = spared.map_or((best_end, best_user), |(_, end, user)| (end, user));
             used.insert(best.1);
             workers.insert(worker, Assignee::User(best.1));
             slots.push(Slot {
@@ -772,7 +800,8 @@ impl<'a> PlanSolver<'a> {
         let plan_priority = i64::from(self.plan.scheduler_data().priority());
         let leads = self.baseline?.by_target.iter().filter_map(|t| {
             let slack = t.slack.get(node)?;
-            Some(slip - slack + plan_priority + i64::from(t.priority))
+            let bump = self.bumps.get(&t.id).copied().unwrap_or(0);
+            Some(slip - slack + plan_priority + i64::from(t.priority) + bump)
         });
         let leads: Vec<i64> = leads.collect();
         Some((*leads.iter().max()?, leads.len()))
@@ -1088,4 +1117,22 @@ fn buffer_limits(plan: &Plan) -> HashMap<Uuid, NaiveDate> {
         }
     }
     limits
+}
+
+/// The people who may work a tag or group slot, in id order: plan users holding the tag, or
+/// everyone in the group and the groups below it
+pub fn eligible(tenant: &Tenant, plan: &Plan, worker: &Worker) -> Vec<Uuid> {
+    let mut people: Vec<Uuid> = match worker {
+        Worker::Tag(tag) => {
+            let users = plan.users().iter();
+            users
+                .filter(|(_, u)| u.tags().contains(tag))
+                .map(|(id, _)| *id)
+                .collect()
+        }
+        Worker::UserGroup(group) => tenant.group_members(*group).into_iter().collect(),
+        Worker::User(_) | Worker::Placeholder => Vec::new(),
+    };
+    people.sort();
+    people
 }

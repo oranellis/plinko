@@ -8,7 +8,7 @@ data model.
 
 Status: the output state, availability calendars, affinities, groups, recorded workers, buffers,
 `ScheduleMode`, `TimeConstraint::apply`, the ledger, baselines, the single-plan solver and the
-combined insertion across plans exist. Call `scheduler::prepare` to cache calendars and baselines,
+combined insertion across plans and repair rounds exist. Call `scheduler::prepare` to cache calendars and baselines,
 then `solve_tenant`. 
 Items marked **Assumed** were not explicitly confirmed and are collected at the end.
 
@@ -335,14 +335,22 @@ Plans will often be in contention for people, so spread the impact:
 
 - **Objective:** lexicographic. First minimise the worst effective delay across all targets
   (delay plus priority offsets), then among equal worst cases the total effective delay.
-- **Round:** take the worst-hit plans, add a temporary priority bump to their targets, and
-  re-insert. Also try giving tasks on their chain to a different eligible person when the current
-  person is a bottleneck (heavily booked by other plans' chain work). Keep the new schedule only
-  if the objective improves.
+- **Round:** two changes are tried, each by scheduling everything again, and the better one that
+  beats the objective is kept (`scheduler/repair.rs`):
+  1. Every worst target that is late (at the worst effective delay) gets a bump added to its
+     urgency of as many days as it is late, adding up over rounds. The bump only applies within
+     the layers, a chain in the hard tier cannot be overtaken.
+  2. Tag and group work that is not started, in any plan, moves off the people who are bottlenecks
+     (booked 0.9 or more of their time, `Ledger::load`) on the worst targets' chains, to the
+     eligible person with the lowest load, if lower than theirs (`PlanSolver::repair`).
+  Only the effective delay of targets counts, with the plan and target priority, not the bumps.
 - **Bounds:** a fixed round cap (**Assumed**: 8), and stop when nothing improves. Deterministic,
   because bumps and candidate order depend only on state and ids.
-- **Speed:** checkpoint the ledger and state at each insertion step so a round restarts from the
-  first step that changes.
+- **Speed:** each round schedules from scratch. Checkpointing the ledger and state at each
+  insertion step so a round restarts from the first step that changes is not done.
+- **Spreading:** when choosing a person for a tag or group slot, someone finishing up to a day
+  after the first to finish is chosen instead if their booked hours in the task's window are at
+  most half (and less than) the first's (`SPREAD_DAYS`), for every placement.
 
 ### Finish
 
@@ -391,7 +399,7 @@ plans move and by how many days. Not part of the first solver.
 - `scheduler/slack.rs`: late ends and slack from the dependency and resource edges (exists).
 - `scheduler/plan_solver.rs`: stages, task placement, worker choice, compaction (exists).
 - `scheduler/combined.rs`: layers, urgency and the order of placing across plans (exists).
-- Planned: repair rounds.
+- `scheduler/repair.rs`: rounds of repair (exists).
 - Reuse `availability::calendar::Calendar`, `Plan::unscheduled`, `Plan::task_allows_day`,
   `PlanBuffer::place`, `ScheduleMode::hours_on`, `TimeConstraint::apply`, `Dependency::start_after`.
 
@@ -449,7 +457,7 @@ scheduler early.
    plans, the eligibility queue, dynamic urgency with priority offsets, and the plan-alone solo
    assignments as defaults. Tests: contention, priority, a rest task never delaying a target.
 6. **Compaction** across all plans (done, `combined::compact`).
-7. **Repair rounds.** The objective (worst effective delay, then total), temporary priority bumps,
+7. **Repair rounds** (done, `scheduler/repair.rs`). The objective (worst effective delay, then total), temporary priority bumps,
    alternative assignees for bottleneck people, checkpointing, and the round cap. Then the spreading
    rule for tag and group slots.
 8. **Outputs and integration.** `TenantVolatileState::from_plans`, forecasts, delays and

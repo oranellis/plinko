@@ -18,7 +18,7 @@ use plinko::{
         parent::Parent,
         short_id::ShortId,
         target::NewTarget,
-        task::{NewTask, PersistentState, Status, TaskPatch, Worker},
+        task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
         user::NewPlanUser,
         workload::Workload,
     },
@@ -82,8 +82,45 @@ impl Plans {
         plan
     }
 
+    /// A new person in the tenant and the plan
+    fn person(&mut self, plan: ShortId) -> Uuid {
+        let id = Uuid::now_v7();
+        let new = NewTenantLoginUser {
+            id,
+            name: "Person".to_string(),
+            email: format!("{id}@example.com"),
+            role: Role::Member,
+        };
+        self.apply(TenantUpdateType::User(Crud::Add(new)));
+        self.update(plan, PlanUpdate::User(Crud::Add(NewPlanUser { id })));
+        id
+    }
+
+    /// A tag in the plan held by the people
+    fn tag(&mut self, plan: ShortId, holders: &[Uuid]) -> Uuid {
+        let id = Uuid::now_v7();
+        let new = plinko::types::tag::NewTag {
+            id,
+            name: "Tag".to_string(),
+        };
+        self.update(plan, PlanUpdate::Tag(Crud::Add(new)));
+        for user in holders {
+            let patch = plinko::types::user::PlanUserDataPatch {
+                id: *user,
+                tags: Some([id].into()),
+            };
+            self.update(plan, PlanUpdate::User(Crud::Update(patch)));
+        }
+        id
+    }
+
     /// A task of `days` days for the shared person, after the tasks and milestones in `after`
     fn task(&mut self, plan: ShortId, days: u32, after: &[PlanNode]) -> Uuid {
+        let shared = Worker::User(self.shared);
+        self.task_for(plan, days, shared, after)
+    }
+
+    fn task_for(&mut self, plan: ShortId, days: u32, worker: Worker, after: &[PlanNode]) -> Uuid {
         let task = Uuid::now_v7();
         let new = NewTask {
             id: task,
@@ -98,7 +135,7 @@ impl Plans {
         .into_iter()
         .map(|node| Dependency { node, lag: 0 })
         .collect();
-        let who = [(Worker::User(self.shared), Workload::new(8).unwrap())];
+        let who = [(worker, Workload::new(8).unwrap())];
         self.patch(plan, task, |p| {
             p.duration = Some(days);
             p.dependencies = Some(after);
@@ -184,14 +221,16 @@ fn first_day(state: &TenantVolatileState, plan: ShortId, task: Uuid) -> NaiveDat
 }
 
 #[test]
-fn the_plan_that_ends_last_alone_goes_first() {
+fn repair_puts_the_short_plan_first_to_cut_the_worst_delay() {
     let mut plans = Plans::new();
     let start = day(2023, 12, 1);
     let (short, short_task) = plans.plan(start, 1);
     let (long, long_task) = plans.plan(start, 3);
     let state = plans.solve();
-    assert_eq!(first_day(&state, long, long_task), day(2024, 1, 1));
-    assert_eq!(first_day(&state, short, short_task), day(2024, 1, 4));
+    // the long plan goes first by the usual order, leaving the short one three days late, so
+    // repair swaps them to make the long one one day late instead
+    assert_eq!(first_day(&state, short, short_task), day(2024, 1, 1));
+    assert_eq!(first_day(&state, long, long_task), day(2024, 1, 2));
     assert_eq!(state.users[&plans.shared].booked_on(day(2024, 1, 4)), 8);
 }
 
@@ -225,12 +264,12 @@ fn forecasts_are_compared_with_the_plan_on_its_own() {
     let (long, _) = plans.plan(start, 3);
     let state = plans.solve();
     let delay = |plan| state.plans[&plan].plan_end.unwrap().delay();
-    assert_eq!(delay(long), 0);
-    // it waits for the long plan's three days
-    assert_eq!(delay(short), 3);
+    assert_eq!(delay(short), 0);
+    // it waits for the short plan's day
+    assert_eq!(delay(long), 1);
     assert_eq!(
-        state.plans[&short].plan_end.unwrap().baseline,
-        day(2024, 1, 1)
+        state.plans[&long].plan_end.unwrap().baseline,
+        day(2024, 1, 3)
     );
 }
 
@@ -326,8 +365,8 @@ fn work_off_the_target_chain_waits_for_every_chain() {
     let rest = plans.task(long, 1, &[]);
     let (short, short_chain) = chain(&mut plans, &[1]);
     let state = plans.solve();
-    // the long plan is first, but its loose task still goes after the short plan's target chain
-    assert_eq!(first_day(&state, short, short_chain[0]), day(2024, 1, 4));
+    // the loose task goes after both target chains, the short one having been moved first
+    assert_eq!(first_day(&state, short, short_chain[0]), day(2024, 1, 1));
     assert_eq!(first_day(&state, long, rest), day(2024, 1, 5));
 }
 
@@ -425,4 +464,61 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
             assert!(fixed.is_none_or(|date| placed.start() >= date));
         }
     }
+}
+
+fn fixed(plans: &mut Plans, plan: ShortId, task: Uuid, date: NaiveDate) {
+    plans.patch(plan, task, |p| {
+        p.time_constraint = Some(TimeConstraint::Fixed(date))
+    });
+}
+
+#[test]
+fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help() {
+    let mut plans = Plans::new();
+    let tagged = plans.empty(start());
+    let (alice, bob) = (plans.person(tagged), plans.person(tagged));
+    let tag = plans.tag(tagged, &[alice, bob]);
+    let (low, high) = (alice.min(bob), alice.max(bob));
+    // a dated task comes before any target chain, and the tie goes to the lower id
+    let held = plans.task_for(tagged, 2, Worker::Tag(tag), &[]);
+    fixed(&mut plans, tagged, held, day(2024, 1, 1));
+    let waiting = plans.empty(start());
+    plans.update(
+        waiting,
+        PlanUpdate::User(Crud::Add(NewPlanUser { id: low })),
+    );
+    let wait = plans.task_for(waiting, 1, Worker::User(low), &[]);
+    let end = plans.milestone(waiting, PlanNode::Task(wait));
+    plans.target(waiting, end);
+    let state = plans.solve();
+    assert_eq!(first_day(&state, waiting, wait), day(2024, 1, 1));
+    let worker = state.plans[&tagged].tasks[&held].workers[&Worker::Tag(tag)];
+    assert_eq!(worker, Assignee::User(high));
+}
+
+#[test]
+fn someone_much_less_booked_is_worth_finishing_a_day_later() {
+    let mut plans = Plans::new();
+    let plan = plans.empty(start());
+    let (alice, bob) = (plans.person(plan), plans.person(plan));
+    let tag = plans.tag(plan, &[alice, bob]);
+    // bob does not work Mondays, so finishes a day after alice, who has a day booked
+    let rule = plinko::availability::rule::NewRule {
+        id: Uuid::now_v7(),
+        start_day: day(2000, 1, 3),
+        kind: plinko::availability::rule::RuleKind::Weekly(
+            plinko::availability::rule::WeeklySchedule::new(
+                [0, 8, 8, 8, 8, 0, 0].map(|h| Workload::new(h).unwrap()),
+            ),
+        ),
+    };
+    let update = plinko::availability::rule_set::RuleSetUpdate::Rule(Crud::Add(rule));
+    plans.apply(TenantUpdateType::Availability(bob, update));
+    let booked = plans.task_for(plan, 1, Worker::User(alice), &[]);
+    fixed(&mut plans, plan, booked, day(2024, 1, 3));
+    let task = plans.task_for(plan, 2, Worker::Tag(tag), &[]);
+    let state = plans.solve();
+    let worker = state.plans[&plan].tasks[&task].workers[&Worker::Tag(tag)];
+    assert_eq!(worker, Assignee::User(bob));
+    assert_eq!(first_day(&state, plan, task), day(2024, 1, 2));
 }

@@ -19,6 +19,7 @@ pub mod fill;
 pub mod ledger;
 mod network;
 mod plan_solver;
+mod repair;
 mod slack;
 pub mod state;
 pub mod status;
@@ -90,20 +91,12 @@ pub fn solve_tenant(tenant: &Tenant) -> TenantVolatileState {
         })
         .collect();
     order.sort();
-    let mut ledger = Ledger::from_tenant(tenant, tenant.today());
     let ids: Vec<ShortId> = order.iter().map(|(_, _, id)| *id).collect();
-    let solvers = ids
-        .iter()
-        .map(|id| PlanSolver::new(tenant, &tenant.plans()[id], Some(&*baselines[id])))
-        .collect();
-    let mut plans = HashMap::new();
-    for (id, mut state) in ids.into_iter().zip(combined::solve(solvers, &mut ledger)) {
-        state.compare_to(&baselines[&id].state);
-        plans.insert(id, state);
-    }
+    let outcome = repair::solve(tenant, &ids, &baselines);
+    let plans = ids.into_iter().zip(outcome.states).collect();
     let mut state = TenantVolatileState::from_plans(plans);
     for (user, schedule) in &mut state.users {
-        schedule.bottleneck = ledger.load(user);
+        schedule.bottleneck = outcome.ledger.load(user);
     }
     state
 }
