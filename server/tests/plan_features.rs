@@ -86,20 +86,6 @@ fn task_node(id: Uuid) -> DependencyNode {
 }
 
 #[test]
-fn today_starts_at_the_plan_start_and_moves_by_update() {
-    let mut plan = new_plan();
-    assert_eq!(*plan.scheduler_data().today(), d(2024, 1, 1));
-    let patch = PlanSchedulerDataPatch {
-        start_date: None,
-        today: Some(d(2024, 1, 9)),
-        scheduler_target: None,
-    };
-    plan.apply_update(PlanUpdate::SchedulerData(patch)).unwrap();
-    assert_eq!(*plan.scheduler_data().today(), d(2024, 1, 9));
-    assert_eq!(*plan.scheduler_data().start_date(), d(2024, 1, 1));
-}
-
-#[test]
 fn allocations_are_hours_per_day_and_may_use_placeholders() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::PlanStart);
@@ -432,4 +418,44 @@ fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
     record(&mut plan, task, &[]).unwrap();
     assert!(plan.tasks()[&task].actual_workers().is_empty());
     allocate(&mut plan, &[]).unwrap();
+}
+
+#[test]
+fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
+    let mut plan = new_plan();
+    let task = add_task(&mut plan, Parent::PlanStart);
+    assert_eq!(plan.tasks()[&task].duration(), 1);
+    let zero = TaskPatch {
+        duration: Some(0),
+        ..task_patch(task)
+    };
+    assert!(patch_task(&mut plan, zero).is_err());
+    let three = TaskPatch {
+        duration: Some(3),
+        ..task_patch(task)
+    };
+    patch_task(&mut plan, three).unwrap();
+    assert_eq!(plan.tasks()[&task].duration(), 3);
+
+    let group = Uuid::now_v7();
+    let new = NewTaskGroup {
+        id: group,
+        name: "Group".to_string(),
+        parent: Parent::PlanStart,
+    };
+    plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
+        .unwrap();
+    assert_eq!(plan.task_groups()[&group].placeholder_duration(), 1);
+    let patch = |placeholder_duration| TaskGroupPatch {
+        id: group,
+        name: None,
+        dependencies: None,
+        parent: None,
+        placeholder_duration: Some(placeholder_duration),
+    };
+    let zero = PlanUpdate::TaskGroup(Crud::Update(patch(0)));
+    assert!(plan.apply_update(zero).is_err());
+    let five = PlanUpdate::TaskGroup(Crud::Update(patch(5)));
+    plan.apply_update(five).unwrap();
+    assert_eq!(plan.task_groups()[&group].placeholder_duration(), 5);
 }

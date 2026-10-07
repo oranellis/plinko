@@ -8,7 +8,7 @@ use crate::{
     planner::{plan::NewPlan, plan_update::PlanUpdate},
     types::{crud::Crud, short_id::ShortId, workload::Workload},
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 // }}}
 
@@ -26,6 +26,8 @@ pub enum TenantUpdateType {
     UserGroup(Crud<NewTenantUserGroup, TenantUserGroupPatch>),
     /// Change one user's availability, which only they or an admin may do
     Availability(Uuid, RuleSetUpdate<Workload>),
+    /// Moves the tenant's clock, which only admins (the server runner) may do
+    SetToday(NaiveDate),
     Plan(PlanTenantUpdate),
 }
 
@@ -44,6 +46,7 @@ impl TenantUpdateType {
             TenantUpdateType::User(update) => update.assign_id(),
             TenantUpdateType::UserGroup(update) => update.assign_id(),
             TenantUpdateType::Availability(_, update) => update.assign_ids(),
+            TenantUpdateType::SetToday(_) => {}
             TenantUpdateType::Plan(update) => update.assign_ids(),
         }
     }

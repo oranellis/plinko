@@ -1,11 +1,13 @@
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate};
 use plinko::{
-    planner::{
-        plan::{NewPlan, Plan, PlanSchedulerDataPatch},
-        plan_update::PlanUpdate,
+    multitenancy::{
+        tenant::Tenant,
+        tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
     },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
     types::{
         crud::Crud,
+        error::PlinkoResult,
         parent::Parent,
         short_id::ShortId,
         task::{NewTask, PersistentState, Status, TaskPatch},
@@ -17,34 +19,58 @@ fn d(day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2024, 1, day).unwrap()
 }
 
-fn plan_with_task() -> (Plan, Uuid) {
-    let mut plan = Plan::from(NewPlan {
-        id: ShortId::new(),
+struct Setup {
+    tenant: Tenant,
+    root: Uuid,
+    plan: ShortId,
+    task: Uuid,
+}
+
+fn apply(setup: &mut Setup, update_type: TenantUpdateType) -> PlinkoResult<()> {
+    setup.tenant.apply_update(TenantUpdate {
+        time: DateTime::from_timestamp(978307200, 0).unwrap(),
+        actor: setup.root,
+        update_type,
+    })
+}
+
+fn setup() -> Setup {
+    let tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), d(1));
+    let root = *tenant.users().keys().next().unwrap();
+    let mut setup = Setup {
+        tenant,
+        root,
+        plan: ShortId::new(),
+        task: Uuid::now_v7(),
+    };
+    let new = NewPlan {
+        id: setup.plan,
         name: "Plan".to_string(),
         start_date: d(1),
-    });
-    let id = Uuid::now_v7();
+    };
+    apply(
+        &mut setup,
+        TenantUpdateType::Plan(PlanTenantUpdate::Add(new)),
+    )
+    .unwrap();
     let new = NewTask {
-        id,
+        id: setup.task,
         name: "Task".to_string(),
         parent: Parent::PlanStart,
     };
-    plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
-    (plan, id)
+    let update = PlanUpdate::Task(Crud::Add(new));
+    let update = PlanTenantUpdate::Update(setup.plan, Box::new(update));
+    apply(&mut setup, TenantUpdateType::Plan(update)).unwrap();
+    setup
 }
 
-fn set_today(plan: &mut Plan, day: u32) {
-    let patch = PlanSchedulerDataPatch {
-        start_date: None,
-        today: Some(d(day)),
-        scheduler_target: None,
-    };
-    plan.apply_update(PlanUpdate::SchedulerData(patch)).unwrap();
+fn set_today(setup: &mut Setup, day: u32) {
+    apply(setup, TenantUpdateType::SetToday(d(day))).unwrap();
 }
 
-fn set_state(plan: &mut Plan, id: Uuid, state: PersistentState) {
+fn set_state(setup: &mut Setup, state: PersistentState) {
     let patch = TaskPatch {
-        id,
+        id: setup.task,
         name: None,
         parent: None,
         mode: None,
@@ -57,12 +83,13 @@ fn set_state(plan: &mut Plan, id: Uuid, state: PersistentState) {
         description: None,
         persistent_state: Some(state),
     };
-    plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
-        .unwrap();
+    let update = PlanUpdate::Task(Crud::Update(patch));
+    let update = PlanTenantUpdate::Update(setup.plan, Box::new(update));
+    apply(setup, TenantUpdateType::Plan(update)).unwrap();
 }
 
-fn state(plan: &Plan, id: Uuid) -> PersistentState {
-    plan.tasks()[&id].persistent_state()
+fn state(setup: &Setup) -> PersistentState {
+    setup.tenant.plans()[&setup.plan].tasks()[&setup.task].persistent_state()
 }
 
 fn with(status: Status, start: Option<u32>, end: Option<u32>) -> PersistentState {
@@ -75,35 +102,43 @@ fn with(status: Status, start: Option<u32>, end: Option<u32>) -> PersistentState
 
 #[test]
 fn task_status_and_actual_dates_can_be_set() {
-    let (mut plan, id) = plan_with_task();
-    assert_eq!(state(&plan, id), PersistentState::default());
-    set_state(&mut plan, id, with(Status::InProgress, Some(2), None));
-    assert_eq!(state(&plan, id), with(Status::InProgress, Some(2), None));
-    set_state(&mut plan, id, with(Status::Completed, Some(2), Some(9)));
-    assert_eq!(state(&plan, id), with(Status::Completed, Some(2), Some(9)));
+    let mut s = setup();
+    assert_eq!(state(&s), PersistentState::default());
+    set_state(&mut s, with(Status::InProgress, Some(2), None));
+    assert_eq!(state(&s), with(Status::InProgress, Some(2), None));
+    set_state(&mut s, with(Status::Completed, Some(2), Some(9)));
+    assert_eq!(state(&s), with(Status::Completed, Some(2), Some(9)));
 }
 
 #[test]
 fn putting_a_task_on_hold_ends_it_today_and_resuming_clears_the_end() {
-    let (mut plan, id) = plan_with_task();
-    set_state(&mut plan, id, with(Status::InProgress, Some(2), None));
-    set_today(&mut plan, 5);
-    set_state(&mut plan, id, with(Status::OnHold, Some(2), None));
-    assert_eq!(state(&plan, id), with(Status::OnHold, Some(2), Some(5)));
+    let mut s = setup();
+    set_state(&mut s, with(Status::InProgress, Some(2), None));
+    set_today(&mut s, 5);
+    set_state(&mut s, with(Status::OnHold, Some(2), None));
+    assert_eq!(state(&s), with(Status::OnHold, Some(2), Some(5)));
 
     // staying on hold keeps the day it started, even if the update leaves the end out
-    set_today(&mut plan, 8);
-    set_state(&mut plan, id, with(Status::OnHold, Some(2), None));
-    assert_eq!(state(&plan, id).actual_end_date, Some(d(5)));
+    set_today(&mut s, 8);
+    set_state(&mut s, with(Status::OnHold, Some(2), None));
+    assert_eq!(state(&s).actual_end_date, Some(d(5)));
 
-    set_state(&mut plan, id, with(Status::InProgress, Some(2), Some(5)));
-    assert_eq!(state(&plan, id), with(Status::InProgress, Some(2), None));
+    set_state(&mut s, with(Status::InProgress, Some(2), Some(5)));
+    assert_eq!(state(&s), with(Status::InProgress, Some(2), None));
 }
 
 #[test]
 fn an_end_date_sent_with_the_hold_is_kept() {
-    let (mut plan, id) = plan_with_task();
-    set_today(&mut plan, 5);
-    set_state(&mut plan, id, with(Status::OnHold, Some(2), Some(4)));
-    assert_eq!(state(&plan, id).actual_end_date, Some(d(4)));
+    let mut s = setup();
+    set_today(&mut s, 5);
+    set_state(&mut s, with(Status::OnHold, Some(2), Some(4)));
+    assert_eq!(state(&s).actual_end_date, Some(d(4)));
+}
+
+#[test]
+fn the_clock_moves_by_update() {
+    let mut s = setup();
+    assert_eq!(s.tenant.today(), d(1));
+    set_today(&mut s, 7);
+    assert_eq!(s.tenant.today(), d(7));
 }

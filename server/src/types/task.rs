@@ -10,7 +10,7 @@ use crate::{
         common::{DateRange, TimeConstraint},
         data_block::DataBlocks,
         dependency::Dependency,
-        error::PlinkoResult,
+        error::{PlinkoError, PlinkoResult},
         parent::Parent,
         workload::Workload,
     },
@@ -42,6 +42,19 @@ pub struct Task {
 
 // impl Task {{{
 impl Task {
+    /// Days, at least 1
+    pub fn duration(&self) -> u32 {
+        self.duration
+    }
+
+    pub fn mode(&self) -> ScheduleMode {
+        self.mode
+    }
+
+    pub fn time_constraint(&self) -> TimeConstraint {
+        self.time_constraint
+    }
+
     pub fn dependencies(&self) -> &Vec<Dependency> {
         &self.dependencies
     }
@@ -86,7 +99,7 @@ impl From<NewTask> for Task {
             name: new.name,
             parent: new.parent,
             mode: ScheduleMode::Strict,
-            duration: 0,
+            duration: 1,
             time_constraint: TimeConstraint::None,
             dependencies: Vec::new(),
             allocations: HashMap::new(),
@@ -102,6 +115,9 @@ impl From<NewTask> for Task {
 impl Patchable<TaskPatch> for Task {
     fn apply_patch(&mut self, patch: TaskPatch) -> PlinkoResult<()> {
         check_id_match(*self.id(), patch.id)?;
+        if patch.duration == Some(0) {
+            return Err(PlinkoError::InvalidDuration);
+        }
 
         if let Some(n) = patch.name {
             self.name = n;

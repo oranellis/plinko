@@ -28,6 +28,8 @@ use crate::{
 pub struct Tenant {
     id: ShortId,
     name: String,
+    /// The current day, which only changes by update (the server runner sends one each day)
+    today: NaiveDate,
     pub(super) users: HashMap<Uuid, TenantLoginUser>,
     pub(super) user_groups: HashMap<Uuid, TenantUserGroup>,
     volatile: HashMap<Uuid, TenantUserVolatileState>,
@@ -38,26 +40,33 @@ pub struct Tenant {
 
 // impl Tenant{{{
 impl Tenant {
-    pub fn new(id: ShortId, name: String) -> Self {
+    pub fn new(id: ShortId, name: String, today: NaiveDate) -> Self {
         let root_user = TenantLoginUser::new(
             "Root User".to_string(),
             "root@localhost".to_string(),
             Role::Admin,
         );
-        Self::new_with_login(id, name, root_user)
+        Self::new_with_login(id, name, today, root_user)
     }
 
     /// Create a new tenant with a specific initial login
     ///
     /// * `id`: A unique ID for the tenant
     /// * `name`: A friendly name for the tenant
+    /// * `today`: The day it starts on
     /// * `user`: An initial user to populate the tenant with
-    pub fn new_with_login(id: ShortId, name: String, user: TenantLoginUser) -> Self {
+    pub fn new_with_login(
+        id: ShortId,
+        name: String,
+        today: NaiveDate,
+        user: TenantLoginUser,
+    ) -> Self {
         let mut users = HashMap::new();
         users.insert(*user.id(), user);
         Self {
             id,
             name,
+            today,
             users,
             user_groups: HashMap::new(),
             volatile: HashMap::new(),
@@ -73,6 +82,10 @@ impl Tenant {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn today(&self) -> NaiveDate {
+        self.today
     }
 
     pub fn users(&self) -> &HashMap<Uuid, TenantLoginUser> {
@@ -150,6 +163,11 @@ impl Tenant {
                 self.volatile.remove(&user);
                 Ok(())
             }
+            TenantUpdateType::SetToday(day) => {
+                allow(is_admin, u.actor)?;
+                self.today = day;
+                Ok(())
+            }
             TenantUpdateType::Plan(update) => self.plan_update(u.actor, is_admin, update),
         }
     }
@@ -177,7 +195,8 @@ impl Tenant {
             PlanTenantUpdate::Update(id, update) => {
                 self.authorize_plan(actor, is_admin, &id)?;
                 self.ensure_plan_refs_exist(&update)?;
-                let update = *update;
+                let mut update = *update;
+                self.set_status_dates(&id, &mut update);
                 let changes_availability = matches!(update, PlanUpdate::Availability(_));
                 self.plans
                     .get_mut(&id)
@@ -188,6 +207,33 @@ impl Tenant {
                 }
                 Ok(())
             }
+        }
+    }
+
+    /// Putting a task on hold ends it on the day that happens (today), unless an end date came with the
+    /// update, and an update that leaves it on hold keeps that end. Resuming clears it again.
+    fn set_status_dates(&self, plan: &ShortId, update: &mut PlanUpdate) {
+        let PlanUpdate::Task(Crud::Update(patch)) = update else {
+            return;
+        };
+        let was = self.plans.get(plan).and_then(|p| p.tasks().get(&patch.id));
+        let Some(was) = was.map(|t| t.persistent_state()) else {
+            return;
+        };
+        let Some(state) = &mut patch.persistent_state else {
+            return;
+        };
+        match (was.status, state.status) {
+            (Status::OnHold, Status::OnHold) => {
+                state.actual_end_date = state.actual_end_date.or(was.actual_end_date);
+            }
+            (_, Status::OnHold) => {
+                state.actual_end_date = state.actual_end_date.or(Some(self.today));
+            }
+            (Status::OnHold, Status::NotStarted | Status::InProgress) => {
+                state.actual_end_date = None;
+            }
+            _ => {}
         }
     }
 

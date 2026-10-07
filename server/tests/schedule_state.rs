@@ -91,7 +91,7 @@ fn update(actor: Uuid, update_type: TenantUpdateType) -> TenantUpdate {
 
 #[test]
 fn a_successful_update_clears_the_stored_schedule() {
-    let mut tenant = Tenant::new(ShortId::new(), "Tenant".to_string());
+    let mut tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), d(2024, 1, 1));
     let root = *tenant.users().keys().next().unwrap();
     tenant.store_schedule(TenantVolatileState::default());
     assert!(tenant.schedule().is_some());

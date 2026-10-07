@@ -19,6 +19,7 @@ pub enum PlinkoError {
     InvalidRule(Uuid),
     LastAdmin,
     UnknownWorkerSlot(Uuid),
+    InvalidDuration,
     Forbidden(Uuid),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
@@ -53,6 +54,7 @@ impl std::fmt::Display for PlinkoError {
                     id
                 )
             }
+            PlinkoError::InvalidDuration => write!(f, "a duration must be at least 1 day"),
             PlinkoError::LastAdmin => write!(f, "the tenant must keep an admin"),
             PlinkoError::InvalidRule(id) => {
                 write!(f, "availability rule {} is invalid", id)

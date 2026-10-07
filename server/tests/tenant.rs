@@ -30,8 +30,12 @@ use plinko::{
 };
 use uuid::Uuid;
 
+fn d(day: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(2024, 1, day).unwrap()
+}
+
 fn new_tenant() -> (Tenant, Uuid) {
-    let tenant = Tenant::new(ShortId::new(), "Example Tenant".to_string());
+    let tenant = Tenant::new(ShortId::new(), "Example Tenant".to_string(), d(1));
     let root = *tenant.users().keys().next().unwrap();
     (tenant, root)
 }
@@ -105,7 +109,7 @@ fn add_task(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> PlinkoResult<()>
 #[test]
 fn create_tenant_with_root_admin() {
     let tenant_id = ShortId::new();
-    let tenant_with_root = Tenant::new(tenant_id, "Example Tenant".to_string());
+    let tenant_with_root = Tenant::new(tenant_id, "Example Tenant".to_string(), d(1));
     assert_eq!(*tenant_with_root.id(), tenant_id);
     assert_eq!(tenant_with_root.name(), "Example Tenant");
     assert_eq!(*tenant_with_root.plans(), HashMap::<ShortId, Plan>::new());
@@ -125,7 +129,7 @@ fn create_tenant_with_login() {
         Role::Admin,
     );
     let user_id = *user.id();
-    let tenant = Tenant::new_with_login(ShortId::new(), "Example Tenant".to_string(), user);
+    let tenant = Tenant::new_with_login(ShortId::new(), "Example Tenant".to_string(), d(1), user);
     assert_eq!(tenant.users().len(), 1);
     assert_eq!(tenant.users()[&user_id].email(), "alice@example.com");
 }
@@ -535,4 +539,15 @@ fn recorded_in(update: &TenantUpdateType) -> Option<&HashMap<Worker, Assignee>> 
         PlanUpdate::Task(Crud::Update(patch)) => patch.actual_workers.as_ref(),
         _ => panic!("expected a task update"),
     }
+}
+
+#[test]
+fn the_clock_is_a_tenant_setting_only_admins_move() {
+    let (mut tenant, root) = new_tenant();
+    let alice = add_user(&mut tenant, root, Role::Member);
+    assert_eq!(tenant.today(), d(1));
+    assert!(apply(&mut tenant, alice, TenantUpdateType::SetToday(d(5))).is_err());
+    assert_eq!(tenant.today(), d(1));
+    apply(&mut tenant, root, TenantUpdateType::SetToday(d(5))).unwrap();
+    assert_eq!(tenant.today(), d(5));
 }

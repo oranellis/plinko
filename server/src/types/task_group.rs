@@ -7,7 +7,10 @@ use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
     types::{
-        common::DateRange, dependency::Dependency, error::PlinkoResult, parent::Parent,
+        common::DateRange,
+        dependency::Dependency,
+        error::{PlinkoError, PlinkoResult},
+        parent::Parent,
         workload::Workload,
     },
 };
@@ -79,7 +82,7 @@ impl From<NewTaskGroup> for TaskGroup {
             name: new.name,
             dependencies: Vec::new(),
             parent: new.parent,
-            placeholder_duration: 0,
+            placeholder_duration: 1,
         }
     }
 }
@@ -87,6 +90,9 @@ impl From<NewTaskGroup> for TaskGroup {
 impl Patchable<TaskGroupPatch> for TaskGroup {
     fn apply_patch(&mut self, patch: TaskGroupPatch) -> PlinkoResult<()> {
         check_id_match(*self.id(), patch.id)?;
+        if patch.placeholder_duration == Some(0) {
+            return Err(PlinkoError::InvalidDuration);
+        }
 
         if let Some(n) = patch.name {
             self.name = n;
@@ -165,7 +171,7 @@ mod tests {
     fn empty_groups_last_their_placeholder_duration_in_working_days() {
         // Wednesday to the following Tuesday is 5 working days, ending the day after
         assert_eq!(group(5).place(d(3), &[], &calendar()), Some(range(3, 10)));
-        assert_eq!(group(0).place(d(3), &[], &calendar()), Some(range(3, 3)));
+        assert_eq!(group(1).place(d(3), &[], &calendar()), Some(range(3, 4)));
         assert_eq!(group(100).place(d(3), &[], &calendar()), None);
     }
 

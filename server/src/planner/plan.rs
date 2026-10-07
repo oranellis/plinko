@@ -10,7 +10,6 @@ use crate::{
     traits::{entity::Entity, patch::Patchable},
     types::{
         affinity::Affinity,
-        crud::Crud,
         data_block::DataBlock,
         dependency::{DependencyNode, PlanNode},
         error::{PlinkoError, PlinkoResult},
@@ -19,7 +18,7 @@ use crate::{
         plan_buffer::PlanBuffer,
         short_id::ShortId,
         tag::Tag,
-        task::{Assignee, NewTask, Status, Task, TaskPatch, Worker},
+        task::{Assignee, Task, Worker},
         task_group::TaskGroup,
         user::{PlanUserData, PlanUserGroupData},
         workload::Workload,
@@ -132,32 +131,6 @@ impl Plan {
             .iter()
             .filter_map(|a| self.affinities.get(a));
         Some(affinities.all(|a| a.allows(day)))
-    }
-
-    /// Putting a task on hold ends it on the day that happens, unless an end date came with the
-    /// update, and an update that leaves it on hold keeps that end. Resuming clears it again.
-    fn set_status_dates(&self, update: &mut Crud<NewTask, TaskPatch>) {
-        let Crud::Update(patch) = update else {
-            return;
-        };
-        let Some(was) = self.tasks.get(&patch.id).map(|t| t.persistent_state()) else {
-            return;
-        };
-        let Some(state) = &mut patch.persistent_state else {
-            return;
-        };
-        match (was.status, state.status) {
-            (Status::OnHold, Status::OnHold) => {
-                state.actual_end_date = state.actual_end_date.or(was.actual_end_date);
-            }
-            (_, Status::OnHold) => {
-                state.actual_end_date = state.actual_end_date.or(Some(self.scheduler_data.today));
-            }
-            (Status::OnHold, Status::NotStarted | Status::InProgress) => {
-                state.actual_end_date = None;
-            }
-            _ => {}
-        }
     }
 
     pub fn ensure_node_exists(&self, node: &PlanNode) -> PlinkoResult<()> {
@@ -275,10 +248,7 @@ impl Plan {
 
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
         match u {
-            PlanUpdate::Task(mut update) => {
-                self.set_status_dates(&mut update);
-                Task::apply_crud(self, update)
-            }
+            PlanUpdate::Task(update) => Task::apply_crud(self, update),
             PlanUpdate::TaskGroup(update) => TaskGroup::apply_crud(self, update),
             PlanUpdate::Milestone(update) => Milestone::apply_crud(self, update),
             PlanUpdate::PlanBuffer(update) => PlanBuffer::apply_crud(self, update),
@@ -317,8 +287,6 @@ impl Plan {
 #[derive(Debug, PartialEq)]
 pub struct PlanSchedulerData {
     start_date: NaiveDate,
-    /// The current day, which only moves forward by updates from the server runner
-    today: NaiveDate,
     scheduler_target: Option<PlanNode>,
 }
 
@@ -327,17 +295,12 @@ impl PlanSchedulerData {
     fn new(start_date: NaiveDate) -> Self {
         Self {
             start_date,
-            today: start_date,
             scheduler_target: None,
         }
     }
 
     pub fn start_date(&self) -> &NaiveDate {
         &self.start_date
-    }
-
-    pub fn today(&self) -> &NaiveDate {
-        &self.today
     }
 
     pub fn scheduler_target(&self) -> &Option<PlanNode> {
@@ -350,9 +313,6 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
         if let Some(s) = patch.start_date {
             self.start_date = s;
         }
-        if let Some(t) = patch.today {
-            self.today = t;
-        }
         if let Some(t) = patch.scheduler_target {
             self.scheduler_target = t
         }
@@ -364,6 +324,5 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 #[derive(Debug)]
 pub struct PlanSchedulerDataPatch {
     pub start_date: Option<NaiveDate>,
-    pub today: Option<NaiveDate>,
     pub scheduler_target: Option<Option<PlanNode>>,
 }
