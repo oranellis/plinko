@@ -24,8 +24,18 @@ impl Entity<Tenant> for TenantLoginUser {
     fn entities_mut(tenant: &mut Tenant) -> &mut HashMap<Uuid, Self> {
         &mut tenant.users
     }
+    /// The tenant always keeps an admin, so a role change cannot demote the last one
+    fn validate(tenant: &Tenant, _id: Uuid) -> PlinkoResult<()> {
+        match tenant.admins().next() {
+            Some(_) => Ok(()),
+            None => Err(PlinkoError::LastAdmin),
+        }
+    }
+
     fn in_use(tenant: &Tenant, id: Uuid) -> bool {
-        tenant.plans.values().any(|p| p.users().contains_key(&id))
+        let last_admin = tenant.admins().eq([&id]);
+        last_admin
+            || tenant.plans.values().any(|p| p.users().contains_key(&id))
             || tenant.user_groups.values().any(|g| g.users().contains(&id))
     }
 }

@@ -217,6 +217,13 @@ impl Tenant {
             .ok_or(PlinkoError::ItemDoesNotExist(id))
     }
 
+    pub(super) fn admins(&self) -> impl Iterator<Item = &Uuid> {
+        self.users
+            .iter()
+            .filter(|(_, u)| u.role() == Role::Admin)
+            .map(|(id, _)| id)
+    }
+
     /// A user's availability calendar, as of the last `refresh_calendars`
     pub fn calendar(&self, user: &Uuid) -> Option<&Calendar<Workload>> {
         self.volatile.get(user)?.calendar.as_ref()

@@ -17,6 +17,7 @@ pub enum PlinkoError {
     DependencyCycle(Uuid),
     ItemInUse(Uuid),
     InvalidRule(Uuid),
+    LastAdmin,
     Forbidden(Uuid),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
@@ -44,6 +45,7 @@ impl std::fmt::Display for PlinkoError {
             PlinkoError::Forbidden(id) => {
                 write!(f, "user {} is not allowed to make this change", id)
             }
+            PlinkoError::LastAdmin => write!(f, "the tenant must keep an admin"),
             PlinkoError::InvalidRule(id) => {
                 write!(f, "availability rule {} is invalid", id)
             }

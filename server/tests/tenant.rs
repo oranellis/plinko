@@ -374,3 +374,27 @@ fn plan_default_calendars_are_cached_until_their_rules_change() {
     apply(&mut tenant, root, remove).unwrap();
     assert!(tenant.plan_calendar(&plan).is_none());
 }
+
+#[test]
+fn the_last_admin_cannot_be_demoted_or_removed() {
+    let (mut tenant, root) = new_tenant();
+    let alice = add_user(&mut tenant, root, Role::Member);
+    let role = |id, role| {
+        TenantUpdateType::User(Crud::Update(TenantLoginUserPatch {
+            id,
+            name: None,
+            email: None,
+            role: Some(role),
+        }))
+    };
+    assert!(apply(&mut tenant, root, role(root, Role::Member)).is_err());
+    assert_eq!(tenant.users()[&root].role(), Role::Admin);
+    let remove = TenantUpdateType::User(Crud::Remove(root));
+    assert!(apply(&mut tenant, root, remove).is_err());
+
+    // with a second admin either can step down
+    apply(&mut tenant, root, role(alice, Role::Admin)).unwrap();
+    apply(&mut tenant, root, role(root, Role::Member)).unwrap();
+    let remove = TenantUpdateType::User(Crud::Remove(root));
+    apply(&mut tenant, alice, remove).unwrap();
+}
