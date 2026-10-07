@@ -10,6 +10,7 @@ use crate::{
     traits::{entity::Entity, patch::Patchable},
     types::{
         affinity::Affinity,
+        crud::Crud,
         data_block::DataBlock,
         dependency::{DependencyNode, PlanNode},
         error::{PlinkoError, PlinkoResult},
@@ -18,7 +19,7 @@ use crate::{
         plan_buffer::PlanBuffer,
         short_id::ShortId,
         tag::Tag,
-        task::{Task, Worker},
+        task::{NewTask, Status, Task, TaskPatch, Worker},
         task_group::TaskGroup,
         user::{PlanUserData, PlanUserGroupData},
         workload::Workload,
@@ -133,6 +134,32 @@ impl Plan {
         Some(affinities.all(|a| a.allows(day)))
     }
 
+    /// Putting a task on hold ends it on the day that happens, unless an end date came with the
+    /// update, and an update that leaves it on hold keeps that end. Resuming clears it again.
+    fn set_status_dates(&self, update: &mut Crud<NewTask, TaskPatch>) {
+        let Crud::Update(patch) = update else {
+            return;
+        };
+        let Some(was) = self.tasks.get(&patch.id).map(|t| t.persistent_state()) else {
+            return;
+        };
+        let Some(state) = &mut patch.persistent_state else {
+            return;
+        };
+        match (was.status, state.status) {
+            (Status::OnHold, Status::OnHold) => {
+                state.actual_end_date = state.actual_end_date.or(was.actual_end_date);
+            }
+            (_, Status::OnHold) => {
+                state.actual_end_date = state.actual_end_date.or(Some(self.scheduler_data.today));
+            }
+            (Status::OnHold, Status::NotStarted | Status::InProgress) => {
+                state.actual_end_date = None;
+            }
+            _ => {}
+        }
+    }
+
     pub fn ensure_node_exists(&self, node: &PlanNode) -> PlinkoResult<()> {
         let (id, exists) = match node {
             PlanNode::Task(id) => (id, self.tasks.contains_key(id)),
@@ -238,7 +265,10 @@ impl Plan {
 
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
         match u {
-            PlanUpdate::Task(update) => Task::apply_crud(self, update),
+            PlanUpdate::Task(mut update) => {
+                self.set_status_dates(&mut update);
+                Task::apply_crud(self, update)
+            }
             PlanUpdate::TaskGroup(update) => TaskGroup::apply_crud(self, update),
             PlanUpdate::Milestone(update) => Milestone::apply_crud(self, update),
             PlanUpdate::PlanBuffer(update) => PlanBuffer::apply_crud(self, update),

@@ -57,6 +57,10 @@ impl Task {
         &mut self.data
     }
 
+    pub fn persistent_state(&self) -> PersistentState {
+        self.persistent_state
+    }
+
     pub fn parent(&self) -> Parent {
         self.parent
     }
@@ -80,7 +84,7 @@ impl From<NewTask> for Task {
             affinities: HashSet::new(),
             description: None,
             data: DataBlocks::default(),
-            persistent_state: PersistentState::new(),
+            persistent_state: PersistentState::default(),
         }
     }
 }
@@ -124,24 +128,14 @@ impl Patchable<TaskPatch> for Task {
 }
 // }}}
 
+/// What users record as a task goes: its status and the days it really started and ended. A task
+/// put on hold ends on the day that happens (see `Plan::apply_update`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PersistentState {
-    status: Status,
-    actual_start_date: Option<NaiveDate>,
-    actual_end_date: Option<NaiveDate>,
+    pub status: Status,
+    pub actual_start_date: Option<NaiveDate>,
+    pub actual_end_date: Option<NaiveDate>,
 }
-
-// impl PersistentState {{{
-impl PersistentState {
-    pub fn new() -> Self {
-        Self {
-            status: Status::NotStarted,
-            actual_start_date: None,
-            actual_end_date: None,
-        }
-    }
-}
-// }}}
 
 /// Written by the scheduler for every task it could schedule, the others are unscheduled
 #[derive(Clone, Debug, PartialEq)]

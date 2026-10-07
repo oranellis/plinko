@@ -59,7 +59,7 @@ impl From<NewMilestone> for Milestone {
             time_constraint: TimeConstraint::None,
             dependencies: Vec::new(),
             data: DataBlocks::default(),
-            persistent_state: PersistentState::new(),
+            persistent_state: PersistentState::default(),
         }
     }
 }
@@ -87,24 +87,10 @@ impl Patchable<MilestonePatch> for Milestone {
 }
 // }}}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PersistentState {
-    actual_date: Option<NaiveDate>,
+    pub actual_date: Option<NaiveDate>,
 }
-
-// impl PersistentState{{{
-impl Default for PersistentState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PersistentState {
-    pub fn new() -> Self {
-        Self { actual_date: None }
-    }
-}
-// }}}
 
 /// Written by the scheduler for every milestone it could schedule
 #[derive(Clone, Debug, PartialEq)]
