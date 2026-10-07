@@ -353,3 +353,39 @@ fn a_new_affinity_allows_every_day() {
         assert_eq!(plan.task_allows_day(&task, day), Some(true));
     }
 }
+
+#[test]
+fn plan_users_hold_tags_by_id() {
+    use plinko::types::{
+        tag::NewTag,
+        user::{NewPlanUser, PlanUserDataPatch},
+    };
+    let mut plan = new_plan();
+    let (user, tag) = (Uuid::now_v7(), Uuid::now_v7());
+    let new = NewPlanUser { id: user };
+    plan.apply_update(PlanUpdate::User(Crud::Add(new))).unwrap();
+    let hold = |tags: &[Uuid]| {
+        PlanUpdate::User(Crud::Update(PlanUserDataPatch {
+            id: user,
+            tags: Some(tags.iter().copied().collect()),
+        }))
+    };
+    assert!(
+        plan.apply_update(hold(&[tag])).is_err(),
+        "the tag must exist"
+    );
+
+    let new = NewTag {
+        id: tag,
+        name: "Designer".to_string(),
+    };
+    plan.apply_update(PlanUpdate::Tag(Crud::Add(new))).unwrap();
+    plan.apply_update(hold(&[tag])).unwrap();
+    assert!(plan.users()[&user].tags().contains(&tag));
+
+    // a tag someone holds cannot be removed
+    let remove = || PlanUpdate::Tag(Crud::Remove(tag));
+    assert!(plan.apply_update(remove()).is_err());
+    plan.apply_update(hold(&[])).unwrap();
+    plan.apply_update(remove()).unwrap();
+}

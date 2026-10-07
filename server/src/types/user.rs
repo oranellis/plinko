@@ -1,18 +1,24 @@
 // modules{{{
+use std::collections::HashSet;
+
 use uuid::Uuid;
 
-use crate::{
-    traits::patch::Patchable,
-    types::{error::PlinkoResult, tag::Tag},
-};
+use crate::{traits::patch::Patchable, types::error::PlinkoResult};
 // }}}
 
+/// A tenant user's place in a plan, with the plan's tags they hold
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PlanUserData {
-    tags: Vec<Tag>,
+    tags: HashSet<Uuid>,
 }
 
 // impl User{{{
+impl PlanUserData {
+    pub fn tags(&self) -> &HashSet<Uuid> {
+        &self.tags
+    }
+}
+
 impl From<NewPlanUser> for PlanUserData {
     fn from(_: NewPlanUser) -> Self {
         Self::default()
@@ -59,5 +65,5 @@ pub struct NewPlanUser {
 
 pub struct PlanUserDataPatch {
     pub id: Uuid,
-    pub tags: Option<Vec<Tag>>,
+    pub tags: Option<HashSet<Uuid>>,
 }

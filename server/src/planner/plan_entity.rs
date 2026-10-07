@@ -9,7 +9,7 @@ use crate::{
     types::{
         affinity::{Affinity, AffinityPatch, NewAffinity},
         dependency::{Dependency, PlanNode},
-        error::PlinkoResult,
+        error::{PlinkoError, PlinkoResult},
         milestone::{Milestone, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
@@ -114,7 +114,7 @@ impl Entity<Plan> for Tag {
         &mut plan.tags
     }
     fn in_use(plan: &Plan, id: Uuid) -> bool {
-        plan.worker_in_use(Worker::Tag(id))
+        plan.worker_in_use(Worker::Tag(id)) || plan.users.values().any(|u| u.tags().contains(&id))
     }
 }
 
@@ -127,6 +127,16 @@ impl Entity<Plan> for PlanUserData {
     }
     fn entities_mut(plan: &mut Plan) -> &mut HashMap<Uuid, Self> {
         &mut plan.users
+    }
+    fn validate(plan: &Plan, id: Uuid) -> PlinkoResult<()> {
+        match plan.users[&id]
+            .tags()
+            .iter()
+            .find(|t| !plan.tags.contains_key(t))
+        {
+            Some(missing) => Err(PlinkoError::ItemDoesNotExist(*missing)),
+            None => Ok(()),
+        }
     }
     fn in_use(plan: &Plan, id: Uuid) -> bool {
         plan.worker_in_use(Worker::User(id))
