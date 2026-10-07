@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use plinko::{
     multitenancy::{
         tenant::Tenant,
-        tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
+        tenant_update::{PlanTenantUpdate, TenantUpdateType},
     },
     planner::{plan::NewPlan, plan_update::PlanUpdate},
     store::Store,

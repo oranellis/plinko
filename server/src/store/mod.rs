@@ -107,7 +107,7 @@ impl Store {
             "INSERT INTO log (seq, update_bytes) VALUES (?1, ?2)",
             params![seq, bytes],
         )?;
-        if seq % SNAPSHOT_EVERY == 0 {
+        if seq.is_multiple_of(SNAPSHOT_EVERY) {
             self.snapshot(seq, tenant)?;
         }
         Ok(seq)
