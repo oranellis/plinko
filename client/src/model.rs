@@ -1,6 +1,6 @@
 //! A plan as rows to show: the tree of groups and items in order, with where each is scheduled.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 use plinko::{
@@ -128,47 +128,62 @@ fn look_of(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -> Lo
 /// The plan's items in order, groups first with what is in them below, each level by when it
 /// starts. What is not scheduled comes last. Members of a collapsed group are left out.
 pub fn rows(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet<Uuid>) -> Vec<Row> {
+    let mut children: HashMap<Parent, Vec<PlanNode>> = HashMap::new();
+    for node in nodes(plan) {
+        children
+            .entry(parent_of(plan, node))
+            .or_default()
+            .push(node);
+    }
+    for level in children.values_mut() {
+        level.sort_by_key(|n| {
+            let start = span_of(state, *n).map(|s| s.0);
+            (start.is_none(), start, node_name(plan, *n), n.id())
+        });
+    }
     let mut rows = Vec::new();
-    add_level(plan, state, collapsed, Parent::PlanStart, 0, &mut rows);
+    let context = Context {
+        plan,
+        state,
+        collapsed,
+        children: &children,
+    };
+    context.add_level(Parent::PlanStart, 0, &mut rows);
     rows
 }
 
-fn add_level(
-    plan: &Plan,
-    state: Option<&PlanVolatileState>,
-    collapsed: &HashSet<Uuid>,
-    parent: Parent,
-    depth: u32,
-    rows: &mut Vec<Row>,
-) {
-    let mut level: Vec<PlanNode> = nodes(plan)
-        .into_iter()
-        .filter(|n| parent_of(plan, *n) == parent)
-        .collect();
-    level.sort_by_key(|n| {
-        (
-            span_of(state, *n).map(|s| s.0).is_none(),
-            span_of(state, *n).map(|s| s.0),
-            node_name(plan, *n),
-            n.id(),
-        )
-    });
-    for node in level {
-        let has_members = matches!(node, PlanNode::TaskGroup(id) if nodes(plan).iter().any(|n| parent_of(plan, *n) == Parent::Node(id)));
-        let is_collapsed = matches!(node, PlanNode::TaskGroup(id) if collapsed.contains(&id));
-        rows.push(Row {
-            node,
-            depth,
-            name: node_name(plan, node),
-            span: span_of(state, node),
-            look: look_of(plan, state, node),
-            unscheduled: state.and_then(|s| s.unscheduled.get(&node).copied()),
-            violated: state.is_some_and(|s| s.constraint_violations.contains_key(&node)),
-            has_members,
-            collapsed: is_collapsed,
-        });
-        if let (PlanNode::TaskGroup(id), false) = (node, is_collapsed) {
-            add_level(plan, state, collapsed, Parent::Node(id), depth + 1, rows);
+struct Context<'a> {
+    plan: &'a Plan,
+    state: Option<&'a PlanVolatileState>,
+    collapsed: &'a HashSet<Uuid>,
+    children: &'a HashMap<Parent, Vec<PlanNode>>,
+}
+
+impl Context<'_> {
+    fn add_level(&self, parent: Parent, depth: u32, rows: &mut Vec<Row>) {
+        for node in self.children.get(&parent).into_iter().flatten().copied() {
+            let group = match node {
+                PlanNode::TaskGroup(id) => Some(id),
+                _ => None,
+            };
+            let members = group.is_some_and(|id| self.children.contains_key(&Parent::Node(id)));
+            let is_collapsed = group.is_some_and(|id| self.collapsed.contains(&id));
+            rows.push(Row {
+                node,
+                depth,
+                name: node_name(self.plan, node),
+                span: span_of(self.state, node),
+                look: look_of(self.plan, self.state, node),
+                unscheduled: self.state.and_then(|s| s.unscheduled.get(&node).copied()),
+                violated: self
+                    .state
+                    .is_some_and(|s| s.constraint_violations.contains_key(&node)),
+                has_members: members,
+                collapsed: is_collapsed,
+            });
+            if let (Some(id), false) = (group, is_collapsed) {
+                self.add_level(Parent::Node(id), depth + 1, rows);
+            }
         }
     }
 }

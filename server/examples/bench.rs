@@ -1,4 +1,5 @@
-//! Times a full schedule of a busy tenant: `cargo run --release --example bench [plans] [tasks]`
+//! Times a full schedule of a busy tenant: `cargo run --release --example bench [plans] [tasks]`.
+//! The login of the saved tenant is root@localhost with the password password123.
 
 use std::{collections::HashMap, time::Instant};
 
@@ -216,6 +217,12 @@ fn main() {
         send(&mut tenant, PlanUpdate::Target(Crud::Add(new)));
     }
 
+    // `PLINKO_BENCH_DB=file` also saves the tenant, for trying the client on a lot of work
+    if let Ok(path) = std::env::var("PLINKO_BENCH_DB") {
+        let store = plinko::store::Store::open(std::path::Path::new(&path)).unwrap();
+        store.create(&tenant).unwrap();
+        store.set_password(root, "password123").unwrap();
+    }
     let started = Instant::now();
     scheduler::prepare(&mut tenant);
     println!("prepare (calendars, baselines): {:?}", started.elapsed());
