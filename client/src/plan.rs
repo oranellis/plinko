@@ -267,10 +267,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 </nav>
                 <Show when=move || tab.get() != PlanTab::Settings>
                     <div class="tools">
-                        <button on:click=move |_| add(Kind::Task)>"+ Task"</button>
-                        <button on:click=move |_| add(Kind::Milestone)>"+ Milestone"</button>
-                        <button on:click=move |_| add(Kind::Group)>"+ Group"</button>
-                        <button on:click=move |_| add(Kind::Buffer)>"+ Buffer"</button>
+                        <button type="button" on:click=move |_| add(Kind::Task)>"+ Task"</button>
+                        <button type="button" on:click=move |_| add(Kind::Milestone)>"+ Milestone"</button>
+                        <button type="button" on:click=move |_| add(Kind::Group)>"+ Group"</button>
+                        <button type="button" on:click=move |_| add(Kind::Buffer)>"+ Buffer"</button>
                     </div>
                 </Show>
                 <div class="split">
@@ -329,7 +329,7 @@ fn List(
                 view! {
                     <li style=format!("margin-left: {}px", row.depth * 16)>
                         {row.has_members.then(|| view! {
-                            <button class="plain" aria-label="Show or hide what is in the group" on:click=move |_| on_toggle.run(node)>
+                            <button type="button" class="plain" aria-label="Show or hide what is in the group" on:click=move |_| on_toggle.run(node)>
                                 {if row.collapsed { "▸" } else { "▾" }}
                             </button>
                         })}

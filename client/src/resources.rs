@@ -98,9 +98,9 @@ pub fn Resources() -> impl IntoView {
     view! {
         <div class="bar">
             <h1>"Resources"</h1>
-            <button on:click=move |_| offset.update(|o| *o -= 1)>"← Earlier"</button>
-            <button on:click=move |_| offset.set(0)>"This week"</button>
-            <button on:click=move |_| offset.update(|o| *o += 1)>"Later →"</button>
+            <button type="button" on:click=move |_| offset.update(|o| *o -= 1)>"← Earlier"</button>
+            <button type="button" on:click=move |_| offset.set(0)>"This week"</button>
+            <button type="button" on:click=move |_| offset.update(|o| *o += 1)>"Later →"</button>
         </div>
         <p class="small">"Hours booked of the hours each person has. Red is more than they have."</p>
         <div class="scroll">

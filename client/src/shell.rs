@@ -74,7 +74,7 @@ pub fn Shell() -> impl IntoView {
                     <Show when=admin>{link("People", Route::People, on_people)}</Show>
                 </nav>
                 <Status />
-                <button class="plain" on:click=logout>
+                <button type="button" class="plain" on:click=logout>
                     {move || sync.me.with(|m| m.as_ref().map(|m| m.name.clone()).unwrap_or_default())}
                     " · Log out"
                 </button>
@@ -82,7 +82,7 @@ pub fn Shell() -> impl IntoView {
             <Show when=move || sync.notice.with(Option::is_some)>
                 <div class="notice" role="alert">
                     {move || sync.notice.get()}
-                    <button class="plain" on:click=move |_| sync.notice.set(None)>"Dismiss"</button>
+                    <button type="button" class="plain" on:click=move |_| sync.notice.set(None)>"Dismiss"</button>
                 </div>
             </Show>
             <main class="page">
@@ -106,5 +106,5 @@ pub fn Shell() -> impl IntoView {
 }
 
 pub fn open_plan(plan: plinko::types::short_id::ShortId) {
-    navigate(Route::Plan(plan, crate::nav::PlanTab::Gantt, None));
+    navigate(Route::Plan(plan, crate::nav::default_tab(), None));
 }

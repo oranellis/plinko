@@ -5,7 +5,7 @@ use leptos::prelude::*;
 
 use crate::{
     format,
-    nav::{PlanTab, Route},
+    nav::Route,
     ui::use_sync,
 };
 
@@ -98,7 +98,7 @@ pub fn Work() -> impl IntoView {
                                         <ul class="items">
                                             {day.entries.into_iter().map(|e| view! {
                                                 <li>
-                                                    <a class="item" href=Route::Plan(e.plan, PlanTab::Gantt, Some(e.task)).path()>
+                                                    <a class="item" href=Route::Plan(e.plan, crate::nav::default_tab(), Some(e.task)).path()>
                                                         <strong>{e.name}</strong>
                                                         <span class="dates">{format!("{} · {} h", e.plan_name, e.hours)}</span>
                                                     </a>
@@ -113,6 +113,6 @@ pub fn Work() -> impl IntoView {
                 }}
             </ul>
         </Show>
-        <button on:click=move |_| shown.update(|n| *n += STEP)>"Show more"</button>
+        <button type="button" on:click=move |_| shown.update(|n| *n += STEP)>"Show more"</button>
     }
 }

@@ -21,7 +21,7 @@ pub fn Modal(
             <div class="modal" role="dialog" aria-label=label on:click=|ev| ev.stop_propagation()>
                 <header>
                     <h2>{title}</h2>
-                    <button class="plain" aria-label="Close" on:click=move |_| on_close.run(())>"✕"</button>
+                    <button type="button" class="plain" aria-label="Close" on:click=move |_| on_close.run(())>"✕"</button>
                 </header>
                 <div class="body">{children()}</div>
             </div>

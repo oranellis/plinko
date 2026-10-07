@@ -205,7 +205,7 @@ fn RuleList(rules: Memo<Option<RuleSet<Workload>>>, on_remove: Callback<Uuid>) -
             {move || listed().into_iter().map(|(id, _, text)| view! {
                 <li class="row">
                     <span>{text}</span>
-                    <button class="plain" aria-label="Remove rule" on:click=move |_| on_remove.run(id)>"✕"</button>
+                    <button type="button" class="plain" aria-label="Remove rule" on:click=move |_| on_remove.run(id)>"✕"</button>
                 </li>
             }).collect_view()}
         </ul>

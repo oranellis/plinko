@@ -33,6 +33,12 @@ fn read<R>(plan: ShortId, f: impl FnOnce(&Plan) -> Option<R>) -> Option<R> {
     sync.tenant.with(|t| f(t.as_ref()?.plans().get(&plan)?))
 }
 
+/// `read` for starting values, which are taken once and not followed
+fn snapshot<R>(plan: ShortId, f: impl FnOnce(&Plan) -> Option<R>) -> Option<R> {
+    let sync = use_sync();
+    sync.tenant.with_untracked(|t| f(t.as_ref()?.plans().get(&plan)?))
+}
+
 fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {
     (*old != new).then_some(new)
 }
@@ -60,7 +66,7 @@ pub fn ItemEditor(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
         <aside class="editor" aria-label=format!("Edit {kind}")>
             <header>
                 <h2>{kind}</h2>
-                <button class="plain" aria-label="Close" on:click=move |_| on_close.run(())>"✕"</button>
+                <button type="button" class="plain" aria-label="Close" on:click=move |_| on_close.run(())>"✕"</button>
             </header>
             <Info plan=plan node=node />
             {match node {
@@ -69,7 +75,7 @@ pub fn ItemEditor(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
                 PlanNode::PlanBuffer(id) => view! { <BufferForm plan=plan id=id on_close=on_close /> }.into_any(),
                 PlanNode::TaskGroup(id) => view! { <GroupForm plan=plan id=id on_close=on_close /> }.into_any(),
             }}
-            <button class="danger" on:click=remove>{format!("Delete {}", kind.to_lowercase())}</button>
+            <button type="button" class="danger" on:click=remove>{format!("Delete {}", kind.to_lowercase())}</button>
         </aside>
     }
 }
@@ -196,13 +202,13 @@ fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) ->
                                 deps.update(|d| if let Some(d) = d.get_mut(i) { d.lag = n });
                             })
                         />
-                        <button class="plain" aria-label="Remove dependency" on:click=move |_| {
+                        <button type="button" class="plain" aria-label="Remove dependency" on:click=move |_| {
                             deps.update(|d| { if i < d.len() { d.remove(i); } });
                         }>"✕"</button>
                     </div>
                 }
             } />
-            <button class="plain" on:click=move |_| deps.update(|d| d.push(Dependency::default()))>
+            <button type="button" class="plain" on:click=move |_| deps.update(|d| d.push(Dependency::default()))>
                 "+ Add a dependency"
             </button>
         </fieldset>
@@ -374,13 +380,13 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
                                 }
                             })
                         />
-                        <button class="plain" aria-label="Remove" on:click=move |_| {
+                        <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
                             allocations.update(|a| { if i < a.len() { a.remove(i); } });
                         }>"✕"</button>
                     </div>
                 }
             } />
-            <button class="plain" on:click=move |_| {
+            <button type="button" class="plain" on:click=move |_| {
                 allocations.update(|a| {
                     if !a.iter().any(|(w, _)| *w == Worker::Placeholder) {
                         a.push((Worker::Placeholder, 8));
@@ -396,7 +402,7 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
 #[component]
 fn TaskForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
-    let Some(task) = read(plan, |p| p.tasks().get(&id).cloned()) else {
+    let Some(task) = snapshot(plan, |p| p.tasks().get(&id).cloned()) else {
         return view! { <p>"This task has been removed."</p> }.into_any();
     };
     let today = sync
@@ -647,7 +653,7 @@ fn Affinities(plan: ShortId, chosen: RwSignal<HashSet<Uuid>>) -> impl IntoView {
 #[component]
 fn MilestoneForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
-    let Some(milestone) = read(plan, |p| p.milestones().get(&id).cloned()) else {
+    let Some(milestone) = snapshot(plan, |p| p.milestones().get(&id).cloned()) else {
         return view! { <p>"This milestone has been removed."</p> }.into_any();
     };
     let today = sync
@@ -695,7 +701,7 @@ fn MilestoneForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoVi
 #[component]
 fn BufferForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
-    let Some(buffer) = read(plan, |p| p.plan_buffers().get(&id).cloned()) else {
+    let Some(buffer) = snapshot(plan, |p| p.plan_buffers().get(&id).cloned()) else {
         return view! { <p>"This buffer has been removed."</p> }.into_any();
     };
     let node = PlanNode::PlanBuffer(id);
@@ -738,7 +744,7 @@ fn BufferForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView 
 #[component]
 fn GroupForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
-    let Some(group) = read(plan, |p| p.task_groups().get(&id).cloned()) else {
+    let Some(group) = snapshot(plan, |p| p.task_groups().get(&id).cloned()) else {
         return view! { <p>"This group has been removed."</p> }.into_any();
     };
     let node = PlanNode::TaskGroup(id);

@@ -62,7 +62,7 @@ pub fn Plans() -> impl IntoView {
     view! {
         <div class="bar">
             <h1>"Plans"</h1>
-            <button class="primary" on:click=move |_| creating.set(true)>"New plan"</button>
+            <button type="button" class="primary" on:click=move |_| creating.set(true)>"New plan"</button>
         </div>
         <Show when=move || cards.with(Vec::is_empty)>
             <p class="empty">"You are not in any plans yet. Make one to get started."</p>
@@ -72,7 +72,7 @@ pub fn Plans() -> impl IntoView {
                 let id = card.id;
                 view! {
                     <li>
-                        <a class="card" href=Route::Plan(id, crate::nav::PlanTab::Gantt, None).path()>
+                        <a class="card" href=Route::Plan(id, crate::nav::default_tab(), None).path()>
                             <strong>{card.name.clone()}</strong>
                             <span>{format!("{} tasks · starts {}", card.tasks, format::day(card.start))}</span>
                             {card.forecast.map(|(end, late)| view! {

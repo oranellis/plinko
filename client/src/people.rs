@@ -97,7 +97,7 @@ pub fn People() -> impl IntoView {
             <section>
                 <div class="bar">
                     <h2>"Logins"</h2>
-                    <button class="primary" on:click=move |_| editing.set(Some(None))>"Add a person"</button>
+                    <button type="button" class="primary" on:click=move |_| editing.set(Some(None))>"Add a person"</button>
                 </div>
                 <ul class="items">
                     <For each=move || people.get() key=|p| format!("{p:?}") children=move |p| {
@@ -107,8 +107,8 @@ pub fn People() -> impl IntoView {
                                 <strong>{p.name.clone()}</strong>
                                 <span class="small">{p.email.clone()}{if p.admin { " · admin" } else { "" }}</span>
                                 <a href=Route::Availability(Availability::User(id)).path()>"Hours"</a>
-                                <button on:click=move |_| editing.set(Some(Some(id)))>"Edit"</button>
-                                <button class="plain" aria-label="Remove" on:click=move |_| {
+                                <button type="button" on:click=move |_| editing.set(Some(Some(id)))>"Edit"</button>
+                                <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
                                     sync.send(TenantUpdateType::User(Crud::Remove(id)));
                                 }>"✕"</button>
                             </li>
@@ -119,7 +119,7 @@ pub fn People() -> impl IntoView {
             <section>
                 <div class="bar">
                     <h2>"Groups"</h2>
-                    <button on:click=move |_| editing_group.set(Some(None))>"Add a group"</button>
+                    <button type="button" on:click=move |_| editing_group.set(Some(None))>"Add a group"</button>
                 </div>
                 <ul class="items">
                     <For each=move || groups.get() key=|g| format!("{g:?}") children=move |g| {
@@ -128,8 +128,8 @@ pub fn People() -> impl IntoView {
                             <li class="row">
                                 <strong>{g.name.clone()}</strong>
                                 <span class="small">{format!("{} people", g.members.len())}</span>
-                                <button on:click=move |_| editing_group.set(Some(Some(id)))>"Edit"</button>
-                                <button class="plain" aria-label="Remove" on:click=move |_| {
+                                <button type="button" on:click=move |_| editing_group.set(Some(Some(id)))>"Edit"</button>
+                                <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
                                     sync.send(TenantUpdateType::UserGroup(Crud::Remove(id)));
                                 }>"✕"</button>
                             </li>
@@ -142,7 +142,7 @@ pub fn People() -> impl IntoView {
                 <p class="small">"The day every plan is scheduled from. It moves on by itself each day."</p>
                 <div class="row">
                     <DateInput day=clock />
-                    <button on:click=move |_| sync.send(TenantUpdateType::SetToday(clock.get_untracked()))>"Set today"</button>
+                    <button type="button" on:click=move |_| sync.send(TenantUpdateType::SetToday(clock.get_untracked()))>"Set today"</button>
                 </div>
             </section>
         </div>

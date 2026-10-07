@@ -67,7 +67,7 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
                 <Field label="Priority, higher goes first where people are wanted by several plans">
                     <Number value=priority on_input=Callback::new(move |n| priority.set(n)) />
                 </Field>
-                <button class="primary" on:click=save>"Save"</button>
+                <button type="button" class="primary" on:click=save>"Save"</button>
                 <a href=Route::Availability(Availability::Plan(plan)).path()>
                     "Hours of placeholders (the plan's default availability)"
                 </a>
@@ -78,7 +78,7 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
             <Affinities plan=plan />
             <section>
                 <h2>"Delete"</h2>
-                <button class="danger" on:click=remove>"Delete this plan"</button>
+                <button type="button" class="danger" on:click=remove>"Delete this plan"</button>
             </section>
         </div>
     }
@@ -147,11 +147,11 @@ fn Targets(plan: ShortId) -> impl IntoView {
                         <strong>{name}</strong>
                         <span class="small">"priority"</span>
                         <Number value=value on_input=Callback::new(move |n| value.set(n)) />
-                        <button on:click=move |_| {
+                        <button type="button" on:click=move |_| {
                             let patch = TargetPatch { id, node: None, priority: Some(value.get_untracked().clamp(-1000, 1000) as i32) };
                             sync.plan(plan, PlanUpdate::Target(Crud::Update(patch)));
                         }>"Set"</button>
-                        <button class="plain" aria-label="Remove target" on:click=move |_| {
+                        <button type="button" class="plain" aria-label="Remove target" on:click=move |_| {
                             sync.plan(plan, PlanUpdate::Target(Crud::Remove(id)));
                         }>"✕"</button>
                     </div>
@@ -167,7 +167,7 @@ fn Targets(plan: ShortId) -> impl IntoView {
                     })
                     on_change=Callback::new(move |v| adding.set(v))
                 />
-                <button on:click=add>"Add target"</button>
+                <button type="button" on:click=add>"Add target"</button>
             </div>
         </section>
     }
@@ -267,7 +267,7 @@ fn People(plan: ShortId) -> impl IntoView {
                                 </label>
                             }
                         }).collect_view()}
-                        <button class="plain" aria-label="Remove from the plan" on:click=move |_| {
+                        <button type="button" class="plain" aria-label="Remove from the plan" on:click=move |_| {
                             sync.plan(plan, PlanUpdate::User(Crud::Remove(id)));
                         }>"✕"</button>
                     </div>
@@ -283,7 +283,7 @@ fn People(plan: ShortId) -> impl IntoView {
                     })
                     on_change=Callback::new(move |v| adding.set(v))
                 />
-                <button on:click=move |_| {
+                <button type="button" on:click=move |_| {
                     if let Ok(id) = Uuid::parse_str(&adding.get_untracked()) {
                         sync.plan(plan, PlanUpdate::User(Crud::Add(NewPlanUser { id })));
                         adding.set(String::new());
@@ -336,7 +336,7 @@ fn Tags(plan: ShortId) -> impl IntoView {
                 <For each=move || tags.get() key=|t| t.clone() children=move |(id, tag)| view! {
                     <li class="row">
                         <strong>{tag}</strong>
-                        <button class="plain" aria-label="Remove tag" on:click=move |_| {
+                        <button type="button" class="plain" aria-label="Remove tag" on:click=move |_| {
                             sync.plan(plan, PlanUpdate::Tag(Crud::Remove(id)));
                         }>"✕"</button>
                     </li>
@@ -420,7 +420,7 @@ fn Affinities(plan: ShortId) -> impl IntoView {
                                    </label>
                                }
                            }).collect_view()}
-                           <button class="plain" aria-label="Remove" on:click=move |_| {
+                           <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
                                sync.plan(plan, PlanUpdate::Affinity(Crud::Remove(id)));
                            }>"✕"</button>
                        </div>
