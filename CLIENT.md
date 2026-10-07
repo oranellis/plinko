@@ -1,0 +1,88 @@
+# Client and server stack
+
+Decisions for the web client and the server it talks to. The scheduler is in `SCHEDULER.md`.
+
+## Requirements
+
+- Everything Plinko 1 did (`plinko/plinko-web`): Gantt with zoom, pan and drag, allocation and
+  resource views, calendar, forms, admin, live sync. It had only `react` and `uuid` as runtime
+  dependencies and hand wrote every widget, so no UI library is being given up.
+- Everything v2 adds: nested groups (moving an item is a parent change), buffers, targets and
+  priorities, rule based availability with a live effective calendar, affinities, recorded workers,
+  forecasts and delays, unscheduled reasons, bottleneck loads, tenant wide views, roles and groups,
+  history and revert.
+- Mobile is required, accessibility is nice to have, plans reach a thousand tasks, collaborative
+  editing is required (every client viewing a plan sees every update), one developer.
+
+## Stack
+
+- **Client:** Leptos, client side rendered, built with trunk, installable as a PWA. No SSR, the app
+  is behind a login. Pre 1.0 churn is accepted. Plain CSS with breakpoints.
+- **Server:** axum, WebSocket for sync, one process per tenant.
+- **Shared code:** the client depends on the `plinko` crate, so the rule engine, date maths,
+  validation (cycles, parents) and `Plan::apply_update` are the same code on both sides, nothing
+  is mirrored in another language. The crate must keep compiling for `wasm32` (uuid and getrandom
+  features, no `std::time`).
+- **Wire:** serde with msgpack or postcard, not JSON, because enum keyed maps like
+  `HashMap<Worker, Workload>` do not survive JSON.
+- Rejected: React or Svelte (types and the rule engine duplicated in TS), egui (forms and
+  accessibility), Dioxus (its native targets are webviews anyway), htmx (no Gantt or dragging).
+
+## Sync
+
+- A tenant is one actor taking updates in order. A client sends a `TenantUpdateType`, the server
+  runs `Tenant::stage` (fresh ids, defaults), logs it, applies it, and broadcasts the staged
+  `TenantUpdate` with its sequence number to every subscriber, the sender included.
+- Clients keep a replica of what they may see and apply broadcasts with `apply_update`, so replicas
+  agree by construction. Late joiners take a snapshot and the log tail.
+- No optimistic edits at first: a drag shows a local ghost and sends one update on release, the
+  result is applied when it comes back. This avoids temp ids, since the server replaces the ids of
+  adds. Conflicts are last writer wins per patched field, in server order.
+- Broadcasts are filtered by plan access, the same rule as `Tenant::authorize_plan`.
+- The schedule is the costly part. It runs off the actor in a blocking task and coalesces: updates
+  that arrive during a solve are covered by the next one. Data updates go out at once, the schedule
+  follows tagged with the sequence number it reflects, and clients show it as recalculating
+  meanwhile. The schedule is tenant wide, so each client is sent only the slice it may see.
+- Presence (who is viewing) can come later.
+
+## Storage and auth
+
+- One SQLite file per tenant process holds the update log, snapshots (every N updates, replay
+  from the last), credentials and sessions. Users are already tenant state, so there is no
+  global user table.
+- The log holds only staged updates, no secrets. Password hashes are in a separate `credentials`
+  table keyed by user id, never in updates or snapshots.
+- Passwords use argon2id (memory hard, no 72 byte limit, unlike bcrypt). Login is by email.
+- Sessions are an opaque random token in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie. Only a
+  hash of the token is stored, with an expiry. The WebSocket upgrade is authenticated by the cookie
+  and checks `Origin`.
+
+## Sharding
+
+- A tenant is a process with its own database, so tenants never share memory or storage.
+- A front proxy (nginx, as in Plinko 1's `deploy/`) routes a tenant's subdomain to its process.
+  A small supervisor script starts a process per tenant. There is no cross process coordination.
+
+## Views
+
+- Desktop and tablet: Gantt on a canvas with virtualised rows and a viewport, touch pan and pinch
+  through pointer events. DOM lists and the plan tree are windowed for a thousand tasks.
+- Mobile gets different views, not a squeezed Gantt: a "my work" agenda from `UserSchedule` (per
+  day, across plans), the plan tree and task list, and a task editor.
+- Everything except the Gantt canvas is real DOM elements, which is most of the accessibility.
+
+## Order of work
+
+1. Serde across the core types, and a `wasm32` build check.
+2. Benchmark the scheduler on a thousand task, multi plan tenant (repair rounds cost up to about
+   16 full solves per update).
+3. Update log, snapshots and replay in SQLite.
+4. Server: auth, tenant actor, WebSocket protocol, coalescing scheduler.
+5. Client: sync and state, then Gantt, then forms and the mobile views.
+
+## Open
+
+- Protocol messages (subscribe, snapshot, update, schedule) and request ids for acks.
+- Snapshot interval, session lifetime, and what a revert is (an inverse update or a replay
+  without an entry, see the note on impact preview in `SCHEDULER.md`).
+- Whether the scheduler needs a faster path before the benchmark says so.

@@ -365,10 +365,12 @@ Build each `PlanVolatileState`, derive milestone and group values, then
   further behind than it is. Large values act like strict classes.
 - Priority only matters on contention. It never reorders layers (hard tier, target chain, rest).
 
-## 9. Impact preview (later)
+## 9. Impact and revert
 
-Because results are a pure function of tenant state, "state + update" against "state" shows which
-plans move and by how many days. Not part of the first solver.
+No preview: a run is too costly to do per edit. Edits are applied, scheduled, and reverted if the
+result is bad. Which plans moved and by how many days is a diff of the new schedule against the
+one before it, a pure function to add when the UI wants it (the previous schedule must be kept,
+`apply_update` clears it). Revert belongs to the update log, see `CLIENT.md`.
 
 ## 10. Data model work needed
 
@@ -463,7 +465,7 @@ scheduler early.
 8. **Outputs and integration** (done). Forecasts, delays, bottleneck loads and `from_plans` come from
    the solver. `Tenant::stage` (fresh ids, then `fill_defaults`) builds the update to log,
    `Tenant::apply_and_schedule` applies it and runs `scheduler::schedule` (`prepare`, `solve_tenant`,
-   `store_schedule`). Impact preview (section 9) is still to do.
+   `store_schedule`). 
 
 At each step keep the determinism test (shuffled map order gives identical results) green.
 

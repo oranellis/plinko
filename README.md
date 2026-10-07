@@ -1,7 +1,7 @@
 # Plinko 2
 
 The second version of the Plinko project management tool, built around adaptive scheduling of
-whole tenants. Design notes and progress are in `../PLAN.md`, the scheduler spec is `SCHEDULER.md`.
+whole tenants. Design notes and progress are in `../PLAN.md`, the scheduler spec is `SCHEDULER.md` and the client and server stack is `CLIENT.md`.
 
 ## Server
 
