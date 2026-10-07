@@ -30,6 +30,11 @@ pub struct Task {
     allocations: HashMap<Worker, Workload>,
     /// Linked affinities, the task is only worked on days that every one of them allows
     affinities: HashSet<Uuid>,
+    /// Who actually does the work for a requested worker, which can be a different person (or the
+    /// placeholder). It starts empty, is filled in as the task starts (by default with the people
+    /// last scheduled for it) and is edited by updates. Slots without an entry use the scheduler's
+    /// choice for tags and groups and the named person for users.
+    actual_workers: HashMap<Worker, Assignee>,
     description: Option<String>,
     data: DataBlocks,
     persistent_state: PersistentState,
@@ -47,6 +52,10 @@ impl Task {
 
     pub fn affinities(&self) -> &HashSet<Uuid> {
         &self.affinities
+    }
+
+    pub fn actual_workers(&self) -> &HashMap<Worker, Assignee> {
+        &self.actual_workers
     }
 
     pub fn data(&self) -> &DataBlocks {
@@ -82,6 +91,7 @@ impl From<NewTask> for Task {
             dependencies: Vec::new(),
             allocations: HashMap::new(),
             affinities: HashSet::new(),
+            actual_workers: HashMap::new(),
             description: None,
             data: DataBlocks::default(),
             persistent_state: PersistentState::default(),
@@ -117,6 +127,9 @@ impl Patchable<TaskPatch> for Task {
         if let Some(a) = patch.affinities {
             self.affinities = a
         }
+        if let Some(w) = patch.actual_workers {
+            self.actual_workers = w
+        }
         if let Some(d) = patch.description {
             self.description = d
         }
@@ -144,6 +157,8 @@ pub struct VolatileState {
     /// Hours per day each person works on the task, including days before today for work already
     /// done and for in progress tasks that overran their duration
     pub assignments: HashMap<Assignee, BTreeMap<NaiveDate, Workload>>,
+    /// The person resolved for each worker the task asks for
+    pub workers: HashMap<Worker, Assignee>,
 }
 
 /// Who actually does the work, as opposed to the `Worker` a task asks for, which can be a tag or
@@ -214,6 +229,7 @@ pub struct TaskPatch {
     pub dependencies: Option<Vec<Dependency>>,
     pub allocations: Option<HashMap<Worker, Workload>>,
     pub affinities: Option<HashSet<Uuid>>,
+    pub actual_workers: Option<HashMap<Worker, Assignee>>,
     pub description: Option<Option<String>>,
     pub persistent_state: Option<PersistentState>,
 }

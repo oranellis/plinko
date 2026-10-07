@@ -179,11 +179,12 @@ fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned() {
         parent: Parent::PlanStart,
     };
     let inner = PlanUpdate::Task(Crud::Add(task));
-    let mut update = TenantUpdateType::Plan(PlanTenantUpdate::Update(client_plan, inner));
+    let mut update = TenantUpdateType::Plan(PlanTenantUpdate::Update(client_plan, Box::new(inner)));
     update.assign_ids();
-    let TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, PlanUpdate::Task(Crud::Add(new)))) =
-        update
-    else {
+    let TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, inner)) = update else {
+        panic!("expected a plan update");
+    };
+    let PlanUpdate::Task(Crud::Add(new)) = *inner else {
         panic!("expected a task add");
     };
     assert_eq!(plan, client_plan, "the plan being edited is not reassigned");

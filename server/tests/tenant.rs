@@ -16,12 +16,14 @@ use plinko::{
         plan::{NewPlan, Plan},
         plan_update::PlanUpdate,
     },
+    scheduler::state::{PlanVolatileState, TenantVolatileState},
     types::{
+        common::DateRange,
         crud::Crud,
         error::PlinkoResult,
         parent::Parent,
         short_id::ShortId,
-        task::NewTask,
+        task::{self, Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
         user::{NewPlanUser, NewPlanUserGroup},
         workload::Workload,
     },
@@ -87,7 +89,7 @@ fn plan_update(
     plan: ShortId,
     update: PlanUpdate,
 ) -> PlinkoResult<()> {
-    let update = TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, update));
+    let update = TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, Box::new(update)));
     apply(tenant, actor, update)
 }
 
@@ -397,4 +399,140 @@ fn the_last_admin_cannot_be_demoted_or_removed() {
     apply(&mut tenant, root, role(root, Role::Member)).unwrap();
     let remove = TenantUpdateType::User(Crud::Remove(root));
     apply(&mut tenant, alice, remove).unwrap();
+}
+
+fn add_task_for_placeholder(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> Uuid {
+    let id = Uuid::now_v7();
+    let new = NewTask {
+        id,
+        name: "Task".to_string(),
+        parent: Parent::PlanStart,
+    };
+    plan_update(tenant, actor, plan, PlanUpdate::Task(Crud::Add(new))).unwrap();
+    let patch = task_patch(id, |p| {
+        p.allocations = Some(HashMap::from([(
+            Worker::Placeholder,
+            Workload::new(4).unwrap(),
+        )]));
+    });
+    plan_update(tenant, actor, plan, PlanUpdate::Task(Crud::Update(patch))).unwrap();
+    id
+}
+
+fn task_patch(id: Uuid, change: impl FnOnce(&mut TaskPatch)) -> TaskPatch {
+    let mut patch = TaskPatch {
+        id,
+        name: None,
+        parent: None,
+        mode: None,
+        duration: None,
+        time_constraint: None,
+        dependencies: None,
+        allocations: None,
+        affinities: None,
+        actual_workers: None,
+        description: None,
+        persistent_state: None,
+    };
+    change(&mut patch);
+    patch
+}
+
+fn start(task: Uuid) -> TaskPatch {
+    task_patch(task, |p| {
+        p.persistent_state = Some(PersistentState {
+            status: Status::InProgress,
+            actual_start_date: None,
+            actual_end_date: None,
+        });
+    })
+}
+
+fn scheduled_for(task: Uuid, plan: ShortId, people: &[(Worker, Assignee)]) -> TenantVolatileState {
+    let state = task::VolatileState {
+        date_range: DateRange::new(
+            NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(),
+        )
+        .unwrap(),
+        assignments: HashMap::new(),
+        workers: people.iter().copied().collect(),
+    };
+    let mut plan_state = PlanVolatileState::default();
+    plan_state.tasks.insert(task, state);
+    TenantVolatileState::from_plans(HashMap::from([(plan, plan_state)]))
+}
+
+fn started_update(plan: ShortId, patch: TaskPatch) -> TenantUpdateType {
+    let update = PlanUpdate::Task(Crud::Update(patch));
+    TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, Box::new(update)))
+}
+
+#[test]
+fn starting_a_task_records_the_people_last_scheduled_for_it() {
+    let (mut tenant, root) = new_tenant();
+    let bob = add_user(&mut tenant, root, Role::Member);
+    let plan = add_plan(&mut tenant, root).unwrap();
+    let task = add_task_for_placeholder(&mut tenant, root, plan);
+    let people = [(Worker::Placeholder, Assignee::User(bob))];
+
+    // without a stored schedule there is nothing to record
+    let mut update = started_update(plan, start(task));
+    tenant.fill_defaults(&mut update);
+    assert!(recorded_in(&update).is_none());
+
+    tenant.store_schedule(scheduled_for(task, plan, &people));
+    let mut update = started_update(plan, start(task));
+    tenant.fill_defaults(&mut update);
+    apply(&mut tenant, root, update).unwrap();
+    let recorded = tenant.plans()[&plan].tasks()[&task]
+        .actual_workers()
+        .clone();
+    assert_eq!(recorded, HashMap::from(people));
+
+    // an update that names people keeps them, and a task with a record keeps it
+    tenant.store_schedule(scheduled_for(
+        task,
+        plan,
+        &[(Worker::Placeholder, Assignee::Placeholder)],
+    ));
+    let mut update = started_update(plan, start(task));
+    tenant.fill_defaults(&mut update);
+    assert!(recorded_in(&update).is_none());
+}
+
+#[test]
+fn recorded_people_must_exist_and_cannot_be_removed() {
+    let (mut tenant, root) = new_tenant();
+    let bob = add_user(&mut tenant, root, Role::Member);
+    let plan = add_plan(&mut tenant, root).unwrap();
+    let task = add_task_for_placeholder(&mut tenant, root, plan);
+    let record = |who| {
+        started_update(
+            plan,
+            task_patch(task, |p| {
+                p.actual_workers = Some(HashMap::from([(Worker::Placeholder, who)]));
+            }),
+        )
+    };
+    let ghost = record(Assignee::User(Uuid::now_v7()));
+    assert!(apply(&mut tenant, root, ghost).is_err());
+
+    apply(&mut tenant, root, record(Assignee::User(bob))).unwrap();
+    let remove = TenantUpdateType::User(Crud::Remove(bob));
+    assert!(apply(&mut tenant, root, remove).is_err());
+
+    apply(&mut tenant, root, record(Assignee::Placeholder)).unwrap();
+    let remove = TenantUpdateType::User(Crud::Remove(bob));
+    apply(&mut tenant, root, remove).unwrap();
+}
+
+fn recorded_in(update: &TenantUpdateType) -> Option<&HashMap<Worker, Assignee>> {
+    let TenantUpdateType::Plan(PlanTenantUpdate::Update(_, inner)) = update else {
+        panic!("expected a plan update");
+    };
+    match &**inner {
+        PlanUpdate::Task(Crud::Update(patch)) => patch.actual_workers.as_ref(),
+        _ => panic!("expected a task update"),
+    }
 }

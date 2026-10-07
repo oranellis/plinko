@@ -42,6 +42,7 @@ fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {
     VolatileState {
         date_range: DateRange::new(d(2024, 1, 1), d(2024, 1, 5)).unwrap(),
         assignments,
+        workers: HashMap::new(),
     }
 }
 

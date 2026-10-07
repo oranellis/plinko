@@ -10,7 +10,10 @@ use crate::{
         user_group::{NewTenantUserGroup, TenantUserGroup, TenantUserGroupPatch},
     },
     traits::entity::Entity,
-    types::error::{PlinkoError, PlinkoResult},
+    types::{
+        error::{PlinkoError, PlinkoResult},
+        task::Assignee,
+    },
 };
 // }}}
 
@@ -34,7 +37,12 @@ impl Entity<Tenant> for TenantLoginUser {
 
     fn in_use(tenant: &Tenant, id: Uuid) -> bool {
         let last_admin = tenant.admins().eq([&id]);
+        let recorded = tenant
+            .plans
+            .values()
+            .any(|p| p.recorded_in_use(Assignee::User(id)));
         last_admin
+            || recorded
             || tenant.plans.values().any(|p| p.users().contains_key(&id))
             || tenant.user_groups.values().any(|g| g.users().contains(&id))
     }

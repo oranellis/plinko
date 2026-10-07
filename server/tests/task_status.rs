@@ -53,6 +53,7 @@ fn set_state(plan: &mut Plan, id: Uuid, state: PersistentState) {
         dependencies: None,
         allocations: None,
         affinities: None,
+        actual_workers: None,
         description: None,
         persistent_state: Some(state),
     };

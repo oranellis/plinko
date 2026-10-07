@@ -18,6 +18,7 @@ use crate::{
         crud::Crud,
         error::{PlinkoError, PlinkoResult},
         short_id::ShortId,
+        task::{Assignee, Status},
         user::NewPlanUser,
         workload::Workload,
     },
@@ -176,6 +177,7 @@ impl Tenant {
             PlanTenantUpdate::Update(id, update) => {
                 self.authorize_plan(actor, is_admin, &id)?;
                 self.ensure_plan_refs_exist(&update)?;
+                let update = *update;
                 let changes_availability = matches!(update, PlanUpdate::Availability(_));
                 self.plans
                     .get_mut(&id)
@@ -205,16 +207,57 @@ impl Tenant {
 
     /// Plans only know ids, so users and groups added to one must exist in the tenant
     fn ensure_plan_refs_exist(&self, update: &PlanUpdate) -> PlinkoResult<()> {
-        let (id, exists) = match update {
-            PlanUpdate::User(Crud::Add(new)) => (new.id, self.users.contains_key(&new.id)),
-            PlanUpdate::UserGroup(Crud::Add(new)) => {
-                (new.id, self.user_groups.contains_key(&new.id))
+        let missing = match update {
+            PlanUpdate::User(Crud::Add(new)) => {
+                Some(new.id).filter(|id| !self.users.contains_key(id))
             }
-            _ => return Ok(()),
+            PlanUpdate::UserGroup(Crud::Add(new)) => {
+                Some(new.id).filter(|id| !self.user_groups.contains_key(id))
+            }
+            PlanUpdate::Task(Crud::Update(patch)) => {
+                let recorded = patch.actual_workers.iter().flat_map(|w| w.values());
+                recorded
+                    .filter_map(|who| match who {
+                        Assignee::User(id) if !self.users.contains_key(id) => Some(*id),
+                        _ => None,
+                    })
+                    .next()
+            }
+            _ => None,
         };
-        exists
-            .then_some(())
-            .ok_or(PlinkoError::ItemDoesNotExist(id))
+        missing.map_or(Ok(()), |id| Err(PlinkoError::ItemDoesNotExist(id)))
+    }
+
+    /// Fills in what a task update leaves out that comes from the last schedule, so it is part of
+    /// the update that is logged (applying an update cannot depend on volatile state). When a task
+    /// goes in progress, on hold or completed with no one recorded, the people last scheduled
+    /// for it are recorded. A server handler calls this next to `TenantUpdateType::assign_ids`.
+    pub fn fill_defaults(&self, update: &mut TenantUpdateType) {
+        let TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, inner)) = update else {
+            return;
+        };
+        let PlanUpdate::Task(Crud::Update(patch)) = &mut **inner else {
+            return;
+        };
+        let started = patch.persistent_state.is_some_and(|s| {
+            matches!(
+                s.status,
+                Status::InProgress | Status::OnHold | Status::Completed
+            )
+        });
+        let task = self.plans.get(plan).and_then(|p| p.tasks().get(&patch.id));
+        let unrecorded = task.is_some_and(|t| t.actual_workers().is_empty());
+        if !started || !unrecorded || patch.actual_workers.is_some() {
+            return;
+        }
+        let scheduled = self
+            .schedule
+            .as_ref()
+            .and_then(|s| s.plans.get(plan))
+            .and_then(|p| p.tasks.get(&patch.id));
+        if let Some(scheduled) = scheduled.filter(|s| !s.workers.is_empty()) {
+            patch.actual_workers = Some(scheduled.workers.clone());
+        }
     }
 
     pub(super) fn admins(&self) -> impl Iterator<Item = &Uuid> {

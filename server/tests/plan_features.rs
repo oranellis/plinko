@@ -17,7 +17,7 @@ use plinko::{
         parent::Parent,
         plan_buffer::NewPlanBuffer,
         short_id::ShortId,
-        task::{NewTask, TaskPatch, Worker},
+        task::{Assignee, NewTask, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroupPatch},
         workload::Workload,
     },
@@ -59,6 +59,7 @@ fn task_patch(id: Uuid) -> TaskPatch {
         dependencies: None,
         allocations: None,
         affinities: None,
+        actual_workers: None,
         description: None,
         persistent_state: None,
     }
@@ -389,4 +390,46 @@ fn plan_users_hold_tags_by_id() {
     assert!(plan.apply_update(remove()).is_err());
     plan.apply_update(hold(&[])).unwrap();
     plan.apply_update(remove()).unwrap();
+}
+
+fn record(plan: &mut Plan, task: Uuid, workers: &[(Worker, Assignee)]) -> PlinkoResult<()> {
+    let patch = TaskPatch {
+        actual_workers: Some(workers.iter().copied().collect()),
+        ..task_patch(task)
+    };
+    patch_task(plan, patch)
+}
+
+#[test]
+fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
+    let mut plan = new_plan();
+    let task = add_task(&mut plan, Parent::PlanStart);
+    let allocate = |plan: &mut Plan, slots: &[Worker]| {
+        let allocations = slots
+            .iter()
+            .map(|w| (*w, Workload::new(4).unwrap()))
+            .collect();
+        let patch = TaskPatch {
+            allocations: Some(allocations),
+            ..task_patch(task)
+        };
+        patch_task(plan, patch)
+    };
+    let (slot, other) = (Worker::Placeholder, Worker::UserGroup(Uuid::now_v7()));
+    let person = Assignee::User(Uuid::now_v7());
+
+    // only workers the task asks for can have someone recorded
+    assert!(record(&mut plan, task, &[(slot, person)]).is_err());
+    allocate(&mut plan, &[slot]).unwrap();
+    record(&mut plan, task, &[(slot, person)]).unwrap();
+    assert_eq!(plan.tasks()[&task].actual_workers()[&slot], person);
+
+    // the worker cannot be dropped from the task while someone is recorded for it
+    assert!(allocate(&mut plan, &[]).is_err());
+    assert!(record(&mut plan, task, &[(other, person)]).is_err());
+
+    // and the record can be cleared
+    record(&mut plan, task, &[]).unwrap();
+    assert!(plan.tasks()[&task].actual_workers().is_empty());
+    allocate(&mut plan, &[]).unwrap();
 }

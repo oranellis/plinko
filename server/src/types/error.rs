@@ -18,6 +18,7 @@ pub enum PlinkoError {
     ItemInUse(Uuid),
     InvalidRule(Uuid),
     LastAdmin,
+    UnknownWorkerSlot(Uuid),
     Forbidden(Uuid),
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
@@ -44,6 +45,13 @@ impl std::fmt::Display for PlinkoError {
             }
             PlinkoError::Forbidden(id) => {
                 write!(f, "user {} is not allowed to make this change", id)
+            }
+            PlinkoError::UnknownWorkerSlot(id) => {
+                write!(
+                    f,
+                    "task {} records a person for a worker it does not ask for",
+                    id
+                )
             }
             PlinkoError::LastAdmin => write!(f, "the tenant must keep an admin"),
             PlinkoError::InvalidRule(id) => {

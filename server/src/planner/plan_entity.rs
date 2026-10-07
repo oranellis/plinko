@@ -14,7 +14,7 @@ use crate::{
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
         tag::{NewTag, Tag, TagPatch},
-        task::{NewTask, Task, TaskPatch, Worker},
+        task::{Assignee, NewTask, Task, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroup, TaskGroupPatch},
         user::{
             NewPlanUser, NewPlanUserGroup, PlanUserData, PlanUserDataPatch, PlanUserGroupData,
@@ -35,11 +35,15 @@ pub trait PlanItem: Entity<Plan> {
     fn affinities(&self) -> Vec<Uuid> {
         Vec::new()
     }
+    /// The workers a person has been recorded for, which must be ones the item asks for
+    fn recorded_workers(&self) -> Vec<Worker> {
+        Vec::new()
+    }
 }
 
 macro_rules! plan_item {
     ($ty:ident, $node:ident, $new:ty, $patch:ty, $field:ident
-     $(, workers: $workers:expr, affinities: $affinities:expr)?) => {
+     $(, workers: $workers:expr, affinities: $affinities:expr, recorded: $recorded:expr)?) => {
         impl Entity<Plan> for $ty {
             type New = $new;
             type Patch = $patch;
@@ -73,6 +77,9 @@ macro_rules! plan_item {
             }
             fn affinities(&self) -> Vec<Uuid> {
                 $affinities(self)
+            }
+            fn recorded_workers(&self) -> Vec<Worker> {
+                $recorded(self)
             })?
         }
     };
@@ -80,7 +87,8 @@ macro_rules! plan_item {
 
 plan_item!(Task, Task, NewTask, TaskPatch, tasks,
     workers: |t: &Task| t.allocations().keys().copied().collect(),
-    affinities: |t: &Task| t.affinities().iter().copied().collect());
+    affinities: |t: &Task| t.affinities().iter().copied().collect(),
+    recorded: |t: &Task| t.actual_workers().keys().copied().collect());
 plan_item!(
     Milestone,
     Milestone,
@@ -139,7 +147,7 @@ impl Entity<Plan> for PlanUserData {
         }
     }
     fn in_use(plan: &Plan, id: Uuid) -> bool {
-        plan.worker_in_use(Worker::User(id))
+        plan.worker_in_use(Worker::User(id)) || plan.recorded_in_use(Assignee::User(id))
     }
 }
 

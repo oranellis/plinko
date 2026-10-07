@@ -33,7 +33,7 @@ pub enum PlanTenantUpdate {
     Add(NewPlan),
     Remove(ShortId),
     /// Mutate the contents of an existing plan
-    Update(ShortId, PlanUpdate),
+    Update(ShortId, Box<PlanUpdate>),
 }
 
 impl TenantUpdateType {

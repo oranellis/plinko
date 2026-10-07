@@ -19,7 +19,7 @@ use crate::{
         plan_buffer::PlanBuffer,
         short_id::ShortId,
         tag::Tag,
-        task::{NewTask, Status, Task, TaskPatch, Worker},
+        task::{Assignee, NewTask, Status, Task, TaskPatch, Worker},
         task_group::TaskGroup,
         user::{PlanUserData, PlanUserGroupData},
         workload::Workload,
@@ -215,6 +215,10 @@ impl Plan {
         item.workers()
             .iter()
             .try_for_each(|w| self.ensure_worker_exists(w))?;
+        let asked = item.workers();
+        if item.recorded_workers().iter().any(|w| !asked.contains(w)) {
+            return Err(PlinkoError::UnknownWorkerSlot(id));
+        }
         for affinity in item.affinities() {
             if !self.affinities.contains_key(&affinity) {
                 return Err(PlinkoError::ItemDoesNotExist(affinity));
@@ -255,6 +259,12 @@ impl Plan {
             || self.node_depended_on::<Milestone>(node)
             || self.node_depended_on::<PlanBuffer>(node)
             || self.node_depended_on::<TaskGroup>(node)
+    }
+
+    /// Whether a task records the person as having done work, which keeps them from being removed
+    pub(crate) fn recorded_in_use(&self, who: Assignee) -> bool {
+        let recorded = |t: &Task| t.actual_workers().values().any(|a| *a == who);
+        self.tasks.values().any(recorded)
     }
 
     pub(super) fn worker_in_use(&self, worker: Worker) -> bool {
