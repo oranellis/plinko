@@ -6,7 +6,8 @@ in a tenant together, because people work across plans. Plinko 1's scheduler
 records what is settled and what carries over from it, and lists the changes still needed in the
 data model.
 
-Status: the output state, availability calendars, affinities, groups, buffer placement,
+Status: the output state, availability calendars, affinities, groups (placement and placeholder
+duration), recorded workers, buffer placement,
 `ScheduleMode`, `TimeConstraint::apply` and the unscheduled check exist. The solver is `todo!()`.
 Items marked **Assumed** were not explicitly confirmed and are collected at the end.
 
@@ -18,7 +19,7 @@ Items marked **Assumed** were not explicitly confirmed and are collected at the 
 - It writes volatile state only (derived, never saved, never part of an update). `Tenant` clears the
   stored schedule on every successful update, and the runner calls `solve_tenant` then
   `Tenant::store_schedule`. Persistent state is what users record about how a plan evolves
-  (status, actual dates, the chosen person for a tag or group slot).
+  (status, actual dates, the people who actually did the work).
 - Prioritise completing each plan as fast as possible. Plans run in parallel, and priorities decide
   contention only.
 - A task is never broken by priority. Once placed, a lower priority task cannot take hours from a
@@ -48,7 +49,8 @@ Everything is read from `Tenant` and its plans.
 `TenantVolatileState { plans, users }`.
 
 - `plans[plan]: PlanVolatileState` holds, per kind of node, only items that could be scheduled:
-  - `tasks: task::VolatileState { date_range, assignments: Assignee -> day -> Workload }`
+  - `tasks: task::VolatileState { date_range, assignments: Assignee -> day -> Workload, workers: Worker -> Assignee }`
+    (`workers` is the person resolved for each worker the task asks for)
   - `task_groups: { date_range }`
   - `milestones: { date, derived_status: DerivedStatus }`
   - `plan_buffers: { date_range }`
@@ -66,17 +68,19 @@ Everything is read from `Tenant` and its plans.
 - `DateRange` end is exclusive: a task's range ends the day after its last working day. A
   zero-length range has `start == end`.
 - Allocations are 0–8 hours per day (`Workload`). Durations are in days.
-- Dependency `lag` is calendar days of the plan calendar, negative for lead:
-  `Dependency::start_after(end) = end + lag`.
+- Dependency `lag` is calendar days of the plan calendar, negative for lead.
 - Time constraint dates are the start of the task or milestone (`TimeConstraint::apply(earliest)`).
 - Unstarted tasks cannot start before tomorrow (Plinko 1; **Assumed**). Milestones may land on
   today. A milestone whose derived status is complete may land in the past (it already happened).
 - Plan start (`ParentStart` at top level) is `max(today, plan start_date)`; a derived-complete
   milestone uses the plan's `start_date`.
-- Plinko 1's start-after rules (inclusive end dates there) carry over adapted to exclusive ends:
-  a task after a task starts at the predecessor's end plus lag; a milestone after a task lands on
-  the task's last working day plus lag; a task after a milestone starts the day after the
-  milestone; a milestone after a milestone may share its day. (**Assumed**, see open items.)
+- Every node has an exclusive end, the day after its last day. A milestone occupies the one day it
+  lands on (`milestone::VolatileState::end()`). A task, group or buffer starts at a dependency's
+  end plus lag (`Dependency::start_after`), so a task after a milestone starts the day after it.
+  A milestone lands on the last day of everything it depends on, tasks, groups, buffers and other
+  milestones alike, plus lag (`Dependency::milestone_date_after`): milestones are zero time events
+  at the trailing edge of their real work, and share a day with milestones they depend on.
+  `ParentStart` is a date, not a node, so `start_after` applies to it for milestones as well.
 - Dropped predecessors are transparent: they add no duration and hold no capacity, so dependents
   start as if the dropped task ended where it would have started.
 
@@ -128,14 +132,15 @@ Everything is read from `Tenant` and its plans.
 - **Completed:** fixed at its actual dates. Assignments for past days are inferred (below).
 - **Dropped:** unscheduled with reason `Dropped`, transparent to dependents.
 - Past work is not saved: for completed tasks and the past days of in-progress and on-hold tasks,
-  apply the daily hours from the actual start forward on the assignee's available days. A past
-  or in-progress task's tag or group slot uses the person recorded when it started (section 10).
+  apply the daily hours from the actual start forward on the assignee's available days. Each
+  requested worker uses the person in `Task.actual_workers` when there is one, otherwise the named
+  user, or for tags and groups the scheduler's resolution (section 4, Recorded workers).
 
 ### Milestones
 
-- No user status, only a derived one. A date marker with zero duration, placed at its earliest
-  start from dependencies. It must land on a working day of the plan calendar, and is re-checked
-  against its constraint after landing.
+- No user status, only a derived one. A zero-time event that lands on the last day of all its
+  dependencies, including other milestones (see date conventions). It must land on a working day of
+  the plan calendar, and is re-checked against its constraint after landing.
 - Derived status: complete when every dependency is done, in progress when any task it depends on
   is in progress, otherwise not started. Done means: the plan start; a task Completed or Dropped;
   a milestone derived complete; a task group whose own dependencies and all members are done; a
@@ -145,12 +150,36 @@ Everything is read from `Tenant` and its plans.
 
 ### Task groups
 
-A single zero-duration node. Its start is when its own dependencies are met (`ParentStart` for a
-top-level group is the plan start). Members anchor to it with `ParentStart`. Its end is the latest
-member end (and no earlier than its start). Its range is start to end. External items depend on the
-group as a whole (its end). A group with no dependencies never starts, so it and its members are
-unscheduled. Groups nest. Milestones, buffers and groups can be members. They have no time
+One node around the items whose `parent` is the group (tasks, milestones, buffers, nested groups).
+Its own dependencies decide the day its members can start: members anchor with `ParentStart`, which
+is that date (the plan start for a top-level group with no other dependency). The group then
+covers the first member's start to the last member's end (`TaskGroup::place`), so it begins
+overlapping its first task and its end falls on the last day a member runs. Milestone members count
+as their one day. With no members the group lasts `placeholder_duration` working days of the plan
+calendar from that date; the placeholder stops applying as soon as a member is added (the value is
+kept, so it applies again if the group empties). A group whose members are all unscheduled is
+unscheduled. External items depend on the group as a whole, on its end. A group with no
+dependencies never starts, so it and its members are unscheduled. Groups nest. They have no time
 constraints and no affinities.
+
+### Recorded workers
+
+`Task.actual_workers` maps a requested worker to the person who actually does the work (`Assignee`,
+which may be a different person from a named user, or the placeholder). It is persistent state: it
+fixes history so past hours do not move when availability or other plans change.
+
+- Empty to begin with. When a task goes in progress, on hold or completed with nothing recorded,
+  `Tenant::fill_defaults` fills it with the people last scheduled for it (the stored schedule's
+  `workers` for the task). It runs in the server handler beside `assign_ids`, so the filled values
+  are part of the logged update and applying an update never reads volatile state. With no stored
+  schedule nothing is filled.
+- Changeable with the task patch (`actual_workers`, replace the whole map, an empty map clears it).
+- Only workers the task asks for can have an entry, dropping a worker with a recorded person fails.
+  A recorded user must exist in the tenant, and a user recorded on any task cannot be removed from
+  the tenant or the plan.
+- The scheduler uses a recorded person for that worker (past days, and an in progress task keeps
+  them going forward). Without an entry it resolves the worker itself, first finisher for a tag or
+  group.
 
 ### Plan buffers
 
@@ -297,11 +326,8 @@ plans move and by how many days. Not part of the first solver.
    targets `{ id, node, priority }` (an entity with `Crud`, validated, blocking removal of the
    node). No targets means the whole plan end.
 2. **Plan priority:** an i32 on the plan (with its patch).
-3. **Persistent assignee:** `task::PersistentState` records the person for each tag or group slot
-   when the task moves to in progress (the user picks, or the server fills in the scheduler's
-   current pick via an update). In-progress and completed tasks use it for past days. Removing a
-   user referenced there is blocked. Tasks started before this exists fall back to the resolution
-   rule (**Assumed**).
+3. **Recorded workers** (done): `Task.actual_workers`, `TaskPatch.actual_workers`,
+   `task::VolatileState.workers`, `Tenant::fill_defaults`. See section 4.
 4. **Actual dates:** default `actual_start_date` to today when moving to in progress, and
    `actual_end_date` to today when completing, if not supplied (on hold already does this).
    (**Assumed**)
@@ -344,8 +370,7 @@ Port Plinko 1's scheduler scenarios, then add:
 
 - Hard tier margin (3 working days), spread tolerance (1 day, half the load), repair round cap (8).
 - Unstarted tasks start no sooner than tomorrow (Plinko 1).
-- Milestone date conventions against exclusive task ends (section 3).
 - Unscheduled dependencies are ignored, dropped ones transparent (Plinko 1).
 - Dependents of an on-hold task use its hold date as the end.
 - Defaulting actual dates on in progress and completed.
-- Fallback assignee for tag or group slots on tasks started before the persistent assignee exists.
+- A task started with no stored schedule (nothing to record) resolves its tag and group workers itself until someone records them.
