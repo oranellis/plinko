@@ -4,5 +4,7 @@ pub mod helpers;
 pub mod multitenancy;
 pub mod planner;
 pub mod scheduler;
+#[cfg(feature = "server")]
+pub mod store;
 pub mod traits;
 pub mod types;

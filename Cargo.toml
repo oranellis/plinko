@@ -1,3 +1,9 @@
 [workspace]
 members = ["server"]
 resolver = "3"
+
+# password hashing is deliberately slow, which is too slow for tests unless optimised
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3

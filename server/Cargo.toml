@@ -3,12 +3,20 @@ name = "plinko"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["server"]
+# what only the server needs, the client builds without it
+server = ["dep:argon2", "dep:rusqlite", "dep:sha2"]
+
 [dependencies]
+argon2 = { version = "0.5", optional = true }
+rusqlite = { version = "0.37", features = ["bundled"], optional = true }
+sha2 = { version = "0.10", optional = true }
 chrono = { version = "0.4.45", features = ["serde"] }
 nanoid = "0.5.0"
 rmp-serde = "1"
 serde = { version = "1", features = ["derive"] }
-uuid = { version = "1.24.1", features = ["v7", "serde"] }
+uuid = { version = "1.24.1", features = ["v4", "v7", "serde"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.3", features = ["wasm_js"] }
