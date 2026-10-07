@@ -9,7 +9,7 @@ data model.
 Status: the output state, availability calendars, affinities, groups, recorded workers, buffers,
 `ScheduleMode`, `TimeConstraint::apply`, the ledger, baselines, the single-plan solver and the
 combined insertion across plans exist. Call `scheduler::prepare` to cache calendars and baselines,
-then `solve_tenant`. Compaction runs plan by plan for now (step 6).
+then `solve_tenant`. 
 Items marked **Assumed** were not explicitly confirmed and are collected at the end.
 
 ## 1. Principles
@@ -321,9 +321,13 @@ for another person wins.
 
 ### Phase 4: compaction
 
-Plinko 1's pass: for every not-started task or milestone (earliest start first), re-insert it from
-its earliest start from dependencies and keep the result only if it ends earlier (or fills gaps).
-No propagation inside a pass. Repeat until nothing improves, at most 50 passes.
+Plinko 1's pass, across all plans: re-insert each not started task from its earliest start from
+dependencies and keep the result only if it ends earlier. Chains to hard dates and targets go
+first, earliest start first (ties by plan order), until nothing moves, then the rest, so loose work
+never takes room a chain could still use, and again until stable, at most 50 passes. No
+propagation inside a pass. Inserting by eligibility never leaves a gap that something placed
+later could not already fill (random plans found no move), so this only does work after repair
+rounds re-insert nodes.
 
 ### Phase 5: repair rounds (contention)
 
@@ -444,7 +448,7 @@ scheduler early.
 5. **Combined insertion** (done, `scheduler/combined.rs`). One shared ledger. The hard tier, target-chain and rest layers across
    plans, the eligibility queue, dynamic urgency with priority offsets, and the plan-alone solo
    assignments as defaults. Tests: contention, priority, a rest task never delaying a target.
-6. **Compaction** across all plans.
+6. **Compaction** across all plans (done, `combined::compact`).
 7. **Repair rounds.** The objective (worst effective delay, then total), temporary priority bumps,
    alternative assignees for bottleneck people, checkpointing, and the round cap. Then the spreading
    rule for tag and group slots.

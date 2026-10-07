@@ -10,6 +10,9 @@ use crate::{
 };
 // }}}
 
+/// The most passes of compaction, each can only move things earlier
+const MAX_COMPACT_PASSES: usize = 50;
+
 /// Days of slack at or below which a chain to a hard date goes before everything else
 const HARD_MARGIN_DAYS: i64 = 3;
 
@@ -90,7 +93,43 @@ pub fn solve(mut solvers: Vec<PlanSolver>, ledger: &mut Ledger) -> Vec<PlanVolat
     }
     for solver in &mut solvers {
         solver.sweep_stuck();
-        solver.compact(ledger);
     }
+    compact(&mut solvers, &views, ledger);
     solvers.into_iter().map(PlanSolver::finish).collect()
+}
+
+/// Pulls tasks of every plan into room left by others. Chains to hard dates and targets go first,
+/// earliest start first, so loose work does not take room they can still use, and the rest follow
+/// once they have all had their chance. Repeats until nothing ends sooner.
+fn compact(solvers: &mut [PlanSolver], views: &[View], ledger: &mut Ledger) {
+    let mut layers: [Vec<(NaiveDate, usize, Vertex)>; 2] = Default::default();
+    for _ in 0..MAX_COMPACT_PASSES {
+        for layer in &mut layers {
+            layer.clear();
+        }
+        for (i, solver) in solvers.iter().enumerate() {
+            for (start, v) in solver.compactable() {
+                layers[usize::from(!on_chain(solver, &views[i], &v))].push((start, i, v));
+            }
+        }
+        let mut moved = false;
+        for layer in &mut layers {
+            layer.sort_by_key(|(start, i, v)| (*start, *i, v.key()));
+            for (_, i, v) in layer.iter() {
+                moved |= solvers[*i].try_compact(*v, ledger);
+            }
+            if moved {
+                break;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+}
+
+/// Whether a node leads to a hard date or a target
+fn on_chain(solver: &PlanSolver, view: &View, v: &Vertex) -> bool {
+    view.chains.iter().any(|(_, _, chain)| chain.contains(v))
+        || solver.urgency(v, &HashMap::new()).is_some()
 }

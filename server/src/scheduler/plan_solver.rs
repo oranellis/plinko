@@ -609,42 +609,49 @@ impl<'a> PlanSolver<'a> {
     }
 
     fn compact_pass(&mut self, ledger: &mut Ledger) -> bool {
-        let mut tasks: Vec<(NaiveDate, Vertex)> = self
-            .order
-            .iter()
-            .filter(|v| self.is_open(v))
-            .filter_map(|v| Some((self.placed.get(v)?.range.start(), *v)))
-            .collect();
-        tasks.sort_by_key(|(start, v)| (*start, v.key()));
         let mut moved = false;
-        for (_, v) in tasks {
-            let Vertex::Node(PlanNode::Task(id)) = v else {
-                continue;
-            };
-            let task = &self.plan.tasks()[&id];
-            let old = self.placed[&v].clone();
-            let Some(start) = self.open_start(&v, task).filter(|s| *s < old.range.end()) else {
-                continue;
-            };
-            let old_run = old.work.map(|w| w.run).unwrap_or_default();
-            ledger.release(&old_run);
-            let better = self
-                .plan_task(task, Kind::Open(start), ledger)
-                .ok()
-                .filter(|p| p.range.end() < self.placed[&v].range.end())
-                .and_then(|p| self.take(ledger, p).ok());
-            match better {
-                Some(placement) => {
-                    self.placed.insert(v, placement);
-                    self.refresh_derived();
-                    moved = true;
-                }
-                None => {
-                    ledger.claim(&old_run);
-                }
-            }
+        for (_, v) in self.compactable() {
+            moved |= self.try_compact(v, ledger);
         }
         moved
+    }
+
+    /// The placed not started tasks and when they start
+    pub fn compactable(&self) -> Vec<(NaiveDate, Vertex)> {
+        let open = self.order.iter().filter(|v| self.is_open(v));
+        open.filter_map(|v| Some((self.placed.get(v)?.range.start(), *v)))
+            .collect()
+    }
+
+    /// Places the task again from the earliest day its dependencies allow and keeps that if it
+    /// ends sooner, `true` if it did
+    pub fn try_compact(&mut self, v: Vertex, ledger: &mut Ledger) -> bool {
+        let Vertex::Node(PlanNode::Task(id)) = v else {
+            return false;
+        };
+        let task = &self.plan.tasks()[&id];
+        let old = self.placed[&v].clone();
+        let Some(start) = self.open_start(&v, task).filter(|s| *s < old.range.end()) else {
+            return false;
+        };
+        let old_run = old.work.map(|w| w.run).unwrap_or_default();
+        ledger.release(&old_run);
+        let better = self
+            .plan_task(task, Kind::Open(start), ledger)
+            .ok()
+            .filter(|p| p.range.end() < self.placed[&v].range.end())
+            .and_then(|p| self.take(ledger, p).ok());
+        match better {
+            Some(placement) => {
+                self.placed.insert(v, placement);
+                self.refresh_derived();
+                true
+            }
+            None => {
+                ledger.claim(&old_run);
+                false
+            }
+        }
     }
     // }}}
 

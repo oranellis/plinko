@@ -361,3 +361,68 @@ fn work_in_progress_in_any_plan_claims_hours_first() {
     assert_eq!(first_day(&state, active, active_task), day(2024, 1, 1));
     assert_eq!(first_day(&state, first, first_chain[0]), day(2024, 1, 4));
 }
+
+/// A small random generator, so the same plans come out every run
+struct Random(u64);
+
+impl Random {
+    fn below(&mut self, n: u64) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (self.0 >> 33) % n
+    }
+}
+
+#[test]
+fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
+    let mut random = Random(12345);
+    for _ in 0..40 {
+        let mut plans = Plans::new();
+        let mut made: Vec<(ShortId, Uuid, Vec<Uuid>, Option<NaiveDate>)> = Vec::new();
+        for _ in 0..=random.below(3) {
+            let plan = plans.empty(start());
+            let mut tasks: Vec<Uuid> = Vec::new();
+            for _ in 0..(2 + random.below(6)) {
+                let after: Vec<Uuid> = tasks
+                    .iter()
+                    .filter(|_| random.below(3) == 0)
+                    .copied()
+                    .collect();
+                let nodes: Vec<PlanNode> = after.iter().map(|t| PlanNode::Task(*t)).collect();
+                let task = plans.task(plan, 1 + random.below(3) as u32, &nodes);
+                let fixed =
+                    (random.below(4) == 0).then(|| day(2024, 1, 1 + random.below(10) as u32));
+                if let Some(date) = fixed {
+                    plans.patch(plan, task, |p| {
+                        p.time_constraint = Some(TimeConstraint::Fixed(date))
+                    });
+                }
+                if random.below(4) == 0 {
+                    let relaxed = Some(plinko::types::task::ScheduleMode::Relaxed);
+                    plans.patch(plan, task, |p| p.mode = relaxed);
+                }
+                made.push((plan, task, after, fixed));
+                tasks.push(task);
+            }
+            if random.below(2) == 0 {
+                let end = plans.milestone(plan, PlanNode::Task(*tasks.last().unwrap()));
+                plans.target(plan, end);
+            }
+        }
+        let state = plans.solve();
+        for schedule in state.users.values() {
+            for day in schedule.assignments.keys() {
+                assert!(schedule.booked_on(*day) <= 8, "overbooked on {day}");
+            }
+        }
+        for (plan, task, after, fixed) in &made {
+            let placed = &state.plans[plan].tasks[task].date_range;
+            for before in after {
+                assert!(placed.start() >= state.plans[plan].tasks[before].date_range.end());
+            }
+            assert!(fixed.is_none_or(|date| placed.start() >= date));
+        }
+    }
+}
