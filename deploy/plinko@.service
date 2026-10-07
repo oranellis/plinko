@@ -1,0 +1,14 @@
+# systemd template: `systemctl enable --now plinko@acme` runs deploy/tenant.sh acme <port> with the
+# port and first run settings from /etc/plinko/acme.env (PORT=3001 and so on).
+[Unit]
+Description=Plinko tenant %i
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/plinko/%i.env
+WorkingDirectory=/opt/plinko
+ExecStart=/opt/plinko/deploy/tenant.sh %i ${PORT}
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

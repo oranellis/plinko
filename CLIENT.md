@@ -71,18 +71,13 @@ Decisions for the web client and the server it talks to. The scheduler is in `SC
   day, across plans), the plan tree and task list, and a task editor.
 - Everything except the Gantt canvas is real DOM elements, which is most of the accessibility.
 
-## Order of work
+## Status
 
-1. Serde across the core types, and a `wasm32` build check.
-2. Benchmark the scheduler on a thousand task, multi plan tenant (done, under a second, see
-   `SCHEDULER.md`).
-3. Update log, snapshots and replay in SQLite.
-4. Server: auth, tenant actor, WebSocket protocol, coalescing scheduler.
-5. Client: sync and state, then Gantt, then forms and the mobile views.
+All five steps are built: serde and the `wasm32` check (`check.sh`), the benchmark, the SQLite store
+(`server/src/store`), the server (`server/src/net`) and the client (`client/`). Left to do:
 
-## Open
-
-- Protocol messages (subscribe, snapshot, update, schedule) and request ids for acks.
-- Snapshot interval, session lifetime, and what a revert is (an inverse update or a replay
-  without an entry, see the note on impact preview in `SCHEDULER.md`).
-- Whether the scheduler needs a faster path before the benchmark says so.
+- The schedule is sent whole to every client after each solve (about 300 KiB at a thousand tasks),
+  which could be sent as a difference.
+- Dependency arrows and dragging bars on the Gantt, and the data blocks of tasks, are not in the client.
+- Reverting a change, and a history view, need the log exposed to the client.
+- Brute force limits on login, and a way to make a tenant without the environment variables.
