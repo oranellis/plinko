@@ -8,8 +8,8 @@ data model.
 
 Status: the output state, availability calendars, affinities, groups, recorded workers, buffers,
 `ScheduleMode`, `TimeConstraint::apply`, the ledger and the single-plan solver exist. Plans are
-scheduled one after another into the shared ledger (by plan id), which the combined insertion of
-step 5 replaces. Call `scheduler::prepare` to cache calendars, then `solve_tenant`.
+scheduled one after another into the shared ledger, the plan that ends last when alone first, then
+the earlier start date, then the lower id, which the combined insertion of step 5 replaces. Call `scheduler::prepare` to cache calendars, then `solve_tenant`.
 Items marked **Assumed** were not explicitly confirmed and are collected at the end.
 
 ## 1. Principles

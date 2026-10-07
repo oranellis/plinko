@@ -1,5 +1,5 @@
 // modules {{{
-use std::collections::HashMap;
+use std::{cmp::Reverse, collections::HashMap};
 
 use chrono::Days;
 
@@ -38,14 +38,24 @@ pub fn prepare(tenant: &mut Tenant) {
 
 /// Schedules every plan in the tenant, from the calendars cached by `prepare`.
 ///
-/// Plans share one ledger of people's hours and go in one after another by id for now, so an
-/// earlier plan takes what it needs before the next sees what is left.
+/// Plans share one ledger of people's hours and go in one after another, so an earlier plan takes
+/// what it needs before the next sees what is left. The plan that finishes last when scheduled
+/// alone goes first, then the one with the earlier start date, then the lower id.
 pub fn solve_tenant(tenant: &Tenant) -> TenantVolatileState {
-    let mut ledger = Ledger::from_tenant(tenant, tenant.today());
-    let mut ids: Vec<_> = tenant.plans().keys().copied().collect();
-    ids.sort();
+    let fresh = Ledger::from_tenant(tenant, tenant.today());
+    let mut order: Vec<_> = tenant
+        .plans()
+        .values()
+        .map(|plan| {
+            let alone = PlanSolver::new(tenant, plan).solve(&mut fresh.clone());
+            let start = *plan.scheduler_data().start_date();
+            (Reverse(alone.end()), start, *plan.id())
+        })
+        .collect();
+    order.sort();
+    let mut ledger = fresh;
     let mut plans = HashMap::new();
-    for id in ids {
+    for (_, _, id) in order {
         let plan = &tenant.plans()[&id];
         plans.insert(id, PlanSolver::new(tenant, plan).solve(&mut ledger));
     }

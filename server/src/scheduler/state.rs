@@ -59,6 +59,17 @@ impl TenantVolatileState {
 }
 // }}}
 
+impl PlanVolatileState {
+    /// The day after the last day anything in the plan is scheduled, `None` if nothing is
+    pub fn end(&self) -> Option<NaiveDate> {
+        let tasks = self.tasks.values().map(|t| t.date_range.end());
+        let groups = self.task_groups.values().map(|g| g.date_range.end());
+        let buffers = self.plan_buffers.values().map(|b| b.date_range.end());
+        let milestones = self.milestones.values().map(|m| m.end());
+        tasks.chain(groups).chain(buffers).chain(milestones).max()
+    }
+}
+
 /// One plan's schedule. Items it could schedule are in the maps for their kind, the rest are in
 /// `unscheduled` with the reason.
 #[derive(Clone, Debug, Default, PartialEq)]
