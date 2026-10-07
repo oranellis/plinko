@@ -99,6 +99,14 @@ pub struct VolatileState {
     pub date: NaiveDate,
 }
 
+impl VolatileState {
+    /// The exclusive end of the one day the milestone lands on, so dependents treat it like any
+    /// other node (see `Dependency::start_after`)
+    pub fn end(&self) -> NaiveDate {
+        self.date + chrono::Days::new(1)
+    }
+}
+
 /// Milestones have no status of their own, it comes from what they depend on
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DerivedStatus {

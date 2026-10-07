@@ -139,6 +139,7 @@ fn group_end_waits_on_members() {
         name: None,
         dependencies: Some(depend(&[task_node(outside)])),
         parent: None,
+        placeholder_duration: None,
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
         .unwrap();
@@ -168,6 +169,7 @@ fn members_anchor_to_group_start() {
         name: None,
         dependencies: Some(depend(&[task_node(member)])),
         parent: None,
+        placeholder_duration: None,
     };
     let update = PlanUpdate::TaskGroup(Crud::Update(patch));
     assert!(plan.apply_update(update).is_err());

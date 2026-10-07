@@ -160,6 +160,7 @@ fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), Pli
         name: None,
         dependencies: None,
         parent: Some(parent),
+        placeholder_duration: None,
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
 }

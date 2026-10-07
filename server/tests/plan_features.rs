@@ -172,6 +172,7 @@ fn group_members_anchor_through_the_group_start() {
             lag: 0,
         }]),
         parent: None,
+        placeholder_duration: None,
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
         .unwrap();

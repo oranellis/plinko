@@ -13,9 +13,18 @@ pub struct Dependency {
 }
 
 impl Dependency {
-    /// The day a dependent can start when the node it depends on ends on `end`
+    /// The day a task, group or buffer can start when the node it depends on ends on `end`
+    /// (exclusive, so the day after its last day). A milestone counts as the one day it lands on.
+    /// `ParentStart` is a date and also uses this, for milestones too.
     pub fn start_after(&self, end: NaiveDate) -> NaiveDate {
         end + Duration::days(i64::from(self.lag))
+    }
+
+    /// The day a milestone lands when the node it depends on ends on `end` (exclusive): the last
+    /// day of that node, so milestones are zero time events at the trailing edge of the work they
+    /// depend on, and share a day with milestones they depend on.
+    pub fn milestone_date_after(&self, end: NaiveDate) -> NaiveDate {
+        self.start_after(end) - Duration::days(1)
     }
 }
 
