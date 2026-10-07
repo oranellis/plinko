@@ -15,7 +15,7 @@ use crate::{
         error::{PlinkoError, PlinkoResult},
         milestone::{self, Milestone},
         parent::Parent,
-        plan_buffer::PlanBuffer,
+        plan_buffer::{self, PlanBuffer},
         short_id::ShortId,
         tag::Tag,
         task::{self, Task, Worker},
@@ -332,6 +332,7 @@ pub struct PlanSchedulerDataPatch {
 pub struct PlanVolatileState {
     pub tasks: HashMap<Uuid, task::VolatileState>,
     pub milestones: HashMap<Uuid, milestone::VolatileState>,
+    pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
 }
 
 // impl PlanVolatileState{{{
@@ -339,7 +340,12 @@ impl PlanVolatileState {
     pub fn new(
         tasks: HashMap<Uuid, task::VolatileState>,
         milestones: HashMap<Uuid, milestone::VolatileState>,
+        plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
     ) -> Self {
-        Self { tasks, milestones }
+        Self {
+            tasks,
+            milestones,
+            plan_buffers,
+        }
     }
 } // }}}
