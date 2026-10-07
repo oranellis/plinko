@@ -1,4 +1,5 @@
 // modules{{{
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 use uuid::Uuid;
@@ -7,7 +8,7 @@ use crate::{traits::patch::Patchable, types::error::PlinkoResult};
 // }}}
 
 /// A tenant user's place in a plan, with the plan's tags they hold
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanUserData {
     tags: HashSet<Uuid>,
 }
@@ -36,7 +37,7 @@ impl Patchable<PlanUserDataPatch> for PlanUserData {
 // }}}
 
 /// A tenant user group assigned to a plan, so anyone in it can be allocated tasks
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanUserGroupData;
 
 impl From<NewPlanUserGroup> for PlanUserGroupData {
@@ -51,18 +52,22 @@ impl Patchable<PlanUserGroupPatch> for PlanUserGroupData {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewPlanUserGroup {
     pub id: Uuid,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct PlanUserGroupPatch {
     pub id: Uuid,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewPlanUser {
     pub id: Uuid,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct PlanUserDataPatch {
     pub id: Uuid,
     pub tags: Option<HashSet<Uuid>>,

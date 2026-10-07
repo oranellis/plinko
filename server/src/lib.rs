@@ -1,4 +1,5 @@
 pub mod availability;
+pub mod codec;
 pub mod helpers;
 pub mod multitenancy;
 pub mod planner;

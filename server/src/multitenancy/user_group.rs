@@ -1,3 +1,5 @@
+use crate::helpers::double_option;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 // modules {{{
@@ -11,7 +13,7 @@ use crate::{
 
 /// A team of users. A group's parent makes teams hierarchical, so anyone in a subgroup is also
 /// in every group above it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TenantUserGroup {
     id: Uuid,
     name: String,
@@ -66,6 +68,7 @@ impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
 }
 // }}}
 
+#[derive(Serialize, Deserialize)]
 pub struct NewTenantUserGroup {
     pub id: Uuid,
     pub name: String,
@@ -73,9 +76,15 @@ pub struct NewTenantUserGroup {
     pub users: HashSet<Uuid>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TenantUserGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
     pub parent: Option<Option<Uuid>>,
     pub users: Option<HashSet<Uuid>>,
 }

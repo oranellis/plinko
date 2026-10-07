@@ -6,6 +6,7 @@ use plinko::{
         rule::{NewRule, RuleKind, WeeklySchedule},
         rule_set::RuleSetUpdate,
     },
+    codec,
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
@@ -920,4 +921,30 @@ fn slack_is_negative_once_a_hard_date_is_missed() {
     // it starts on the 4th and ends on the 5th, but could end on the 3rd
     assert_eq!(slack[&node(late)], -2);
     assert_eq!(slack[&node(first)], -2);
+}
+
+#[test]
+fn a_snapshot_of_a_tenant_schedules_the_same() {
+    let mut world = World::new();
+    let (alice, bob) = (world.user(), world.user());
+    world.weekly_hours(bob, [4, 4, 4, 4, 4, 0, 0]);
+    let tag = world.tag(&[alice, bob]);
+    let first = world.task(2, &[(Worker::Tag(tag), 4), (user(alice), 4)], &[start()]);
+    world.patch(first, |p| {
+        p.time_constraint = Some(TimeConstraint::Latest(d(9)))
+    });
+    let marker = world.milestone(&[after(node(first))]);
+    let buffer = world.buffer(2, &[after(PlanNode::Milestone(marker))]);
+    let group = world.group(2, &[after(PlanNode::PlanBuffer(buffer))]);
+    world.task_in(Parent::Node(group), 1, &[(user(bob), 2)], &[start()]);
+    world.target(PlanNode::Milestone(marker));
+    let expected = world.solve();
+
+    let bytes = codec::encode(&world.tenant).unwrap();
+    let mut loaded: Tenant = codec::decode(&bytes).unwrap();
+    assert!(loaded.schedule().is_none(), "derived state is not saved");
+    plinko::scheduler::schedule(&mut loaded);
+    let state = loaded.schedule().unwrap().plans[&world.plan].clone();
+    assert_eq!(state, expected);
+    assert!(!state.tasks.is_empty() && !state.task_groups.is_empty());
 }

@@ -1,7 +1,8 @@
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 
 /// The days from `start` up to but not including `end`, so a zero length range has equal ends
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DateRange {
     start: NaiveDate,
     end: NaiveDate,
@@ -22,7 +23,7 @@ impl DateRange {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum TimeConstraint {
     #[default]
     None,

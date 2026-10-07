@@ -1,4 +1,5 @@
 // modules{{{
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
@@ -27,13 +28,14 @@ use crate::{
 };
 // }}}
 
+#[derive(Serialize, Deserialize)]
 pub struct NewPlan {
     pub id: ShortId,
     pub name: String,
     pub start_date: NaiveDate,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
     id: ShortId,
     name: String,
@@ -288,7 +290,7 @@ impl Plan {
 }
 // }}}
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanSchedulerData {
     start_date: NaiveDate,
     priority: i32,
@@ -326,7 +328,7 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 }
 // }}}
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PlanSchedulerDataPatch {
     pub start_date: Option<NaiveDate>,
     pub priority: Option<i32>,

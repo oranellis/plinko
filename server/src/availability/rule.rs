@@ -1,5 +1,7 @@
 // modules{{{
+use crate::helpers::double_option;
 use chrono::{NaiveDate, Weekday};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -15,7 +17,7 @@ pub const RULE_START_RANGE: std::ops::RangeInclusive<NaiveDate> =
     NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()..=NaiveDate::from_ymd_opt(2100, 12, 31).unwrap();
 
 /// Something that sets availability from `start_day` going forward until `stop_day`
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Rule<V> {
     id: Uuid,
     start_day: NaiveDate,
@@ -78,7 +80,7 @@ impl<V> Patchable<RulePatch<V>> for Rule<V> {
 
 /// In increasing priority: a weekly schedule, special monthly days, a finite run of workdays, and
 /// holidays.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RuleKind<V> {
     /// Replaces the weekly schedule
     Weekly(WeeklySchedule<V>),
@@ -93,7 +95,7 @@ pub enum RuleKind<V> {
     Holiday,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WeeklySchedule<V>([V; 7]);
 
 // impl WeeklySchedule{{{
@@ -124,7 +126,7 @@ impl<V: DayValue> Default for WeeklySchedule<V> {
 // }}}
 
 /// Sets `value` on the days picked by `ordinal` and `target` in every month
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MonthlyOverride<V> {
     pub ordinal: Ordinal,
     pub target: MonthTarget,
@@ -133,7 +135,7 @@ pub struct MonthlyOverride<V> {
     pub priority: u32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MonthTarget {
     /// The day of the month
     Day,
@@ -144,7 +146,7 @@ pub enum MonthTarget {
     Week([bool; 7]),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Ordinal {
     First,
     Second,
@@ -176,15 +178,22 @@ impl Ordinal {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewRule<V> {
     pub id: Uuid,
     pub start_day: NaiveDate,
     pub kind: RuleKind<V>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct RulePatch<V> {
     pub id: Uuid,
     pub start_day: Option<NaiveDate>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
     pub stop_day: Option<Option<NaiveDate>>,
     pub kind: Option<RuleKind<V>>,
 }

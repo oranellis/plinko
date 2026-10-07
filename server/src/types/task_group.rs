@@ -1,5 +1,6 @@
 // modules {{{
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -21,7 +22,7 @@ use crate::{
 /// then covers the first member's start to the last member's end, so it begins with its first
 /// task and ends on the last day a member runs. With no members it lasts `placeholder_duration`
 /// working days instead, and that stops applying as soon as a member is added.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TaskGroup {
     id: Uuid,
     name: String,
@@ -111,12 +112,14 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
 }
 // }}}
 
+#[derive(Serialize, Deserialize)]
 pub struct NewTaskGroup {
     pub id: Uuid,
     pub name: String,
     pub parent: Parent,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TaskGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
@@ -126,7 +129,7 @@ pub struct TaskGroupPatch {
 }
 
 /// Written by the scheduler for every group it could schedule, see `TaskGroup::place`
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub date_range: DateRange,
 }

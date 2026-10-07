@@ -1,10 +1,11 @@
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tag {
     id: Uuid,
     name: String,
@@ -37,6 +38,7 @@ impl Patchable<TagPatch> for Tag {
 }
 // }}}
 
+#[derive(Serialize, Deserialize)]
 pub struct NewTag {
     pub id: Uuid,
     pub name: String,
@@ -44,6 +46,7 @@ pub struct NewTag {
 
 // Bit weaksauce because there is only one thing you can change, maybe later I'll add groups or
 // something which will make this worth it
+#[derive(Serialize, Deserialize)]
 pub struct TagPatch {
     pub id: Uuid,
     pub name: Option<String>,

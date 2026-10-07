@@ -1,4 +1,5 @@
 // modules{{{
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use chrono::{NaiveDate, Weekday};
@@ -19,12 +20,13 @@ use crate::{
 // }}}
 
 /// How much someone can work on each day, as a set of rules over a default weekly schedule
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RuleSet<V> {
     pub(super) week_start: Weekday,
     pub(super) rules: HashMap<Uuid, Rule<V>>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum RuleSetUpdate<V> {
     Rule(Crud<NewRule<V>, RulePatch<V>>),
     WeekStart(Weekday),

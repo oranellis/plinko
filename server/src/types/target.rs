@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
 
 /// A node the scheduler brings as far forward as it can. It has no due date, the scheduler
 /// forecasts when it lands. `priority` is added to the plan's and breaks contention for people.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Target {
     id: Uuid,
     node: PlanNode,
@@ -52,12 +53,14 @@ impl Patchable<TargetPatch> for Target {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewTarget {
     pub id: Uuid,
     pub node: PlanNode,
     pub priority: i32,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TargetPatch {
     pub id: Uuid,
     pub node: Option<PlanNode>,

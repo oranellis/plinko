@@ -1,8 +1,10 @@
 use nanoid::nanoid;
+use serde::{Deserialize, Serialize};
 
 use crate::types::error::{PlinkoError, PlinkoResult};
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct ShortId([u8; 8]);
 
 impl ShortId {
@@ -22,6 +24,14 @@ impl ShortId {
         } else {
             Err(PlinkoError::InvalidShortId(s.to_string()))
         }
+    }
+}
+
+impl TryFrom<String> for ShortId {
+    type Error = PlinkoError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::from_str_checked(&value)
     }
 }
 

@@ -1,5 +1,7 @@
 // modules {{{
+use crate::helpers::double_option;
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -13,7 +15,7 @@ use crate::{
 };
 // }}}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanBuffer {
     id: Uuid,
     parent: Parent,
@@ -102,22 +104,28 @@ impl Patchable<PlanBufferPatch> for PlanBuffer {
 // }}}
 
 /// Written by the scheduler for every buffer it could schedule, see `PlanBuffer::place`
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub date_range: DateRange,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewPlanBuffer {
     pub id: Uuid,
     pub parent: Parent,
     pub duration: u32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanBufferPatch {
     pub id: Uuid,
     pub parent: Option<Parent>,
     pub dependencies: Option<Vec<Dependency>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
     pub set_start_day: Option<Option<NaiveDate>>,
     pub duration: Option<u32>,
 }

@@ -1,4 +1,5 @@
 // modules{{{
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use uuid::Uuid;
@@ -11,7 +12,7 @@ use crate::{
 // }}}
 
 /// Optional extra information attached to a task or milestone
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DataBlocks {
     blocks: HashMap<Uuid, DataBlock>,
 }
@@ -22,7 +23,7 @@ impl DataBlocks {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DataBlock {
     id: Uuid,
     title: String,
@@ -78,39 +79,41 @@ impl Entity<DataBlocks> for DataBlock {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum BlockContent {
     TodoList(Vec<TodoItem>),
     Links(Vec<Link>),
     Budget(Budget),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TodoItem {
     pub text: String,
     pub done: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Link {
     pub name: String,
     pub url: String,
 }
 
 /// Money in minor units (like cents) of a single currency
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Budget {
     pub planned: i64,
     pub actual: i64,
     pub currency: String,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewDataBlock {
     pub id: Uuid,
     pub title: String,
     pub content: BlockContent,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct DataBlockPatch {
     pub id: Uuid,
     pub title: Option<String>,

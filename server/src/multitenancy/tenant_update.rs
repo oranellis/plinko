@@ -9,9 +9,11 @@ use crate::{
     types::{crud::Crud, short_id::ShortId, workload::Workload},
 };
 use chrono::{DateTime, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 // }}}
 
+#[derive(Serialize, Deserialize)]
 /// The deterministic boundary for mutating a tenant. Every change to tenant state is a
 /// `TenantUpdate`, and `time` is the only source of "now" for anything it touches.
 pub struct TenantUpdate {
@@ -21,6 +23,7 @@ pub struct TenantUpdate {
     pub update_type: TenantUpdateType,
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum TenantUpdateType {
     User(Crud<NewTenantLoginUser, TenantLoginUserPatch>),
     UserGroup(Crud<NewTenantUserGroup, TenantUserGroupPatch>),
@@ -31,6 +34,7 @@ pub enum TenantUpdateType {
     Plan(PlanTenantUpdate),
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum PlanTenantUpdate {
     Add(NewPlan),
     Remove(ShortId),

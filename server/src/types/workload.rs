@@ -1,6 +1,8 @@
 use crate::types::error::{PlinkoError, PlinkoResult};
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
 pub struct Workload {
     value: u8,
 }
@@ -16,6 +18,12 @@ impl Workload {
 
     pub fn get(&self) -> u8 {
         self.value
+    }
+}
+
+impl From<Workload> for u8 {
+    fn from(workload: Workload) -> Self {
+        workload.value
     }
 }
 

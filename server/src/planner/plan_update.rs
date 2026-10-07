@@ -1,4 +1,5 @@
 // modules{{{
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -21,6 +22,7 @@ use crate::{
 };
 // }}}
 
+#[derive(Serialize, Deserialize)]
 pub enum PlanUpdate {
     Task(Crud<NewTask, TaskPatch>),
     TaskGroup(Crud<NewTaskGroup, TaskGroupPatch>),

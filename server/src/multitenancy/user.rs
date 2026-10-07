@@ -1,4 +1,5 @@
 // modules{{{
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -10,13 +11,13 @@ use crate::{
 // }}}
 
 /// Admins see and edit everything, members create plans and edit the plans they are part of
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Role {
     Admin,
     Member,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TenantLoginUser {
     id: Uuid,
     name: String,
@@ -94,6 +95,7 @@ pub struct TenantUserVolatileState {
     pub calendar: Option<Calendar<Workload>>,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewTenantLoginUser {
     pub id: Uuid,
     pub name: String,
@@ -101,6 +103,7 @@ pub struct NewTenantLoginUser {
     pub role: Role,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TenantLoginUserPatch {
     pub id: Uuid,
     pub name: Option<String>,

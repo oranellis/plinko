@@ -1,5 +1,6 @@
 // modules{{{
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
 };
 // }}}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Milestone {
     id: Uuid,
     name: String,
@@ -87,13 +88,13 @@ impl Patchable<MilestonePatch> for Milestone {
 }
 // }}}
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PersistentState {
     pub actual_date: Option<NaiveDate>,
 }
 
 /// Written by the scheduler for every milestone it could schedule
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub derived_status: DerivedStatus,
     pub date: NaiveDate,
@@ -108,7 +109,7 @@ impl VolatileState {
 }
 
 /// Milestones have no status of their own, it comes from what they depend on
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DerivedStatus {
     #[default]
     NotStarted,
@@ -116,12 +117,14 @@ pub enum DerivedStatus {
     Completed,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewMilestone {
     pub id: Uuid,
     pub name: String,
     pub parent: Parent,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct MilestonePatch {
     pub id: Uuid,
     pub name: Option<String>,

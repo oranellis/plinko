@@ -1,5 +1,6 @@
 // modules{{{
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
 
 /// A named set of days that tasks linked to it may be worked on, described with the same rules
 /// as availability but with a yes or no for each day. Until rules change it, every day is allowed.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Affinity {
     id: Uuid,
     name: String,
@@ -61,11 +62,13 @@ impl Patchable<AffinityPatch> for Affinity {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewAffinity {
     pub id: Uuid,
     pub name: String,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct AffinityPatch {
     pub id: Uuid,
     pub name: Option<String>,

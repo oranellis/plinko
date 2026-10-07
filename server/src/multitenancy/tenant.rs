@@ -2,6 +2,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
@@ -28,6 +29,9 @@ use crate::{
 };
 // }}}
 
+/// Everything a tenant is, and so what a snapshot holds. The caches and the schedule are
+/// derived and left out, so a loaded tenant needs `scheduler::schedule` before it has them.
+#[derive(Serialize, Deserialize)]
 pub struct Tenant {
     id: ShortId,
     name: String,
@@ -35,9 +39,13 @@ pub struct Tenant {
     today: NaiveDate,
     pub(super) users: HashMap<Uuid, TenantLoginUser>,
     pub(super) user_groups: HashMap<Uuid, TenantUserGroup>,
+    #[serde(skip)]
     volatile: HashMap<Uuid, TenantUserVolatileState>,
+    #[serde(skip)]
     plan_calendars: HashMap<ShortId, Calendar<Workload>>,
+    #[serde(skip)]
     schedule: Option<TenantVolatileState>,
+    #[serde(skip)]
     baselines: HashMap<ShortId, Baseline>,
     pub(super) plans: HashMap<ShortId, Plan>,
 }

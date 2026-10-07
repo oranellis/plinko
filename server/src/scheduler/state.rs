@@ -1,4 +1,5 @@
 // modules{{{
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::NaiveDate;
@@ -18,7 +19,7 @@ use crate::types::{
 
 /// Everything a scheduler run writes. It is derived from the tenant's state and rebuilt by the
 /// next run, never saved or part of an update.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct TenantVolatileState {
     pub plans: HashMap<ShortId, PlanVolatileState>,
     pub users: HashMap<Uuid, UserSchedule>,
@@ -110,7 +111,7 @@ impl PlanVolatileState {
 
 /// One plan's schedule. Items it could schedule are in the maps for their kind, the rest are in
 /// `unscheduled` with the reason.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanVolatileState {
     pub tasks: HashMap<Uuid, task::VolatileState>,
     pub task_groups: HashMap<Uuid, task_group::VolatileState>,
@@ -126,7 +127,7 @@ pub struct PlanVolatileState {
 }
 
 /// When a target lands as scheduled, against when its plan would land it with no other plans
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TargetForecast {
     pub forecast: NaiveDate,
     pub baseline: NaiveDate,
@@ -139,7 +140,7 @@ impl TargetForecast {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UnscheduledReason {
     /// The task was dropped, so it is out of the plan
     Dropped,
@@ -157,7 +158,7 @@ pub enum UnscheduledReason {
 }
 
 /// The constraint is not met, so the item was pushed to the closest date it could take
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConstraintViolation {
     pub constraint: TimeConstraint,
     pub scheduled: NaiveDate,
@@ -165,7 +166,7 @@ pub struct ConstraintViolation {
 
 /// A person's work across every plan, to see what they are assigned on past, present and
 /// upcoming days and how booked they are
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct UserSchedule {
     pub assignments: BTreeMap<NaiveDate, Vec<UserAssignment>>,
     /// Booked hours as a share of available hours from their first to last assigned day, set by
@@ -180,7 +181,7 @@ impl UserSchedule {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserAssignment {
     pub plan: ShortId,
     pub task: Uuid,

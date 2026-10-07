@@ -1,5 +1,7 @@
 // modules {{{
+use crate::helpers::double_option;
 use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
@@ -17,7 +19,7 @@ use crate::{
 };
 // }}}
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     id: Uuid,
     name: String,
@@ -159,7 +161,7 @@ impl Patchable<TaskPatch> for Task {
 
 /// What users record as a task goes: its status and the days it really started and ended. A task
 /// put on hold ends on the day that happens (see `Plan::apply_update`).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PersistentState {
     pub status: Status,
     pub actual_start_date: Option<NaiveDate>,
@@ -167,7 +169,7 @@ pub struct PersistentState {
 }
 
 /// Written by the scheduler for every task it could schedule, the others are unscheduled
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub date_range: DateRange,
     /// Hours per day each person works on the task, including days before today for work already
@@ -179,14 +181,14 @@ pub struct VolatileState {
 
 /// Who actually does the work, as opposed to the `Worker` a task asks for, which can be a tag or
 /// a user group that the scheduler resolves to people
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Assignee {
     User(Uuid),
     /// Unlimited, never conflicts with other work
     Placeholder,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Status {
     #[default]
     NotStarted,
@@ -197,7 +199,7 @@ pub enum Status {
 }
 
 /// How a task fills the days it is worked on
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScheduleMode {
     /// Only days where the whole daily block of hours is free
     #[default]
@@ -219,7 +221,7 @@ impl ScheduleMode {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Worker {
     Tag(Uuid),
     User(Uuid),
@@ -229,12 +231,14 @@ pub enum Worker {
     Placeholder,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct NewTask {
     pub id: Uuid,
     pub name: String,
     pub parent: Parent,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct TaskPatch {
     pub id: Uuid,
     pub name: Option<String>,
@@ -246,6 +250,11 @@ pub struct TaskPatch {
     pub allocations: Option<HashMap<Worker, Workload>>,
     pub affinities: Option<HashSet<Uuid>>,
     pub actual_workers: Option<HashMap<Worker, Assignee>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
     pub description: Option<Option<String>>,
     pub persistent_state: Option<PersistentState>,
 }

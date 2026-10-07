@@ -1,11 +1,12 @@
 // modules{{{
+use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 use chrono::{Duration, NaiveDate};
 use uuid::Uuid;
 // }}}
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dependency {
     pub node: DependencyNode,
     /// Calendar days (not working days) after the node, negative to start before it
@@ -28,7 +29,7 @@ impl Dependency {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DependencyNode {
     /// The start of the enclosing task group, or the plan start for top level items
     #[default]
@@ -48,7 +49,7 @@ impl PlanNode {
 }
 
 /// A schedulable node. A task group is a single node that ends when all of its members end.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlanNode {
     Task(Uuid),
     Milestone(Uuid),

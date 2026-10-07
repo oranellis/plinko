@@ -24,6 +24,7 @@ pub enum PlinkoError {
     ItemExists(Uuid),
     ItemDoesNotExist(Uuid),
     IdMismatch(String, String),
+    Codec(String),
 }
 
 // impl PlinkoError{{{
@@ -71,6 +72,7 @@ impl std::fmt::Display for PlinkoError {
             PlinkoError::ItemExists(id) => {
                 write!(f, "item {} already exists", id)
             }
+            PlinkoError::Codec(why) => write!(f, "cannot read or write data: {}", why),
             PlinkoError::IdMismatch(id1, id2) => {
                 write!(f, "{} does not match {}", id1, id2)
             }
