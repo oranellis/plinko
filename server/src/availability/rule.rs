@@ -10,6 +10,10 @@ use crate::{
 };
 // }}}
 
+/// Rules may only start within this range, which keeps the calendars built from them a sane size
+pub const RULE_START_RANGE: std::ops::RangeInclusive<NaiveDate> =
+    NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()..=NaiveDate::from_ymd_opt(2100, 12, 31).unwrap();
+
 /// Something that sets availability from `start_day` going forward until `stop_day`
 #[derive(Clone, Debug, PartialEq)]
 pub struct Rule<V> {

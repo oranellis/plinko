@@ -8,7 +8,7 @@ use crate::{
     availability::{
         calendar::run_days,
         day_value::DayValue,
-        rule::{NewRule, Rule, RuleKind, RulePatch},
+        rule::{NewRule, RULE_START_RANGE, Rule, RuleKind, RulePatch},
     },
     traits::entity::Entity,
     types::{
@@ -124,7 +124,8 @@ impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
         let rule = &set.rules[&id];
         let stops_before_start = rule.stop_day().is_some_and(|s| s <= rule.start_day());
         let empty_run = matches!(rule.kind(), RuleKind::FiniteWorkdays { days: 0, .. });
-        match stops_before_start || empty_run {
+        let out_of_range = !RULE_START_RANGE.contains(&rule.start_day());
+        match stops_before_start || empty_run || out_of_range {
             true => Err(PlinkoError::InvalidRule(id)),
             false => Ok(()),
         }
@@ -352,6 +353,24 @@ mod tests {
         assert_eq!(ids(d(2024, 1, 2)), [monthly_id]);
         assert_eq!(ids(d(2024, 3, 2)), [monthly_id, holiday_id]);
         assert!(ids(d(2023, 12, 31)).is_empty());
+    }
+
+    #[test]
+    fn rules_must_start_within_the_supported_years() {
+        let mut set = RuleSet::<Workload>::default();
+        let add = |set: &mut RuleSet<Workload>, start_day| {
+            let new = NewRule {
+                id: Uuid::now_v7(),
+                start_day,
+                kind: RuleKind::Holiday,
+            };
+            set.apply_update(RuleSetUpdate::Rule(Crud::Add(new)))
+        };
+        assert!(add(&mut set, d(1999, 12, 31)).is_err());
+        assert!(add(&mut set, d(2101, 1, 1)).is_err());
+        assert!(add(&mut set, NaiveDate::MIN).is_err());
+        add(&mut set, d(2000, 1, 1)).unwrap();
+        assert_eq!(set.rules().len(), 1);
     }
 
     #[test]
