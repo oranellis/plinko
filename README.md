@@ -11,7 +11,7 @@ whole tenants. Design notes and progress are in `../PLAN.md`, the scheduler spec
 - `availability/` rule sets that describe daily availability or allowed days, built into calendars.
 - `planner/` plans, their updates and the dependency graph checks.
 - `multitenancy/` tenants, login users, user groups and `TenantUpdate`.
-- `scheduler/` the state a scheduler run writes. The solver itself is not written yet.
+- `scheduler/` schedules a whole tenant (`scheduler::schedule`, spec in `SCHEDULER.md`) and holds the state it writes.
 - `traits/` the shared `Entity`, `Patchable` and `Identified` traits.
 
 ## Conventions

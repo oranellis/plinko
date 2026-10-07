@@ -460,9 +460,10 @@ scheduler early.
 7. **Repair rounds** (done, `scheduler/repair.rs`). The objective (worst effective delay, then total), temporary priority bumps,
    alternative assignees for bottleneck people, checkpointing, and the round cap. Then the spreading
    rule for tag and group slots.
-8. **Outputs and integration.** `TenantVolatileState::from_plans`, forecasts, delays and
-   bottleneck loads, the runner calling `solve_tenant` then `Tenant::store_schedule` after every
-   update and `Tenant::fill_defaults` in the handler. Impact preview afterwards (section 9).
+8. **Outputs and integration** (done). Forecasts, delays, bottleneck loads and `from_plans` come from
+   the solver. `Tenant::stage` (fresh ids, then `fill_defaults`) builds the update to log,
+   `Tenant::apply_and_schedule` applies it and runs `scheduler::schedule` (`prepare`, `solve_tenant`,
+   `store_schedule`). Impact preview (section 9) is still to do.
 
 At each step keep the determinism test (shuffled map order gives identical results) green.
 

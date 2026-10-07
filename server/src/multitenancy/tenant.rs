@@ -1,7 +1,7 @@
 // modules{{{
 use std::collections::{HashMap, HashSet};
 
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 use crate::{
@@ -12,7 +12,10 @@ use crate::{
         user_group::TenantUserGroup,
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
-    scheduler::state::{Baseline, TenantVolatileState},
+    scheduler::{
+        self,
+        state::{Baseline, TenantVolatileState},
+    },
     traits::entity::Entity,
     types::{
         crud::Crud,
@@ -307,10 +310,35 @@ impl Tenant {
         missing.map_or(Ok(()), |id| Err(PlinkoError::ItemDoesNotExist(id)))
     }
 
+    /// Turns what a client asked for into the update to log and apply: new items get fresh ids
+    /// and the defaults from the last schedule are filled in, see `fill_defaults`
+    pub fn stage(
+        &self,
+        time: DateTime<Utc>,
+        actor: Uuid,
+        mut update_type: TenantUpdateType,
+    ) -> TenantUpdate {
+        update_type.assign_ids();
+        self.fill_defaults(&mut update_type);
+        TenantUpdate {
+            time,
+            actor,
+            update_type,
+        }
+    }
+
+    /// Applies an update then schedules again, so `schedule` is up to date. Nothing changes if
+    /// the update is refused.
+    pub fn apply_and_schedule(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
+        self.apply_update(u)?;
+        scheduler::schedule(self);
+        Ok(())
+    }
+
     /// Fills in what a task update leaves out that comes from the last schedule, so it is part of
     /// the update that is logged (applying an update cannot depend on volatile state). When a task
     /// goes in progress, on hold or completed with no one recorded, the people last scheduled
-    /// for it are recorded. A server handler calls this next to `TenantUpdateType::assign_ids`.
+    /// for it are recorded. `stage` does it with `TenantUpdateType::assign_ids`.
     pub fn fill_defaults(&self, update: &mut TenantUpdateType) {
         let TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, inner)) = update else {
             return;

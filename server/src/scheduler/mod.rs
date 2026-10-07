@@ -54,6 +54,14 @@ pub fn prepare(tenant: &mut Tenant) {
     }
 }
 
+/// Schedules the tenant and keeps the result on it, for `Tenant::schedule`. The server runs this
+/// after every update, `Tenant::apply_and_schedule` does.
+pub fn schedule(tenant: &mut Tenant) {
+    prepare(tenant);
+    let state = solve_tenant(tenant);
+    tenant.store_schedule(state);
+}
+
 /// The plan scheduled with every person's hours to itself
 fn baseline(tenant: &Tenant, plan: &ShortId) -> Baseline {
     let mut ledger = Ledger::from_tenant(tenant, tenant.today());
