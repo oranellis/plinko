@@ -102,7 +102,8 @@ Everything is read from `Tenant` and its plans.
 - **End:** the day after the later of the last assignment day and `duration` working days from the
   start (`Calendar::end_after_workdays`).
 - **Affinities:** a task works only on days every linked affinity allows (`Plan::task_allows_day`).
-  A person must also be available that day. A task that can never be placed (no allowed days,
+  A person must also be available that day. Days an affinity disallows behave like calendar gaps,
+  not blocks: they do not restart a strict run (**Assumed**). A task that can never be placed (no allowed days,
   not enough capacity within the horizon) is unscheduled with `NoCapacity`.
 - **`ScheduleMode`** (`hours_on(wanted, available)`):
   - Strict (default): a day counts only if the full daily block is free for the worker. Strict
@@ -131,6 +132,8 @@ Everything is read from `Tenant` and its plans.
   allocation is applied after that. For computing milestone or group derived status it counts as
   not completed. Dependents use the hold date as its end. Resuming (in progress) applies the
   daily hours again.
+- Actual start and end dates are inclusive days (the first and last day worked), so a range ends the
+  day after `actual_end_date` (**Assumed**). This holds for completed and on-hold tasks.
 - **Completed:** fixed at its actual dates. Assignments for past days are inferred (below).
 - **Dropped:** unscheduled with reason `Dropped`, transparent to dependents.
 - Past work is not saved: for completed tasks and the past days of in-progress and on-hold tasks,
@@ -154,7 +157,8 @@ Everything is read from `Tenant` and its plans.
 
 One node around the items whose `parent` is the group (tasks, milestones, buffers, nested groups).
 Its own dependencies decide the day its members can start: members anchor with `ParentStart`, which
-is that date (the plan start for a top-level group with no other dependency). The group then
+is that date. A top-level group needs an explicit `ParentStart` dependency to be anchored to the
+plan start, exactly like a task. The group then
 covers the first member's start to the last member's end (`TaskGroup::place`), so it begins
 overlapping its first task and its end falls on the last day a member runs. Milestone members count
 as their one day. With no members the group lasts `placeholder_duration` working days of the plan
@@ -189,9 +193,12 @@ fixes history so past hours do not move when availability or other plans change.
 `calendar` is the plan calendar. The duration is working days, the end is exclusive. Unset
 (`set_start_day` is `None`): ends a duration after `start`. Set: ends where it would have if it
 had started on `set_start_day`, so it shrinks when `start` is later and grows when earlier, never
-below zero length. Not yet implemented: a task or milestone that cannot move later (Fixed or
-Latest constraint) and depends on a buffer shrinks the buffer to fit regardless of set or unset,
-down to zero length, and only then is the constraint violated.
+below zero length. A task or milestone that cannot move later (Fixed or Latest constraint, date `X`)
+and depends on a buffer shrinks the buffer to fit, set or unset: the buffer ends no later than
+`limit = X - lag` for a task (`X - lag + 1` for a milestone), the smallest limit over such
+dependents, so its end becomes `max(start, min(natural end, limit))` (**Assumed**). Only when the
+buffer is already zero length and `start` is past the limit is the constraint violated. This is
+not in `PlanBuffer::place` yet, which needs an optional `limit` argument.
 
 ## 5. Unscheduled items
 
@@ -335,7 +342,10 @@ plans move and by how many days. Not part of the first solver.
    (**Assumed**)
 5. **Output:** per-target forecast and delay against the baseline, and per-person bottleneck
    load, in the volatile state.
-6. **Buffer shrink for hard-constrained dependents** (section 4).
+6. **Buffer shrink for hard-constrained dependents** (section 4): a `limit` argument on
+   `PlanBuffer::place`.
+7. **Accessors the scheduler needs:** `Task` has no `duration()`, `mode()` or `time_constraint()`
+   yet. Check the other entities as the engine is written.
 
 ## 11. Code layout
 
