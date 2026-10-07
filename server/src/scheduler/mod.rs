@@ -2,6 +2,7 @@
 use crate::{multitenancy::tenant::Tenant, scheduler::state::TenantVolatileState};
 // }}}
 
+pub mod ledger;
 pub mod state;
 
 /// Schedules every plan in the tenant together, since people work across plans

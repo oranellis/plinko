@@ -357,7 +357,8 @@ plans move and by how many days. Not part of the first solver.
 
 - `scheduler/mod.rs`: `solve_tenant` and the phases.
 - `scheduler/state.rs`: output types (exists).
-- Planned: a ledger (capacity per person per day), baselines and solo slack, the insertion engine
+- `scheduler/ledger.rs`: capacity ledger (exists).
+- Planned: baselines and solo slack, the insertion engine
   (fill, propagate, compact), and repair rounds, in separate files.
 - Reuse `availability::calendar::Calendar`, `Plan::unscheduled`, `Plan::task_allows_day`,
   `PlanBuffer::place`, `ScheduleMode::hours_on`, `TimeConstraint::apply`, `Dependency::start_after`.
@@ -398,9 +399,11 @@ scheduler early.
    - Volatile outputs: per-target forecast and delay, per-person bottleneck load.
    - `PlanBuffer::place` takes an optional `limit` for the shrink rule.
    - Check the other entities for the accessors the engine needs.
-2. **Capacity ledger.** Remaining hours per person per day as arrays over the horizon, built from
-   `Tenant::refresh_calendars` and the plan calendar. Support take, return, and undo of a run.
-   Anchors and in-progress tasks deduct future hours from it.
+2. **Capacity ledger** (done, `scheduler/ledger.rs`). Remaining hours per person per day as arrays over the horizon, built from
+   `Tenant::refresh_calendars` and the plan calendar. A `Run` of claims is
+   taken atomically (`Ledger::claim`) and given back (`release`), `Clone` checkpoints it. Claims on
+   days before the window are ignored, so anchors and in-progress tasks deduct only future hours.
+   `load` gives the bottleneck share.
 3. **Single-plan insertion (port of Plinko 1).** For one plan alone: anchors, in-progress, constrained
    nodes, target chain, rest, in that order, with CPM ordering. Earliest start from dependencies
    (the date conventions in section 3), strict (consecutive, synchronised) and relaxed fills,
