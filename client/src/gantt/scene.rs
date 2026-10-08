@@ -130,8 +130,9 @@ impl Context<'_> {
                     violated: self.state.is_some_and(|s| s.constraint_violations.contains_key(&node)),
                     // what ends its group is not a leaf when something waits on the group
                     leaf: !self.depended.contains(&node)
-                        && model::ends_group(self.plan, self.state, node)
-                            .is_none_or(|group| !self.depended.contains(&group)),
+                        && !model::ends_groups(self.plan, self.state, node)
+                            .iter()
+                            .any(|group| self.depended.contains(group)),
                     target: self.targets.contains(&node),
                     members,
                     collapsed: matches!(node, PlanNode::TaskGroup(id) if self.collapsed.contains(&id)),

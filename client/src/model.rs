@@ -241,12 +241,24 @@ pub fn reason(reason: UnscheduledReason) -> &'static str {
     }
 }
 
-/// The group a node is in when it ends on the group's last day, so the group ends with it
-pub fn ends_group(
+/// Every group that ends with the node, innermost first: its group when it ends on the group's
+/// last day, then that group's own group when the group ends on its last day too, and so on
+pub fn ends_groups(
     plan: &Plan,
     state: Option<&PlanVolatileState>,
     node: PlanNode,
-) -> Option<PlanNode> {
+) -> Vec<PlanNode> {
+    let mut groups = Vec::new();
+    let mut current = node;
+    while let Some(group) = ends_group(plan, state, current) {
+        groups.push(group);
+        current = group;
+    }
+    groups
+}
+
+/// The group a node is in when it ends on the group's last day, so the group ends with it
+fn ends_group(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -> Option<PlanNode> {
     let Parent::Node(group) = parent_of(plan, node) else {
         return None;
     };
