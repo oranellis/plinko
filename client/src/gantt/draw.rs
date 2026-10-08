@@ -270,7 +270,7 @@ pub fn paint(ctx: &CanvasRenderingContext2d, frame: &Frame) -> Hits {
     }
 
     // the dependencies of the item under the pointer, behind the bars
-    paint_links(ctx, frame, &geometry);
+    paint_links(ctx, frame, &geometry, &group_boxes);
 
     for p in &frame.scene.arrangement.placed {
         if p.kind == Kind::Group || !visible(p) {
@@ -424,9 +424,14 @@ fn paint_group(
     hits.headers.push((p.mark, strip, arrow));
 }
 
-fn paint_links(ctx: &CanvasRenderingContext2d, frame: &Frame, geometry: &HashMap<Mark, Geometry>) {
+fn paint_links(
+    ctx: &CanvasRenderingContext2d,
+    frame: &Frame,
+    geometry: &HashMap<Mark, Geometry>,
+    group_boxes: &HashMap<Mark, Rect>,
+) {
     ctx.set_line_width(1.5);
-    let mut diamonds: Vec<((f64, f64), &str)> = Vec::new();
+    let mut diamonds: Vec<(Mark, (f64, f64), &str)> = Vec::new();
     for link in frame.links {
         let (Some(from), Some(to)) = (
             geometry.get(&mark_of(link.from)),
@@ -457,17 +462,41 @@ fn paint_links(ctx: &CanvasRenderingContext2d, frame: &Frame, geometry: &HashMap
                 anchor,
                 Anchor::Start(PlanNode::TaskGroup(_)) | Anchor::End(PlanNode::TaskGroup(_))
             ) {
-                diamonds.push((point, solid));
+                diamonds.push((mark_of(anchor), point, solid));
             }
         }
     }
+    // the edge of a group a line meets lights up, strongest in the middle and fading out
+    // towards the top and bottom, over most of its height
+    for (mark, (x, y), colour) in &diamonds {
+        let Some(group) = group_boxes.get(mark) else {
+            continue;
+        };
+        let half = group.h * 0.4;
+        let glow = ctx.create_linear_gradient(0.0, y - half, 0.0, y + half);
+        let _ = glow.add_color_stop(0.0, &faded(colour));
+        let _ = glow.add_color_stop(0.5, colour);
+        let _ = glow.add_color_stop(1.0, &faded(colour));
+        ctx.set_stroke_style_canvas_gradient(&glow);
+        ctx.set_line_width(3.0);
+        ctx.begin_path();
+        ctx.move_to(*x, y - half);
+        ctx.line_to(*x, y + half);
+        ctx.stroke();
+    }
     // a small milestone marker where a line meets the edge of a group
-    for ((x, y), colour) in diamonds {
+    for (_, (x, y), colour) in diamonds {
         path_diamond(ctx, x, y, 5.0);
         ctx.set_fill_style_str(colour);
         ctx.fill();
     }
     ctx.set_line_width(1.0);
+}
+
+/// `#rrggbb` with no opacity, to fade a gradient out without going through black
+fn faded(hex: &str) -> String {
+    let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0);
+    format!("rgba({},{},{},0)", channel(1), channel(3), channel(5))
 }
 
 fn stroke_border(ctx: &CanvasRenderingContext2d, outline: Option<(String, f64)>) {
