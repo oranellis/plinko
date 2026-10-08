@@ -24,7 +24,7 @@ use uuid::Uuid;
 use crate::{
     format, forms,
     model::{self, node_name},
-    ui::{Field, Number, Select, Text, options, use_sync},
+    ui::{Actions, Block, Field, List, Number, Segmented, Select, Text, options, use_sync},
 };
 
 /// What a plan holds right now, or `None` if it is gone
@@ -44,36 +44,38 @@ fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {
     (*old != new).then_some(new)
 }
 
-/// The form for one item, to go in a window, and a way to delete it
+/// Takes an item out of its plan
+pub fn remove_item(plan: ShortId, node: PlanNode) {
+    let update = match node {
+        PlanNode::Task(id) => PlanUpdate::Task(Crud::Remove(id)),
+        PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Remove(id)),
+        PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Remove(id)),
+        PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Remove(id)),
+    };
+    use_sync().plan(plan, update);
+}
+
+/// The form for one item, to go in a window. `on_close` is for after it is saved or deleted.
 #[component]
-pub fn ItemEditor(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl IntoView {
-    let sync = use_sync();
-    let remove = move |_| {
-        let update = match node {
-            PlanNode::Task(id) => PlanUpdate::Task(Crud::Remove(id)),
-            PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Remove(id)),
-            PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Remove(id)),
-            PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Remove(id)),
-        };
-        sync.plan(plan, update);
+pub fn ItemEditor(
+    plan: ShortId,
+    node: PlanNode,
+    on_close: Callback<()>,
+    on_cancel: Callback<()>,
+) -> impl IntoView {
+    let remove = Callback::new(move |()| {
+        remove_item(plan, node);
         on_close.run(());
-    };
-    let what = match node {
-        PlanNode::Task(_) => "task",
-        PlanNode::Milestone(_) => "milestone",
-        PlanNode::PlanBuffer(_) => "buffer",
-        PlanNode::TaskGroup(_) => "task group",
-    };
+    });
     view! {
         <div class="editor">
             <Info plan=plan node=node />
             {match node {
-                PlanNode::Task(id) => view! { <TaskForm plan=plan id=id on_close=on_close /> }.into_any(),
-                PlanNode::Milestone(id) => view! { <MilestoneForm plan=plan id=id on_close=on_close /> }.into_any(),
-                PlanNode::PlanBuffer(id) => view! { <BufferForm plan=plan id=id on_close=on_close /> }.into_any(),
-                PlanNode::TaskGroup(id) => view! { <GroupForm plan=plan id=id on_close=on_close /> }.into_any(),
+                PlanNode::Task(id) => view! { <TaskForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
+                PlanNode::Milestone(id) => view! { <MilestoneForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
+                PlanNode::PlanBuffer(id) => view! { <BufferForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
+                PlanNode::TaskGroup(id) => view! { <GroupForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
             }}
-            <button type="button" class="danger" on:click=remove>{format!("Delete {what}")}</button>
         </div>
     }
 }
@@ -174,8 +176,13 @@ fn depends_options(plan: ShortId, except: PlanNode) -> Signal<Vec<(String, Strin
 fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> impl IntoView {
     let choices = depends_options(plan, me);
     view! {
-        <fieldset class="list">
-            <legend>"Depends on"</legend>
+        <List
+            label="Dependencies"
+            empty="No dependencies added yet"
+            add="Add"
+            count=Signal::derive(move || deps.with(Vec::len))
+            on_add=Callback::new(move |()| deps.update(|d| d.push(Dependency::default())))
+        >
             <For each=move || 0..deps.with(Vec::len) key=|i| *i children=move |i| {
                 let node = Signal::derive(move || {
                     deps.with(|d| d.get(i).map(|d| forms::node_value(d.node)).unwrap_or_default())
@@ -192,7 +199,6 @@ fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) ->
                                 }
                             })
                         />
-                        <span class="small">"lag"</span>
                         <Number
                             value=lag
                             on_input=Callback::new(move |n: i64| {
@@ -200,16 +206,14 @@ fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) ->
                                 deps.update(|d| if let Some(d) = d.get_mut(i) { d.lag = n });
                             })
                         />
+                        <span class="small" title="Lag days, positive to delay and negative to start early">"lag"</span>
                         <button type="button" class="plain" aria-label="Remove dependency" on:click=move |_| {
                             deps.update(|d| { if i < d.len() { d.remove(i); } });
                         }>"✕"</button>
                     </div>
                 }
             } />
-            <button type="button" class="plain" on:click=move |_| deps.update(|d| d.push(Dependency::default()))>
-                "+ Add a dependency"
-            </button>
-        </fieldset>
+        </List>
     }
 }
 
@@ -236,7 +240,7 @@ fn ParentPicker(plan: ShortId, me: PlanNode, parent: RwSignal<Parent>) -> impl I
         options
     });
     view! {
-        <Field label="In group">
+        <Field label="Group">
             <Select
                 value=Signal::derive(move || forms::parent_value(parent.get()))
                 options=choices
@@ -250,34 +254,39 @@ fn ParentPicker(plan: ShortId, me: PlanNode, parent: RwSignal<Parent>) -> impl I
     }
 }
 
+/// How the item is held to a date, and the date for the kinds that have one
 #[component]
 fn Constraint(kind: RwSignal<String>, day: RwSignal<NaiveDate>) -> impl IntoView {
     view! {
-        <Field label="Date">
-            <div class="row">
-                <Select
+        <div class="cols">
+            <Block label="Constraint Type">
+                <Segmented
                     value=kind
                     options=options([
-                        ("none", "No date"),
-                        ("earliest", "Not before"),
-                        ("latest", "Not after"),
-                        ("fixed", "On"),
+                        ("none", "None"),
+                        ("earliest", "Earliest"),
+                        ("fixed", "Fixed"),
+                        ("latest", "Latest"),
                     ])
                     on_change=Callback::new(move |v| kind.set(v))
                 />
-                <Show when=move || kind.get() != "none">
-                    <DateInput day=day />
-                </Show>
-            </div>
-        </Field>
+            </Block>
+            <Field label="Constraint Date">
+                <DateInput day=day disabled=Signal::derive(move || kind.get() == "none") />
+            </Field>
+        </div>
     }
 }
 
 #[component]
-pub fn DateInput(day: RwSignal<NaiveDate>) -> impl IntoView {
+pub fn DateInput(
+    day: RwSignal<NaiveDate>,
+    #[prop(optional)] disabled: Option<Signal<bool>>,
+) -> impl IntoView {
     view! {
         <input
             type="date"
+            disabled=move || disabled.is_some_and(|d| d.get())
             prop:value=move || format::iso(day.get())
             on:input=move |ev| {
                 if let Some(d) = format::parse_iso(&event_target_value(&ev)) {
@@ -290,10 +299,14 @@ pub fn DateInput(day: RwSignal<NaiveDate>) -> impl IntoView {
 
 /// A date that can be left empty
 #[component]
-fn OptionalDate(value: RwSignal<Option<NaiveDate>>) -> impl IntoView {
+fn OptionalDate(
+    value: RwSignal<Option<NaiveDate>>,
+    #[prop(optional)] disabled: Option<Signal<bool>>,
+) -> impl IntoView {
     view! {
         <input
             type="date"
+            disabled=move || disabled.is_some_and(|d| d.get())
             prop:value=move || value.get().map(format::iso).unwrap_or_default()
             on:input=move |ev| value.set(format::parse_iso(&event_target_value(&ev)))
         />
@@ -337,26 +350,26 @@ fn worker_options(plan: ShortId) -> Signal<Vec<(String, String)>> {
 #[component]
 fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl IntoView {
     let choices = worker_options(plan);
-    let hours = options([
-        ("0", "0 h"),
-        ("1", "1 h"),
-        ("2", "2 h"),
-        ("3", "3 h"),
-        ("4", "4 h"),
-        ("5", "5 h"),
-        ("6", "6 h"),
-        ("7", "7 h"),
-        ("8", "8 h"),
-    ]);
     view! {
-        <fieldset class="list">
-            <legend>"Who works on it, hours a day"</legend>
+        <List
+            label="Workers"
+            empty="No workers added yet"
+            add="Add Worker"
+            count=Signal::derive(move || allocations.with(Vec::len))
+            on_add=Callback::new(move |()| {
+                allocations.update(|a| {
+                    if !a.iter().any(|(w, _)| *w == Worker::Placeholder) {
+                        a.push((Worker::Placeholder, 8));
+                    }
+                });
+            })
+        >
             <For each=move || 0..allocations.with(Vec::len) key=|i| *i children=move |i| {
                 let worker = Signal::derive(move || {
                     allocations.with(|a| a.get(i).map(|(w, _)| forms::worker_value(*w)).unwrap_or_default())
                 });
-                let hour = Signal::derive(move || {
-                    allocations.with(|a| a.get(i).map(|(_, h)| h.to_string()).unwrap_or_default())
+                let hours = Signal::derive(move || {
+                    allocations.with(|a| a.get(i).map_or(0, |(_, h)| i64::from(*h)))
                 });
                 view! {
                     <div class="row">
@@ -369,36 +382,35 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
                                 }
                             })
                         />
-                        <Select
-                            value=hour
-                            options=hours
-                            on_change=Callback::new(move |v: String| {
-                                if let Ok(h) = v.parse::<u8>() {
-                                    allocations.update(|a| if let Some(a) = a.get_mut(i) { a.1 = h });
-                                }
+                        <Number
+                            value=hours
+                            min=0
+                            max=8
+                            on_input=Callback::new(move |n: i64| {
+                                allocations.update(|a| if let Some(a) = a.get_mut(i) { a.1 = n.clamp(0, 8) as u8 });
                             })
                         />
-                        <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
+                        <span class="small" title="Hours a day">"h"</span>
+                        <button type="button" class="plain" aria-label="Remove worker" on:click=move |_| {
                             allocations.update(|a| { if i < a.len() { a.remove(i); } });
                         }>"✕"</button>
                     </div>
                 }
             } />
-            <button type="button" class="plain" on:click=move |_| {
-                allocations.update(|a| {
-                    if !a.iter().any(|(w, _)| *w == Worker::Placeholder) {
-                        a.push((Worker::Placeholder, 8));
-                    }
-                });
-            }>"+ Add someone"</button>
-        </fieldset>
+        </List>
     }
 }
 // }}}
 
 // forms {{{
 #[component]
-fn TaskForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
+fn TaskForm(
+    plan: ShortId,
+    id: Uuid,
+    on_close: Callback<()>,
+    on_cancel: Callback<()>,
+    remove: Callback<()>,
+) -> impl IntoView {
     let sync = use_sync();
     let Some(task) = snapshot(plan, |p| p.tasks().get(&id).cloned()) else {
         return view! { <p>"This task has been removed."</p> }.into_any();
@@ -488,52 +500,72 @@ fn TaskForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
             <Field label="Name">
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
             </Field>
-            <Field label="Notes">
+            <Field label="Description">
                 <textarea prop:value=move || description.get() on:input=move |ev| description.set(event_target_value(&ev))></textarea>
             </Field>
-            <Field label="Days of work">
-                <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=1 max=3650 />
-            </Field>
-            <Field label="Status">
-                <Select
+            <Block label="Status">
+                <Segmented
                     value=Signal::derive(move || forms::status_value(status.get()).to_string())
                     options=options([
-                        ("not-started", "Not started"),
-                        ("in-progress", "In progress"),
-                        ("on-hold", "On hold"),
-                        ("completed", "Completed"),
+                        ("not-started", "Not Started"),
+                        ("in-progress", "In Progress"),
+                        ("on-hold", "On Hold"),
+                        ("completed", "Complete"),
                         ("dropped", "Dropped"),
                     ])
                     on_change=Callback::new(move |v: String| {
-                        if let Some(s) = forms::parse_status(&v) {
-                            status.set(s);
+                        let Some(next) = forms::parse_status(&v) else { return };
+                        status.set(next);
+                        match next {
+                            Status::NotStarted => { started.set(None); ended.set(None); }
+                            Status::InProgress | Status::OnHold => {
+                                ended.set(None);
+                                if started.get_untracked().is_none() { started.set(Some(today)); }
+                            }
+                            Status::Completed | Status::Dropped => {
+                                if ended.get_untracked().is_none() { ended.set(Some(today)); }
+                            }
                         }
                     })
                 />
-            </Field>
-            <Show when=move || status.get() != Status::NotStarted>
-                <Field label="Started"><OptionalDate value=started /></Field>
-            </Show>
-            <Show when=move || matches!(status.get(), Status::Completed | Status::OnHold)>
-                <Field label="Finished"><OptionalDate value=ended /></Field>
-            </Show>
-            <Field label="Days worked">
-                <Select
-                    value=mode
-                    options=options([
-                        ("strict", "Whole days in a row"),
-                        ("relaxed", "Any free time"),
-                    ])
-                    on_change=Callback::new(move |v| mode.set(v))
-                />
-            </Field>
+            </Block>
+            <div class="cols">
+                <Field label="Duration (days)">
+                    <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=1 max=3650 />
+                </Field>
+                <Block label="Mode">
+                    <button
+                        type="button"
+                        class="toggle"
+                        class:on=move || mode.get() == "strict"
+                        title="Strict needs whole days in a row, relaxed uses any free time"
+                        on:click=move |_| mode.update(|m| *m = if m == "strict" { "relaxed" } else { "strict" }.to_string())
+                    >
+                        {move || if mode.get() == "strict" { "Strict" } else { "Relaxed" }}
+                    </button>
+                </Block>
+            </div>
             <Constraint kind=kind day=day />
+            <div class="cols">
+                <Field label=Signal::derive(move || {
+                    let missing = matches!(status.get(), Status::InProgress | Status::OnHold) && started.get().is_none();
+                    if missing { "Actual Start *" } else { "Actual Start" }.to_string()
+                })>
+                    <OptionalDate value=started disabled=Signal::derive(move || status.get() == Status::NotStarted) />
+                </Field>
+                <Field label=Signal::derive(move || {
+                    let missing = matches!(status.get(), Status::Completed | Status::Dropped) && ended.get().is_none();
+                    if missing { "Actual End *" } else { "Actual End" }.to_string()
+                })>
+                    <OptionalDate value=ended disabled=Signal::derive(move || !matches!(status.get(), Status::Completed | Status::Dropped)) />
+                </Field>
+            </div>
             <ParentPicker plan=plan me=node parent=parent />
-            <Dependencies plan=plan me=node deps=deps />
             <Workers plan=plan allocations=allocations />
+            <Dependencies plan=plan me=node deps=deps />
             <Recorded plan=plan task=original recorded=recorded allocations=allocations />
             <Affinities plan=plan chosen=affinities />
-            <button type="submit" class="primary">"Save"</button>
+            <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
     .into_any()
@@ -562,8 +594,7 @@ fn Recorded(
     });
     view! {
         <Show when=move || recorded.with(|r| !r.is_empty())>
-            <fieldset class="list">
-                <legend>"Who actually did the work"</legend>
+            <Block label="Who Actually Did The Work"><div class="list">
                 {move || {
                     let asked: Vec<Worker> = allocations.with(|a| a.iter().map(|(w, _)| *w).collect());
                     asked
@@ -592,7 +623,7 @@ fn Recorded(
                         })
                         .collect_view()
                 }}
-            </fieldset>
+            </div></Block>
         </Show>
     }
 }
@@ -621,8 +652,7 @@ fn Affinities(plan: ShortId, chosen: RwSignal<HashSet<Uuid>>) -> impl IntoView {
     });
     view! {
         <Show when=move || all.with(|a| !a.is_empty())>
-            <fieldset class="list">
-                <legend>"Only on the days of"</legend>
+            <Block label="Only On The Days Of"><div class="list">
                 {move || {
                     all.get()
                         .into_iter()
@@ -643,13 +673,19 @@ fn Affinities(plan: ShortId, chosen: RwSignal<HashSet<Uuid>>) -> impl IntoView {
                         })
                         .collect_view()
                 }}
-            </fieldset>
+            </div></Block>
         </Show>
     }
 }
 
 #[component]
-fn MilestoneForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
+fn MilestoneForm(
+    plan: ShortId,
+    id: Uuid,
+    on_close: Callback<()>,
+    on_cancel: Callback<()>,
+    remove: Callback<()>,
+) -> impl IntoView {
     let sync = use_sync();
     let Some(milestone) = snapshot(plan, |p| p.milestones().get(&id).cloned()) else {
         return view! { <p>"This milestone has been removed."</p> }.into_any();
@@ -690,14 +726,20 @@ fn MilestoneForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoVi
             <Constraint kind=kind day=day />
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
-            <button type="submit" class="primary">"Save"</button>
+            <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
     .into_any()
 }
 
 #[component]
-fn BufferForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
+fn BufferForm(
+    plan: ShortId,
+    id: Uuid,
+    on_close: Callback<()>,
+    on_cancel: Callback<()>,
+    remove: Callback<()>,
+) -> impl IntoView {
     let sync = use_sync();
     let Some(buffer) = snapshot(plan, |p| p.plan_buffers().get(&id).cloned()) else {
         return view! { <p>"This buffer has been removed."</p> }.into_any();
@@ -725,22 +767,28 @@ fn BufferForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView 
     };
     view! {
         <form class="form" on:submit=move |ev| { ev.prevent_default(); save(()); }>
-            <Field label="Working days">
+            <Field label="Duration (days)">
                 <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=0 max=3650 />
             </Field>
-            <Field label="Meant to start on (it shrinks or grows to keep its end)">
+            <Field label="Set Start (it grows or shrinks to keep its end)">
                 <OptionalDate value=set />
             </Field>
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
-            <button type="submit" class="primary">"Save"</button>
+            <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
     .into_any()
 }
 
 #[component]
-fn GroupForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
+fn GroupForm(
+    plan: ShortId,
+    id: Uuid,
+    on_close: Callback<()>,
+    on_cancel: Callback<()>,
+    remove: Callback<()>,
+) -> impl IntoView {
     let sync = use_sync();
     let Some(group) = snapshot(plan, |p| p.task_groups().get(&id).cloned()) else {
         return view! { <p>"This group has been removed."</p> }.into_any();
@@ -771,12 +819,12 @@ fn GroupForm(plan: ShortId, id: Uuid, on_close: Callback<()>) -> impl IntoView {
             <Field label="Name">
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
             </Field>
-            <Field label="Days when it holds nothing yet">
+            <Field label="Placeholder Duration (days)">
                 <Number value=placeholder on_input=Callback::new(move |n| placeholder.set(n)) min=1 max=3650 />
             </Field>
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
-            <button type="submit" class="primary">"Save"</button>
+            <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
     .into_any()

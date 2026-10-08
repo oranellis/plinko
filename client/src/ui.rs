@@ -30,12 +30,94 @@ pub fn Modal(
 }
 
 #[component]
-pub fn Field(#[prop(into)] label: String, children: Children) -> impl IntoView {
+pub fn Field(#[prop(into)] label: Signal<String>, children: Children) -> impl IntoView {
     view! {
         <label class="field">
-            <span>{label}</span>
+            <span>{move || label.get()}</span>
             {children()}
         </label>
+    }
+}
+
+/// A labelled group of controls, for the ones a label cannot wrap
+#[component]
+pub fn Block(#[prop(into)] label: String, children: Children) -> impl IntoView {
+    view! {
+        <div class="field">
+            <span>{label}</span>
+            {children()}
+        </div>
+    }
+}
+
+/// Buttons side by side, one of which is picked
+#[component]
+pub fn Segmented(
+    #[prop(into)] value: Signal<String>,
+    options: Signal<Vec<(String, String)>>,
+    on_change: Callback<String>,
+) -> impl IntoView {
+    view! {
+        <div class="segmented">
+            {move || {
+                options
+                    .get()
+                    .into_iter()
+                    .map(|(v, label)| {
+                        let mine = v.clone();
+                        view! {
+                            <button
+                                type="button"
+                                class:on=move || value.get() == mine
+                                on:click=move |_| on_change.run(v.clone())
+                            >
+                                {label}
+                            </button>
+                        }
+                    })
+                    .collect_view()
+            }}
+        </div>
+    }
+}
+
+/// A bordered list of rows with an add button under it
+#[component]
+pub fn List(
+    #[prop(into)] label: String,
+    #[prop(into)] empty: String,
+    #[prop(into)] add: String,
+    #[prop(into)] count: Signal<usize>,
+    on_add: Callback<()>,
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <div class="field">
+            <span>{label}</span>
+            <div class="list">
+                <Show when=move || count.get() == 0>
+                    <p class="none">{empty.clone()}</p>
+                </Show>
+                {children()}
+            </div>
+            <button type="button" class="add" on:click=move |_| on_add.run(())>{format!("+ {add}")}</button>
+        </div>
+    }
+}
+
+/// The buttons under a form: an optional delete on the left, then cancel and save
+#[component]
+pub fn Actions(
+    on_cancel: Callback<()>,
+    #[prop(optional)] on_delete: Option<Callback<()>>,
+) -> impl IntoView {
+    view! {
+        <div class="actions">
+            {on_delete.map(|d| view! { <button type="button" class="danger" on:click=move |_| d.run(())>"Delete"</button> })}
+            <span class="grow"></span>
+            <button type="button" on:click=move |_| on_cancel.run(())>"Cancel"</button>
+            <button type="submit" class="primary">"Save"</button>
+        </div>
     }
 }
 

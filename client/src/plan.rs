@@ -20,7 +20,7 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
-    editor::ItemEditor,
+    editor::{ItemEditor, remove_item},
     format,
     gantt::{self, Gantt, arrange::Mark, layout::Viewport, scene},
     icons::{Icon, IconKind},
@@ -161,6 +161,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let violation =
         Callback::new(move |mark: Mark| gantt::info::violation(state_of().as_ref(), mark));
 
+    // an item just added and not saved yet, which is dropped again if the window is cancelled
+    let fresh = RwSignal::new(None::<Uuid>);
     let go = move |tab: PlanTab, open: Option<Uuid>| navigate(Route::Plan(plan, tab, open));
     let on_open = Callback::new(move |node: PlanNode| go(tab.get_untracked(), Some(node.id())));
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
@@ -290,7 +292,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         sync.plan_then(plan, update, move |created| {
             if let Some(Created::Item(id)) = created {
                 // anchored to the start so it is scheduled, then open for editing
-                let open = Box::new(move |_| navigate(Route::Plan(plan, current, Some(id))));
+                let open = Box::new(move |_| {
+                    fresh.try_set(Some(id));
+                    navigate(Route::Plan(plan, current, Some(id)));
+                });
                 depends(id, plan, &sync, open);
             }
         });
@@ -428,7 +433,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 {move || {
                     node.get()
                         .filter(|_| tab.get() != PlanTab::Settings)
-                        .map(|node| view! { <ItemWindow plan=plan node=node on_close=on_close /> })
+                        .map(|node| view! { <ItemWindow plan=plan node=node fresh=fresh on_close=on_close /> })
                 }}
                 <Show when=move || searching.get()>
                     <SearchWindow plan=plan on_found=on_found on_close=Callback::new(move |_| searching.set(false)) />
@@ -450,16 +455,32 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
 
 /// The floating window for editing the item that is open
 #[component]
-fn ItemWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl IntoView {
+fn ItemWindow(
+    plan: ShortId,
+    node: PlanNode,
+    fresh: RwSignal<Option<Uuid>>,
+    on_close: Callback<()>,
+) -> impl IntoView {
     let title = match node {
-        PlanNode::Task(_) => "Task",
-        PlanNode::Milestone(_) => "Milestone",
-        PlanNode::PlanBuffer(_) => "Buffer",
-        PlanNode::TaskGroup(_) => "Task group",
+        PlanNode::Task(_) => "Edit Task",
+        PlanNode::Milestone(_) => "Edit Milestone",
+        PlanNode::PlanBuffer(_) => "Edit Buffer",
+        PlanNode::TaskGroup(_) => "Edit Task Group",
     };
+    let saved = Callback::new(move |()| {
+        fresh.set(None);
+        on_close.run(());
+    });
+    let cancel = Callback::new(move |()| {
+        if fresh.get_untracked() == Some(node.id()) {
+            fresh.set(None);
+            remove_item(plan, node);
+        }
+        on_close.run(());
+    });
     view! {
-        <Modal title=title on_close=on_close>
-            <ItemEditor plan=plan node=node on_close=on_close />
+        <Modal title=title on_close=cancel>
+            <ItemEditor plan=plan node=node on_close=saved on_cancel=cancel />
         </Modal>
     }
 }

@@ -35,7 +35,7 @@ button {
 button:hover { background: #4a4a4c; }
 button.primary { background: var(--accent); color: #fff; }
 button.primary:hover { background: var(--accent-hover); }
-button.danger { background: var(--danger); color: #fff; margin-top: 12px; }
+button.danger { background: var(--danger); color: #fff; }
 button.danger:hover { background: #f44336; }
 button.plain { background: none; color: var(--text); padding: 4px 8px; min-height: 28px; }
 button.plain:hover { background: var(--raised); }
@@ -138,7 +138,24 @@ canvas.gantt { width: 100%; height: 100%; display: block; touch-action: none; ba
 .field > span, legend { font-size: 12px; color: #999; text-transform: uppercase; letter-spacing: 0.04em; }
 .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .row > select, .row > input { flex: 1; min-width: 0; }
-fieldset.list { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; display: grid; gap: 6px; margin: 0; min-width: 0; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.cols > * { min-width: 0; }
+.field input[type=date], .field input[type=text], .field input[type=number], .field select { width: 100%; }
+.field input:disabled { opacity: 0.45; }
+.segmented { display: flex; }
+.segmented button { flex: 1; border-radius: 0; padding: 0 6px; font-size: 13px; background: var(--line); border-right: 1px solid var(--bg); white-space: nowrap; }
+.segmented button:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.segmented button:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-right: none; }
+.segmented button.on, button.toggle.on { background: var(--accent); color: #fff; font-weight: 600; }
+button.toggle { width: 100%; font-size: 13px; }
+.list { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); padding: 6px; display: grid; gap: 6px; min-height: 64px; align-content: start; }
+.list .none { margin: 0; padding: 2px 6px; font-size: 13px; color: #555; }
+.list .row > input[type=number] { flex: 0 0 64px; width: 64px; text-align: center; }
+.small { font-size: 12px; color: var(--muted); }
+button.add { justify-self: start; font-size: 13px; padding: 4px 12px; min-height: 28px; }
+.actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.actions .grow { flex: 1; }
+.actions button.danger { margin: 0; }
 .check { display: flex; gap: 8px; align-items: center; font-size: 14px; }
 input.search { width: 100%; margin-bottom: 10px; }
 input.search.nothing { border-color: var(--danger); }
