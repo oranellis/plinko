@@ -87,7 +87,7 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
         }
     }
     // what ends a group ends it, and the group ends with it
-    for group in model::ends_groups(plan, state, node) {
+    if let Some(group) = model::ends_groups(plan, state, node).first().copied() {
         out.push(Link {
             from: Anchor::End(node),
             to: Anchor::End(group),
