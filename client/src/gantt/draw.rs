@@ -192,6 +192,8 @@ pub fn paint(ctx: &CanvasRenderingContext2d, frame: &Frame) -> Hits {
             .links
             .iter()
             .filter(|l| l.role == Role::Before)
+            // a group's start is only marked by its diamond, the group itself is not before
+            .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
             .map(|l| mark_of(l.from));
         let after = frame
             .links
