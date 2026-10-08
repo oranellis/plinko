@@ -1,7 +1,7 @@
 //! Editing one item of a plan. Each editor keeps a draft of its fields and sends only what was
 //! changed, so two people editing different fields of an item do not undo each other.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 use leptos::prelude::*;
@@ -24,7 +24,11 @@ use uuid::Uuid;
 use crate::{
     format, forms,
     model::{self, node_name},
-    ui::{Actions, Block, Field, List, Number, Segmented, Select, Text, options, use_sync},
+    sync::Sync,
+    ui::{
+        Actions, Block, Choice, Field, Hours, List, Number, Picker, Segmented, Select, Text,
+        options, use_sync,
+    },
 };
 
 /// What a plan holds right now, or `None` if it is gone
@@ -143,45 +147,51 @@ fn who_name(who: Assignee) -> String {
 }
 
 // pickers {{{
-/// Every item of the plan that something can depend on, other than `except`
-fn depends_options(plan: ShortId, except: PlanNode) -> Signal<Vec<(String, String)>> {
+/// Every item of the plan that something can depend on, other than `except`. Plan targets are
+/// marked, and the start of the parent is offered when `with_start`.
+fn depends_options(plan: ShortId, except: PlanNode, with_start: bool) -> Signal<Vec<Choice>> {
     Signal::derive(move || {
-        let mut options = vec![(
-            "start".to_string(),
-            "Start of the group or plan".to_string(),
-        )];
-        let mut nodes = read(plan, |p| Some(model::nodes(p))).unwrap_or_default();
-        nodes.retain(|n| *n != except);
-        let mut named: Vec<(String, String)> = read(plan, |p| {
-            Some(
-                nodes
-                    .iter()
-                    .map(|n| {
-                        (
-                            forms::node_value(DependencyNode::Node(*n)),
-                            node_name(p, *n),
-                        )
-                    })
-                    .collect(),
-            )
-        })
-        .unwrap_or_default();
-        named.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
-        options.extend(named);
+        let mut options = Vec::new();
+        if with_start {
+            options.push(Choice::new("start", "Parent Start", "start"));
+        }
+        let named = read(plan, |p| {
+            let targets: HashSet<PlanNode> = p.targets().values().map(|t| t.node()).collect();
+            let mut named: Vec<Choice> = model::nodes(p)
+                .into_iter()
+                .filter(|n| *n != except)
+                .map(|n| {
+                    let tone = if targets.contains(&n) { "target" } else { "" };
+                    let value = forms::node_value(DependencyNode::Node(n));
+                    Choice::new(value, node_name(p, n), tone)
+                })
+                .collect();
+            named.sort_by(|a, b| a.label.cmp(&b.label).then(a.value.cmp(&b.value)));
+            Some(named)
+        });
+        options.extend(named.unwrap_or_default());
         options
     })
 }
 
+/// What an item waits for, or what waits for it, each with a lag in days
 #[component]
-fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> impl IntoView {
-    let choices = depends_options(plan, me);
+fn DependencyList(
+    #[prop(into)] label: String,
+    #[prop(into)] empty: String,
+    #[prop(into)] placeholder: String,
+    choices: Signal<Vec<Choice>>,
+    deps: RwSignal<Vec<Dependency>>,
+    /// What a new row starts as
+    fresh: Dependency,
+) -> impl IntoView {
     view! {
         <List
-            label="Dependencies"
-            empty="No dependencies added yet"
+            label=label
+            empty=empty
             add="Add"
             count=Signal::derive(move || deps.with(Vec::len))
-            on_add=Callback::new(move |()| deps.update(|d| d.push(Dependency::default())))
+            on_add=Callback::new(move |()| deps.update(|d| d.push(fresh.clone())))
         >
             <For each=move || 0..deps.with(Vec::len) key=|i| *i children=move |i| {
                 let node = Signal::derive(move || {
@@ -190,9 +200,10 @@ fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) ->
                 let lag = Signal::derive(move || deps.with(|d| d.get(i).map_or(0, |d| i64::from(d.lag))));
                 view! {
                     <div class="row">
-                        <Select
+                        <Picker
                             value=node
-                            options=choices
+                            choices=choices
+                            placeholder=placeholder.clone()
                             on_change=Callback::new(move |v: String| {
                                 if let Some(node) = forms::parse_node(&v) {
                                     deps.update(|d| if let Some(d) = d.get_mut(i) { d.node = node });
@@ -207,13 +218,150 @@ fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) ->
                             })
                         />
                         <span class="small" title="Lag days, positive to delay and negative to start early">"lag"</span>
-                        <button type="button" class="plain" aria-label="Remove dependency" on:click=move |_| {
+                        <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
                             deps.update(|d| { if i < d.len() { d.remove(i); } });
                         }>"✕"</button>
                     </div>
                 }
             } />
         </List>
+    }
+}
+
+#[component]
+fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> impl IntoView {
+    view! {
+        <DependencyList
+            label="Dependencies"
+            empty="No dependencies added yet"
+            placeholder="Select dependency…"
+            choices=depends_options(plan, me, true)
+            deps=deps
+            fresh=Dependency::default()
+        />
+    }
+}
+
+/// The items that wait for this one, which are kept in their own dependencies
+#[component]
+fn Dependents(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> impl IntoView {
+    view! {
+        <DependencyList
+            label="Required by"
+            empty="No dependents added yet"
+            placeholder="Select dependent…"
+            choices=depends_options(plan, me, false)
+            deps=deps
+            fresh=Dependency { node: DependencyNode::Node(me), lag: 0 }
+        />
+    }
+}
+
+/// The items that depend on `me`, as dependencies on them
+fn dependents_of(plan: &Plan, me: PlanNode) -> Vec<Dependency> {
+    let mut found: Vec<(String, Dependency)> = model::nodes(plan)
+        .into_iter()
+        .filter(|n| *n != me)
+        .flat_map(|n| {
+            model::dependencies(plan, n)
+                .into_iter()
+                .filter(|d| d.node == DependencyNode::Node(me))
+                .map(move |d| (n, d.lag))
+        })
+        .map(|(n, lag)| {
+            (
+                node_name(plan, n),
+                Dependency {
+                    node: DependencyNode::Node(n),
+                    lag,
+                },
+            )
+        })
+        .collect();
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found.into_iter().map(|(_, d)| d).collect()
+}
+
+fn set_dependencies(sync: Sync, plan: ShortId, node: PlanNode, deps: Vec<Dependency>) {
+    let update = match node {
+        PlanNode::Task(id) => PlanUpdate::Task(Crud::Update(TaskPatch {
+            id,
+            name: None,
+            parent: None,
+            mode: None,
+            duration: None,
+            time_constraint: None,
+            dependencies: Some(deps),
+            allocations: None,
+            affinities: None,
+            actual_workers: None,
+            description: None,
+            persistent_state: None,
+        })),
+        PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Update(MilestonePatch {
+            id,
+            name: None,
+            parent: None,
+            time_constraint: None,
+            dependencies: Some(deps),
+            persistent_state: None,
+        })),
+        PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Update(PlanBufferPatch {
+            id,
+            parent: None,
+            dependencies: Some(deps),
+            set_start_day: None,
+            duration: None,
+        })),
+        PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Update(TaskGroupPatch {
+            id,
+            name: None,
+            dependencies: Some(deps),
+            parent: None,
+            placeholder_duration: None,
+        })),
+    };
+    sync.plan(plan, update);
+}
+
+/// Changes the dependencies of the other items to match what was asked for in `new`
+fn apply_dependents(
+    sync: Sync,
+    plan: ShortId,
+    me: PlanNode,
+    old: &[Dependency],
+    new: &[Dependency],
+) {
+    let wanted = |deps: &[Dependency]| -> HashMap<PlanNode, i32> {
+        deps.iter()
+            .filter_map(|d| match d.node {
+                DependencyNode::Node(n) if n != me => Some((n, d.lag)),
+                _ => None,
+            })
+            .collect()
+    };
+    let (old, new) = (wanted(old), wanted(new));
+    let affected: HashSet<PlanNode> = old.keys().chain(new.keys()).copied().collect();
+    for other in affected {
+        if old.get(&other) == new.get(&other) {
+            continue;
+        }
+        let mut deps = sync
+            .tenant
+            .with_untracked(|t| Some(model::dependencies(t.as_ref()?.plans().get(&plan)?, other)))
+            .unwrap_or_default();
+        let mine = DependencyNode::Node(me);
+        deps.retain(|d| d.node != mine || new.contains_key(&other));
+        if let Some(lag) = new.get(&other) {
+            match deps.iter_mut().find(|d| d.node == mine) {
+                Some(d) => d.lag = *lag,
+                None => deps.push(Dependency {
+                    node: mine,
+                    lag: *lag,
+                }),
+            }
+        }
+        set_dependencies(sync, plan, other, deps);
     }
 }
 
@@ -349,7 +497,14 @@ fn worker_options(plan: ShortId) -> Signal<Vec<(String, String)>> {
 
 #[component]
 fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl IntoView {
-    let choices = worker_options(plan);
+    let named = worker_options(plan);
+    let choices = Signal::derive(move || {
+        named
+            .get()
+            .into_iter()
+            .map(|(v, l)| Choice::new(v, l, ""))
+            .collect::<Vec<_>>()
+    });
     view! {
         <List
             label="Workers"
@@ -359,7 +514,7 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
             on_add=Callback::new(move |()| {
                 allocations.update(|a| {
                     if !a.iter().any(|(w, _)| *w == Worker::Placeholder) {
-                        a.push((Worker::Placeholder, 8));
+                        a.push((Worker::Placeholder, 4));
                     }
                 });
             })
@@ -373,24 +528,22 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
                 });
                 view! {
                     <div class="row">
-                        <Select
+                        <Picker
                             value=worker
-                            options=choices
+                            choices=choices
+                            placeholder="Select worker…"
                             on_change=Callback::new(move |v: String| {
                                 if let Some(w) = forms::parse_worker(&v) {
                                     allocations.update(|a| if let Some(a) = a.get_mut(i) { a.0 = w });
                                 }
                             })
                         />
-                        <Number
+                        <Hours
                             value=hours
-                            min=0
-                            max=8
-                            on_input=Callback::new(move |n: i64| {
-                                allocations.update(|a| if let Some(a) = a.get_mut(i) { a.1 = n.clamp(0, 8) as u8 });
+                            on_change=Callback::new(move |n: u8| {
+                                allocations.update(|a| if let Some(a) = a.get_mut(i) { a.1 = n });
                             })
                         />
-                        <span class="small" title="Hours a day">"h"</span>
                         <button type="button" class="plain" aria-label="Remove worker" on:click=move |_| {
                             allocations.update(|a| { if i < a.len() { a.remove(i); } });
                         }>"✕"</button>
@@ -450,6 +603,8 @@ fn TaskForm(
     let ended = RwSignal::new(state.actual_end_date);
     let recorded = RwSignal::new(task.actual_workers().clone());
     let original = StoredValue::new(task);
+    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
+    let dependents = RwSignal::new(was.clone());
 
     let save = move |_| {
         let old: Task = original.get_value();
@@ -493,6 +648,7 @@ fn TaskForm(
             persistent_state: changed(&old.persistent_state(), new_state),
         };
         sync.plan(plan, PlanUpdate::Task(Crud::Update(patch)));
+        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
         on_close.run(());
     };
     view! {
@@ -533,17 +689,13 @@ fn TaskForm(
                 <Field label="Duration (days)">
                     <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=1 max=3650 />
                 </Field>
-                <Block label="Mode">
-                    <button
-                        type="button"
-                        class="toggle"
-                        class:on=move || mode.get() == "strict"
-                        title="Strict needs whole days in a row, relaxed uses any free time"
-                        on:click=move |_| mode.update(|m| *m = if m == "strict" { "relaxed" } else { "strict" }.to_string())
-                    >
-                        {move || if mode.get() == "strict" { "Strict" } else { "Relaxed" }}
-                    </button>
-                </Block>
+                <Field label="Mode">
+                    <Select
+                        value=mode
+                        options=options([("strict", "Strict"), ("relaxed", "Relaxed")])
+                        on_change=Callback::new(move |v| mode.set(v))
+                    />
+                </Field>
             </div>
             <Constraint kind=kind day=day />
             <div class="cols">
@@ -563,6 +715,7 @@ fn TaskForm(
             <ParentPicker plan=plan me=node parent=parent />
             <Workers plan=plan allocations=allocations />
             <Dependencies plan=plan me=node deps=deps />
+            <Dependents plan=plan me=node deps=dependents />
             <Recorded plan=plan task=original recorded=recorded allocations=allocations />
             <Affinities plan=plan chosen=affinities />
             <Actions on_cancel=on_cancel on_delete=remove />
@@ -702,6 +855,8 @@ fn MilestoneForm(
     let parent = RwSignal::new(milestone.parent());
     let deps = RwSignal::new(milestone.dependencies().clone());
     let original = StoredValue::new(milestone);
+    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
+    let dependents = RwSignal::new(was.clone());
     let save = move |_| {
         let old = original.get_value();
         let patch = MilestonePatch {
@@ -716,6 +871,7 @@ fn MilestoneForm(
             persistent_state: None,
         };
         sync.plan(plan, PlanUpdate::Milestone(Crud::Update(patch)));
+        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
         on_close.run(());
     };
     view! {
@@ -726,6 +882,7 @@ fn MilestoneForm(
             <Constraint kind=kind day=day />
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
+            <Dependents plan=plan me=node deps=dependents />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
@@ -750,6 +907,8 @@ fn BufferForm(
     let parent = RwSignal::new(buffer.parent());
     let deps = RwSignal::new(buffer.dependencies().clone());
     let original = StoredValue::new(buffer);
+    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
+    let dependents = RwSignal::new(was.clone());
     let save = move |_| {
         let old = original.get_value();
         let patch = PlanBufferPatch {
@@ -763,6 +922,7 @@ fn BufferForm(
             ),
         };
         sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
+        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
         on_close.run(());
     };
     view! {
@@ -775,6 +935,7 @@ fn BufferForm(
             </Field>
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
+            <Dependents plan=plan me=node deps=dependents />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
@@ -799,6 +960,8 @@ fn GroupForm(
     let parent = RwSignal::new(group.parent());
     let deps = RwSignal::new(group.dependencies().clone());
     let original = StoredValue::new(group);
+    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
+    let dependents = RwSignal::new(was.clone());
     let save = move |_| {
         let old = original.get_value();
         let patch = TaskGroupPatch {
@@ -812,6 +975,7 @@ fn GroupForm(
             ),
         };
         sync.plan(plan, PlanUpdate::TaskGroup(Crud::Update(patch)));
+        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
         on_close.run(());
     };
     view! {
@@ -824,6 +988,7 @@ fn GroupForm(
             </Field>
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
+            <Dependents plan=plan me=node deps=dependents />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }

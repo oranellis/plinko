@@ -67,7 +67,7 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
 
 - The Gantt is one canvas in the style of Plinko 1 (`plinko1-ui.md`), on desktop and phones alike:
   packed lanes, group outlines, hover dependency lines, momentum drag, pinch and wheel zoom.
-- Items open in floating windows. A "my work" agenda comes from `UserSchedule` (per day, across
+- Items open in a pane beside the chart. A "my work" agenda comes from `UserSchedule` (per day, across
   plans), and a plan can also be shown as a list.
 - Everything except the Gantt canvas is real DOM elements, which is most of the accessibility.
 

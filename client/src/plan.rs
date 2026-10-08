@@ -410,6 +410,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         </ul>
                     </Show>
                 </div>
+                <div class="workspace">
                 <div class="main">
                     {move || match tab.get() {
                         PlanTab::Gantt => view! {
@@ -433,8 +434,9 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 {move || {
                     node.get()
                         .filter(|_| tab.get() != PlanTab::Settings)
-                        .map(|node| view! { <ItemWindow plan=plan node=node fresh=fresh on_close=on_close /> })
+                        .map(|node| view! { <ItemPane plan=plan node=node fresh=fresh on_close=on_close /> })
                 }}
+                </div>
                 <Show when=move || searching.get()>
                     <SearchWindow plan=plan on_found=on_found on_close=Callback::new(move |_| searching.set(false)) />
                 </Show>
@@ -453,9 +455,9 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     }
 }
 
-/// The floating window for editing the item that is open
+/// The pane beside the chart for editing the item that is open
 #[component]
-fn ItemWindow(
+fn ItemPane(
     plan: ShortId,
     node: PlanNode,
     fresh: RwSignal<Option<Uuid>>,
@@ -479,9 +481,15 @@ fn ItemWindow(
         on_close.run(());
     });
     view! {
-        <Modal title=title on_close=cancel>
-            <ItemEditor plan=plan node=node on_close=saved on_cancel=cancel />
-        </Modal>
+        <aside class="pane">
+            <header>
+                <h2>{title}</h2>
+                <button type="button" class="plain" aria-label="Close" on:click=move |_| cancel.run(())>"✕"</button>
+            </header>
+            <div class="body">
+                <ItemEditor plan=plan node=node on_close=saved on_cancel=cancel />
+            </div>
+        </aside>
     }
 }
 

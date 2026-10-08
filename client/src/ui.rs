@@ -1,6 +1,6 @@
 //! Small pieces the pages share.
 
-use leptos::prelude::*;
+use leptos::{html, prelude::*};
 
 use crate::sync::{Link, Sync};
 
@@ -77,6 +77,139 @@ pub fn Segmented(
                     })
                     .collect_view()
             }}
+        </div>
+    }
+}
+
+/// One thing a `Picker` can pick. `tone` is a CSS class that colours it: `start` or `target`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Choice {
+    pub value: String,
+    pub label: String,
+    pub tone: &'static str,
+}
+
+impl Choice {
+    pub fn new(value: impl Into<String>, label: impl Into<String>, tone: &'static str) -> Self {
+        Self {
+            value: value.into(),
+            label: label.into(),
+            tone,
+        }
+    }
+}
+
+/// A button that opens a searchable list of `choices`, holding the value that is picked
+#[component]
+pub fn Picker(
+    #[prop(into)] value: Signal<String>,
+    #[prop(into)] choices: Signal<Vec<Choice>>,
+    on_change: Callback<String>,
+    #[prop(optional, into)] placeholder: String,
+) -> impl IntoView {
+    let open = RwSignal::new(false);
+    let filter = RwSignal::new(String::new());
+    let anchor = RwSignal::new((0.0, 0.0, 0.0));
+    let button = NodeRef::<html::Button>::new();
+    let search = NodeRef::<html::Input>::new();
+    let current = Memo::new(move |_| {
+        let v = value.get();
+        choices.with(|all| all.iter().find(|c| c.value == v).cloned())
+    });
+    let show = move |_| {
+        if let Some(b) = button.get_untracked() {
+            let r = b.get_bounding_client_rect();
+            anchor.set((r.left(), r.bottom() + 2.0, r.width()));
+        }
+        filter.set(String::new());
+        open.set(true);
+        set_timeout(
+            move || {
+                if let Some(i) = search.get_untracked() {
+                    let _ = i.focus();
+                }
+            },
+            std::time::Duration::from_millis(0),
+        );
+    };
+    let shown = Memo::new(move |_| {
+        let wanted = filter.get().to_lowercase();
+        choices.with(|all| {
+            all.iter()
+                .filter(|c| wanted.is_empty() || c.label.to_lowercase().contains(&wanted))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+    });
+    view! {
+        <button type="button" class="picker" node_ref=button on:click=show>
+            {move || match current.get() {
+                Some(c) => view! { <span class=c.tone>{c.label}</span> }.into_any(),
+                None => view! { <span class="muted">{placeholder.clone()}</span> }.into_any(),
+            }}
+            <span class="chevron">"▾"</span>
+        </button>
+        <Show when=move || open.get()>
+            <div class="picker-backdrop" on:click=move |_| open.set(false)></div>
+            <div
+                class="popover"
+                style=move || {
+                    let (x, y, w) = anchor.get();
+                    format!("left:{x}px;top:{y}px;width:{w}px")
+                }
+            >
+                <input
+                    class="search"
+                    node_ref=search
+                    placeholder="Search…"
+                    prop:value=move || filter.get()
+                    on:input=move |ev| filter.set(event_target_value(&ev))
+                    on:keydown=move |ev| if ev.key() == "Escape" { open.set(false) }
+                />
+                <ul>
+                    <For each=move || shown.get() key=|c| c.value.clone() children=move |c| {
+                        let pick = c.value.clone();
+                        view! {
+                            <li><button type="button" class=c.tone on:click=move |_| {
+                                open.set(false);
+                                on_change.run(pick.clone());
+                            }>{c.label}</button></li>
+                        }
+                    } />
+                    <Show when=move || shown.with(Vec::is_empty)><li class="none">"No results"</li></Show>
+                </ul>
+            </div>
+        </Show>
+    }
+}
+
+/// Hours of a day, out of eight: a thin cell for none, then eight, lit from the left
+#[component]
+pub fn Hours(#[prop(into)] value: Signal<i64>, on_change: Callback<u8>) -> impl IntoView {
+    view! {
+        <div class="hours" role="group" aria-label="Hours a day">
+            <button
+                type="button"
+                class="cell none"
+                class:lit=move || value.get() == 0
+                title="0/8"
+                on:click=move |_| on_change.run(0)
+            ></button>
+            {(1u8..=8)
+                .map(|n| {
+                    let lit = move || value.get() >= i64::from(n);
+                    view! {
+                        <button
+                            type="button"
+                            class="cell"
+                            class:lit=lit
+                            title=format!("{n}/8")
+                            on:click=move |_| on_change.run(n)
+                        ></button>
+                    }
+                })
+                .collect_view()}
+            <span class="small">{move || format!("{}/8", value.get())}</span>
         </div>
     }
 }

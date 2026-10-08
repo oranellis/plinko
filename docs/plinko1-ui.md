@@ -419,6 +419,8 @@ editors, toolbar icons) except:
 - **Groups:** members are packed together and drawn as a rounded outline around a faint filled
   block, nested outward. Hover dependencies to a group end at a small diamond on its left or right
   edge.
+- **Editors:** a pane on the right of the chart (a full sheet on phones) with the layout of v1's
+  modal, dependency and worker choices are searchable pickers, worker hours are a row of eight cells.
 - **Unscheduled items:** a list window rather than a strip.
 - **Plan views:** the Gantt and list are toolbar icons.
 - **Navigation:** routes in the URL, tabs on top (bottom bar on phones).

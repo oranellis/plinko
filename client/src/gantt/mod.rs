@@ -110,7 +110,13 @@ pub fn Gantt(
     }
     on_resize.forget();
     Effect::new(move |_| {
-        if canvas.get().is_some() {
+        if let Some(element) = canvas.get() {
+            // the chart changes size when the pane beside it opens or closes
+            let watch = Closure::<dyn FnMut()>::new(measure);
+            if let Ok(observer) = web_sys::ResizeObserver::new(watch.as_ref().unchecked_ref()) {
+                observer.observe(element.as_ref());
+            }
+            watch.forget();
             measure();
             // the page may still be settling into its place
             set_timeout(measure, Duration::from_millis(60));

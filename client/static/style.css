@@ -97,6 +97,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* the plan page: a toolbar of icons over the chart, as in Plinko 1 */
 .plan { display: flex; flex-direction: column; flex: 1; min-height: 0; position: relative; }
+.workspace { display: flex; flex: 1; min-height: 0; }
 .toolbar { position: relative; display: flex; align-items: center; height: 44px; padding: 0 12px; flex: none; background: var(--bg); }
 .toolbar-buttons { display: flex; align-items: center; flex: 1; min-width: 0; }
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 4px; z-index: 1; }
@@ -122,15 +123,16 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .switcher a:hover { background: #37373d; }
 .switcher a.current { background: #1c3a5a; color: #7cb9f4; }
 .switcher .tick { width: 14px; color: var(--accent); font-size: 11px; }
-.main { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.main { flex: 1; min-width: 0; min-height: 0; overflow: auto; position: relative; }
 canvas.gantt { width: 100%; height: 100%; display: block; touch-action: none; background: var(--bg); }
 
-/* floating windows */
+/* floating windows and the pane beside the chart */
+.pane { width: 440px; flex: none; background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: grid; place-items: center; z-index: 1000; padding: 16px; }
 .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6); width: min(500px, 100%); max-height: 90dvh; display: flex; flex-direction: column; overflow: hidden; }
-.modal > header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); flex: none; }
-.modal > header h2 { font-weight: 600; }
-.modal .body { padding: 18px; overflow-y: auto; flex: 1; }
+.modal > header, .pane > header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); flex: none; }
+.modal > header h2, .pane > header h2 { font-weight: 600; }
+.modal .body, .pane .body { padding: 18px; overflow-y: auto; flex: 1; }
 .info { list-style: none; margin: 0 0 12px; padding: 0; color: var(--muted); font-size: 13px; }
 .info li:first-child { color: var(--text); }
 .form { display: grid; gap: 14px; }
@@ -146,8 +148,7 @@ canvas.gantt { width: 100%; height: 100%; display: block; touch-action: none; ba
 .segmented button { flex: 1; border-radius: 0; padding: 0 6px; font-size: 13px; background: var(--line); border-right: 1px solid var(--bg); white-space: nowrap; }
 .segmented button:first-child { border-radius: var(--radius) 0 0 var(--radius); }
 .segmented button:last-child { border-radius: 0 var(--radius) var(--radius) 0; border-right: none; }
-.segmented button.on, button.toggle.on { background: var(--accent); color: #fff; font-weight: 600; }
-button.toggle { width: 100%; font-size: 13px; }
+.segmented button.on { background: var(--accent); color: #fff; font-weight: 600; }
 .list { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); padding: 6px; display: grid; gap: 6px; min-height: 64px; align-content: start; }
 .list .none { margin: 0; padding: 2px 6px; font-size: 13px; color: #555; }
 .list .row > input[type=number] { flex: 0 0 64px; width: 64px; text-align: center; }
@@ -199,6 +200,7 @@ table.grid th:first-child, table.grid td:first-child { text-align: left; positio
   .bottom a.active { color: #fff; background: var(--raised); }
   .page { padding-bottom: calc(var(--bottom) + 16px); }
   .page:has(.plan) { padding-bottom: var(--bottom); }
+  .pane { position: absolute; inset: 0; width: auto; z-index: 20; border-left: none; }
   .modal { align-self: end; width: 100%; max-height: 92dvh; border-radius: 12px 12px 0 0; }
   .backdrop { padding: 0; align-items: end; }
 }
@@ -207,3 +209,24 @@ table.grid th:first-child, table.grid td:first-child { text-align: left; positio
   .toolbar-title { position: static; transform: none; max-width: 100%; width: 100%; justify-content: center; font-size: 14px; }
   .toolbar-buttons { width: 100%; }
 }
+
+/* pickers and hours */
+button.picker { flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; background: var(--bg); border: 1px solid var(--line); text-align: left; font-size: 14px; padding: 0 10px; }
+button.picker > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
+.muted { color: var(--faint); }
+.start { color: #a78bfa; }
+.target { color: #ffd600; }
+.picker-backdrop { position: fixed; inset: 0; z-index: 1100; }
+.popover { position: fixed; z-index: 1101; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); padding: 6px; display: grid; gap: 6px; }
+.popover input.search { width: 100%; margin: 0; }
+.popover ul { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
+.popover li button { width: 100%; text-align: left; background: none; border-radius: 3px; padding: 5px 8px; min-height: 0; font-size: 13px; color: inherit; }
+.popover li button.start { color: #a78bfa; } .popover li button.target { color: #ffd600; }
+.popover li button:hover { background: var(--raised); }
+.popover li.none { color: var(--faint); padding: 6px 8px; font-size: 13px; }
+.hours { display: flex; gap: 3px; align-items: center; }
+.hours .cell { width: 14px; height: 22px; min-height: 0; padding: 0; background: var(--line); border-radius: 2px; }
+.hours .cell.none { width: 5px; }
+.hours .cell.lit { background: var(--accent); }
+.hours .small { min-width: 28px; margin-left: 4px; }
