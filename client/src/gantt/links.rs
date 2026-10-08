@@ -28,8 +28,6 @@ pub enum Role {
     Before,
     /// Comes after it
     After,
-    /// Is inside the group under the pointer and starts with it
-    Inside,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,23 +75,15 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
         });
     }
     for other in nodes {
-        for dep in model::dependencies(plan, other) {
-            let after_end = dep.node == DependencyNode::Node(node);
-            let in_group = matches!(node, PlanNode::TaskGroup(group)
-                if dep.node == DependencyNode::ParentStart
-                    && model::parent_of(plan, other) == Parent::Node(group));
-            if after_end || in_group {
-                let (from, role) = if after_end {
-                    (Anchor::End(node), Role::After)
-                } else {
-                    (Anchor::Start(node), Role::Inside)
-                };
-                out.push(Link {
-                    from,
-                    to: Anchor::Start(other),
-                    role,
-                });
-            }
+        if model::dependencies(plan, other)
+            .iter()
+            .any(|d| d.node == DependencyNode::Node(node))
+        {
+            out.push(Link {
+                from: Anchor::End(node),
+                to: Anchor::Start(other),
+                role: Role::After,
+            });
         }
     }
     // what ends a group ends it, and the group ends with it
@@ -103,17 +93,6 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
             to: Anchor::End(group),
             role: Role::After,
         });
-    }
-    if matches!(node, PlanNode::TaskGroup(_)) {
-        for member in model::nodes(plan) {
-            if model::ends_group(plan, state, member) == Some(node) {
-                out.push(Link {
-                    from: Anchor::End(member),
-                    to: Anchor::End(node),
-                    role: Role::Inside,
-                });
-            }
-        }
     }
     out
 }
@@ -253,11 +232,8 @@ mod tests {
             role: Role::Before
         }));
         let around = links(&plan, None, Mark::Node(group));
-        assert!(around.contains(&Link {
-            from: Anchor::Start(group),
-            to: Anchor::Start(member),
-            role: Role::Inside
-        }));
+        // what is inside a group is not linked to it
+        assert!(!around.iter().any(|l| l.to == Anchor::Start(member)));
         assert!(around.contains(&Link {
             from: Anchor::End(group),
             to: Anchor::Start(after),

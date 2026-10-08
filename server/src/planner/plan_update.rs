@@ -88,7 +88,6 @@ impl PlanUpdate {
                 name: None,
                 dependencies,
                 parent,
-                placeholder_duration: None,
             })),
         }
     }

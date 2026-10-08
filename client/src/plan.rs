@@ -265,7 +265,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         name: None,
                         dependencies: Some(vec![Dependency::default()]),
                         parent: None,
-                        placeholder_duration: None,
                     };
                     sync.plan_then(plan, PlanUpdate::TaskGroup(Crud::Update(patch)), then);
                 },

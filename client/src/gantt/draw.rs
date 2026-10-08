@@ -33,7 +33,6 @@ const BEFORE: &str = "#fc1ef1";
 const AFTER: &str = "#07fcd7";
 const BEFORE_LINE: &str = "rgba(252,30,241,0.66)";
 const INSIDE: &str = "#1255a5";
-const INSIDE_LINE: &str = "rgba(18,85,165,0.8)";
 const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
 const PROBLEM: &str = "#e65100";
 const PLAN_START: &str = "#a78bfa";
@@ -239,7 +238,8 @@ pub fn paint(ctx: &CanvasRenderingContext2d, frame: &Frame) -> Hits {
         if p.kind == Kind::Group {
             let bar = vp.bar(from, to, p.lane);
             let expand = 4.0 + 4.0 * f64::from(p.levels);
-            let inset = 2.0 + 3.0 * f64::from(p.depth);
+            // the top and bottom of nested groups share the lines of the grid, only the sides step out
+            let inset = 2.0;
             let top = vp.lane_top(p.lane) + inset;
             let rect = Rect {
                 x: bar.x - expand,
@@ -450,7 +450,6 @@ fn paint_links(
         let (line, solid) = match link.role {
             Role::Before => (BEFORE_LINE, BEFORE),
             Role::After => (AFTER_LINE, AFTER),
-            Role::Inside => (INSIDE_LINE, INSIDE),
         };
         ctx.set_stroke_style_str(line);
         ctx.begin_path();

@@ -323,9 +323,7 @@ impl<'a> PlanSolver<'a> {
                     return Err(Reason::NoScheduledMembers);
                 }
                 let group = &self.plan.task_groups()[id];
-                group
-                    .place(start, &scheduled, &self.calendar)
-                    .ok_or(Reason::NoCapacity)?
+                group.place(start, &scheduled).ok_or(Reason::NoCapacity)?
             }
         };
         Ok(Placement { range, work: None })

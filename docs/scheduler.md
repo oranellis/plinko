@@ -171,9 +171,8 @@ is that date. A top-level group needs an explicit `ParentStart` dependency to be
 plan start, exactly like a task. The group then
 covers the first member's start to the last member's end (`TaskGroup::place`), so it begins
 overlapping its first task and its end falls on the last day a member runs. Milestone members count
-as their one day. With no members the group lasts `placeholder_duration` working days of the plan
-calendar (default 1, at least 1) from that date; the placeholder stops applying as soon as a member is added (the value is
-kept, so it applies again if the group empties). A group whose members are all unscheduled is
+as their one day. With no members the group lasts 3 calendar days from that date (not configurable); that stops
+applying as soon as a member is added. A group whose members are all unscheduled is
 unscheduled. External items depend on the group as a whole, on its end. A group with no
 dependencies never starts, so it and its members are unscheduled. Groups nest. They have no time
 constraints and no affinities.

@@ -248,7 +248,7 @@ impl World {
         id
     }
 
-    fn group(&mut self, placeholder: u32, on: &[Dep]) -> Uuid {
+    fn group(&mut self, on: &[Dep]) -> Uuid {
         let id = self.id();
         let new = NewTaskGroup {
             id,
@@ -261,7 +261,6 @@ impl World {
             name: None,
             dependencies: Some(deps(on)),
             parent: None,
-            placeholder_duration: Some(placeholder),
         };
         self.plan_update(PlanUpdate::TaskGroup(Crud::Update(patch)));
         id
@@ -753,7 +752,7 @@ fn affinities_limit_the_days_worked() {
 fn groups_cover_their_members_and_start_them_together() {
     let mut world = World::new();
     let alice = world.user();
-    let group = world.group(1, &[start()]);
+    let group = world.group(&[start()]);
     let parent = Parent::Node(group);
     let one = world.task_in(
         parent,
@@ -773,11 +772,11 @@ fn groups_cover_their_members_and_start_them_together() {
 }
 
 #[test]
-fn empty_groups_last_their_placeholder_and_groups_of_unscheduled_members_are_unscheduled() {
+fn empty_groups_last_three_calendar_days_and_groups_of_unscheduled_members_are_unscheduled() {
     let mut world = World::new();
-    let empty = world.group(3, &[start()]);
+    let empty = world.group(&[start()]);
     let after_empty = world.task(1, &[], &[after(PlanNode::TaskGroup(empty))]);
-    let hollow = world.group(1, &[start()]);
+    let hollow = world.group(&[start()]);
     let nobody = world.tag(&[]);
     world.task_in(
         Parent::Node(hollow),
@@ -786,9 +785,9 @@ fn empty_groups_last_their_placeholder_and_groups_of_unscheduled_members_are_uns
         &[start()],
     );
     let state = world.solve();
-    // the Sunday is not a working day, so three days are Monday to Wednesday
-    assert_eq!(state.task_groups[&empty].date_range.end(), d(4));
-    assert_eq!(span(&state, after_empty), (d(4), d(5)));
+    // three calendar days from the Sunday before, and the task after it works that Wednesday
+    assert_eq!(state.task_groups[&empty].date_range.end(), d(3));
+    assert_eq!(span(&state, after_empty), (d(3), d(4)));
     let reason = state.unscheduled[&PlanNode::TaskGroup(hollow)];
     assert_eq!(reason, UnscheduledReason::NoScheduledMembers);
 }
@@ -937,7 +936,7 @@ fn a_snapshot_of_a_tenant_schedules_the_same() {
     });
     let marker = world.milestone(&[after(node(first))]);
     let buffer = world.buffer(2, &[after(PlanNode::Milestone(marker))]);
-    let group = world.group(2, &[after(PlanNode::PlanBuffer(buffer))]);
+    let group = world.group(&[after(PlanNode::PlanBuffer(buffer))]);
     world.task_in(Parent::Node(group), 1, &[(user(bob), 2)], &[start()]);
     world.target(PlanNode::Milestone(marker));
     let expected = world.solve();

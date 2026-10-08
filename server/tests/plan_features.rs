@@ -160,7 +160,6 @@ fn group_members_anchor_through_the_group_start() {
             lag: 0,
         }]),
         parent: None,
-        placeholder_duration: None,
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
         .unwrap();
@@ -512,17 +511,4 @@ fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
         .unwrap();
-    assert_eq!(plan.task_groups()[&group].placeholder_duration(), 1);
-    let patch = |placeholder_duration| TaskGroupPatch {
-        id: group,
-        name: None,
-        dependencies: None,
-        parent: None,
-        placeholder_duration: Some(placeholder_duration),
-    };
-    let zero = PlanUpdate::TaskGroup(Crud::Update(patch(0)));
-    assert!(plan.apply_update(zero).is_err());
-    let five = PlanUpdate::TaskGroup(Crud::Update(patch(5)));
-    plan.apply_update(five).unwrap();
-    assert_eq!(plan.task_groups()[&group].placeholder_duration(), 5);
 }

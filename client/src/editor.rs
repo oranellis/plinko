@@ -894,7 +894,6 @@ fn GroupForm(
     };
     let node = PlanNode::TaskGroup(id);
     let name = RwSignal::new(group.name().to_string());
-    let placeholder = RwSignal::new(i64::from(group.placeholder_duration()));
     let parent = RwSignal::new(group.parent());
     let deps = RwSignal::new(group.dependencies().clone());
     let original = StoredValue::new(group);
@@ -907,10 +906,6 @@ fn GroupForm(
             name: changed(&old.name().to_string(), name.get_untracked()),
             dependencies: changed(old.dependencies(), deps.get_untracked()),
             parent: changed(&old.parent(), parent.get_untracked()),
-            placeholder_duration: changed(
-                &old.placeholder_duration(),
-                placeholder.get_untracked().clamp(1, 3650) as u32,
-            ),
         };
         sync.plan(plan, PlanUpdate::TaskGroup(Crud::Update(patch)));
         apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
@@ -920,9 +915,6 @@ fn GroupForm(
         <form class="form" on:submit=move |ev| { ev.prevent_default(); save(()); }>
             <Field label="Name">
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
-            </Field>
-            <Field label="Placeholder Duration (days)">
-                <Number value=placeholder on_input=Callback::new(move |n| placeholder.set(n)) min=1 max=3650 />
             </Field>
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
