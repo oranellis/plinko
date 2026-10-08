@@ -1,8 +1,7 @@
-//! One plan: its Gantt chart or list, and the editor for the item that is open.
+//! One plan: its toolbar of icons, its Gantt chart or list, and the window for the item that is open.
 
 use std::collections::HashSet;
 
-use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
     planner::plan_update::PlanUpdate,
@@ -23,11 +22,12 @@ use uuid::Uuid;
 use crate::{
     editor::ItemEditor,
     format,
-    gantt::Gantt,
+    gantt::{self, Gantt, arrange::Mark, layout::Viewport, scene},
+    icons::{Icon, IconKind},
     model::{self, Look, Row},
     nav::{PlanTab, Route, navigate},
     settings::PlanSettings,
-    ui::use_sync,
+    ui::{Modal, use_sync},
 };
 
 fn task_patch(id: Uuid) -> TaskPatch {
@@ -75,17 +75,38 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             .with(|t| t.as_ref().is_some_and(|t| t.plans().contains_key(&plan)))
     });
     let collapsed = RwSignal::new(HashSet::<Uuid>::new());
+    let state_of = move || {
+        sync.schedule
+            .with(|s| s.as_ref().and_then(|(_, s)| s.plans.get(&plan).cloned()))
+    };
     let rows = Memo::new(move |_| {
-        let schedule = sync.schedule.get();
-        let state = schedule.as_ref().and_then(|(_, s)| s.plans.get(&plan));
+        let state = state_of();
         collapsed.with(|collapsed| {
             sync.tenant.with(|t| {
                 t.as_ref()
                     .and_then(|t| t.plans().get(&plan))
-                    .map(|p| model::rows(p, state, collapsed))
+                    .map(|p| model::rows(p, state.as_ref(), collapsed))
                     .unwrap_or_default()
             })
         })
+    });
+    let scene = Memo::new(move |_| {
+        let state = state_of();
+        collapsed
+            .with(|collapsed| {
+                sync.tenant.with(|t| {
+                    let plan = t.as_ref().and_then(|t| t.plans().get(&plan))?;
+                    Some(scene::build(plan, state.as_ref(), collapsed))
+                })
+            })
+            .unwrap_or_else(|| scene::Scene {
+                plan_start: sync
+                    .tenant
+                    .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default()),
+                arrangement: Default::default(),
+                unplaced: Vec::new(),
+                last_day: 0.0,
+            })
     });
     let name = Memo::new(move |_| {
         sync.tenant.with(|t| {
@@ -106,31 +127,42 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         sync.tenant
             .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
     });
-    let range = Signal::derive(move || {
-        let spans: Vec<(NaiveDate, NaiveDate)> =
-            rows.with(|r| r.iter().filter_map(|r| r.span).collect());
-        let first = spans.iter().map(|s| s.0).min()?.min(today.get());
-        let last = spans.iter().map(|s| s.1).max()?.max(today.get());
-        Some((first, last))
-    });
-    let problems = Memo::new(move |_| {
-        rows.with(|r| {
-            (
-                r.iter().filter(|r| r.unscheduled.is_some()).count(),
-                r.iter().filter(|r| r.violated).count(),
-            )
+    let unplaced = Memo::new(move |_| scene.with(|s| s.unplaced.len()));
+
+    let viewport = RwSignal::new(None::<Viewport>);
+    let jump = RwSignal::new(0u32);
+    let focus = RwSignal::new(None::<Mark>);
+    let searching = RwSignal::new(false);
+    let listing = RwSignal::new(false);
+    let switching = RwSignal::new(false);
+
+    let links = Callback::new(move |mark: Mark| {
+        sync.tenant.with(|t| {
+            t.as_ref()
+                .and_then(|t| t.plans().get(&plan))
+                .map(|p| gantt::links::links(p, mark))
+                .unwrap_or_default()
         })
     });
-    let finish = Memo::new(move |_| {
-        sync.schedule.with(|s| {
-            s.as_ref()
-                .and_then(|(_, s)| s.plans.get(&plan))
-                .and_then(|s| s.plan_end)
-        })
+    let info = Callback::new(move |mark: Mark| {
+        let state = state_of();
+        sync.tenant
+            .with(|t| {
+                let t = t.as_ref()?;
+                Some(gantt::info::info(
+                    t,
+                    t.plans().get(&plan)?,
+                    state.as_ref(),
+                    mark,
+                ))
+            })
+            .unwrap_or_default()
     });
+    let violation =
+        Callback::new(move |mark: Mark| gantt::info::violation(state_of().as_ref(), mark));
 
     let go = move |tab: PlanTab, open: Option<Uuid>| navigate(Route::Plan(plan, tab, open));
-    let on_select = Callback::new(move |node: PlanNode| go(tab.get_untracked(), Some(node.id())));
+    let on_open = Callback::new(move |node: PlanNode| go(tab.get_untracked(), Some(node.id())));
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
     let on_toggle = Callback::new(move |node: PlanNode| {
         collapsed.update(|c| {
@@ -138,6 +170,34 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 c.insert(node.id());
             }
         });
+    });
+    // what a search picked: on the chart scroll to it and flash it, else open it
+    let on_found = Callback::new(move |node: PlanNode| {
+        searching.set(false);
+        let placed = scene.with_untracked(|s| {
+            s.arrangement
+                .placed
+                .iter()
+                .any(|p| p.mark == Mark::Node(node))
+        });
+        if tab.get_untracked() == PlanTab::Gantt && placed {
+            focus.set(Some(Mark::Node(node)));
+        } else if tab.get_untracked() == PlanTab::Gantt {
+            // inside a folded group: unfold what holds it
+            let mut inside = model::parent_of_in(sync, plan, node);
+            while let Some(group) = inside {
+                collapsed.update(|c| {
+                    c.remove(&group);
+                });
+                inside = model::parent_of_in(sync, plan, PlanNode::TaskGroup(group));
+            }
+            set_timeout(
+                move || focus.set(Some(Mark::Node(node))),
+                std::time::Duration::from_millis(50),
+            );
+        } else {
+            go(tab.get_untracked(), Some(node.id()));
+        }
     });
 
     // new items go in the group that is open, or beside the item that is
@@ -236,76 +296,265 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         });
     };
 
-    let tab_link = move |label: &'static str, to: PlanTab| {
+    let icon_button = move |label: &'static str, kind: IconKind, on: Callback<()>| {
         view! {
-            <a href=Route::Plan(plan, to, None).path() class:active=move || tab.get() == to>{label}</a>
+            <button type="button" class="toolbar-btn" title=label aria-label=label on:click=move |_| on.run(())>
+                <Icon kind=kind />
+            </button>
         }
     };
+    let plans = Memo::new(move |_| {
+        sync.tenant.with(|t| {
+            let mut all: Vec<(ShortId, String)> = t
+                .as_ref()
+                .map(|t| {
+                    t.plans()
+                        .iter()
+                        .map(|(id, p)| (*id, p.name().to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            all.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
+            all
+        })
+    });
     view! {
         <Show when=move || exists.get() fallback=move || view! {
             <p class="empty">"This plan is not here, it may have been deleted. "<a href=Route::Plans.path()>"Back to plans"</a></p>
         }>
             <div class="plan">
-                <div class="bar">
-                    <h1>{move || name.get()}</h1>
-                    {move || finish.get().map(|f| view! {
-                        <span class="pill" class:late={f.delay() > 0}>
-                            {format!("Finishes {} · {}", format::day(f.forecast), format::delay(f.delay()))}
-                        </span>
-                    })}
-                    <Show when=move || { let n = problems.get().0; n > 0 }>
-                        <span class="pill problem">{move || format!("{} not scheduled", problems.get().0)}</span>
-                    </Show>
-                    <Show when=move || { let n = problems.get().1; n > 0 }>
-                        <span class="pill problem">{move || format!("{} miss their date", problems.get().1)}</span>
+                <div class="toolbar">
+                    <div class="toolbar-buttons">
+                    <div class="toolbar-left">
+                        <Show
+                            when=move || tab.get() != PlanTab::Settings
+                            fallback=move || icon_button("Back", IconKind::Back, Callback::new(move |_| go(PlanTab::Gantt, None)))
+                        >
+                            <Show when=move || tab.get() == PlanTab::Gantt>
+                                {icon_button("Jump to today", IconKind::Today, Callback::new(move |_| jump.update(|n| *n += 1)))}
+                            </Show>
+                            {icon_button("Add task", IconKind::AddTask, Callback::new(move |_| add(Kind::Task)))}
+                            {icon_button("Add milestone", IconKind::AddMilestone, Callback::new(move |_| add(Kind::Milestone)))}
+                            {icon_button("Add task group", IconKind::AddGroup, Callback::new(move |_| add(Kind::Group)))}
+                            {icon_button("Add buffer", IconKind::AddBuffer, Callback::new(move |_| add(Kind::Buffer)))}
+                            {icon_button("Search", IconKind::Search, Callback::new(move |_| searching.set(true)))}
+                        </Show>
+                    </div>
+                    <button
+                        type="button"
+                        class="toolbar-title"
+                        title="Switch plan"
+                        aria-haspopup="listbox"
+                        aria-expanded=move || switching.get().to_string()
+                        on:click=move |_| switching.update(|s| *s = !*s)
+                    >
+                        <span class="toolbar-title-text">{move || name.get()}</span>
+                        <span class="toolbar-title-chevron">"▾"</span>
+                    </button>
+                    <div class="toolbar-right">
+                        <Show when=move || { unplaced.get() > 0 }>
+                            <button
+                                type="button"
+                                class="toolbar-btn problem"
+                                title="Not scheduled"
+                                aria-label="Items that are not scheduled"
+                                on:click=move |_| listing.set(true)
+                            >
+                                <Icon kind=IconKind::Alert />
+                                <span class="badge">{move || unplaced.get()}</span>
+                            </button>
+                        </Show>
+                        {move || {
+                            let (kind, label, to) = if tab.get() == PlanTab::List {
+                                (IconKind::Gantt, "Show the Gantt chart", PlanTab::Gantt)
+                            } else {
+                                (IconKind::List, "Show a list", PlanTab::List)
+                            };
+                            icon_button(label, kind, Callback::new(move |_| go(to, None)))
+                        }}
+                        <button
+                            type="button"
+                            class="toolbar-btn"
+                            class:active=move || tab.get() == PlanTab::Settings
+                            title="Plan settings"
+                            aria-label="Plan settings"
+                            on:click=move |_| go(if tab.get_untracked() == PlanTab::Settings { PlanTab::Gantt } else { PlanTab::Settings }, None)
+                        >
+                            <Icon kind=IconKind::Settings />
+                        </button>
+                    </div>
+                    </div>
+                    <Show when=move || switching.get()>
+                        <div class="switcher-backdrop" on:click=move |_| switching.set(false)></div>
+                        <ul class="switcher" role="listbox">
+                            <For each=move || plans.get() key=|p| p.clone() children=move |(id, label)| {
+                                let current = id == plan;
+                                view! {
+                                    <li>
+                                        <a
+                                            class:current=current
+                                            href=Route::Plan(id, tab.get_untracked(), None).path()
+                                            on:click=move |_| switching.set(false)
+                                        >
+                                            <span class="tick">{if current { "✓" } else { "" }}</span>
+                                            {label}
+                                        </a>
+                                    </li>
+                                }
+                            } />
+                        </ul>
                     </Show>
                 </div>
-                <nav class="subtabs" aria-label="Plan views">
-                    {tab_link("Gantt", PlanTab::Gantt)}
-                    {tab_link("List", PlanTab::List)}
-                    {tab_link("Settings", PlanTab::Settings)}
-                </nav>
-                <Show when=move || tab.get() != PlanTab::Settings>
-                    <div class="tools">
-                        <button type="button" on:click=move |_| add(Kind::Task)>"+ Task"</button>
-                        <button type="button" on:click=move |_| add(Kind::Milestone)>"+ Milestone"</button>
-                        <button type="button" on:click=move |_| add(Kind::Group)>"+ Group"</button>
-                        <button type="button" on:click=move |_| add(Kind::Buffer)>"+ Buffer"</button>
-                    </div>
-                </Show>
-                <div class="split">
-                    <div class="main">
-                        {move || match tab.get() {
-                            PlanTab::Gantt => view! {
-                                <Gantt
-                                    rows=rows.into()
-                                    today=today
-                                    range=range
-                                    selected=Signal::derive(move || node.get())
-                                    on_select=on_select
-                                    on_toggle=on_toggle
-                                />
-                            }.into_any(),
-                            PlanTab::List => view! { <List rows=rows selected=node on_select=on_select on_toggle=on_toggle /> }.into_any(),
-                            PlanTab::Settings => view! { <PlanSettings plan=plan /> }.into_any(),
-                        }}
-                    </div>
-                    {move || {
-                        node.get()
-                            .filter(|_| tab.get() != PlanTab::Settings)
-                            .map(|node| view! { <ItemEditor plan=plan node=node on_close=on_close /> })
+                <div class="main">
+                    {move || match tab.get() {
+                        PlanTab::Gantt => view! {
+                            <Gantt
+                                scene=scene.into()
+                                today=today
+                                viewport=viewport
+                                links=links
+                                info=info
+                                violation=violation
+                                on_open=on_open
+                                on_toggle=on_toggle
+                                jump=jump
+                                focus=focus
+                            />
+                        }.into_any(),
+                        PlanTab::List => view! { <List rows=rows on_open=on_open on_toggle=on_toggle /> }.into_any(),
+                        PlanTab::Settings => view! { <PlanSettings plan=plan /> }.into_any(),
                     }}
                 </div>
+                {move || {
+                    node.get()
+                        .filter(|_| tab.get() != PlanTab::Settings)
+                        .map(|node| view! { <ItemWindow plan=plan node=node on_close=on_close /> })
+                }}
+                <Show when=move || searching.get()>
+                    <SearchWindow plan=plan on_found=on_found on_close=Callback::new(move |_| searching.set(false)) />
+                </Show>
+                <Show when=move || listing.get()>
+                    <UnplacedWindow
+                        scene=scene
+                        on_open=Callback::new(move |node: PlanNode| {
+                            listing.set(false);
+                            go(tab.get_untracked(), Some(node.id()));
+                        })
+                        on_close=Callback::new(move |_| listing.set(false))
+                    />
+                </Show>
             </div>
         </Show>
+    }
+}
+
+/// The floating window for editing the item that is open
+#[component]
+fn ItemWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl IntoView {
+    let title = match node {
+        PlanNode::Task(_) => "Task",
+        PlanNode::Milestone(_) => "Milestone",
+        PlanNode::PlanBuffer(_) => "Buffer",
+        PlanNode::TaskGroup(_) => "Task group",
+    };
+    view! {
+        <Modal title=title on_close=on_close>
+            <ItemEditor plan=plan node=node on_close=on_close />
+        </Modal>
+    }
+}
+
+/// Filter the items by name, then go to one
+#[component]
+fn SearchWindow(
+    plan: ShortId,
+    on_found: Callback<PlanNode>,
+    on_close: Callback<()>,
+) -> impl IntoView {
+    let sync = use_sync();
+    let filter = RwSignal::new(String::new());
+    let results = Memo::new(move |_| {
+        let wanted = filter.get().to_lowercase();
+        sync.tenant
+            .with(|t| {
+                let p = t.as_ref()?.plans().get(&plan)?;
+                let mut found: Vec<(PlanNode, String)> = model::nodes(p)
+                    .into_iter()
+                    .map(|n| (n, model::node_name(p, n)))
+                    .filter(|(_, name)| wanted.is_empty() || name.to_lowercase().contains(&wanted))
+                    .collect();
+                found.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.id().cmp(&b.0.id())));
+                Some(found)
+            })
+            .unwrap_or_default()
+    });
+    view! {
+        <Modal title="Search" on_close=on_close>
+            <input
+                type="text"
+                class="search"
+                placeholder="Filter tasks and milestones…"
+                autofocus
+                prop:value=move || filter.get()
+                class:nothing=move || !filter.with(String::is_empty) && results.with(Vec::is_empty)
+                on:input=move |ev| filter.set(event_target_value(&ev))
+            />
+            <ul class="results">
+                <Show when=move || results.with(Vec::is_empty)>
+                    <li class="none">"No results"</li>
+                </Show>
+                <For each=move || results.get() key=|r| r.clone() children=move |(node, name)| {
+                    let glyph = match node {
+                        PlanNode::Task(_) => "▬",
+                        PlanNode::Milestone(_) => "◇",
+                        PlanNode::PlanBuffer(_) => "▭",
+                        PlanNode::TaskGroup(_) => "▢",
+                    };
+                    view! {
+                        <li>
+                            <button type="button" on:click=move |_| on_found.run(node)>
+                                <span class="glyph">{glyph}</span>
+                                {name}
+                            </button>
+                        </li>
+                    }
+                } />
+            </ul>
+        </Modal>
+    }
+}
+
+/// Everything the scheduler could not place, and why
+#[component]
+fn UnplacedWindow(
+    scene: Memo<scene::Scene>,
+    on_open: Callback<PlanNode>,
+    on_close: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <Modal title="Not scheduled" on_close=on_close>
+            <p class="small">"These have no place on the chart. Open one to fix what is stopping it."</p>
+            <ul class="results">
+                <For each=move || scene.with(|s| s.unplaced.clone()) key=|u| format!("{u:?}") children=move |u| {
+                    let node = u.node;
+                    view! {
+                        <li>
+                            <button type="button" on:click=move |_| on_open.run(node)>
+                                <strong>{u.name.clone()}</strong>
+                                <span class="problem">{u.reason.clone()}</span>
+                            </button>
+                        </li>
+                    }
+                } />
+            </ul>
+        </Modal>
     }
 }
 
 #[component]
 fn List(
     rows: Memo<Vec<Row>>,
-    selected: Memo<Option<PlanNode>>,
-    on_select: Callback<PlanNode>,
+    on_open: Callback<PlanNode>,
     on_toggle: Callback<PlanNode>,
 ) -> impl IntoView {
     view! {
@@ -335,8 +584,7 @@ fn List(
                         })}
                         <button
                             class=format!("item {look}")
-                            class:selected=move || selected.get() == Some(node)
-                            on:click=move |_| on_select.run(node)
+                            on:click=move |_| on_open.run(node)
                         >
                             <strong>{row.name.clone()}</strong>
                             <span class="dates">{dates.unwrap_or_else(|| "Not scheduled".to_string())}</span>

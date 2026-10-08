@@ -44,14 +44,9 @@ fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {
     (*old != new).then_some(new)
 }
 
+/// The form for one item, to go in a window, and a way to delete it
 #[component]
 pub fn ItemEditor(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl IntoView {
-    let kind = match node {
-        PlanNode::Task(_) => "Task",
-        PlanNode::Milestone(_) => "Milestone",
-        PlanNode::PlanBuffer(_) => "Buffer",
-        PlanNode::TaskGroup(_) => "Task group",
-    };
     let sync = use_sync();
     let remove = move |_| {
         let update = match node {
@@ -63,12 +58,14 @@ pub fn ItemEditor(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
         sync.plan(plan, update);
         on_close.run(());
     };
+    let what = match node {
+        PlanNode::Task(_) => "task",
+        PlanNode::Milestone(_) => "milestone",
+        PlanNode::PlanBuffer(_) => "buffer",
+        PlanNode::TaskGroup(_) => "task group",
+    };
     view! {
-        <aside class="editor" aria-label=format!("Edit {kind}")>
-            <header>
-                <h2>{kind}</h2>
-                <button type="button" class="plain" aria-label="Close" on:click=move |_| on_close.run(())>"✕"</button>
-            </header>
+        <div class="editor">
             <Info plan=plan node=node />
             {match node {
                 PlanNode::Task(id) => view! { <TaskForm plan=plan id=id on_close=on_close /> }.into_any(),
@@ -76,8 +73,8 @@ pub fn ItemEditor(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
                 PlanNode::PlanBuffer(id) => view! { <BufferForm plan=plan id=id on_close=on_close /> }.into_any(),
                 PlanNode::TaskGroup(id) => view! { <GroupForm plan=plan id=id on_close=on_close /> }.into_any(),
             }}
-            <button type="button" class="danger" on:click=remove>{format!("Delete {}", kind.to_lowercase())}</button>
-        </aside>
+            <button type="button" class="danger" on:click=remove>{format!("Delete {what}")}</button>
+        </div>
     }
 }
 

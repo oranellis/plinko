@@ -1,5 +1,9 @@
-//! Painting the Gantt on a canvas. Everything here is drawn from the `View` and the rows, with
-//! no state of its own.
+//! Painting the chart on a canvas, the way Plinko 1 did: dark, rounded bars with their names on
+//! them, diamonds for milestones, groups as faint rounded boxes around their members, and the
+//! dependencies of the item under the pointer as lines behind the bars. It draws from what it is
+//! given and keeps no state, and it hands back where everything ended up so the pointer can hit it.
+
+use std::collections::HashMap;
 
 use chrono::{Datelike, NaiveDate, Weekday};
 use plinko::types::dependency::PlanNode;
@@ -7,297 +11,746 @@ use web_sys::CanvasRenderingContext2d;
 
 use crate::{
     format,
-    gantt::layout::{HEADER_HEIGHT, ROW_HEIGHT, View, bar, date_of, day_number},
-    model::{Look, Row},
+    gantt::{
+        arrange::{Kind, Mark, Placed},
+        layout::{HEADER_HEIGHT, MONTH_HEIGHT, ROW_HEIGHT, Rect, Viewport},
+        links::{Anchor, Link, Role},
+        scene::Scene,
+    },
+    model::Look,
 };
 
-pub const LABEL_WIDTH: f64 = 220.0;
-pub const LABEL_WIDTH_NARROW: f64 = 120.0;
-const INDENT: f64 = 14.0;
+const BACKGROUND: &str = "#1e1e1e";
+const HEADER: &str = "#252526";
+const WEEKEND: &str = "#1e1e1e";
+const BORDER: &str = "#3a3a3c";
+const GRID: &str = "#2a2a2c";
+const TODAY_BAND: &str = "rgba(64,91,200,0.18)";
+const TODAY_TEXT: &str = "#4a90d9";
+const TARGET: &str = "#ffd600";
+const HOVERED: &str = "#1e88e5";
+const BEFORE: &str = "#fc1ef1";
+const AFTER: &str = "#07fcd7";
+const BEFORE_LINE: &str = "rgba(252,30,241,0.66)";
+const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
+const PROBLEM: &str = "#e65100";
+const PLAN_START: &str = "#a78bfa";
+const GROUP_FILL: &str = "rgba(255,255,255,0.035)";
+const GROUP_LINE: &str = "#4a4a4c";
+const RADIUS: f64 = 6.0;
 
-const BACKGROUND: &str = "#ffffff";
-const STRIPE: &str = "#f8fafc";
-const WEEKEND: &str = "#f1f5f9";
-const GRID: &str = "#e2e8f0";
-const TEXT: &str = "#0f172a";
-const MUTED: &str = "#64748b";
-const SELECTED: &str = "#dbeafe";
-const TODAY: &str = "#ef4444";
-const PROBLEM: &str = "#dc2626";
-
-fn colour(look: Look) -> &'static str {
+fn look_colour(look: Look) -> &'static str {
     match look {
-        Look::NotStarted => "#3b82f6",
-        Look::InProgress => "#f59e0b",
-        Look::OnHold => "#94a3b8",
-        Look::Completed => "#22c55e",
+        Look::NotStarted => "#555555",
+        Look::InProgress => "#f5a623",
+        Look::OnHold => "#b39ddb",
+        Look::Completed => "#66bb6a",
     }
 }
 
-pub struct Scene<'a> {
+fn milestone_colour(look: Look) -> &'static str {
+    match look {
+        Look::Completed => "#66bb6a",
+        Look::InProgress => "#f5a623",
+        _ => "#888888",
+    }
+}
+
+/// Everything one frame needs
+pub struct Frame<'a> {
     pub width: f64,
     pub height: f64,
-    pub label_width: f64,
-    pub view: View,
-    pub rows: &'a [Row],
-    pub selected: Option<PlanNode>,
+    pub viewport: Viewport,
+    pub scene: &'a Scene,
     pub today: NaiveDate,
+    pub hover: Option<Mark>,
+    pub links: &'a [Link],
+    /// Something to outline in red, and how strongly
+    pub flash: Option<(Mark, f64)>,
+    /// What to say about the item under the pointer, the title first
+    pub info: &'a [String],
+    /// A short note by the pointer for a violation under it, and where the pointer is
+    pub tip: Option<(&'a [String], (f64, f64))>,
 }
 
-fn rect(ctx: &CanvasRenderingContext2d, style: &str, x: f64, y: f64, w: f64, h: f64) {
-    ctx.set_fill_style_str(style);
-    ctx.fill_rect(x, y, w, h);
+/// Where the things drawn are, for hit testing
+#[derive(Default)]
+pub struct Hits {
+    pub items: Vec<(Mark, Rect)>,
+    pub violations: Vec<(Mark, Rect)>,
+    /// A group's name strip, and the small arrow in it that folds the group
+    pub headers: Vec<(Mark, Rect, Rect)>,
 }
 
-fn line(ctx: &CanvasRenderingContext2d, style: &str, x1: f64, y1: f64, x2: f64, y2: f64) {
-    ctx.set_stroke_style_str(style);
+/// Where an item or group sits: its first day, its last day, and for a group its box
+struct Geometry {
+    start: (f64, f64),
+    end: (f64, f64),
+}
+
+fn path_round(ctx: &CanvasRenderingContext2d, r: Rect, radius: f64) {
+    let radius = radius.min(r.w / 2.0).min(r.h / 2.0);
     ctx.begin_path();
-    ctx.move_to(x1, y1);
-    ctx.line_to(x2, y2);
-    ctx.stroke();
+    ctx.move_to(r.x + radius, r.y);
+    ctx.line_to(r.x + r.w - radius, r.y);
+    ctx.quadratic_curve_to(r.x + r.w, r.y, r.x + r.w, r.y + radius);
+    ctx.line_to(r.x + r.w, r.y + r.h - radius);
+    ctx.quadratic_curve_to(r.x + r.w, r.y + r.h, r.x + r.w - radius, r.y + r.h);
+    ctx.line_to(r.x + radius, r.y + r.h);
+    ctx.quadratic_curve_to(r.x, r.y + r.h, r.x, r.y + r.h - radius);
+    ctx.line_to(r.x, r.y + radius);
+    ctx.quadratic_curve_to(r.x, r.y, r.x + radius, r.y);
+    ctx.close_path();
 }
 
-fn text(ctx: &CanvasRenderingContext2d, style: &str, words: &str, x: f64, y: f64) {
-    ctx.set_fill_style_str(style);
+fn path_diamond(ctx: &CanvasRenderingContext2d, cx: f64, cy: f64, r: f64) {
+    ctx.begin_path();
+    ctx.move_to(cx, cy - r);
+    ctx.line_to(cx + r, cy);
+    ctx.line_to(cx, cy + r);
+    ctx.line_to(cx - r, cy);
+    ctx.close_path();
+}
+
+fn text(ctx: &CanvasRenderingContext2d, colour: &str, font: &str, words: &str, x: f64, y: f64) {
+    ctx.set_fill_style_str(colour);
+    ctx.set_font(font);
     let _ = ctx.fill_text(words, x, y);
 }
 
-pub fn paint(ctx: &CanvasRenderingContext2d, scene: &Scene) {
-    let Scene {
-        width,
-        height,
-        label_width,
-        ..
-    } = *scene;
-    rect(ctx, BACKGROUND, 0.0, 0.0, width, height);
-    ctx.set_font("12px system-ui, sans-serif");
-    ctx.set_text_baseline("middle");
+fn clip_rect(ctx: &CanvasRenderingContext2d, r: Rect) {
+    ctx.begin_path();
+    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.clip();
+}
+
+/// The border an item gets for what it is to the item under the pointer or for being found
+fn border(
+    frame: &Frame,
+    mark: Mark,
+    target: bool,
+    before: &[Mark],
+    after: &[Mark],
+) -> Option<(String, f64)> {
+    match frame.flash {
+        Some((flashed, alpha)) if flashed == mark => {
+            return Some((format!("rgba(229,57,53,{alpha})"), 4.0));
+        }
+        _ => {}
+    }
+    if target {
+        Some((TARGET.to_string(), 3.0))
+    } else if frame.hover == Some(mark) {
+        Some((HOVERED.to_string(), 3.5))
+    } else if before.contains(&mark) {
+        Some((BEFORE.to_string(), 3.0))
+    } else if after.contains(&mark) {
+        Some((AFTER.to_string(), 3.0))
+    } else {
+        None
+    }
+}
+
+fn mark_of(anchor: Anchor) -> Mark {
+    match anchor {
+        Anchor::PlanStart => Mark::PlanStart,
+        Anchor::Start(node) | Anchor::End(node) => Mark::Node(node),
+    }
+}
+
+pub fn paint(ctx: &CanvasRenderingContext2d, frame: &Frame) -> Hits {
+    let mut hits = Hits::default();
+    ctx.set_fill_style_str(BACKGROUND);
+    ctx.fill_rect(0.0, 0.0, frame.width, frame.height);
     ctx.set_line_width(1.0);
 
-    ctx.save();
-    ctx.translate(label_width, 0.0).ok();
-    ctx.begin_path();
-    ctx.rect(0.0, 0.0, width - label_width, height);
-    ctx.clip();
-    let timeline = width - label_width;
-    paint_rows(ctx, scene, timeline);
-    paint_header(ctx, scene, timeline);
-    paint_today(ctx, scene);
-    ctx.restore();
-    paint_labels(ctx, scene);
-}
+    let start = frame.scene.plan_start;
+    let vp = frame.viewport;
+    let offset = |date: NaiveDate| (date - start).num_days() as f64;
+    let today_offset = offset(frame.today);
 
-fn paint_header(ctx: &CanvasRenderingContext2d, scene: &Scene, timeline: f64) {
-    let view = scene.view;
-    rect(ctx, BACKGROUND, 0.0, 0.0, timeline, HEADER_HEIGHT);
-    line(ctx, GRID, 0.0, HEADER_HEIGHT, timeline, HEADER_HEIGHT);
-    let narrow = view.day_width < 14.0;
-    for day in view.days(timeline) {
-        let Some(date) = date_of(day as f64) else {
-            continue;
-        };
-        let x = view.x(day as f64);
-        let first_of_month = date.day() == 1;
-        if first_of_month || (day as f64 - view.origin.floor()).abs() < 0.5 {
-            text(
-                ctx,
-                TEXT,
-                &format!("{} {}", format::month(date), date.year()),
-                x.max(2.0) + 4.0,
-                12.0,
+    let today_x = vp.x(today_offset);
+    if today_x >= 0.0 && today_x < frame.width {
+        ctx.set_fill_style_str(TODAY_BAND);
+        ctx.fill_rect(today_x, 0.0, vp.day_width, frame.height);
+    }
+    paint_header(ctx, frame, start);
+
+    // the rows, below the header
+    ctx.save();
+    clip_rect(
+        ctx,
+        Rect {
+            x: 0.0,
+            y: HEADER_HEIGHT,
+            w: frame.width,
+            h: frame.height - HEADER_HEIGHT,
+        },
+    );
+    let (before, after): (Vec<Mark>, Vec<Mark>) = {
+        let before = frame
+            .links
+            .iter()
+            .filter(|l| l.role == Role::Before)
+            .map(|l| mark_of(l.from));
+        let after = frame
+            .links
+            .iter()
+            .filter(|l| l.role == Role::After)
+            .map(|l| mark_of(l.to));
+        (before.collect(), after.collect())
+    };
+
+    // where everything is, so lines can be drawn to it
+    let mut geometry: HashMap<Mark, Geometry> = HashMap::new();
+    let mut group_boxes: HashMap<Mark, Rect> = HashMap::new();
+    let visible = |p: &Placed| {
+        let top = vp.lane_top(p.lane);
+        top + ROW_HEIGHT * p.lanes as f64 > HEADER_HEIGHT && top < frame.height
+    };
+    for p in &frame.scene.arrangement.placed {
+        let (from, to) = (offset(p.span.0), offset(p.span.1));
+        if p.kind == Kind::Group {
+            let bar = vp.bar(from, to, p.lane);
+            let expand = 4.0 + 4.0 * f64::from(p.levels);
+            let inset = 2.0 + 3.0 * f64::from(p.depth);
+            let top = vp.lane_top(p.lane) + inset;
+            let rect = Rect {
+                x: bar.x - expand,
+                y: top,
+                w: bar.w + 2.0 * expand,
+                h: ROW_HEIGHT * p.lanes as f64 - 2.0 * inset,
+            };
+            geometry.insert(
+                p.mark,
+                Geometry {
+                    start: (rect.x, rect.y + rect.h / 2.0),
+                    end: (rect.x + rect.w, rect.y + rect.h / 2.0),
+                },
             );
-        }
-        if first_of_month {
-            line(ctx, MUTED, x, 0.0, x, HEADER_HEIGHT);
-        }
-        if narrow {
-            if date.weekday() == Weekday::Mon {
-                text(ctx, MUTED, &date.day().to_string(), x + 2.0, 32.0);
+            group_boxes.insert(p.mark, rect);
+            if visible(p) {
+                paint_group(ctx, frame, p, rect, &before, &after, &mut hits);
             }
         } else {
-            let label = if view.day_width > 40.0 {
-                format!("{} {}", format::weekday(date), date.day())
-            } else {
-                date.day().to_string()
-            };
-            text(ctx, MUTED, &label, x + 3.0, 32.0);
+            geometry.insert(
+                p.mark,
+                Geometry {
+                    start: vp.start_centre(from, p.lane),
+                    end: vp.end_centre(to, p.lane),
+                },
+            );
         }
     }
+
+    // the dependencies of the item under the pointer, behind the bars
+    paint_links(ctx, frame, &geometry);
+
+    for p in &frame.scene.arrangement.placed {
+        if p.kind == Kind::Group || !visible(p) {
+            continue;
+        }
+        let (from, to) = (offset(p.span.0), offset(p.span.1));
+        match (p.mark, p.kind) {
+            (Mark::PlanStart, _) => {
+                paint_plan_start(ctx, frame, p, from, &before, &after, &mut hits)
+            }
+            (_, Kind::Milestone) => {
+                paint_milestone(ctx, frame, p, from, &before, &after, &mut hits)
+            }
+            _ => paint_bar(ctx, frame, p, (from, to), &before, &after, &mut hits),
+        }
+    }
+    ctx.restore();
+
+    if !frame.info.is_empty() {
+        paint_panel(ctx, frame.info, frame.height);
+    }
+    if let Some((lines, pointer)) = frame.tip {
+        paint_tip(ctx, lines, pointer, frame.width, frame.height);
+    }
+    hits
 }
 
-fn paint_today(ctx: &CanvasRenderingContext2d, scene: &Scene) {
-    let x = scene.view.x(day_number(scene.today) + 0.5);
-    line(ctx, TODAY, x, 0.0, x, scene.height);
-}
-
-fn paint_rows(ctx: &CanvasRenderingContext2d, scene: &Scene, timeline: f64) {
-    let view = scene.view;
-    // weekends and grid behind everything
-    for day in view.days(timeline) {
-        let Some(date) = date_of(day as f64) else {
+fn paint_header(ctx: &CanvasRenderingContext2d, frame: &Frame, start: NaiveDate) {
+    let vp = frame.viewport;
+    ctx.set_fill_style_str(HEADER);
+    ctx.fill_rect(0.0, 0.0, frame.width, HEADER_HEIGHT);
+    let (first, last) = vp.visible_days(frame.width);
+    let today = (frame.today - start).num_days();
+    let mut month: Option<(String, f64)> = None;
+    let day_row = HEADER_HEIGHT - MONTH_HEIGHT;
+    for offset in first..=last {
+        let Some(date) = start.checked_add_signed(chrono::Duration::days(offset)) else {
             continue;
         };
-        let x = view.x(day as f64);
-        if matches!(date.weekday(), Weekday::Sat | Weekday::Sun) {
-            rect(ctx, WEEKEND, x, HEADER_HEIGHT, view.day_width, scene.height);
+        let x = vp.x(offset as f64);
+        let label = format!("{} {}", format::month(date), date.year());
+        if month.as_ref().is_some_and(|(current, _)| *current != label) {
+            if let Some((current, from)) = month.take() {
+                text(ctx, "#888", "13px sans-serif", &current, from + 4.0, 15.0);
+            }
+            ctx.set_stroke_style_str(BORDER);
+            ctx.begin_path();
+            ctx.move_to(x, 0.0);
+            ctx.line_to(x, MONTH_HEIGHT);
+            ctx.stroke();
         }
-        if view.day_width >= 14.0 {
-            line(ctx, GRID, x, HEADER_HEIGHT, x, scene.height);
+        if month.is_none() {
+            month = Some((label, x));
+        }
+        let weekend = matches!(date.weekday(), Weekday::Sat | Weekday::Sun);
+        ctx.set_fill_style_str(if weekend { WEEKEND } else { HEADER });
+        ctx.fill_rect(x, MONTH_HEIGHT, vp.day_width, day_row);
+        let colour = if offset == today {
+            TODAY_TEXT
+        } else if weekend {
+            "#555"
+        } else {
+            "#aaa"
+        };
+        if vp.day_width >= 18.0 {
+            ctx.set_text_align("center");
+            text(
+                ctx,
+                colour,
+                "12px sans-serif",
+                &date.day().to_string(),
+                x + vp.day_width / 2.0,
+                43.0,
+            );
+            ctx.set_text_align("left");
+        }
+        ctx.set_stroke_style_str(GRID);
+        ctx.begin_path();
+        ctx.move_to(x, MONTH_HEIGHT);
+        ctx.line_to(x, frame.height);
+        ctx.stroke();
+    }
+    if let Some((current, from)) = month {
+        text(ctx, "#888", "13px sans-serif", &current, from + 4.0, 15.0);
+    }
+    ctx.set_stroke_style_str(BORDER);
+    ctx.begin_path();
+    ctx.move_to(0.0, HEADER_HEIGHT);
+    ctx.line_to(frame.width, HEADER_HEIGHT);
+    ctx.stroke();
+}
+
+fn paint_group(
+    ctx: &CanvasRenderingContext2d,
+    frame: &Frame,
+    p: &Placed,
+    rect: Rect,
+    before: &[Mark],
+    after: &[Mark],
+    hits: &mut Hits,
+) {
+    path_round(ctx, rect, 8.0);
+    ctx.set_fill_style_str(GROUP_FILL);
+    ctx.fill();
+    let outline = border(frame, p.mark, p.target, before, after);
+    ctx.set_stroke_style_str(outline.as_ref().map_or(GROUP_LINE, |(c, _)| c.as_str()));
+    ctx.set_line_width(outline.as_ref().map_or(1.0, |(_, w)| *w));
+    ctx.stroke();
+    ctx.set_line_width(1.0);
+
+    // the name along the top lane of the group, with the arrow that folds it
+    let lane_top = frame.viewport.lane_top(p.lane);
+    let strip = Rect {
+        x: rect.x,
+        y: lane_top,
+        w: rect.w,
+        h: ROW_HEIGHT,
+    };
+    let arrow = Rect {
+        x: rect.x + 4.0,
+        y: lane_top + 4.0,
+        w: 20.0,
+        h: ROW_HEIGHT - 8.0,
+    };
+    let label = if p.collapsed {
+        format!("▸  {} ({})", p.name, p.members)
+    } else {
+        format!("▾  {}", p.name)
+    };
+    ctx.save();
+    clip_rect(
+        ctx,
+        Rect {
+            x: rect.x + 4.0,
+            y: lane_top,
+            w: (rect.w - 8.0).max(0.0),
+            h: ROW_HEIGHT,
+        },
+    );
+    ctx.set_text_baseline("middle");
+    let colour = if frame.hover == Some(p.mark) {
+        "#f5d040"
+    } else {
+        "#aaa"
+    };
+    text(
+        ctx,
+        colour,
+        "13px sans-serif",
+        &label,
+        rect.x + 8.0,
+        lane_top + ROW_HEIGHT / 2.0,
+    );
+    ctx.set_text_baseline("alphabetic");
+    ctx.restore();
+    hits.headers.push((p.mark, strip, arrow));
+}
+
+fn paint_links(ctx: &CanvasRenderingContext2d, frame: &Frame, geometry: &HashMap<Mark, Geometry>) {
+    ctx.set_line_width(1.5);
+    let mut diamonds: Vec<((f64, f64), &str)> = Vec::new();
+    for link in frame.links {
+        let (Some(from), Some(to)) = (
+            geometry.get(&mark_of(link.from)),
+            geometry.get(&mark_of(link.to)),
+        ) else {
+            continue;
+        };
+        let from_point = match link.from {
+            Anchor::Start(_) | Anchor::PlanStart => from.start,
+            Anchor::End(_) => from.end,
+        };
+        let to_point = match link.to {
+            Anchor::Start(_) | Anchor::PlanStart => to.start,
+            Anchor::End(_) => to.end,
+        };
+        let (line, solid) = match link.role {
+            Role::Before => (BEFORE_LINE, BEFORE),
+            Role::After => (AFTER_LINE, AFTER),
+        };
+        ctx.set_stroke_style_str(line);
+        ctx.begin_path();
+        ctx.move_to(from_point.0, from_point.1);
+        ctx.line_to(to_point.0, to_point.1);
+        ctx.stroke();
+        for (anchor, point) in [(link.from, from_point), (link.to, to_point)] {
+            if matches!(
+                anchor,
+                Anchor::Start(PlanNode::TaskGroup(_)) | Anchor::End(PlanNode::TaskGroup(_))
+            ) {
+                diamonds.push((point, solid));
+            }
         }
     }
-    for index in view.visible_rows(scene.height, scene.rows.len()) {
-        let row = &scene.rows[index];
-        let top = view.row_top(index);
-        if Some(row.node) == scene.selected {
-            rect(ctx, SELECTED, 0.0, top, timeline, ROW_HEIGHT);
-        } else if index % 2 == 1 {
-            ctx.set_global_alpha(0.5);
-            rect(ctx, STRIPE, 0.0, top, timeline, ROW_HEIGHT);
-            ctx.set_global_alpha(1.0);
-        }
-        line(ctx, GRID, 0.0, top + ROW_HEIGHT, timeline, top + ROW_HEIGHT);
-        if let Some(span) = row.span {
-            paint_bar(ctx, scene, row, span, top);
-        }
+    // a small milestone marker where a line meets the edge of a group
+    for ((x, y), colour) in diamonds {
+        path_diamond(ctx, x, y, 5.0);
+        ctx.set_fill_style_str(colour);
+        ctx.fill();
     }
+    ctx.set_line_width(1.0);
+}
+
+fn stroke_border(ctx: &CanvasRenderingContext2d, outline: Option<(String, f64)>) {
+    if let Some((colour, width)) = outline {
+        ctx.set_stroke_style_str(&colour);
+        ctx.set_line_width(width);
+        ctx.stroke();
+        ctx.set_line_width(1.0);
+    }
+}
+
+/// The blue wash on the right of something nothing depends on
+fn leaf_wash(ctx: &CanvasRenderingContext2d, rect: Rect) {
+    let width = rect.w.min(28.0);
+    let gradient = ctx.create_linear_gradient(rect.x + rect.w - width, 0.0, rect.x + rect.w, 0.0);
+    let _ = gradient.add_color_stop(0.0, "rgba(30,136,229,0)");
+    let _ = gradient.add_color_stop(1.0, "rgba(30,136,229,0.65)");
+    ctx.save();
+    path_round(ctx, rect, RADIUS);
+    ctx.clip();
+    ctx.set_fill_style_canvas_gradient(&gradient);
+    ctx.fill_rect(rect.x + rect.w - width, rect.y, width, rect.h);
+    ctx.restore();
 }
 
 fn paint_bar(
     ctx: &CanvasRenderingContext2d,
-    scene: &Scene,
-    row: &Row,
-    span: (NaiveDate, NaiveDate),
-    top: f64,
+    frame: &Frame,
+    p: &Placed,
+    (from, to): (f64, f64),
+    before: &[Mark],
+    after: &[Mark],
+    hits: &mut Hits,
 ) {
-    let (x, width) = bar(&scene.view, span);
-    let middle = top + ROW_HEIGHT / 2.0;
-    match row.node {
-        PlanNode::Milestone(_) => {
-            let centre = x + scene.view.day_width / 2.0;
-            ctx.set_fill_style_str(colour(row.look));
-            ctx.begin_path();
-            ctx.move_to(centre, middle - 9.0);
-            ctx.line_to(centre + 9.0, middle);
-            ctx.line_to(centre, middle + 9.0);
-            ctx.line_to(centre - 9.0, middle);
-            ctx.close_path();
-            ctx.fill();
-            if row.violated {
-                ctx.set_stroke_style_str(PROBLEM);
-                ctx.set_line_width(2.0);
-                ctx.stroke();
-                ctx.set_line_width(1.0);
-            }
-        }
-        PlanNode::TaskGroup(_) => {
-            rect(ctx, "#334155", x, top + 9.0, width, 5.0);
-            rect(ctx, "#334155", x, top + 9.0, 3.0, 12.0);
-            rect(ctx, "#334155", x + width - 3.0, top + 9.0, 3.0, 12.0);
-        }
-        PlanNode::PlanBuffer(_) => {
-            rect(ctx, "#cbd5e1", x, top + 8.0, width, ROW_HEIGHT - 16.0);
-            ctx.set_stroke_style_str("#94a3b8");
-            ctx.stroke_rect(x, top + 8.0, width, ROW_HEIGHT - 16.0);
-        }
-        PlanNode::Task(_) => {
-            rect(
-                ctx,
-                colour(row.look),
-                x,
-                top + 6.0,
-                width,
-                ROW_HEIGHT - 12.0,
-            );
-            if row.violated {
-                ctx.set_stroke_style_str(PROBLEM);
-                ctx.set_line_width(2.0);
-                ctx.stroke_rect(x, top + 6.0, width, ROW_HEIGHT - 12.0);
-                ctx.set_line_width(1.0);
-            }
-            if width > 60.0 {
-                text(
-                    ctx,
-                    "#ffffff",
-                    &clip(ctx, &row.name, width - 8.0),
-                    x + 5.0,
-                    middle,
-                );
-            }
-        }
+    let rect = frame.viewport.bar(from, to, p.lane);
+    path_round(ctx, rect, RADIUS);
+    if p.kind == Kind::Buffer {
+        ctx.set_fill_style_str("rgba(138,138,138,0.25)");
+        ctx.fill();
+        let _ = ctx.set_line_dash(&js_sys::Array::of2(&4.0.into(), &3.0.into()));
+        ctx.set_stroke_style_str("#8a8a8a");
+        ctx.stroke();
+        let _ = ctx.set_line_dash(&js_sys::Array::new());
+    } else {
+        ctx.set_fill_style_str(look_colour(p.look));
+        ctx.fill();
     }
-}
+    if p.leaf {
+        leaf_wash(ctx, rect);
+    }
+    path_round(ctx, rect, RADIUS);
+    stroke_border(ctx, border(frame, p.mark, p.target, before, after));
 
-/// The name cut short with an ellipsis if it is wider than `room`
-fn clip(ctx: &CanvasRenderingContext2d, name: &str, room: f64) -> String {
-    let wide = |s: &str| ctx.measure_text(s).map(|m| m.width()).unwrap_or(0.0);
-    if wide(name) <= room {
-        return name.to_string();
-    }
-    let mut kept: String = name.to_string();
-    while !kept.is_empty() && wide(&format!("{kept}…")) > room {
-        kept.pop();
-    }
-    format!("{kept}…")
-}
-
-fn paint_labels(ctx: &CanvasRenderingContext2d, scene: &Scene) {
-    let (label_width, view) = (scene.label_width, scene.view);
+    // the name inside the bar
+    let colour = if p.look == Look::InProgress {
+        "rgba(0,0,0,0.85)"
+    } else {
+        "rgba(255,255,255,0.9)"
+    };
     ctx.save();
-    ctx.begin_path();
-    ctx.rect(0.0, 0.0, label_width, scene.height);
-    ctx.clip();
-    rect(ctx, BACKGROUND, 0.0, 0.0, label_width, scene.height);
-    for index in view.visible_rows(scene.height, scene.rows.len()) {
-        let row = &scene.rows[index];
-        let top = view.row_top(index);
-        if Some(row.node) == scene.selected {
-            rect(ctx, SELECTED, 0.0, top, label_width, ROW_HEIGHT);
-        }
-        let indent = 8.0 + f64::from(row.depth) * INDENT;
-        let mut x = indent;
-        if row.has_members {
-            text(
-                ctx,
-                MUTED,
-                if row.collapsed { "▸" } else { "▾" },
-                x,
-                top + ROW_HEIGHT / 2.0,
-            );
-            x += 12.0;
-        }
-        let problem = row.unscheduled.is_some() || row.violated;
-        let name = clip(
+    clip_rect(
+        ctx,
+        Rect {
+            x: rect.x + 4.0,
+            y: rect.y,
+            w: (rect.w - 8.0).max(0.0),
+            h: rect.h,
+        },
+    );
+    ctx.set_text_baseline("middle");
+    text(
+        ctx,
+        colour,
+        "16px sans-serif",
+        &p.name,
+        rect.x + 6.0,
+        rect.y + rect.h / 2.0,
+    );
+    ctx.set_text_baseline("alphabetic");
+    ctx.restore();
+    hits.items.push((p.mark, rect));
+    if p.violated {
+        paint_violation(
             ctx,
-            &row.name,
-            label_width - x - if problem { 26.0 } else { 8.0 },
-        );
-        let style = if row.unscheduled.is_some() {
-            MUTED
-        } else {
-            TEXT
-        };
-        text(ctx, style, &name, x, top + ROW_HEIGHT / 2.0);
-        if problem {
-            text(
-                ctx,
-                PROBLEM,
-                "⚠",
-                label_width - 20.0,
-                top + ROW_HEIGHT / 2.0,
-            );
-        }
-        line(
-            ctx,
-            GRID,
-            0.0,
-            top + ROW_HEIGHT,
-            label_width,
-            top + ROW_HEIGHT,
+            p.mark,
+            rect.x + rect.w + 10.0,
+            rect.y + rect.h / 2.0,
+            hits,
         );
     }
-    rect(ctx, BACKGROUND, 0.0, 0.0, label_width, HEADER_HEIGHT);
-    text(ctx, MUTED, "Name", 8.0, 22.0);
-    line(ctx, GRID, 0.0, HEADER_HEIGHT, label_width, HEADER_HEIGHT);
-    ctx.restore();
-    line(ctx, GRID, label_width, 0.0, label_width, scene.height);
+}
+
+fn paint_violation(ctx: &CanvasRenderingContext2d, mark: Mark, x: f64, y: f64, hits: &mut Hits) {
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("middle");
+    text(ctx, PROBLEM, "bold 16px sans-serif", "!", x, y);
+    ctx.set_text_align("left");
+    ctx.set_text_baseline("alphabetic");
+    hits.violations.push((
+        mark,
+        Rect {
+            x: x - 8.0,
+            y: y - 10.0,
+            w: 16.0,
+            h: 20.0,
+        },
+    ));
+}
+
+fn paint_milestone(
+    ctx: &CanvasRenderingContext2d,
+    frame: &Frame,
+    p: &Placed,
+    from: f64,
+    before: &[Mark],
+    after: &[Mark],
+    hits: &mut Hits,
+) {
+    let (cx, cy) = frame.viewport.start_centre(from, p.lane);
+    let r = 10.0;
+    path_diamond(ctx, cx, cy, r);
+    ctx.set_fill_style_str(milestone_colour(p.look));
+    ctx.fill();
+    if p.leaf {
+        leaf_wash(
+            ctx,
+            Rect {
+                x: cx - r,
+                y: cy - r,
+                w: r * 2.0,
+                h: r * 2.0,
+            },
+        );
+    }
+    path_diamond(ctx, cx, cy, r);
+    stroke_border(ctx, border(frame, p.mark, p.target, before, after));
+    let name_x = cx + r + 6.0 + if p.violated { 20.0 } else { 0.0 };
+    let hovered = frame.hover == Some(p.mark);
+    ctx.set_text_baseline("middle");
+    text(
+        ctx,
+        if hovered { "#f5d040" } else { "#bbb" },
+        "14px sans-serif",
+        &p.name,
+        name_x,
+        cy,
+    );
+    ctx.set_text_baseline("alphabetic");
+    hits.items.push((
+        p.mark,
+        Rect {
+            x: cx - r,
+            y: cy - r,
+            w: r * 2.0,
+            h: r * 2.0,
+        },
+    ));
+    if p.violated {
+        paint_violation(ctx, p.mark, cx + r + 10.0, cy, hits);
+    }
+}
+
+fn paint_plan_start(
+    ctx: &CanvasRenderingContext2d,
+    frame: &Frame,
+    p: &Placed,
+    from: f64,
+    before: &[Mark],
+    after: &[Mark],
+    hits: &mut Hits,
+) {
+    let (cx, cy) = frame.viewport.start_centre(from, p.lane);
+    let r = 9.0;
+    path_diamond(ctx, cx, cy, r);
+    ctx.set_fill_style_str(if frame.hover == Some(p.mark) {
+        "#c4b5fd"
+    } else {
+        PLAN_START
+    });
+    ctx.fill();
+    path_diamond(ctx, cx, cy, r);
+    stroke_border(ctx, border(frame, p.mark, false, before, after));
+    ctx.set_text_baseline("middle");
+    text(
+        ctx,
+        "#bbb",
+        "13px sans-serif",
+        "Plan Start",
+        cx + r + 6.0,
+        cy,
+    );
+    ctx.set_text_baseline("alphabetic");
+    hits.items.push((
+        p.mark,
+        Rect {
+            x: cx - r,
+            y: cy - r,
+            w: r * 2.0,
+            h: r * 2.0,
+        },
+    ));
+}
+
+/// The panel at the bottom left that says what the item under the pointer is
+fn paint_panel(ctx: &CanvasRenderingContext2d, lines: &[String], height: f64) {
+    let (pad, margin, title, body) = (10.0, 8.0, 20.0, 15.0);
+    ctx.set_font(&format!("{title}px sans-serif"));
+    let mut wide = ctx.measure_text(&lines[0]).map_or(0.0, |m| m.width());
+    ctx.set_font(&format!("{body}px sans-serif"));
+    for line in &lines[1..] {
+        wide = wide.max(ctx.measure_text(line).map_or(0.0, |m| m.width()));
+    }
+    let rows = (lines.len() - 1) as f64;
+    let h = pad * 2.0
+        + title * 1.25
+        + if rows > 0.0 {
+            4.0 + rows * (body * 1.4 + 4.0) - 4.0
+        } else {
+            0.0
+        };
+    let rect = Rect {
+        x: margin,
+        y: height - margin - h,
+        w: wide + pad * 2.0,
+        h,
+    };
+    ctx.set_fill_style_str("rgba(0,0,0,0.19)");
+    path_round(
+        ctx,
+        Rect {
+            x: rect.x + 2.0,
+            y: rect.y + 3.0,
+            ..rect
+        },
+        6.0,
+    );
+    ctx.fill();
+    path_round(ctx, rect, 6.0);
+    ctx.set_fill_style_str("rgba(30,30,30,0.86)");
+    ctx.fill();
+    ctx.set_stroke_style_str("#4a4a4a");
+    ctx.stroke();
+    ctx.set_text_baseline("top");
+    text(
+        ctx,
+        "#d4d4d4",
+        &format!("{title}px sans-serif"),
+        &lines[0],
+        rect.x + pad,
+        rect.y + pad,
+    );
+    for (i, line) in lines[1..].iter().enumerate() {
+        let y = rect.y + pad + title * 1.25 + 4.0 + i as f64 * (body * 1.4 + 4.0);
+        text(
+            ctx,
+            "#8a8a8a",
+            &format!("{body}px sans-serif"),
+            line,
+            rect.x + pad,
+            y,
+        );
+    }
+    ctx.set_text_baseline("alphabetic");
+}
+
+/// A small note by the pointer for something that has gone wrong
+fn paint_tip(
+    ctx: &CanvasRenderingContext2d,
+    lines: &[String],
+    (mx, my): (f64, f64),
+    width: f64,
+    height: f64,
+) {
+    let (pad, line_h) = (7.0, 17.0);
+    ctx.set_font("12px sans-serif");
+    let wide = lines
+        .iter()
+        .map(|l| ctx.measure_text(l).map_or(0.0, |m| m.width()))
+        .fold(0.0, f64::max);
+    let (w, h) = (
+        wide + pad * 2.0,
+        lines.len() as f64 * line_h + pad * 2.0 - 3.0,
+    );
+    let mut x = mx + 14.0;
+    if x + w > width - 4.0 {
+        x = mx - w - 10.0;
+    }
+    let y = (my - h / 2.0).clamp(4.0, (height - 4.0 - h).max(4.0));
+    path_round(ctx, Rect { x, y, w, h }, 4.0);
+    ctx.set_fill_style_str("rgba(18,18,18,0.95)");
+    ctx.fill();
+    ctx.set_stroke_style_str(PROBLEM);
+    ctx.set_line_width(1.5);
+    ctx.stroke();
+    ctx.set_line_width(1.0);
+    ctx.set_text_baseline("top");
+    for (i, line) in lines.iter().enumerate() {
+        text(
+            ctx,
+            "#e8a87c",
+            "12px sans-serif",
+            line,
+            x + pad,
+            y + pad + i as f64 * line_h,
+        );
+    }
+    ctx.set_text_baseline("alphabetic");
 }

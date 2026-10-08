@@ -3,10 +3,16 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
+use leptos::prelude::*;
 use plinko::{
     planner::plan::Plan,
     scheduler::state::{PlanVolatileState, UnscheduledReason},
-    types::{dependency::PlanNode, milestone::DerivedStatus, parent::Parent, task::Status},
+    types::{
+        dependency::{Dependency, PlanNode},
+        milestone::DerivedStatus,
+        parent::Parent,
+        task::Status,
+    },
 };
 use uuid::Uuid;
 
@@ -67,7 +73,7 @@ pub fn node_name(plan: &Plan, node: PlanNode) -> String {
     .unwrap_or_else(|| "Missing".to_string())
 }
 
-fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
+pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
     match node {
         PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.parent()),
         PlanNode::Milestone(id) => plan.milestones().get(&id).map(|m| m.parent()),
@@ -75,6 +81,38 @@ fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
         PlanNode::PlanBuffer(id) => plan.plan_buffers().get(&id).map(|b| b.parent()),
     }
     .unwrap_or(Parent::PlanStart)
+}
+
+/// The group a node is directly in, found in the plan as the client holds it
+pub fn parent_of_in(
+    sync: crate::sync::Sync,
+    plan: plinko::types::short_id::ShortId,
+    node: PlanNode,
+) -> Option<Uuid> {
+    sync.tenant.with_untracked(|t| {
+        let plan = t.as_ref()?.plans().get(&plan)?;
+        match parent_of(plan, node) {
+            Parent::Node(group) => Some(group),
+            Parent::PlanStart => None,
+        }
+    })
+}
+
+/// What a node depends on
+pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<Dependency> {
+    match node {
+        PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.dependencies().clone()),
+        PlanNode::Milestone(id) => plan.milestones().get(&id).map(|m| m.dependencies().clone()),
+        PlanNode::TaskGroup(id) => plan
+            .task_groups()
+            .get(&id)
+            .map(|g| g.dependencies().clone()),
+        PlanNode::PlanBuffer(id) => plan
+            .plan_buffers()
+            .get(&id)
+            .map(|b| b.dependencies().clone()),
+    }
+    .unwrap_or_default()
 }
 
 /// Every node of the plan
@@ -93,7 +131,10 @@ pub fn nodes(plan: &Plan) -> Vec<PlanNode> {
         .collect()
 }
 
-fn span_of(state: Option<&PlanVolatileState>, node: PlanNode) -> Option<(NaiveDate, NaiveDate)> {
+pub fn span_of(
+    state: Option<&PlanVolatileState>,
+    node: PlanNode,
+) -> Option<(NaiveDate, NaiveDate)> {
     let state = state?;
     match node {
         PlanNode::Task(id) => state
@@ -112,7 +153,7 @@ fn span_of(state: Option<&PlanVolatileState>, node: PlanNode) -> Option<(NaiveDa
     }
 }
 
-fn look_of(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -> Look {
+pub fn look_of(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -> Look {
     match node {
         PlanNode::Task(id) => plan
             .tasks()

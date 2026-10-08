@@ -411,28 +411,15 @@ The v1 rules assume things v2 data changes. These are facts to decide against, n
 - Monday.com sync, the bug report modal, and the organisation features are v1 only and are not
   being carried over for now.
 
-## What the first v2 UI does differently
+## Where v2 differs from v1
 
-For steering: the points where the first v2 build departs from v1.
+The v2 client follows v1 (dark theme, packed lanes, rounded bars, hover dependency lines, floating
+editors, toolbar icons) except:
 
-- **Theme:** v2 is a light page with a dark top bar, v1 is dark throughout.
-- **Gantt rows:** v2 gives every item its own row with a 220 px name column on the left, v1 packs
-  items into shared lanes with names on the bars and no name column.
-- **Shapes:** v2 bars are plain rectangles, filling the full day columns edge to edge, v1's are
-  rounded (radius 6), inset from the day columns, 24 px high in a 36 px row, with the name drawn in
-  the bar and a gradient and outlines that follow the corners.
-- **Time axis:** v2 starts at the earliest scheduled date and clips at the first and last, v1
-  counts from the plan start with half a screen of slack either side.
-- **Bars and markers:** v2 colours bars by status in a bright blue family and shows
-  weekends across the body, v1 uses the grey/amber/lilac/green status colours, shades weekends only in
-  the header, shows a gold target outline, a leaf gradient and the orange `!`.
-- **Dependencies:** v2 draws none, v1 draws straight lines (end day centre to start day centre)
-  from the hovered item to what it depends on and what depends on it, behind the bars, in magenta
-  and cyan, with matching outlines.
-- **Editing:** v2 edits in a side panel (a sheet on phones) with native controls, v1 uses centred
-  modals with hand drawn pickers and a segmented status control.
-- **Navigation:** v2 has a top tab bar (a bottom bar on phones) and routes in the URL, v1 has the
-  Home cards and a toolbar whose buttons belong to the page.
-- **Gestures:** v2 pans by drag, pinches, and zooms with Ctrl + wheel, v1 has momentum, and zoom on
-  Shift + wheel only.
-- **Search, Jump to today** and the red flash on found items exist in v1 only.
+- **Groups:** members are packed together and drawn as a rounded outline around a faint filled
+  block, nested outward. Hover dependencies to a group end at a small diamond on its left or right
+  edge.
+- **Unscheduled items:** a list window rather than a strip.
+- **Plan views:** the Gantt and list are toolbar icons.
+- **Navigation:** routes in the URL, tabs on top (bottom bar on phones).
+- **Phones:** the Gantt as on desktop, with pinch zoom; Ctrl + wheel also zooms.

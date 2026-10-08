@@ -3,7 +3,7 @@
   "short_name": "Plinko",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1f2937",
-  "theme_color": "#1f2937",
-  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+  "background_color": "#1e1e1e",
+  "theme_color": "#1e1e1e",
+  "icons": [{ "src": "plinko_logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
 }

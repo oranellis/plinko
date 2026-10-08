@@ -94,7 +94,7 @@ pub fn Work() -> impl IntoView {
                                         <ul class="items">
                                             {day.entries.into_iter().map(|e| view! {
                                                 <li>
-                                                    <a class="item" href=Route::Plan(e.plan, crate::nav::default_tab(), Some(e.task)).path()>
+                                                    <a class="item" href=Route::Plan(e.plan, crate::nav::PlanTab::Gantt, Some(e.task)).path()>
                                                         <strong>{e.name}</strong>
                                                         <span class="dates">{format!("{} · {} h", e.plan_name, e.hours)}</span>
                                                     </a>

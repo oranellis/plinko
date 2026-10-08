@@ -91,19 +91,6 @@ impl Route {
     }
 }
 
-/// The view a plan opens on: the list on a phone, where a Gantt chart is cramped
-pub fn default_tab() -> PlanTab {
-    let width = web_sys::window()
-        .and_then(|w| w.inner_width().ok())
-        .and_then(|w| w.as_f64())
-        .unwrap_or(1024.0);
-    if width < 720.0 {
-        PlanTab::List
-    } else {
-        PlanTab::Gantt
-    }
-}
-
 pub fn navigate(route: Route) {
     if let Some(window) = web_sys::window() {
         let _ = window.location().set_hash(&route.path());

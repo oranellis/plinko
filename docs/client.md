@@ -65,10 +65,10 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
 
 ## Views
 
-- Desktop and tablet: Gantt on a canvas with virtualised rows and a viewport, touch pan and pinch
-  through pointer events. DOM lists and the plan tree are windowed for a thousand tasks.
-- Mobile gets different views, not a squeezed Gantt: a "my work" agenda from `UserSchedule` (per
-  day, across plans), the plan tree and task list, and a task editor.
+- The Gantt is one canvas in the style of Plinko 1 (`plinko1-ui.md`), on desktop and phones alike:
+  packed lanes, group outlines, hover dependency lines, momentum drag, pinch and wheel zoom.
+- Items open in floating windows. A "my work" agenda comes from `UserSchedule` (per day, across
+  plans), and a plan can also be shown as a list.
 - Everything except the Gantt canvas is real DOM elements, which is most of the accessibility.
 
 ## Status
@@ -78,6 +78,6 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 
 - The schedule is sent whole to every client after each solve (about 300 KiB at a thousand tasks),
   which could be sent as a difference.
-- Dependency arrows and dragging bars on the Gantt, and the data blocks of tasks, are not in the client.
+- Dragging bars on the Gantt, and the data blocks of tasks, are not in the client.
 - Reverting a change, and a history view, need the log exposed to the client.
 - Brute force limits on login, and a way to make a tenant without the environment variables.

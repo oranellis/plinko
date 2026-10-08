@@ -29,7 +29,9 @@ pub fn Login() -> impl IntoView {
     view! {
         <main class="login">
             <form on:submit=submit>
+                <img src="plinko_logo.svg" alt="Plinko logo" />
                 <h1>"Plinko"</h1>
+                <p class="subtitle">"Sign in to continue"</p>
                 <Field label="Email">
                     <Text value=email on_input=Callback::new(move |v| email.set(v)) kind="email" />
                 </Field>

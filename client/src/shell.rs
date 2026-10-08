@@ -6,6 +6,7 @@ use plinko::multitenancy::user::Role;
 use crate::{
     api,
     availability::Availability,
+    icons::{Icon, IconKind},
     nav::{Route, navigate, use_route},
     people::People,
     plan::PlanPage,
@@ -52,9 +53,12 @@ pub fn Shell() -> impl IntoView {
             sync.tenant.set(None);
         });
     };
-    let link = move |label: &'static str, to: Route, active: Signal<bool>| {
+    let link = move |label: &'static str, icon: IconKind, to: Route, active: Signal<bool>| {
         view! {
-            <a href=to.path() class:active=move || active.get()>{label}</a>
+            <a href=to.path() class:active=move || active.get()>
+                <Icon kind=icon size=16 />
+                {label}
+            </a>
         }
     };
     let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
@@ -65,13 +69,16 @@ pub fn Shell() -> impl IntoView {
     view! {
         <div class="shell">
             <header class="top">
-                <a class="brand" href=Route::Plans.path()>"Plinko"</a>
+                <a class="brand" href=Route::Plans.path()>
+                    <img src="plinko_logo.svg" alt="" />
+                    "Plinko"
+                </a>
                 <span class="tenant">{name}</span>
                 <nav class="tabs" aria-label="Main">
-                    {link("Plans", Route::Plans, on_plans)}
-                    {link("My work", Route::Work, on_work)}
-                    {link("Resources", Route::Resources, on_resources)}
-                    <Show when=admin>{link("People", Route::People, on_people)}</Show>
+                    {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
+                    {link("My work", IconKind::Allocation, Route::Work, on_work)}
+                    {link("Resources", IconKind::Resources, Route::Resources, on_resources)}
+                    <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
                 </nav>
                 <Status />
                 <button type="button" class="plain" on:click=logout>
@@ -96,15 +103,15 @@ pub fn Shell() -> impl IntoView {
                 }}
             </main>
             <nav class="bottom" aria-label="Main">
-                {link("Plans", Route::Plans, on_plans)}
-                {link("My work", Route::Work, on_work)}
-                {link("Resources", Route::Resources, on_resources)}
-                <Show when=admin>{link("People", Route::People, on_people)}</Show>
+                {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
+                {link("My work", IconKind::Allocation, Route::Work, on_work)}
+                {link("Resources", IconKind::Resources, Route::Resources, on_resources)}
+                <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
             </nav>
         </div>
     }
 }
 
 pub fn open_plan(plan: plinko::types::short_id::ShortId) {
-    navigate(Route::Plan(plan, crate::nav::default_tab(), None));
+    navigate(Route::Plan(plan, crate::nav::PlanTab::Gantt, None));
 }

@@ -4,6 +4,7 @@ mod editor;
 mod format;
 mod forms;
 mod gantt;
+mod icons;
 mod login;
 mod model;
 mod nav;

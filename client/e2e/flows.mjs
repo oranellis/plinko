@@ -14,7 +14,8 @@ async function session(width = 1280, height = 800) {
   return page;
 }
 const click = (page, label) => page.evaluate((label) => {
-  const b = [...document.querySelectorAll("button, a")].find((b) => b.textContent.trim() === label && b.offsetParent !== null);
+  const same = (b) => [b.textContent.trim(), b.title, b.getAttribute("aria-label")].includes(label);
+  const b = [...document.querySelectorAll("button, a")].find((b) => same(b) && b.offsetParent !== null);
   if (!b) throw new Error("no button " + label); b.click();
 }, label);
 const fill = async (page, selector, text) => {
@@ -40,17 +41,18 @@ await click(a, "New plan"); await sleep(200);
 await a.type(".modal input[type=text]", "Collab plan");
 await a.click(".modal button[type=submit]");
 await a.waitForSelector(".plan");
-await click(a, "+ Task"); await a.waitForSelector(".editor form");
+await click(a, "Add task"); await a.waitForSelector(".editor form");
 await fill(a, ".editor input[type=text]", "Design");
 await click(a, "Save"); await a.waitForFunction(() => !document.querySelector(".editor"));
 await sleep(1000);
 
 // tapping a row in the chart opens it
+// a new task starts tomorrow, the day after today which is where the plan starts, in the second lane
 const box = await a.evaluate(() => { const r = document.querySelector("canvas.gantt").getBoundingClientRect(); return { x: r.x, y: r.y }; });
-await a.mouse.click(box.x + 60, box.y + 44 + 15);
+await a.mouse.click(box.x + 34 + 17, box.y + 56 + 36 + 18);
 await a.waitForSelector(".editor form", { timeout: 3000 }).catch(() => {});
 expect(await a.evaluate(() => !!document.querySelector(".editor")), "tapping a row in the chart opens its editor");
-await click(a, "✕");
+await click(a, "Close");
 // dragging pans, the wheel zooms: the day labels change
 const before = await a.screenshot({ encoding: "base64" });
 await a.mouse.move(box.x + 500, box.y + 200);
@@ -67,9 +69,9 @@ const b = await session();
 await login(b, "admin@example.com", "password123");
 await b.evaluate(() => document.querySelector("a.card").click());
 await b.waitForSelector(".plan");
-await click(b, "List"); await sleep(500);
+await click(b, "Show a list"); await sleep(500);
 expect((await text(b)).includes("Design"), "a second window shows the task");
-await click(a, "List"); await sleep(300);
+await click(a, "Show a list"); await sleep(300);
 await a.evaluate(() => [...document.querySelectorAll("button.item")][0].click());
 await a.waitForSelector(".editor form");
 await fill(a, ".editor input[type=text]", "Design v2");
@@ -87,7 +89,7 @@ await login(m, "mia@example.com", "mia-password-1");
 expect((await text(m)).includes("not in any plans"), "a member with no plans sees none");
 await a.evaluate(() => document.querySelector("a[href='#/']").click()); await sleep(400);
 await a.evaluate(() => document.querySelector("a.card").click()); await a.waitForSelector(".plan");
-await click(a, "Settings"); await sleep(500);
+await click(a, "Plan settings"); await sleep(500);
 await a.evaluate(() => {
   const sel = [...document.querySelectorAll("section select")].find((s) => [...s.options].some((o) => o.textContent === "Mia Member"));
   sel.value = [...sel.options].find((o) => o.textContent === "Mia Member").value; sel.dispatchEvent(new Event("change", { bubbles: true }));
