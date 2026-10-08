@@ -62,12 +62,12 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
     view! {
         <div class="people">
             <section>
-                <h2>"Schedule"</h2>
-                <Field label="Starts"><DateInput day=start /></Field>
-                <Field label="Priority, higher goes first where people are wanted by several plans">
+                <h2>"Plan Settings"</h2>
+                <Field label="Start Date"><DateInput day=start /></Field>
+                <Field label="Priority (higher goes first when several plans want the same people)">
                     <Number value=priority on_input=Callback::new(move |n| priority.set(n)) />
                 </Field>
-                <button type="button" class="primary" on:click=save>"Save"</button>
+                <button type="button" class="primary" on:click=save>"Save Plan Settings"</button>
                 <a href=Route::Availability(Availability::Plan(plan)).path()>
                     "Hours of placeholders (the plan's default availability)"
                 </a>
@@ -77,8 +77,8 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
             <Tags plan=plan />
             <Affinities plan=plan />
             <section>
-                <h2>"Delete"</h2>
-                <button type="button" class="danger" on:click=remove>"Delete this plan"</button>
+                <h2>"Plan Management"</h2>
+                <button type="button" class="danger" on:click=remove>"Delete Plan"</button>
             </section>
         </div>
     }
@@ -135,7 +135,7 @@ fn Targets(plan: ShortId) -> impl IntoView {
     };
     view! {
         <section>
-            <h2>"Targets"</h2>
+            <h2>"Scheduler Target"</h2>
             <p class="small">
                 "A target is something the scheduler brings as early as it can, like a launch milestone. "
                 "A plan with none is scheduled to finish as early as it can overall."
@@ -167,7 +167,7 @@ fn Targets(plan: ShortId) -> impl IntoView {
                     })
                     on_change=Callback::new(move |v| adding.set(v))
                 />
-                <button type="button" on:click=add>"Add target"</button>
+                <button type="button" on:click=add>"Add Target"</button>
             </div>
         </section>
     }
@@ -351,7 +351,7 @@ fn Tags(plan: ShortId) -> impl IntoView {
                 }
             }>
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) placeholder="Designer" />
-                <button type="submit">"Add tag"</button>
+                <button type="submit">"Add Tag"</button>
             </form>
         </section>
     }

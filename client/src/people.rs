@@ -18,7 +18,7 @@ use crate::{
     api,
     editor::DateInput,
     nav::{Availability, Route},
-    ui::{Field, Modal, Select, Text, use_sync},
+    ui::{Actions, Block, Field, Modal, Select, Text, use_sync},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -96,8 +96,8 @@ pub fn People() -> impl IntoView {
             <div class="bar"><h1>"People"</h1></div>
             <section>
                 <div class="bar">
-                    <h2>"Logins"</h2>
-                    <button type="button" class="primary" on:click=move |_| editing.set(Some(None))>"Add a person"</button>
+                    <h2>"Users"</h2>
+                    <button type="button" class="primary" on:click=move |_| editing.set(Some(None))>"New User"</button>
                 </div>
                 <ul class="items">
                     <For each=move || people.get() key=|p| format!("{p:?}") children=move |p| {
@@ -119,7 +119,7 @@ pub fn People() -> impl IntoView {
             <section>
                 <div class="bar">
                     <h2>"Groups"</h2>
-                    <button type="button" on:click=move |_| editing_group.set(Some(None))>"Add a group"</button>
+                    <button type="button" on:click=move |_| editing_group.set(Some(None))>"New Group"</button>
                 </div>
                 <ul class="items">
                     <For each=move || groups.get() key=|g| format!("{g:?}") children=move |g| {
@@ -180,9 +180,9 @@ fn PersonForm(
     let password = RwSignal::new(String::new());
     let failure = RwSignal::new(None::<String>);
     let title = if existing.is_some() {
-        "Edit person"
+        "Edit User"
     } else {
-        "Add a person"
+        "New User"
     };
     let save = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -243,13 +243,13 @@ fn PersonForm(
                 <Field label="Email"><Text value=email on_input=Callback::new(move |v| email.set(v)) kind="email" /></Field>
                 <label class="check">
                     <input type="checkbox" prop:checked=move || admin.get() on:change=move |ev| admin.set(event_target_checked(&ev)) />
-                    "Admin, can manage people and see every plan"
+                    "Admin (can manage people and see every plan)"
                 </label>
                 <Field label=if which.is_some() { "New password, leave empty to keep" } else { "Password, at least 8 characters" }>
                     <Text value=password on_input=Callback::new(move |v| password.set(v)) kind="password" />
                 </Field>
                 <Show when=move || failure.get().is_some()><p class="error">{move || failure.get()}</p></Show>
-                <button type="submit" class="primary">"Save"</button>
+                <Actions on_cancel=on_close />
             </form>
         </Modal>
     }
@@ -313,7 +313,7 @@ fn GroupForm(
         on_close.run(());
     };
     view! {
-        <Modal title=if which.is_some() { "Edit group" } else { "Add a group" } on_close=on_close>
+        <Modal title=if which.is_some() { "Edit Group" } else { "New Group" } on_close=on_close>
             <form class="form" on:submit=save>
                 <Field label="Name"><Text value=name on_input=Callback::new(move |v| name.set(v)) /></Field>
                 <Field label="Inside">
@@ -323,8 +323,7 @@ fn GroupForm(
                         on_change=Callback::new(move |v: String| parent.set(Uuid::parse_str(&v).ok()))
                     />
                 </Field>
-                <fieldset class="list">
-                    <legend>"People"</legend>
+                <Block label="People"><div class="list">
                     {move || people.get().into_iter().map(|p| {
                         let id = p.id;
                         view! {
@@ -337,8 +336,8 @@ fn GroupForm(
                             </label>
                         }
                     }).collect_view()}
-                </fieldset>
-                <button type="submit" class="primary">"Save"</button>
+                </div></Block>
+                <Actions on_cancel=on_close />
             </form>
         </Modal>
     }

@@ -37,7 +37,7 @@ const expect = (cond, what) => { console.log(cond ? "ok  " : "FAIL", what); if (
 
 const a = await session();
 await login(a, "admin@example.com", "password123");
-await click(a, "New plan"); await sleep(200);
+await click(a, "New Plan"); await sleep(200);
 await a.type(".modal input[type=text]", "Collab plan");
 await a.click(".modal button[type=submit]");
 await a.waitForSelector(".plan");
@@ -80,7 +80,7 @@ expect((await text(b)).includes("Design v2"), "a rename in one window shows in t
 
 // a member sees nothing until they are put in the plan
 await a.goto(`${base}/#/people`); await sleep(600);
-await click(a, "Add a person"); await a.waitForSelector(".modal form");
+await click(a, "New User"); await a.waitForSelector(".modal form");
 const inputs = await a.$$(".modal input");
 await inputs[0].type("Mia Member"); await inputs[1].type("mia@example.com"); await inputs[3].type("mia-password-1");
 await a.click(".modal button[type=submit]"); await sleep(1500);

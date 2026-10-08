@@ -13,7 +13,7 @@ use crate::{
     format,
     nav::Route,
     shell::open_plan,
-    ui::{Field, Modal, Text, use_sync},
+    ui::{Actions, Field, Modal, Text, use_sync},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -62,7 +62,7 @@ pub fn Plans() -> impl IntoView {
     view! {
         <div class="bar">
             <h1>"Plans"</h1>
-            <button type="button" class="primary" on:click=move |_| creating.set(true)>"New plan"</button>
+            <button type="button" class="primary" on:click=move |_| creating.set(true)>"New Plan"</button>
         </div>
         <Show when=move || cards.with(Vec::is_empty)>
             <div class="empty">
@@ -109,6 +109,9 @@ fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
     );
     let make = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
+        if name.with_untracked(|n| n.trim().is_empty()) {
+            return;
+        }
         let new = NewPlan {
             id: ShortId::new(),
             name: name.get_untracked(),
@@ -125,12 +128,12 @@ fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
         on_close.run(());
     };
     view! {
-        <Modal title="New plan" on_close=on_close>
-            <form on:submit=make>
-                <Field label="Name">
-                    <Text value=name on_input=Callback::new(move |v| name.set(v)) placeholder="Website relaunch" />
+        <Modal title="New Plan" on_close=on_close>
+            <form class="form" on:submit=make>
+                <Field label="Plan Name">
+                    <Text value=name on_input=Callback::new(move |v| name.set(v)) placeholder="My Plan" />
                 </Field>
-                <Field label="Starts">
+                <Field label="Start Date">
                     <input
                         type="date"
                         prop:value=move || format::iso(start.get())
@@ -141,9 +144,7 @@ fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
                         }
                     />
                 </Field>
-                <button type="submit" class="primary" disabled=move || name.with(|n| n.trim().is_empty())>
-                    "Create"
-                </button>
+                <Actions on_cancel=on_close />
             </form>
         </Modal>
     }
