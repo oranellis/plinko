@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 ./client/build.sh
 cargo build -p plinko
 export PLINKO_TENANT=${PLINKO_TENANT:-Debug}
-export PLINKO_ADMIN_EMAIL=${PLINKO_ADMIN_EMAIL:-admin@example.com}
-export PLINKO_ADMIN_PASSWORD=${PLINKO_ADMIN_PASSWORD:-change-me-now}
+export PLINKO_ADMIN_EMAIL=${PLINKO_ADMIN_EMAIL:-"admin@example.com"}
+export PLINKO_ADMIN_PASSWORD=${PLINKO_ADMIN_PASSWORD:-"change-me-now"}
 export PLINKO_INSECURE_COOKIES=1
 exec target/debug/plinko-server
