@@ -316,3 +316,96 @@ fn the_start_of_the_parent_is_dropped_when_another_dependency_leads_there() {
     assert_eq!(task_deps(&plan, b).len(), 2);
 }
 // }}}
+
+// removal {{{
+fn remove_through(plan: &mut Plan, node: PlanNode) {
+    for update in plan.removal(node) {
+        plan.apply_update(update).unwrap();
+    }
+}
+
+#[test]
+fn removing_an_item_joins_what_was_before_to_what_was_after() {
+    let mut plan = new_plan();
+    let ids: Vec<Uuid> = (0..4)
+        .map(|_| add_task(&mut plan, Parent::PlanStart))
+        .collect();
+    let (a, b, c, d) = (ids[0], ids[1], ids[2], ids[3]);
+    let lagged = |id, lag| Dependency {
+        node: task_node(id),
+        lag,
+    };
+    set_task_deps(&mut plan, a, &[DependencyNode::ParentStart]).unwrap();
+    plan.apply_update(PlanUpdate::set_dependencies(
+        PlanNode::Task(b),
+        vec![lagged(a, 2)],
+    ))
+    .unwrap();
+    plan.apply_update(PlanUpdate::set_dependencies(
+        PlanNode::Task(c),
+        vec![lagged(b, 3)],
+    ))
+    .unwrap();
+    plan.apply_update(PlanUpdate::set_dependencies(
+        PlanNode::Task(d),
+        vec![lagged(b, 0)],
+    ))
+    .unwrap();
+    remove_through(&mut plan, PlanNode::Task(b));
+    assert!(!plan.tasks().contains_key(&b));
+    assert_eq!(plan.tasks()[&c].dependencies(), &[lagged(a, 5)]);
+    assert_eq!(plan.tasks()[&d].dependencies(), &[lagged(a, 2)]);
+}
+
+#[test]
+fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
+    let mut plan = new_plan();
+    let before = add_task(&mut plan, Parent::PlanStart);
+    set_task_deps(&mut plan, before, &[DependencyNode::ParentStart]).unwrap();
+    let group = add_group(&mut plan, Parent::PlanStart);
+    plan.apply_update(PlanUpdate::set_dependencies(
+        PlanNode::TaskGroup(group),
+        vec![Dependency {
+            node: task_node(before),
+            lag: 1,
+        }],
+    ))
+    .unwrap();
+    let (m1, m2) = (
+        add_task(&mut plan, Parent::Node(group)),
+        add_task(&mut plan, Parent::Node(group)),
+    );
+    set_task_deps(&mut plan, m1, &[DependencyNode::ParentStart]).unwrap();
+    set_task_deps(&mut plan, m2, &[task_node(m1)]).unwrap();
+    let after = add_task(&mut plan, Parent::PlanStart);
+    set_task_deps(&mut plan, after, &[group_node(group)]).unwrap();
+
+    remove_through(&mut plan, PlanNode::TaskGroup(group));
+    assert!(plan.task_groups().is_empty());
+    assert_eq!(plan.tasks()[&m1].parent(), Parent::PlanStart);
+    // the start of the group was one day after the first task
+    assert_eq!(
+        plan.tasks()[&m1].dependencies(),
+        &[Dependency {
+            node: task_node(before),
+            lag: 1
+        }]
+    );
+    assert_eq!(
+        plan.tasks()[&m2].dependencies(),
+        &[Dependency {
+            node: task_node(m1),
+            lag: 0
+        }]
+    );
+    let mut waits: Vec<_> = plan.tasks()[&after]
+        .dependencies()
+        .iter()
+        .map(|d| d.node)
+        .collect();
+    waits.sort_by_key(|n| format!("{n:?}"));
+    let mut members = vec![task_node(m1), task_node(m2)];
+    members.sort_by_key(|n| format!("{n:?}"));
+    assert_eq!(waits, members);
+}
+// }}}

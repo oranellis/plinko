@@ -140,7 +140,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         sync.tenant.with(|t| {
             t.as_ref()
                 .and_then(|t| t.plans().get(&plan))
-                .map(|p| gantt::links::links(p, mark))
+                .map(|p| gantt::links::links(p, state_of().as_ref(), mark))
                 .unwrap_or_default()
         })
     });

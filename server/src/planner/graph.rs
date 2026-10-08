@@ -174,7 +174,7 @@ impl Graph<'_> {
     }
 }
 
-fn nodes<T: PlanItem>(plan: &Plan) -> Vec<PlanNode> {
+pub(crate) fn nodes<T: PlanItem>(plan: &Plan) -> Vec<PlanNode> {
     T::entities(plan).keys().map(|id| T::node(*id)).collect()
 }
 

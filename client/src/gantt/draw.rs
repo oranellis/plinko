@@ -148,7 +148,11 @@ impl Marked {
                 .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
                 .map(|l| mark_of(l.from))
                 .collect(),
-            after: linked(Role::After).map(|l| mark_of(l.to)).collect(),
+            // the end of a group is only marked by its diamond
+            after: linked(Role::After)
+                .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
+                .map(|l| mark_of(l.to))
+                .collect(),
             // a group's block takes the lanes under its name
             inside: group
                 .map(|g| {

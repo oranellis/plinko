@@ -3,6 +3,7 @@
 
 use plinko::{
     planner::plan::Plan,
+    scheduler::state::PlanVolatileState,
     types::{
         dependency::{DependencyNode, PlanNode},
         parent::Parent,
@@ -40,7 +41,7 @@ pub struct Link {
 
 /// Only the direct links of the item, one step either way. An item inside a group that depends on
 /// the start of its group is linked to the start of the group, and the plan start for the top level.
-pub fn links(plan: &Plan, hovered: Mark) -> Vec<Link> {
+pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> Vec<Link> {
     let mut out = Vec::new();
     let nodes = model::nodes(plan);
     let start_of = |parent: Parent| match parent {
@@ -91,6 +92,25 @@ pub fn links(plan: &Plan, hovered: Mark) -> Vec<Link> {
                     from,
                     to: Anchor::Start(other),
                     role,
+                });
+            }
+        }
+    }
+    // what ends a group ends it, and the group ends with it
+    if let Some(group) = model::ends_group(plan, state, node) {
+        out.push(Link {
+            from: Anchor::End(node),
+            to: Anchor::End(group),
+            role: Role::After,
+        });
+    }
+    if matches!(node, PlanNode::TaskGroup(_)) {
+        for member in model::nodes(plan) {
+            if model::ends_group(plan, state, member) == Some(node) {
+                out.push(Link {
+                    from: Anchor::End(member),
+                    to: Anchor::End(node),
+                    role: Role::Inside,
                 });
             }
         }
@@ -171,7 +191,7 @@ mod tests {
             &[DependencyNode::Node(second)],
         );
 
-        let around = links(&plan, Mark::Node(second));
+        let around = links(&plan, None, Mark::Node(second));
         assert_eq!(around.len(), 2);
         assert!(around.contains(&Link {
             from: Anchor::End(first),
@@ -185,13 +205,13 @@ mod tests {
         }));
 
         // the first waits for the plan start, and the plan start is linked to what starts from it
-        let start = links(&plan, Mark::Node(first));
+        let start = links(&plan, None, Mark::Node(first));
         assert!(start.contains(&Link {
             from: Anchor::PlanStart,
             to: Anchor::Start(first),
             role: Role::Before
         }));
-        let from_start = links(&plan, Mark::PlanStart);
+        let from_start = links(&plan, None, Mark::PlanStart);
         assert_eq!(
             from_start,
             [Link {
@@ -227,12 +247,12 @@ mod tests {
             &[DependencyNode::Node(group)],
         );
 
-        assert!(links(&plan, Mark::Node(member)).contains(&Link {
+        assert!(links(&plan, None, Mark::Node(member)).contains(&Link {
             from: Anchor::Start(group),
             to: Anchor::Start(member),
             role: Role::Before
         }));
-        let around = links(&plan, Mark::Node(group));
+        let around = links(&plan, None, Mark::Node(group));
         assert!(around.contains(&Link {
             from: Anchor::Start(group),
             to: Anchor::Start(member),

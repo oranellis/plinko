@@ -11,6 +11,7 @@ use crate::{
         data_block::{DataBlockPatch, NewDataBlock},
         dependency::{Dependency, PlanNode},
         milestone::{MilestonePatch, NewMilestone},
+        parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         tag::{NewTag, TagPatch},
         target::{NewTarget, TargetPatch},
@@ -43,12 +44,20 @@ pub enum PlanUpdate {
 impl PlanUpdate {
     /// Replaces the dependencies of an item and changes nothing else
     pub fn set_dependencies(node: PlanNode, dependencies: Vec<Dependency>) -> Self {
-        let dependencies = Some(dependencies);
+        Self::rewire(node, None, Some(dependencies))
+    }
+
+    /// Changes the group and the dependencies of an item, whichever are given, and nothing else
+    pub fn rewire(
+        node: PlanNode,
+        parent: Option<Parent>,
+        dependencies: Option<Vec<Dependency>>,
+    ) -> Self {
         match node {
             PlanNode::Task(id) => PlanUpdate::Task(Crud::Update(TaskPatch {
                 id,
                 name: None,
-                parent: None,
+                parent,
                 mode: None,
                 duration: None,
                 time_constraint: None,
@@ -62,14 +71,14 @@ impl PlanUpdate {
             PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Update(MilestonePatch {
                 id,
                 name: None,
-                parent: None,
+                parent,
                 time_constraint: None,
                 dependencies,
                 persistent_state: None,
             })),
             PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Update(PlanBufferPatch {
                 id,
-                parent: None,
+                parent,
                 dependencies,
                 set_start_day: None,
                 duration: None,
@@ -78,9 +87,19 @@ impl PlanUpdate {
                 id,
                 name: None,
                 dependencies,
-                parent: None,
+                parent,
                 placeholder_duration: None,
             })),
+        }
+    }
+
+    /// Takes the item out of the plan, once nothing refers to it
+    pub fn remove(node: PlanNode) -> Self {
+        match node {
+            PlanNode::Task(id) => PlanUpdate::Task(Crud::Remove(id)),
+            PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Remove(id)),
+            PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Remove(id)),
+            PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Remove(id)),
         }
     }
 

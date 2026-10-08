@@ -49,15 +49,16 @@ fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {
     (*old != new).then_some(new)
 }
 
-/// Takes an item out of its plan
+/// Takes an item out of its plan, joining what was around it back together
 pub fn remove_item(plan: ShortId, node: PlanNode) {
-    let update = match node {
-        PlanNode::Task(id) => PlanUpdate::Task(Crud::Remove(id)),
-        PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Remove(id)),
-        PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Remove(id)),
-        PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Remove(id)),
-    };
-    use_sync().plan(plan, update);
+    let sync = use_sync();
+    let updates = sync
+        .tenant
+        .with_untracked(|t| Some(t.as_ref()?.plans().get(&plan)?.removal(node)))
+        .unwrap_or_else(|| vec![PlanUpdate::remove(node)]);
+    for update in updates {
+        sync.plan(plan, update);
+    }
 }
 
 /// The form for one item, to go in a window. `on_close` is for after it is saved or deleted.

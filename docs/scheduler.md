@@ -218,6 +218,13 @@ chain's lags add up to at least its lag (the plan start, a group's start and a g
 as links). Both the update and the follow-ups are logged, so replays do not recompute it
 (`Plan::simplifications`).
 
+### Removing items
+
+`Plan::removal` gives the updates that remove an item without breaking chains: whatever depended
+on it depends on what it depended on (lags added). A removed group moves its members to the
+group's parent, with the group's dependencies as the start they had, and whatever depended on the
+group depends on each member. Targets on the item go too.
+
 ## 5. Unscheduled items
 
 `Plan::unscheduled()` already finds items with no dependency chain to the plan start. Any chain

@@ -241,6 +241,19 @@ pub fn reason(reason: UnscheduledReason) -> &'static str {
     }
 }
 
+/// The group a node is in when it ends on the group's last day, so the group ends with it
+pub fn ends_group(
+    plan: &Plan,
+    state: Option<&PlanVolatileState>,
+    node: PlanNode,
+) -> Option<PlanNode> {
+    let Parent::Node(group) = parent_of(plan, node) else {
+        return None;
+    };
+    let group = PlanNode::TaskGroup(group);
+    (span_of(state, node)?.1 == span_of(state, group)?.1).then_some(group)
+}
+
 #[cfg(test)]
 mod tests {
     use plinko::{
