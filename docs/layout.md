@@ -18,7 +18,7 @@
 - `availability/` rule sets that describe daily availability or allowed days, built into calendars.
 - `planner/` plans, their updates and the dependency graph checks.
 - `multitenancy/` tenants, login users, user groups and `TenantUpdate`.
-- `scheduler/` schedules a whole tenant (`scheduler::schedule`, spec in `SCHEDULER.md`) and holds the state it writes.
+- `scheduler/` schedules a whole tenant (`scheduler::schedule`, spec in `scheduler.md`) and holds the state it writes.
 - `protocol.rs`, `codec.rs` the WebSocket messages and the format of updates, snapshots and schedules.
 - `store/` a tenant's SQLite file: update log, snapshots, passwords and sessions.
 - `net/` the tenant actor, the scheduling thread, and the HTTP and WebSocket front.

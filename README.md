@@ -23,5 +23,5 @@ builds it, installs it under `/opt/plinko`, and runs a systemd service for the t
 - `docs/development.md` running the debug build, the settings, and the checks.
 - `docs/release.md` building, installing, backing up and running tenants in production.
 - `docs/layout.md` the folders, the source layout of the `plinko` crate, and its conventions.
-- `docs/SCHEDULER.md` the scheduler's spec, how it decides, and how it is built and measured.
-- `docs/CLIENT.md` the client and server stack, how updates sync, storage, auth, and what is left.
+- `docs/scheduler.md` the scheduler's spec, how it decides, and how it is built and measured.
+- `docs/client.md` the client and server stack, how updates sync, storage, auth, and what is left.

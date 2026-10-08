@@ -370,7 +370,7 @@ Build each `PlanVolatileState`, derive milestone and group values, then
 No preview: a run is too costly to do per edit. Edits are applied, scheduled, and reverted if the
 result is bad. Which plans moved and by how many days is a diff of the new schedule against the
 one before it, a pure function to add when the UI wants it (the previous schedule must be kept,
-`apply_update` clears it). Revert belongs to the update log, see `CLIENT.md`.
+`apply_update` clears it). Revert belongs to the update log, see `client.md`.
 
 ## 10. Data model work needed
 

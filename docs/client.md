@@ -1,6 +1,6 @@
 # Client and server stack
 
-Decisions for the web client and the server it talks to. The scheduler is in `SCHEDULER.md`.
+Decisions for the web client and the server it talks to. The scheduler is in `scheduler.md`.
 
 ## Requirements
 
