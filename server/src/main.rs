@@ -1,7 +1,8 @@
 //! The server of one tenant. Settings come from the environment:
-//! `PLINKO_DB` (default `tenant.db`), `PLINKO_LISTEN` (default `127.0.0.1:3000`), `PLINKO_FILES`
+//! `PLINKO_TENANT` (the tenant's name, always needed, its files are in `data/<name>` under the
+//! directory the server runs from), `PLINKO_LISTEN` (default `127.0.0.1:3000`), `PLINKO_FILES`
 //! (the client build, default `client/dist`), `PLINKO_INSECURE_COOKIES=1` for plain HTTP, and on
-//! the first run `PLINKO_TENANT`, `PLINKO_ADMIN_EMAIL` and `PLINKO_ADMIN_PASSWORD`.
+//! the first run `PLINKO_ADMIN_EMAIL` and `PLINKO_ADMIN_PASSWORD`.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -11,7 +12,7 @@ use plinko::{
         user::{Role, TenantLoginUser},
     },
     net::{actor, http},
-    store::Store,
+    store::{self, Store},
     types::short_id::ShortId,
 };
 
@@ -20,13 +21,15 @@ fn setting(name: &str) -> Option<String> {
 }
 
 fn required(name: &str) -> String {
-    setting(name).unwrap_or_else(|| panic!("a new tenant needs {name}"))
+    setting(name).unwrap_or_else(|| panic!("{name} is needed"))
 }
 
 #[tokio::main]
 async fn main() {
-    let db = PathBuf::from(setting("PLINKO_DB").unwrap_or("tenant.db".to_string()));
-    let store = Arc::new(Store::open(&db).expect("the database opens"));
+    let name = required("PLINKO_TENANT");
+    let dir = store::tenant_dir(&name).unwrap_or_else(|e| panic!("{e}"));
+    std::fs::create_dir_all(&dir).expect("the tenant's folder is made");
+    let store = Arc::new(Store::open(&dir.join("tenant.db")).expect("the database opens"));
     if store.is_empty().expect("the database reads") {
         let admin = TenantLoginUser::new(
             "Admin".to_string(),
@@ -35,7 +38,6 @@ async fn main() {
         );
         let id = *admin.id();
         let today = chrono::Utc::now().date_naive();
-        let name = required("PLINKO_TENANT");
         let tenant = Tenant::new_with_login(ShortId::new(), name, today, admin);
         store.create(&tenant).expect("the tenant saves");
         store

@@ -1,25 +1,28 @@
 # Plinko 2
 
 The second version of the Plinko project management tool, built around adaptive scheduling of
-whole tenants. Design notes and progress are in `../PLAN.md`, the scheduler spec is
-`SCHEDULER.md` and the client and server stack is `CLIENT.md`.
+whole tenants. Design notes and progress are in `../PLAN.md`.
+
+## Two ways to run it
+
+- **Debug**, to work on it: `./run_debug.sh` builds the debug client and server and runs a tenant
+  on http://127.0.0.1:3000, with its files in `data/Debug`. See `docs/development.md`.
+- **Release**, to host it: `deploy/build.sh`, `deploy/install.sh` and `deploy/new_tenant.sh` build
+  it, install it under `/opt/plinko` and run a systemd service for each tenant, each keeping its
+  files in `/opt/plinko/data/<name>`. See `docs/release.md`.
+
+In both the server keeps a tenant's files in `data/<name>` under the folder it runs from, which
+is ignored by git.
 
 ## Layout
 
 - `server/` the `plinko` crate: the model and scheduler (also compiled to WebAssembly for the
   client), and with the default `server` feature the store, the tenant server and its binary.
 - `client/` the Leptos web client, built into `client/dist` by `client/build.sh`.
-- `deploy/` one process per tenant: `tenant.sh`, a systemd template and an nginx example.
-
-## Working on it
-
-- `./check.sh` lints, tests, and checks the model and client build for the browser.
-- `client/e2e/run.sh` runs the browser checks (needs node and chromium).
-- `cargo run --release -p plinko --example bench` times scheduling a busy tenant.
-- Run a tenant locally: `PLINKO_DB=tenant.db PLINKO_TENANT=Acme PLINKO_ADMIN_EMAIL=you@example.com
-  PLINKO_ADMIN_PASSWORD=change-me-now PLINKO_INSECURE_COOKIES=1 cargo run -p plinko` after
-  `client/build.sh`, then open http://127.0.0.1:3000. The admin settings are only read on the first
-  run, the others are listed in `server/src/main.rs`.
+- `deploy/` the release path: build and install scripts, the systemd template, an nginx example.
+- `docs/` `development.md`, `release.md`, the scheduler spec `SCHEDULER.md` and the client and
+  server stack `CLIENT.md`.
+- `run_debug.sh` the debug path, and `check.sh` which lints, tests and checks the browser build.
 
 ## Source layout of the `plinko` crate
 
@@ -27,7 +30,7 @@ whole tenants. Design notes and progress are in `../PLAN.md`, the scheduler spec
 - `availability/` rule sets that describe daily availability or allowed days, built into calendars.
 - `planner/` plans, their updates and the dependency graph checks.
 - `multitenancy/` tenants, login users, user groups and `TenantUpdate`.
-- `scheduler/` schedules a whole tenant (`scheduler::schedule`, spec in `SCHEDULER.md`) and holds the state it writes.
+- `scheduler/` schedules a whole tenant (`scheduler::schedule`, spec in `docs/SCHEDULER.md`) and holds the state it writes.
 - `protocol.rs`, `codec.rs` the WebSocket messages and the format of updates, snapshots and schedules.
 - `store/` a tenant's SQLite file: update log, snapshots, passwords and sessions.
 - `net/` the tenant actor, the scheduling thread, and the HTTP and WebSocket front.

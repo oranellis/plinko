@@ -4,7 +4,10 @@
 
 pub mod auth;
 
-use std::{path::Path, sync::Mutex};
+use std::{
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -24,6 +27,19 @@ impl From<rusqlite::Error> for PlinkoError {
     fn from(error: rusqlite::Error) -> Self {
         PlinkoError::Store(error.to_string())
     }
+}
+
+/// Where a tenant keeps its files: `data/<name>` under the directory the server runs from. The
+/// name is a folder name, so it is only letters, digits, `-` and `_`.
+pub fn tenant_dir(name: &str) -> PlinkoResult<PathBuf> {
+    let plain = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    if name.is_empty() || name.len() > 64 || !name.chars().all(plain) {
+        let why = "a tenant name is up to 64 letters, digits, - and _";
+        return Err(PlinkoError::Generic(format!(
+            "{name:?} is not a valid name: {why}"
+        )));
+    }
+    Ok(Path::new("data").join(name))
 }
 
 pub struct Store {
@@ -144,3 +160,16 @@ impl Store {
     }
 }
 // }}}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tenants_get_a_folder_under_data_and_names_cannot_leave_it() {
+        assert_eq!(tenant_dir("Acme-1_x").unwrap(), Path::new("data/Acme-1_x"));
+        for name in ["", "..", "a/b", "../x", "a b", ".hidden", &"n".repeat(65)] {
+            assert!(tenant_dir(name).is_err(), "{name:?}");
+        }
+    }
+}

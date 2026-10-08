@@ -217,9 +217,12 @@ fn main() {
         send(&mut tenant, PlanUpdate::Target(Crud::Add(new)));
     }
 
-    // `PLINKO_BENCH_DB=file` also saves the tenant, for trying the client on a lot of work
-    if let Ok(path) = std::env::var("PLINKO_BENCH_DB") {
-        let store = plinko::store::Store::open(std::path::Path::new(&path)).unwrap();
+    // `PLINKO_BENCH_SAVE=1` also saves the tenant as `data/Bench`, to try the client on a lot of
+    // work: run the server with PLINKO_TENANT=Bench and log in as root@localhost
+    if std::env::var("PLINKO_BENCH_SAVE").is_ok() {
+        let dir = plinko::store::tenant_dir("Bench").unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = plinko::store::Store::open(&dir.join("tenant.db")).unwrap();
         store.create(&tenant).unwrap();
         store.set_password(root, "password123").unwrap();
     }

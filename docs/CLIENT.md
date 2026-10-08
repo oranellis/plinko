@@ -47,7 +47,7 @@ Decisions for the web client and the server it talks to. The scheduler is in `SC
 
 ## Storage and auth
 
-- One SQLite file per tenant process holds the update log, snapshots (every N updates, replay
+- One SQLite file per tenant, `data/<name>/tenant.db`, holds the update log, snapshots (every N updates, replay
   from the last), credentials and sessions. Users are already tenant state, so there is no
   global user table.
 - The log holds only staged updates, no secrets. Password hashes are in a separate `credentials`
@@ -60,8 +60,8 @@ Decisions for the web client and the server it talks to. The scheduler is in `SC
 ## Sharding
 
 - A tenant is a process with its own database, so tenants never share memory or storage.
-- A front proxy (nginx, as in Plinko 1's `deploy/`) routes a tenant's subdomain to its process.
-  A small supervisor script starts a process per tenant. There is no cross process coordination.
+- A front proxy (nginx) routes a tenant's subdomain to its process. systemd runs one instance of
+  a template unit per tenant, see `release.md`. There is no cross process coordination.
 
 ## Views
 
