@@ -204,6 +204,109 @@ pub(crate) fn anchored(plan: &Plan) -> HashSet<Vertex> {
     anchored
 }
 
+/// How much lag the longest chain of dependencies from `from` back to `to` (the plan start when
+/// `None`) adds up to, with the results kept for the next question about the same `to`
+struct Chains<'a, 'p> {
+    graph: &'a Graph<'p>,
+    longest: HashMap<(Vertex, Option<Vertex>), Option<i64>>,
+}
+
+impl Chains<'_, '_> {
+    fn lag(&mut self, from: Vertex, to: Option<Vertex>) -> Option<i64> {
+        if let Some(known) = self.longest.get(&(from, to)) {
+            return *known;
+        }
+        // a cycle would loop for ever, and is not a chain
+        self.longest.insert((from, to), None);
+        let mut best = None;
+        for edge in self.graph.edges(from) {
+            let lag = i64::from(edge.lag);
+            let through = if edge.from == to {
+                Some(lag)
+            } else {
+                edge.from.and_then(|u| self.lag(u, to)).map(|l| l + lag)
+            };
+            best = best.max(through);
+        }
+        self.longest.insert((from, to), best);
+        best
+    }
+}
+
+/// The dependencies the items touching `touched` can do without: those another dependency of the
+/// same item already implies. A chain a to b to c makes a direct a to c redundant when the chain's
+/// lags add up to at least its lag. Gives each changed item with the dependencies to keep, in order.
+pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependency>)> {
+    let graph = Graph::new(plan);
+    let vertices = graph.vertices();
+    let mut waiting: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
+    for v in &vertices {
+        for from in graph.waits_on(*v) {
+            waiting.entry(from).or_default().push(*v);
+        }
+    }
+    // everything that waits on the touched item, itself included, can have gained a shortcut
+    let mut affected: HashSet<Vertex> = HashSet::new();
+    let mut pending = match touched {
+        PlanNode::TaskGroup(id) => vec![Vertex::GroupStart(id), touched.into()],
+        _ => vec![touched.into()],
+    };
+    while let Some(v) = pending.pop() {
+        if affected.insert(v) {
+            pending.extend(waiting.get(&v).into_iter().flatten());
+        }
+    }
+    let mut chains = Chains {
+        graph: &graph,
+        longest: HashMap::new(),
+    };
+    let mut changed = Vec::new();
+    for v in vertices.into_iter().filter(|v| affected.contains(v)) {
+        let (item, deps) = match v {
+            Vertex::GroupStart(id) => {
+                (PlanNode::TaskGroup(id), dependencies::<TaskGroup>(plan, id))
+            }
+            Vertex::Node(node @ PlanNode::Task(id)) => (node, dependencies::<Task>(plan, id)),
+            Vertex::Node(node @ PlanNode::Milestone(id)) => {
+                (node, dependencies::<Milestone>(plan, id))
+            }
+            Vertex::Node(node @ PlanNode::PlanBuffer(id)) => {
+                (node, dependencies::<PlanBuffer>(plan, id))
+            }
+            Vertex::Node(PlanNode::TaskGroup(_)) => continue,
+        };
+        let edges = graph.edges(v);
+        let kept: Vec<Dependency> = deps
+            .iter()
+            .zip(&edges)
+            .enumerate()
+            .filter(|(i, (_, edge))| {
+                !edges.iter().enumerate().any(|(j, other)| {
+                    let Some(source) = other.from else {
+                        return false;
+                    };
+                    j != *i
+                        && other.from != edge.from
+                        && chains
+                            .lag(source, edge.from)
+                            .is_some_and(|l| i64::from(other.lag) + l >= i64::from(edge.lag))
+                })
+            })
+            .map(|(_, (dep, _))| dep.clone())
+            .collect();
+        if kept.len() < deps.len() {
+            changed.push((item, kept));
+        }
+    }
+    changed
+}
+
+fn dependencies<'a, T: PlanItem + 'a>(plan: &'a Plan, id: Uuid) -> &'a [Dependency] {
+    T::entities(plan)
+        .get(&id)
+        .map_or(&[], |item| item.dependencies())
+}
+
 /// Nodes with no chain of dependencies back to the plan start
 pub fn unscheduled(plan: &Plan) -> HashSet<PlanNode> {
     let anchored = anchored(plan);

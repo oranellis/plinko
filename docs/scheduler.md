@@ -210,6 +210,14 @@ dependents, so its end becomes `max(start, min(natural end, limit))` (**Assumed*
 buffer is already zero length and `start` is past the limit is the constraint violated. That is
 the `limit` argument of `PlanBuffer::place`.
 
+### Redundant dependencies
+
+After an update that changes an item's dependencies or group, the server follows it with updates
+that drop what other dependencies already imply: `a -> c` goes when `a -> b -> c` exists and the
+chain's lags add up to at least its lag (the plan start, a group's start and a group's end count
+as links). Both the update and the follow-ups are logged, so replays do not recompute it
+(`Plan::simplifications`).
+
 ## 5. Unscheduled items
 
 `Plan::unscheduled()` already finds items with no dependency chain to the plan start. Any chain

@@ -256,6 +256,18 @@ impl Plan {
             .any(|t| t.allocations().contains_key(&worker))
     }
 
+    /// The updates that cut the dependencies down to what is needed after `update`, which are
+    /// the ones it made redundant, see `graph::simplified`
+    pub fn simplifications(&self, update: &PlanUpdate) -> Vec<PlanUpdate> {
+        let Some(touched) = update.rewires() else {
+            return Vec::new();
+        };
+        graph::simplified(self, touched)
+            .into_iter()
+            .map(|(node, kept)| PlanUpdate::set_dependencies(node, kept))
+            .collect()
+    }
+
     pub fn apply_update(&mut self, u: PlanUpdate) -> PlinkoResult<()> {
         match u {
             PlanUpdate::Task(update) => Task::apply_crud(self, update),

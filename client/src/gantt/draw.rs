@@ -475,14 +475,18 @@ fn stroke_border(ctx: &CanvasRenderingContext2d, outline: Option<(String, f64)>)
     }
 }
 
-/// The blue wash on the right of something nothing depends on
-fn leaf_wash(ctx: &CanvasRenderingContext2d, rect: Rect) {
+/// The blue wash on the right of something nothing depends on, kept inside the path `shape` draws
+fn leaf_wash(
+    ctx: &CanvasRenderingContext2d,
+    rect: Rect,
+    shape: impl Fn(&CanvasRenderingContext2d),
+) {
     let width = rect.w.min(28.0);
     let gradient = ctx.create_linear_gradient(rect.x + rect.w - width, 0.0, rect.x + rect.w, 0.0);
     let _ = gradient.add_color_stop(0.0, "rgba(30,136,229,0)");
     let _ = gradient.add_color_stop(1.0, "rgba(30,136,229,0.65)");
     ctx.save();
-    path_round(ctx, rect, RADIUS);
+    shape(ctx);
     ctx.clip();
     ctx.set_fill_style_canvas_gradient(&gradient);
     ctx.fill_rect(rect.x + rect.w - width, rect.y, width, rect.h);
@@ -511,7 +515,7 @@ fn paint_bar(
         ctx.fill();
     }
     if p.leaf {
-        leaf_wash(ctx, rect);
+        leaf_wash(ctx, rect, |c| path_round(c, rect, RADIUS));
     }
     path_round(ctx, rect, RADIUS);
     stroke_border(ctx, border(frame, p.mark, p.target, marked));
@@ -586,15 +590,13 @@ fn paint_milestone(
     ctx.set_fill_style_str(milestone_colour(p.look));
     ctx.fill();
     if p.leaf {
-        leaf_wash(
-            ctx,
-            Rect {
-                x: cx - r,
-                y: cy - r,
-                w: r * 2.0,
-                h: r * 2.0,
-            },
-        );
+        let square = Rect {
+            x: cx - r,
+            y: cy - r,
+            w: r * 2.0,
+            h: r * 2.0,
+        };
+        leaf_wash(ctx, square, |c| path_diamond(c, cx, cy, r));
     }
     path_diamond(ctx, cx, cy, r);
     stroke_border(ctx, border(frame, p.mark, p.target, marked));

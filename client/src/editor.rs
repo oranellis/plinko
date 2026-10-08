@@ -284,45 +284,7 @@ fn dependents_of(plan: &Plan, me: PlanNode) -> Vec<Dependency> {
 }
 
 fn set_dependencies(sync: Sync, plan: ShortId, node: PlanNode, deps: Vec<Dependency>) {
-    let update = match node {
-        PlanNode::Task(id) => PlanUpdate::Task(Crud::Update(TaskPatch {
-            id,
-            name: None,
-            parent: None,
-            mode: None,
-            duration: None,
-            time_constraint: None,
-            dependencies: Some(deps),
-            allocations: None,
-            affinities: None,
-            actual_workers: None,
-            description: None,
-            persistent_state: None,
-        })),
-        PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Update(MilestonePatch {
-            id,
-            name: None,
-            parent: None,
-            time_constraint: None,
-            dependencies: Some(deps),
-            persistent_state: None,
-        })),
-        PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Update(PlanBufferPatch {
-            id,
-            parent: None,
-            dependencies: Some(deps),
-            set_start_day: None,
-            duration: None,
-        })),
-        PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Update(TaskGroupPatch {
-            id,
-            name: None,
-            dependencies: Some(deps),
-            parent: None,
-            placeholder_duration: None,
-        })),
-    };
-    sync.plan(plan, update);
+    sync.plan(plan, PlanUpdate::set_dependencies(node, deps));
 }
 
 /// Changes the dependencies of the other items to match what was asked for in `new`

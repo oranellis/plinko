@@ -256,7 +256,14 @@ impl Actor {
             };
             let _ = connection.out.send(message);
         }
+        // a new dependency can make others redundant, which go as updates of their own
+        let extras = self.tenant.simplifications(&copy.update_type);
         let _ = self.scheduler.send(Applied { seq, update: copy });
+        for extra in extras {
+            if let Err(error) = self.apply(actor, extra) {
+                eprintln!("a dependency was not simplified: {error}");
+            }
+        }
         Ok((seq, created))
     }
 

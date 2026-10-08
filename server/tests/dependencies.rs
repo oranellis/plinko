@@ -216,3 +216,103 @@ fn allocated_tags_must_exist_and_cannot_be_removed() {
     let remove = PlanUpdate::Tag(Crud::Remove(tag));
     plan.apply_update(remove).unwrap();
 }
+
+// simplification {{{
+fn lagged(node: DependencyNode, lag: i32) -> Dependency {
+    Dependency { node, lag }
+}
+
+/// Sets the dependencies, then applies what simplifying leaves to do, returning the update's items
+fn set_and_simplify(plan: &mut Plan, id: Uuid, deps: Vec<Dependency>) -> Vec<PlanNode> {
+    let patch = TaskPatch {
+        dependencies: Some(deps),
+        ..task_patch(id)
+    };
+    let update = PlanUpdate::Task(Crud::Update(patch));
+    let extra = {
+        plan.apply_update(update.clone()).unwrap();
+        plan.simplifications(&update)
+    };
+    let changed = extra.iter().filter_map(|u| u.rewires()).collect();
+    for u in extra {
+        plan.apply_update(u).unwrap();
+    }
+    changed
+}
+
+fn task_deps(plan: &Plan, id: Uuid) -> Vec<Dependency> {
+    plan.tasks()[&id].dependencies().clone()
+}
+
+#[test]
+fn a_dependency_a_chain_implies_is_dropped() {
+    let mut plan = new_plan();
+    let (a, b, c) = (
+        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::PlanStart),
+    );
+    let on = |id| DependencyNode::Node(PlanNode::Task(id));
+    set_and_simplify(&mut plan, a, vec![Dependency::default()]);
+    set_and_simplify(&mut plan, b, vec![lagged(on(a), 0)]);
+    // a to c is implied by a to b to c
+    let changed = set_and_simplify(&mut plan, c, vec![lagged(on(a), 0), lagged(on(b), 0)]);
+    assert_eq!(changed, [PlanNode::Task(c)]);
+    assert_eq!(task_deps(&plan, c), [lagged(on(b), 0)]);
+}
+
+#[test]
+fn a_new_link_makes_dependents_redundant_too() {
+    let mut plan = new_plan();
+    let ids: Vec<Uuid> = (0..3)
+        .map(|_| add_task(&mut plan, Parent::PlanStart))
+        .collect();
+    let (a, b, c) = (ids[0], ids[1], ids[2]);
+    let on = |id| DependencyNode::Node(PlanNode::Task(id));
+    set_and_simplify(&mut plan, a, vec![Dependency::default()]);
+    set_and_simplify(&mut plan, c, vec![lagged(on(a), 0), lagged(on(b), 0)]);
+    assert_eq!(task_deps(&plan, c).len(), 2);
+    // b now waits on a, so c waiting on a as well says nothing new
+    set_and_simplify(&mut plan, b, vec![lagged(on(a), 0)]);
+    assert_eq!(task_deps(&plan, c), [lagged(on(b), 0)]);
+}
+
+#[test]
+fn a_longer_lag_than_the_chain_gives_is_kept() {
+    let mut plan = new_plan();
+    let ids: Vec<Uuid> = (0..3)
+        .map(|_| add_task(&mut plan, Parent::PlanStart))
+        .collect();
+    let (a, b, c) = (ids[0], ids[1], ids[2]);
+    let on = |id| DependencyNode::Node(PlanNode::Task(id));
+    set_and_simplify(&mut plan, a, vec![Dependency::default()]);
+    set_and_simplify(&mut plan, b, vec![lagged(on(a), 2)]);
+    // ten days after a is later than two days after a and then b
+    set_and_simplify(&mut plan, c, vec![lagged(on(a), 10), lagged(on(b), 0)]);
+    assert_eq!(task_deps(&plan, c).len(), 2);
+    // while three days after a is not
+    set_and_simplify(&mut plan, c, vec![lagged(on(a), 1), lagged(on(b), 0)]);
+    assert_eq!(task_deps(&plan, c), [lagged(on(b), 0)]);
+}
+
+#[test]
+fn the_start_of_the_parent_is_dropped_when_another_dependency_leads_there() {
+    let mut plan = new_plan();
+    let (a, b) = (
+        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::PlanStart),
+    );
+    let on = |id| DependencyNode::Node(PlanNode::Task(id));
+    set_and_simplify(&mut plan, a, vec![Dependency::default()]);
+    set_and_simplify(&mut plan, b, vec![Dependency::default(), lagged(on(a), 0)]);
+    assert_eq!(task_deps(&plan, b), [lagged(on(a), 0)]);
+    // an item that is not anchored leads nowhere, so the start stays
+    let loose = add_task(&mut plan, Parent::PlanStart);
+    set_and_simplify(
+        &mut plan,
+        b,
+        vec![Dependency::default(), lagged(on(loose), 0)],
+    );
+    assert_eq!(task_deps(&plan, b).len(), 2);
+}
+// }}}

@@ -385,6 +385,21 @@ impl Tenant {
         }
     }
 
+    /// The updates to make after `update` to drop the dependencies it made redundant. Applying
+    /// them leaves nothing more to do.
+    pub fn simplifications(&self, update: &TenantUpdateType) -> Vec<TenantUpdateType> {
+        let TenantUpdateType::Plan(PlanTenantUpdate::Update(id, inner)) = update else {
+            return Vec::new();
+        };
+        let Some(plan) = self.plans.get(id) else {
+            return Vec::new();
+        };
+        plan.simplifications(inner)
+            .into_iter()
+            .map(|u| TenantUpdateType::Plan(PlanTenantUpdate::Update(*id, Box::new(u))))
+            .collect()
+    }
+
     /// Applies an update then schedules again, so `schedule` is up to date. Nothing changes if
     /// the update is refused.
     pub fn apply_and_schedule(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
