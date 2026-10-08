@@ -10,6 +10,7 @@ use plinko::{
 };
 
 use crate::{
+    datepicker::DateInput,
     format,
     nav::Route,
     shell::open_plan,
@@ -134,15 +135,7 @@ fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
                     <Text value=name on_input=Callback::new(move |v| name.set(v)) placeholder="My Plan" />
                 </Field>
                 <Field label="Start Date">
-                    <input
-                        type="date"
-                        prop:value=move || format::iso(start.get())
-                        on:input=move |ev| {
-                            if let Some(day) = format::parse_iso(&event_target_value(&ev)) {
-                                start.set(day);
-                            }
-                        }
-                    />
+                    <DateInput day=start />
                 </Field>
                 <Actions on_cancel=on_close />
             </form>

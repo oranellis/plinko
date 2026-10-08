@@ -6,13 +6,14 @@ use plinko::multitenancy::user::Role;
 use crate::{
     api,
     availability::Availability,
+    format::{DateFormat, use_date_format},
     icons::{Icon, IconKind},
     nav::{Route, navigate, use_route},
     people::People,
     plan::PlanPage,
     plans::Plans,
     resources::Resources,
-    ui::{Status, use_sync},
+    ui::{Select, Status, use_sync},
     work::Work,
 };
 
@@ -44,6 +45,7 @@ pub fn Shell() -> impl IntoView {
         sync.tenant
             .with(|t| t.as_ref().map(|t| t.name().to_string()).unwrap_or_default())
     };
+    let layout = use_date_format();
     let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
     let _ = Role::Admin;
     let logout = move |_| {
@@ -81,6 +83,19 @@ pub fn Shell() -> impl IntoView {
                     <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
                 </nav>
                 <Status />
+                <span class="date-format" title="How dates are written">
+                    <Select
+                        value=Signal::derive(move || layout.get().label().to_string())
+                        options=Signal::stored(
+                            DateFormat::ALL.map(|f| (f.label().to_string(), f.label().to_string())).to_vec(),
+                        )
+                        on_change=Callback::new(move |v: String| {
+                            if let Some(f) = DateFormat::ALL.into_iter().find(|f| f.label() == v) {
+                                layout.set(f);
+                            }
+                        })
+                    />
+                </span>
                 <button type="button" class="plain" on:click=logout>
                     {move || sync.me.with(|m| m.as_ref().map(|m| m.name.clone()).unwrap_or_default())}
                     " · Log out"

@@ -32,6 +32,8 @@ const HOVERED: &str = "#1e88e5";
 const BEFORE: &str = "#fc1ef1";
 const AFTER: &str = "#07fcd7";
 const BEFORE_LINE: &str = "rgba(252,30,241,0.66)";
+const INSIDE: &str = "#1565c0";
+const INSIDE_LINE: &str = "rgba(21,101,192,0.8)";
 const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
 const PROBLEM: &str = "#e65100";
 const PLAN_START: &str = "#a78bfa";
@@ -125,13 +127,43 @@ fn clip_rect(ctx: &CanvasRenderingContext2d, r: Rect) {
 }
 
 /// The border an item gets for what it is to the item under the pointer or for being found
-fn border(
-    frame: &Frame,
-    mark: Mark,
-    target: bool,
-    before: &[Mark],
-    after: &[Mark],
-) -> Option<(String, f64)> {
+/// What is outlined besides the item under the pointer
+struct Marked {
+    before: Vec<Mark>,
+    after: Vec<Mark>,
+    /// Everything inside the group under the pointer
+    inside: Vec<Mark>,
+}
+
+impl Marked {
+    fn of(frame: &Frame) -> Self {
+        let linked = |role: Role| frame.links.iter().filter(move |l| l.role == role);
+        let placed = &frame.scene.arrangement.placed;
+        let group = placed
+            .iter()
+            .find(|p| p.kind == Kind::Group && Some(p.mark) == frame.hover);
+        Self {
+            // a group's start is only marked by its diamond, the group itself is not before
+            before: linked(Role::Before)
+                .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
+                .map(|l| mark_of(l.from))
+                .collect(),
+            after: linked(Role::After).map(|l| mark_of(l.to)).collect(),
+            // a group's block takes the lanes under its name
+            inside: group
+                .map(|g| {
+                    placed
+                        .iter()
+                        .filter(|p| p.lane > g.lane && p.lane < g.lane + g.lanes)
+                        .map(|p| p.mark)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+}
+
+fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(String, f64)> {
     match frame.flash {
         Some((flashed, alpha)) if flashed == mark => {
             return Some((format!("rgba(229,57,53,{alpha})"), 4.0));
@@ -142,9 +174,11 @@ fn border(
         Some((TARGET.to_string(), 3.0))
     } else if frame.hover == Some(mark) {
         Some((HOVERED.to_string(), 3.5))
-    } else if before.contains(&mark) {
+    } else if marked.inside.contains(&mark) {
+        Some((INSIDE.to_string(), 3.0))
+    } else if marked.before.contains(&mark) {
         Some((BEFORE.to_string(), 3.0))
-    } else if after.contains(&mark) {
+    } else if marked.after.contains(&mark) {
         Some((AFTER.to_string(), 3.0))
     } else {
         None
@@ -187,21 +221,7 @@ pub fn paint(ctx: &CanvasRenderingContext2d, frame: &Frame) -> Hits {
             h: frame.height - HEADER_HEIGHT,
         },
     );
-    let (before, after): (Vec<Mark>, Vec<Mark>) = {
-        let before = frame
-            .links
-            .iter()
-            .filter(|l| l.role == Role::Before)
-            // a group's start is only marked by its diamond, the group itself is not before
-            .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
-            .map(|l| mark_of(l.from));
-        let after = frame
-            .links
-            .iter()
-            .filter(|l| l.role == Role::After)
-            .map(|l| mark_of(l.to));
-        (before.collect(), after.collect())
-    };
+    let marked = Marked::of(frame);
 
     // where everything is, so lines can be drawn to it
     let mut geometry: HashMap<Mark, Geometry> = HashMap::new();
@@ -232,7 +252,7 @@ pub fn paint(ctx: &CanvasRenderingContext2d, frame: &Frame) -> Hits {
             );
             group_boxes.insert(p.mark, rect);
             if visible(p) {
-                paint_group(ctx, frame, p, rect, &before, &after, &mut hits);
+                paint_group(ctx, frame, p, rect, &marked, &mut hits);
             }
         } else {
             geometry.insert(
@@ -254,13 +274,9 @@ pub fn paint(ctx: &CanvasRenderingContext2d, frame: &Frame) -> Hits {
         }
         let (from, to) = (offset(p.span.0), offset(p.span.1));
         match (p.mark, p.kind) {
-            (Mark::PlanStart, _) => {
-                paint_plan_start(ctx, frame, p, from, &before, &after, &mut hits)
-            }
-            (_, Kind::Milestone) => {
-                paint_milestone(ctx, frame, p, from, &before, &after, &mut hits)
-            }
-            _ => paint_bar(ctx, frame, p, (from, to), &before, &after, &mut hits),
+            (Mark::PlanStart, _) => paint_plan_start(ctx, frame, p, from, &marked, &mut hits),
+            (_, Kind::Milestone) => paint_milestone(ctx, frame, p, from, &marked, &mut hits),
+            _ => paint_bar(ctx, frame, p, (from, to), &marked, &mut hits),
         }
     }
     ctx.restore();
@@ -344,14 +360,13 @@ fn paint_group(
     frame: &Frame,
     p: &Placed,
     rect: Rect,
-    before: &[Mark],
-    after: &[Mark],
+    marked: &Marked,
     hits: &mut Hits,
 ) {
     path_round(ctx, rect, 8.0);
     ctx.set_fill_style_str(GROUP_FILL);
     ctx.fill();
-    let outline = border(frame, p.mark, p.target, before, after);
+    let outline = border(frame, p.mark, p.target, marked);
     ctx.set_stroke_style_str(outline.as_ref().map_or(GROUP_LINE, |(c, _)| c.as_str()));
     ctx.set_line_width(outline.as_ref().map_or(1.0, |(_, w)| *w));
     ctx.stroke();
@@ -426,6 +441,7 @@ fn paint_links(ctx: &CanvasRenderingContext2d, frame: &Frame, geometry: &HashMap
         let (line, solid) = match link.role {
             Role::Before => (BEFORE_LINE, BEFORE),
             Role::After => (AFTER_LINE, AFTER),
+            Role::Inside => (INSIDE_LINE, INSIDE),
         };
         ctx.set_stroke_style_str(line);
         ctx.begin_path();
@@ -478,8 +494,7 @@ fn paint_bar(
     frame: &Frame,
     p: &Placed,
     (from, to): (f64, f64),
-    before: &[Mark],
-    after: &[Mark],
+    marked: &Marked,
     hits: &mut Hits,
 ) {
     let rect = frame.viewport.bar(from, to, p.lane);
@@ -499,7 +514,7 @@ fn paint_bar(
         leaf_wash(ctx, rect);
     }
     path_round(ctx, rect, RADIUS);
-    stroke_border(ctx, border(frame, p.mark, p.target, before, after));
+    stroke_border(ctx, border(frame, p.mark, p.target, marked));
 
     // the name inside the bar
     let colour = if p.look == Look::InProgress {
@@ -562,8 +577,7 @@ fn paint_milestone(
     frame: &Frame,
     p: &Placed,
     from: f64,
-    before: &[Mark],
-    after: &[Mark],
+    marked: &Marked,
     hits: &mut Hits,
 ) {
     let (cx, cy) = frame.viewport.start_centre(from, p.lane);
@@ -583,7 +597,7 @@ fn paint_milestone(
         );
     }
     path_diamond(ctx, cx, cy, r);
-    stroke_border(ctx, border(frame, p.mark, p.target, before, after));
+    stroke_border(ctx, border(frame, p.mark, p.target, marked));
     let name_x = cx + r + 6.0 + if p.violated { 20.0 } else { 0.0 };
     let hovered = frame.hover == Some(p.mark);
     ctx.set_text_baseline("middle");
@@ -615,8 +629,7 @@ fn paint_plan_start(
     frame: &Frame,
     p: &Placed,
     from: f64,
-    before: &[Mark],
-    after: &[Mark],
+    marked: &Marked,
     hits: &mut Hits,
 ) {
     let (cx, cy) = frame.viewport.start_centre(from, p.lane);
@@ -629,7 +642,7 @@ fn paint_plan_start(
     });
     ctx.fill();
     path_diamond(ctx, cx, cy, r);
-    stroke_border(ctx, border(frame, p.mark, false, before, after));
+    stroke_border(ctx, border(frame, p.mark, false, marked));
     ctx.set_text_baseline("middle");
     text(
         ctx,

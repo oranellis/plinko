@@ -22,6 +22,7 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
+    datepicker::{DatePicker, OptionalDate},
     format, forms,
     model::{self, node_name},
     sync::Sync,
@@ -420,44 +421,18 @@ fn Constraint(kind: RwSignal<String>, day: RwSignal<NaiveDate>) -> impl IntoView
                 />
             </Block>
             <Field label="Constraint Date">
-                <DateInput day=day disabled=Signal::derive(move || kind.get() == "none") />
+                // clearing the date takes the constraint away
+                <DatePicker
+                    value=Signal::derive(move || (kind.get() != "none").then(|| day.get()))
+                    on_change=Callback::new(move |d: Option<NaiveDate>| match d {
+                        Some(d) => day.set(d),
+                        None => kind.set("none".to_string()),
+                    })
+                    clearable=true
+                    disabled=Signal::derive(move || kind.get() == "none")
+                />
             </Field>
         </div>
-    }
-}
-
-#[component]
-pub fn DateInput(
-    day: RwSignal<NaiveDate>,
-    #[prop(optional)] disabled: Option<Signal<bool>>,
-) -> impl IntoView {
-    view! {
-        <input
-            type="date"
-            disabled=move || disabled.is_some_and(|d| d.get())
-            prop:value=move || format::iso(day.get())
-            on:input=move |ev| {
-                if let Some(d) = format::parse_iso(&event_target_value(&ev)) {
-                    day.set(d);
-                }
-            }
-        />
-    }
-}
-
-/// A date that can be left empty
-#[component]
-fn OptionalDate(
-    value: RwSignal<Option<NaiveDate>>,
-    #[prop(optional)] disabled: Option<Signal<bool>>,
-) -> impl IntoView {
-    view! {
-        <input
-            type="date"
-            disabled=move || disabled.is_some_and(|d| d.get())
-            prop:value=move || value.get().map(format::iso).unwrap_or_default()
-            on:input=move |ev| value.set(format::parse_iso(&event_target_value(&ev)))
-        />
     }
 }
 

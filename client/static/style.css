@@ -194,7 +194,7 @@ table.grid th:first-child, table.grid td:first-child { text-align: left; positio
 
 @media (max-width: 719px) {
   :root { --top: 40px; }
-  .top .tabs, .top .tenant, .top button { display: none; }
+  .top .tabs, .top .tenant, .top button, .top .date-format { display: none; }
   .bottom { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; height: var(--bottom); background: var(--bg); border-top: 1px solid var(--soft); position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; padding-bottom: env(safe-area-inset-bottom); }
   .bottom a { color: var(--muted); text-decoration: none; justify-content: center; border-radius: 0; flex-direction: column; gap: 2px; font-size: 11px; }
   .bottom a.active { color: #fff; background: var(--raised); }
@@ -230,3 +230,16 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .hours .cell.none { width: 5px; }
 .hours .cell.lit { background: var(--accent); }
 .hours .small { min-width: 28px; margin-left: 4px; }
+
+/* the calendar of a date picker */
+.calendar { width: 264px; }
+.calendar .month { display: flex; align-items: center; justify-content: space-between; }
+.calendar .month button { font-size: 16px; padding: 2px 8px; }
+.calendar .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.calendar .head { font-size: 11px; color: var(--muted); padding: 4px 0; }
+.calendar .day { padding: 5px 0; min-height: 0; background: none; font-size: 13px; }
+.calendar .day:hover { background: var(--raised); }
+.calendar .day.today { border: 1px solid var(--accent); }
+.calendar .day.on { background: var(--accent); color: #fff; }
+.calendar .foot { display: flex; justify-content: space-between; }
+.date-format select { font-size: 12px; min-height: 26px; padding: 2px 6px; }

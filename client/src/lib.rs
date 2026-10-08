@@ -1,5 +1,6 @@
 mod api;
 mod availability;
+mod datepicker;
 mod editor;
 mod format;
 mod forms;
@@ -27,6 +28,7 @@ use crate::{login::Login, shell::Shell, sync::Sync};
 fn App() -> impl IntoView {
     let sync = Sync::new();
     provide_context(sync);
+    format::provide_date_format();
     let booted = RwSignal::new(false);
     spawn_local(async move {
         if let Some(profile) = api::me().await {

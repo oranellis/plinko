@@ -24,7 +24,7 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
-    editor::DateInput,
+    datepicker::DateInput,
     model::{self, node_name},
     nav::{Availability, Route, navigate},
     ui::{Field, Number, Select, Text, use_sync},

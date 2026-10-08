@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::{
     api,
-    editor::DateInput,
+    datepicker::DateInput,
     nav::{Availability, Route},
     ui::{Actions, Block, Field, Modal, Select, Text, use_sync},
 };

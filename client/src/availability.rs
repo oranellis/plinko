@@ -15,7 +15,7 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
-    editor::DateInput,
+    datepicker::DateInput,
     format,
     nav::{Availability as Of, Route},
     ui::{Field, Number, Select, options, use_sync},

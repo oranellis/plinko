@@ -27,6 +27,8 @@ pub enum Role {
     Before,
     /// Comes after it
     After,
+    /// Is inside the group under the pointer and starts with it
+    Inside,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,15 +82,15 @@ pub fn links(plan: &Plan, hovered: Mark) -> Vec<Link> {
                 if dep.node == DependencyNode::ParentStart
                     && model::parent_of(plan, other) == Parent::Node(group));
             if after_end || in_group {
-                let from = if after_end {
-                    Anchor::End(node)
+                let (from, role) = if after_end {
+                    (Anchor::End(node), Role::After)
                 } else {
-                    Anchor::Start(node)
+                    (Anchor::Start(node), Role::Inside)
                 };
                 out.push(Link {
                     from,
                     to: Anchor::Start(other),
-                    role: Role::After,
+                    role,
                 });
             }
         }
@@ -234,7 +236,7 @@ mod tests {
         assert!(around.contains(&Link {
             from: Anchor::Start(group),
             to: Anchor::Start(member),
-            role: Role::After
+            role: Role::Inside
         }));
         assert!(around.contains(&Link {
             from: Anchor::End(group),
