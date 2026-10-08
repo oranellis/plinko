@@ -466,22 +466,20 @@ fn paint_links(
             }
         }
     }
-    // the edge of a group a line meets lights up, strongest in the middle and fading out
-    // towards the top and bottom, over most of its height
-    for (mark, (x, y), colour) in &diamonds {
+    // the border of a group lights up from the edge a line meets, fading over a quarter of its width
+    for (mark, (x, _), colour) in &diamonds {
         let Some(group) = group_boxes.get(mark) else {
             continue;
         };
-        let half = group.h * 0.4;
-        let glow = ctx.create_linear_gradient(0.0, y - half, 0.0, y + half);
-        let _ = glow.add_color_stop(0.0, &faded(colour));
-        let _ = glow.add_color_stop(0.5, colour);
+        let reach = group.w * 0.25;
+        let left = (*x - group.x).abs() < (*x - group.x - group.w).abs();
+        let inward = if left { *x + reach } else { *x - reach };
+        let glow = ctx.create_linear_gradient(*x, 0.0, inward, 0.0);
+        let _ = glow.add_color_stop(0.0, colour);
         let _ = glow.add_color_stop(1.0, &faded(colour));
         ctx.set_stroke_style_canvas_gradient(&glow);
         ctx.set_line_width(3.0);
-        ctx.begin_path();
-        ctx.move_to(*x, y - half);
-        ctx.line_to(*x, y + half);
+        path_round(ctx, *group, 8.0);
         ctx.stroke();
     }
     // a small milestone marker where a line meets the edge of a group
