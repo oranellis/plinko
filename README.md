@@ -25,3 +25,4 @@ builds it, installs it under `/opt/plinko`, and runs a systemd service for the t
 - `docs/layout.md` the folders, the source layout of the `plinko` crate, and its conventions.
 - `docs/scheduler.md` the scheduler's spec, how it decides, and how it is built and measured.
 - `docs/client.md` the client and server stack, how updates sync, storage, auth, and what is left.
+- `docs/plinko1-ui.md` how the first version's web client looked and behaved: theme, layout, the Gantt, and the other views.
