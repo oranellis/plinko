@@ -32,8 +32,8 @@ const HOVERED: &str = "#1e88e5";
 const BEFORE: &str = "#fc1ef1";
 const AFTER: &str = "#07fcd7";
 const BEFORE_LINE: &str = "rgba(252,30,241,0.66)";
-const INSIDE: &str = "#1565c0";
-const INSIDE_LINE: &str = "rgba(21,101,192,0.8)";
+const INSIDE: &str = "#1255a5";
+const INSIDE_LINE: &str = "rgba(18,85,165,0.8)";
 const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
 const PROBLEM: &str = "#e65100";
 const PLAN_START: &str = "#a78bfa";
@@ -468,7 +468,8 @@ fn paint_links(
     }
     // the border of a group lights up from the edge a line meets, fading over a quarter of its width
     for (mark, (x, _), colour) in &diamonds {
-        let Some(group) = group_boxes.get(mark) else {
+        // a group under the pointer is plain blue all round
+        let (Some(group), false) = (group_boxes.get(mark), frame.hover == Some(*mark)) else {
             continue;
         };
         let reach = group.w * 0.25;
