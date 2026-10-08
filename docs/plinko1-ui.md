@@ -146,21 +146,46 @@ draw.
 - On opening a plan (and on **Jump to today**) the view centres today: `scrollX = max(0, todayOffset
   × 34 − width/2)`, `scrollY = 0`. The zoom resets to 34 on Jump to today only.
 
-### Rows are packed
+### How items are arranged: packed rows
 
-`packGanttRows` places every task and milestone into rows by greedy bin packing:
+There is no list of tasks and no row per task. `packGanttRows` (`utils/planUtils.ts`) turns the plan
+into **lanes**, and a lane holds as many items as fit end to end. An item is a task or a milestone
+that has dates from the scheduler (anything without an allocation is left out). A task covers its
+first to its last day **inclusive**, a milestone is the single day it lands on (start = end).
 
-1. **Plan Start** is a synthetic milestone, always first, in row 0.
-2. Active items (all but dropped) are sorted by start date then name.
-3. For each item, take the first row whose last item ended before it, i.e. `item.start >
-   rowEnd` where a row's end is the last item's end **plus one day**, so items in a row are
-   separated by at least one blank day. Otherwise open a new row.
-4. **Dropped** tasks are not in that packing. They are packed on their own **below a separator
-   row**, a thin horizontal rule `rgba(138,138,138,.31)` across the full width, with no labels.
+1. Take the active items, every item except dropped tasks, and put the synthetic **Plan Start**
+   first: a milestone on the plan's start date, taken out of the sort and placed at the front
+   so it is always the first item of lane 0.
+2. Sort the rest by **start date, then name** (plain string comparison of the ISO date and then
+   `localeCompare` of the name). Dates compare as text, which is why ISO dates are used.
+3. Go through the items in that order and put each in the **first lane** (lowest index) where the
+   lane's last item has finished *and left a gap*: the lane keeps a "free from" day, which is
+   the last item's end **plus one day**, and an item fits when `item.start > freeFrom`. So two
+   items may share a lane only if there is **at least one empty day between them**. If no lane
+   fits, a new lane is added below the others. After placing, the lane's free-from day becomes
+   this item's end plus one.
+4. **Dropped** tasks go through the same packing on their own, into lanes that start **below a
+   separator row**, so they sit under the live work, never between it. The separator is its own
+   row holding a single thin rule across the width, and it is only added when something is dropped.
+5. A lane's index is its row, `y = 56 + row × 36 − scrollY`. The number of rows is the highest
+   lane plus one (plus the separator and the dropped lanes), and that is what the vertical scroll
+   range is made of.
 
-So a row is a lane: one lane can hold a whole run of short tasks and milestones end to end, and a
-plan with many small tasks is much shorter than one row per task. There is no grouping or
-nesting (v1 has no task groups), and nothing says which row a task is in.
+A worked example, one character a day, `A`..`D` tasks and `◇` a milestone, plan start on day 0:
+
+```
+day:   0 1 2 3 4 5 6 7 8 9
+lane0: ◇ . A A A . . D D D     Plan Start, A (days 2-4), D (days 7-9)
+lane1: . . B B . C C C         B (days 2-3) overlaps A so opens lane 1, C (days 5-7) cannot follow A in lane 0 (it starts the day after A ends, no gap) so takes lane 1 after B, D can go back to lane 0
+```
+
+Because the order is by start date and the choice is the first lane that fits, the arrangement is
+fully determined by the dates, it is recomputed from scratch on every plan update (a task moving
+can move other tasks between lanes), and the top lanes are the busiest. Nothing records which lane
+an item is in, nothing can be moved between lanes, and related items are not kept together
+(there is no grouping or nesting, v1 has no task groups). The only structure a person sees is
+time: the chain of work reads left to right along the lanes, and the dependencies are shown on
+hover (below).
 
 ### What is drawn, back to front
 
@@ -191,24 +216,58 @@ nesting (v1 has no task groups), and nothing says which row a task is in.
      between a diamond and its name, which has its own hover tooltip.
 6. **Hover panel** (below).
 
-### Hover and dependencies
+### Shapes
 
-Hover only exists for a mouse. Hovering an item:
+- **Task bar: a rounded rectangle.** It spans the task's first day column to the end of its last
+  day column, inset by `0.12 × day width` on the left and right (about 4 px at the default zoom, so
+  bars on consecutive days are visibly separate), and by 6 px top and bottom of the 36 px row,
+  which makes it 24 px high. The corners are drawn as quadratic curves with radius 6, capped at
+  half the width and half the height so a very short bar is a pill and never a bad shape. A
+  bar is never narrower than 4 px.
+- Everything painted on a bar is clipped to that rounded shape: the leaf gradient, and the
+  name (clipped to the bar minus 4 px each side, 6 px in from the left, vertically centred).
+  Borders for hover, dependencies, target and flash are strokes of the same path, 3 to 4 px, so they
+  follow the rounded corners and sit half outside the bar.
+- **Milestone: a diamond.** A four point polygon of radius 10 (Plan Start 9) centred on the middle
+  of its day column and the middle of the row, with no rounding, filled by derived status. Its
+  name is outside it to the right instead of inside, clipped where the next item in the same
+  lane begins, which only matters because lanes are shared.
+- The click and hover target of an item is its **rectangle** (the bar's, or the diamond's
+  bounding square), not the exact shape.
 
-- Outlines it `#1e88e5` (3.5 px), outlines everything it **depends on** magenta `#fc1ef1` and
-  everything that **depends on it** cyan `#07fcd7` (3 px), and draws a straight 1.5 px line from
-  each predecessor's end day centre to the hovered item's start day centre in
-  `rgba(252,30,241,.66)`, and from the hovered item to each dependent in
-  `rgba(7,252,215,.66)`. Dropped tasks are skipped. There are **no permanent arrows**: the graph
-  only shows for the item under the pointer.
-- Shows an **info panel** drawn on the canvas, bottom left, 8 px in from the corner: radius 6,
-  fill `rgba(30,30,30,.86)`, border `#4a4a4a`, a soft offset shadow, 10 px padding. The first line is
-  the name at 20 px `#d4d4d4`, the others 15 px `#8a8a8a`:
+### Dependency lines
+
+Only for the item under the pointer, never all at once, and only direct links.
+
+- For each item the hovered one **depends on**, a straight line is drawn from the **centre of the
+  predecessor's last day column**, at the middle of its row, to the **centre of the hovered item's
+  first day column**, at the middle of its row. For each item that **depends on the hovered one** the
+  same, from the hovered item's last day centre to the dependent's first day centre.
+- The lines are plain straight segments, 1.5 px, with no arrowheads and no routing, so they cross
+  diagonally over whatever lies between. They are drawn **behind** the bars, so what shows is the
+  part in the gaps and the ends are hidden under the bars. Magenta `rgba(252,30,241,.66)` is
+  "comes before", cyan `rgba(7,252,215,.66)` is "comes after", and the two ends get the matching
+  magenta or cyan 3 px outline, with the hovered item outlined blue `#1e88e5`.
+- The lag of a dependency is not drawn, and a dependent that starts later than its predecessor ends
+  just gets a longer line. Plan Start counts as a predecessor (and the hovered Plan Start lights up the
+  items that depend on it). Dropped tasks never take part, and a line is skipped if either end has
+  no dates.
+- Only the lane geometry matters for finding the ends: the line goes from item centre to item
+  centre whichever lanes they are in, which is what makes it readable with packed rows.
+
+### Hover
+
+Hover only exists for a mouse. Hovering an item outlines it, shows its dependency lines (above), and
+shows an **info panel** drawn on the canvas.
+
+- The panel sits bottom left, 8 px in from the corner: radius 6, fill `rgba(30,30,30,.86)`, border
+  `#4a4a4a`, a soft offset shadow, 10 px padding. The first line is the name at 20 px `#d4d4d4`, the
+  rest 15 px `#8a8a8a`:
   - task: `Status: …`, `Started: …` (actual start) or `Scheduled: …`, `Ends: …`, `Workers: …`
     (user names, or `needs: tag, tag`, or `(unassigned)`), and `⚠ Constraint violated`.
   - milestone: `Milestone`, `Scheduled: …`, the violation line.
   - Plan Start: `Date: …`.
-  - A small Monday logo and tick on the second line for items linked to Monday.
+  - a small Monday logo and tick on the second line for items linked to Monday.
 - The `!` marker's tooltip is separate: a small panel by the pointer with an orange border and
   three lines, `Fixed date violated` / `Latest date exceeded` / `Earliest date not met`,
   `Required: …`, `Scheduled: …`.
@@ -232,6 +291,31 @@ Hover only exists for a mouse. Hovering an item:
   times, then fades over 700 ms).
 - Nothing is draggable: dates are not edited by moving bars. Changing a plan means editing in the
   modal and the scheduler redraws it.
+
+### Carrying the arrangement over to v2 data
+
+The v1 rules assume things v2 data changes. These are facts to decide against, not decisions.
+
+- **End dates:** v1 items are inclusive of their last day, a v2 `date_range` ends on the day after
+  its last day, and a v2 milestone's range is its one day. The "one blank day between items in
+  a lane" rule is `next.start > previous.last_day + 1`, which is `next.start >= previous.end + 1` in
+  v2 terms.
+- **Groups, buffers and targets:** v1 has only tasks, milestones and a synthetic Plan Start, with a
+  single target outlined in gold. v2 adds task groups (nested, spanning their members), buffers
+  (a span with no work), and a list of targets with priorities. Packing does not know about
+  parent/child, so a group either takes its own lane above its members, or is drawn behind them,
+  or is a header the members pack beneath, and that needs choosing.
+- **Items without dates:** v1 only drew items the scheduler dated. v2 reports unscheduled items with
+  a reason, which have no place on the timeline, so they need somewhere to show (v1's dropped lanes
+  under a separator are the closest precedent).
+- **Plan Start:** v1 draws it as a purple diamond in lane 0 and lets dependencies point at it. In
+  v2 the start is a plan setting that nodes depend on implicitly (`ParentStart`), and a group has its
+  own start.
+- **Violations and unmet dates:** v1's orange `!` and tooltip map directly onto v2's constraint
+  violations (constraint kind, required date, scheduled date).
+- **Dependency lines:** v2 dependencies carry a lag in calendar days and a node can depend on a
+  group's end. The v1 straight line from the end of one to the start of the other still works, with
+  the question of what a group's end and start are.
 
 ## Allocation
 
@@ -334,12 +418,17 @@ For steering: the points where the first v2 build departs from v1.
 - **Theme:** v2 is a light page with a dark top bar, v1 is dark throughout.
 - **Gantt rows:** v2 gives every item its own row with a 220 px name column on the left, v1 packs
   items into shared lanes with names on the bars and no name column.
+- **Shapes:** v2 bars are plain rectangles, filling the full day columns edge to edge, v1's are
+  rounded (radius 6), inset from the day columns, 24 px high in a 36 px row, with the name drawn in
+  the bar and a gradient and outlines that follow the corners.
 - **Time axis:** v2 starts at the earliest scheduled date and clips at the first and last, v1
   counts from the plan start with half a screen of slack either side.
 - **Bars and markers:** v2 colours bars by status in a bright blue family and shows
   weekends across the body, v1 uses the grey/amber/lilac/green status colours, shades weekends only in
   the header, shows a gold target outline, a leaf gradient and the orange `!`.
-- **Dependencies:** v2 draws none, v1 draws the hovered item's predecessors and dependents.
+- **Dependencies:** v2 draws none, v1 draws straight lines (end day centre to start day centre)
+  from the hovered item to what it depends on and what depends on it, behind the bars, in magenta
+  and cyan, with matching outlines.
 - **Editing:** v2 edits in a side panel (a sheet on phones) with native controls, v1 uses centred
   modals with hand drawn pickers and a segmented status control.
 - **Navigation:** v2 has a top tab bar (a bottom bar on phones) and routes in the URL, v1 has the
