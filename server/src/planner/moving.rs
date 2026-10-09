@@ -4,7 +4,7 @@ use crate::{
     planner::{
         plan::Plan,
         plan_update::PlanUpdate,
-        removal::{all_nodes, merged, placement},
+        removal::{all_nodes, placement},
     },
     types::{
         dependency::{Dependency, DependencyNode, PlanNode},
@@ -44,7 +44,7 @@ impl Plan {
         let mut updates = Vec::new();
         if let Parent::Node(id) = from {
             let (_, outer) = placement(self, PlanNode::TaskGroup(id));
-            deps = merged(
+            deps = Dependency::merged(
                 deps.into_iter()
                     .flat_map(|d| match d.node {
                         DependencyNode::ParentStart => outer
@@ -69,7 +69,7 @@ impl Plan {
                 DependencyNode::Node(n) => !self.is_within(n, group),
             });
             let (_, own) = placement(self, group);
-            let mut group_deps = merged([own, lifted].concat());
+            let mut group_deps = Dependency::merged([own, lifted].concat());
             // waiting on the parent's start is implied once there is something else to wait on
             if group_deps.len() > 1 {
                 group_deps.retain(|d| d.node != DependencyNode::ParentStart || d.lag != 0);
@@ -97,7 +97,11 @@ impl Plan {
                             }
                         })
                         .collect();
-                    updates.push(PlanUpdate::rewire(other, None, Some(merged(swapped))));
+                    updates.push(PlanUpdate::rewire(
+                        other,
+                        None,
+                        Some(Dependency::merged(swapped)),
+                    ));
                 }
             }
         }

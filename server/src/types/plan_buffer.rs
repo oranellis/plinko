@@ -90,7 +90,7 @@ impl Patchable<PlanBufferPatch> for PlanBuffer {
             self.parent = p;
         }
         if let Some(p) = patch.dependencies {
-            self.dependencies = p;
+            self.dependencies = Dependency::merged(p);
         }
         if let Some(p) = patch.set_start_day {
             self.set_start_day = p

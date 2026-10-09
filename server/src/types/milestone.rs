@@ -96,7 +96,7 @@ impl Patchable<MilestonePatch> for Milestone {
             self.time_constraint = t;
         }
         if let Some(d) = patch.dependencies {
-            self.dependencies = d;
+            self.dependencies = Dependency::merged(d);
         }
         if let Some(p) = patch.persistent_state {
             self.persistent_state = p

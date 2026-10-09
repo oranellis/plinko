@@ -46,18 +46,6 @@ pub(super) fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
     nodes
 }
 
-/// Each node once, with the longest lag it was given
-pub(super) fn merged(deps: Vec<Dependency>) -> Vec<Dependency> {
-    let mut out: Vec<Dependency> = Vec::new();
-    for dep in deps {
-        match out.iter_mut().find(|d| d.node == dep.node) {
-            Some(known) => known.lag = known.lag.max(dep.lag),
-            None => out.push(dep),
-        }
-    }
-    out
-}
-
 impl Plan {
     /// The updates that remove `node` and leave the rest of the plan connected, the last of them
     /// removes it. Whatever depended on it depends on what it depended on, with the lags added.
@@ -100,7 +88,7 @@ impl Plan {
             updates.push(PlanUpdate::rewire(
                 *member,
                 Some(parent),
-                Some(merged(moved)),
+                Some(Dependency::merged(moved)),
             ));
         }
 
@@ -135,7 +123,7 @@ impl Plan {
                         .collect()
                 })
                 .collect();
-            let replaced = match merged(replaced) {
+            let replaced = match Dependency::merged(replaced) {
                 kept if kept.is_empty() => vec![Dependency::default()],
                 kept => kept,
             };

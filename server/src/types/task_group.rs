@@ -99,7 +99,7 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
             self.name = n;
         }
         if let Some(d) = patch.dependencies {
-            self.dependencies = d;
+            self.dependencies = Dependency::merged(d);
         }
         if let Some(p) = patch.parent {
             self.parent = p;

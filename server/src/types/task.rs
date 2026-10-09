@@ -148,7 +148,7 @@ impl Patchable<TaskPatch> for Task {
             self.time_constraint = t
         }
         if let Some(d) = patch.dependencies {
-            self.dependencies = d
+            self.dependencies = Dependency::merged(d)
         }
         if let Some(a) = patch.allocations {
             self.allocations = a

@@ -14,6 +14,18 @@ pub struct Dependency {
 }
 
 impl Dependency {
+    /// Each node once, with the longest lag it was given
+    pub fn merged(deps: Vec<Dependency>) -> Vec<Dependency> {
+        let mut out: Vec<Dependency> = Vec::new();
+        for dep in deps {
+            match out.iter_mut().find(|d| d.node == dep.node) {
+                Some(known) => known.lag = known.lag.max(dep.lag),
+                None => out.push(dep),
+            }
+        }
+        out
+    }
+
     /// The day a task, group or buffer can start when the node it depends on ends on `end`
     /// (exclusive, so the day after its last day). A milestone counts as the one day it lands on.
     /// `ParentStart` is a date and also uses this, for milestones too.
@@ -116,5 +128,14 @@ mod tests {
 
         // and a milestone after the milestone shares its day
         assert_eq!(link.milestone_date_after(milestone.end()), d(5));
+    }
+
+    #[test]
+    fn a_repeated_node_is_kept_once_with_its_longest_lag() {
+        let on = |lag| Dependency {
+            node: DependencyNode::ParentStart,
+            lag,
+        };
+        assert_eq!(Dependency::merged(vec![on(1), on(3), on(2)]), vec![on(3)]);
     }
 }
