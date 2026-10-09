@@ -14,7 +14,7 @@ pub const BAR_INSET_Y: f64 = 6.0;
 /// The thinnest a bar is drawn
 pub const MIN_BAR_WIDTH: f64 = 4.0;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
     pub x: f64,
     pub y: f64,

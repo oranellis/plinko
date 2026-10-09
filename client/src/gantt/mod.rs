@@ -24,7 +24,7 @@ use crate::gantt::{
     layout::{Bounds, DAY_WIDTH, Rect, Viewport},
     links::{Link, Role},
     scene::Scene,
-    shift::{Drag, DragView, Editing, Handle, Overlay},
+    shift::{Drag, DragView, Editing, Grips, Handle, Overlay},
 };
 
 /// Movement under this many pixels is a tap, not a drag (more for a finger)
@@ -290,8 +290,8 @@ pub fn Gantt(
                 .map(|p| p.kind)
         });
         match (kind, rect_of(Mark::Node(node))) {
-            (Some(kind), Some(rect)) => shift::handles(kind, rect),
-            _ => Vec::new(),
+            (Some(kind), Some(rect)) => Grips::of(kind, rect),
+            _ => Grips::default(),
         }
     };
 
@@ -369,6 +369,7 @@ pub fn Gantt(
             let view = dragged.map(|d| match d {
                 Drag::Link { node, right } => DragView::Link {
                     from: handles
+                        .list
                         .iter()
                         .find(|(h, _)| *h == Handle::Link { right })
                         .map_or(at, |(_, p)| *p),
@@ -446,7 +447,7 @@ pub fn Gantt(
             let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
             if let Some((node, handle)) = nearby
                 .get_untracked()
-                .and_then(|node| shift::grabbed(&handles_of(node), x, y).map(|h| (node, h)))
+                .and_then(|node| handles_of(node).at(x, y).map(|h| (node, h)))
             {
                 if let Some(canvas) = canvas.get_untracked() {
                     let element: &web_sys::Element = canvas.as_ref();
@@ -513,7 +514,7 @@ pub fn Gantt(
             // handles show for the item the pointer is near, and stay while it is on one
             let on_handle = nearby
                 .get_untracked()
-                .is_some_and(|n| shift::grabbed(&handles_of(n), x, y).is_some());
+                .is_some_and(|n| handles_of(n).at(x, y).is_some());
             if !on_handle {
                 let found = hits.with_value(|h| {
                     h.items

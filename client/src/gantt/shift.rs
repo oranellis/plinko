@@ -22,7 +22,7 @@ const DARK: &str = "#3a3a3e";
 /// deal more than what is drawn
 fn reach(handle: Handle) -> (f64, f64) {
     match handle {
-        Handle::Move => (18.0, 12.0),
+        Handle::Move => (0.0, 0.0),
         Handle::Resize => (9.0, 14.0),
         Handle::Link { .. } => (12.0, 12.0),
     }
@@ -83,33 +83,42 @@ pub struct Editing {
     pub chain: Callback<(PlanNode, PlanNode), Vec<Link>>,
 }
 
-/// The handles an item has, with where each is
-pub fn handles(kind: Kind, rect: Rect) -> Vec<(Handle, (f64, f64))> {
-    let middle = rect.y + rect.h / 2.0;
-    let mut out = Vec::new();
-    if matches!(kind, Kind::Task | Kind::Buffer) {
-        out.push((Handle::Resize, (rect.x + rect.w - 6.0, middle)));
-    }
-    out.push((
-        Handle::Link { right: true },
-        (rect.x + rect.w + 12.0, middle),
-    ));
-    out.push((Handle::Link { right: false }, (rect.x - 12.0, middle)));
-    // a short bar has no room in the middle, so the handle sits just above it
-    let up = if rect.w < 60.0 { rect.y - 4.0 } else { middle };
-    out.push((Handle::Move, (rect.x + rect.w / 2.0, up)));
-    out
+/// The handles an item has, with where each is, and the item they belong to
+#[derive(Clone, Debug, Default)]
+pub struct Grips {
+    rect: Rect,
+    pub list: Vec<(Handle, (f64, f64))>,
 }
 
-/// The handle at a point, if there is one
-pub fn grabbed(handles: &[(Handle, (f64, f64))], x: f64, y: f64) -> Option<Handle> {
-    handles
-        .iter()
-        .find(|(h, (hx, hy))| {
-            let (w, t) = reach(*h);
-            (hx - x).abs() <= w && (hy - y).abs() <= t
-        })
-        .map(|(h, _)| *h)
+impl Grips {
+    pub fn of(kind: Kind, rect: Rect) -> Self {
+        let middle = rect.y + rect.h / 2.0;
+        let mut list = Vec::new();
+        if matches!(kind, Kind::Task | Kind::Buffer) {
+            list.push((Handle::Resize, (rect.x + rect.w - 6.0, middle)));
+        }
+        list.push((
+            Handle::Link { right: true },
+            (rect.x + rect.w + 12.0, middle),
+        ));
+        list.push((Handle::Link { right: false }, (rect.x - 12.0, middle)));
+        list.push((Handle::Move, (rect.x + rect.w / 2.0, middle)));
+        Self { rect, list }
+    }
+
+    /// The handle at a point, if there is one. The duration grip and the dots come first, and the
+    /// move handle is everywhere else on the item.
+    pub fn at(&self, x: f64, y: f64) -> Option<Handle> {
+        self.list
+            .iter()
+            .filter(|(h, _)| *h != Handle::Move)
+            .find(|(h, (hx, hy))| {
+                let (w, t) = reach(*h);
+                (hx - x).abs() <= w && (hy - y).abs() <= t
+            })
+            .map(|(h, _)| *h)
+            .or_else(|| (!self.list.is_empty() && self.rect.contains(x, y)).then_some(Handle::Move))
+    }
 }
 
 /// Whether a point is near enough to a rectangle for its handles to show
@@ -142,7 +151,7 @@ pub fn resize_label(delta: i32, duration: u32) -> String {
 
 /// What is drawn on top of the chart for the handles and the drag in progress
 pub struct Overlay {
-    pub handles: Vec<(Handle, (f64, f64))>,
+    pub handles: Grips,
     pub pointer: (f64, f64),
     pub drag: Option<DragView>,
 }
@@ -173,9 +182,9 @@ pub enum DragView {
 pub fn paint(ctx: &CanvasRenderingContext2d, overlay: &Overlay) {
     ctx.save();
     let dragging = overlay.drag.is_some();
-    for (handle, (x, y)) in &overlay.handles {
+    for (handle, (x, y)) in &overlay.handles.list {
         // only the grabbed one stays while dragging, drawn where the pointer is
-        let lit = grabbed(&overlay.handles, overlay.pointer.0, overlay.pointer.1) == Some(*handle);
+        let lit = overlay.handles.at(overlay.pointer.0, overlay.pointer.1) == Some(*handle);
         if dragging {
             continue;
         }
@@ -276,26 +285,28 @@ fn ghost(ctx: &CanvasRenderingContext2d, r: Rect, name: &str) {
     }
 }
 
-/// The move handle: three dark lines on a light plate
+/// The move handle: three dark lines
 fn grip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, lit: bool) {
-    ctx.set_fill_style_str(if lit { LIT } else { LIGHT });
-    ctx.fill_rect(x - 9.0, y - 7.0, 18.0, 14.0);
-    ctx.set_stroke_style_str(DARK);
-    ctx.set_line_width(2.0);
+    ctx.set_stroke_style_str(if lit { LIT } else { DARK });
+    ctx.set_line_width(2.5);
+    ctx.set_line_cap("round");
     ctx.begin_path();
-    for dy in [-3.5, 0.0, 3.5] {
-        ctx.move_to(x - 5.0, y + dy);
-        ctx.line_to(x + 5.0, y + dy);
+    for dy in [-4.0, 0.0, 4.0] {
+        ctx.move_to(x - 4.0, y + dy);
+        ctx.line_to(x + 4.0, y + dy);
     }
     ctx.stroke();
 }
 
-/// The resize handle: a dark slot in a light plate
+/// The duration handle: one dark vertical line
 fn slot(ctx: &CanvasRenderingContext2d, x: f64, y: f64, lit: bool) {
-    ctx.set_fill_style_str(if lit { LIT } else { LIGHT });
-    ctx.fill_rect(x - 4.5, y - 9.0, 9.0, 18.0);
-    ctx.set_fill_style_str(DARK);
-    ctx.fill_rect(x - 1.5, y - 6.0, 3.0, 12.0);
+    ctx.set_stroke_style_str(if lit { LIT } else { DARK });
+    ctx.set_line_width(3.0);
+    ctx.set_line_cap("round");
+    ctx.begin_path();
+    ctx.move_to(x, y - 7.0);
+    ctx.line_to(x, y + 7.0);
+    ctx.stroke();
 }
 
 fn dot(ctx: &CanvasRenderingContext2d, (x, y): (f64, f64), colour: &str) {
@@ -342,7 +353,8 @@ mod tests {
     #[test]
     fn only_tasks_and_buffers_can_be_resized() {
         let has = |kind| {
-            handles(kind, rect())
+            Grips::of(kind, rect())
+                .list
                 .iter()
                 .any(|(h, _)| *h == Handle::Resize)
         };
@@ -351,20 +363,15 @@ mod tests {
     }
 
     #[test]
-    fn a_handle_is_taken_close_by_and_the_resize_grip_wins_in_the_corner() {
-        let all = handles(Kind::Task, rect());
-        let (_, (x, y)) = all[0];
-        assert_eq!(grabbed(&all, x + 2.0, y), Some(Handle::Resize));
-        assert_eq!(grabbed(&all, 0.0, 0.0), None);
-        let edge = all
-            .iter()
-            .find(|(h, _)| *h == Handle::Link { right: true })
-            .unwrap()
-            .1;
-        assert_eq!(
-            grabbed(&all, edge.0, edge.1),
-            Some(Handle::Link { right: true })
-        );
+    fn the_whole_item_moves_except_the_right_edge_and_the_dots() {
+        let grips = Grips::of(Kind::Task, rect());
+        // the item is x 100 to 220, y 50 to 74, the duration grip is inside its right edge
+        assert_eq!(grips.at(214.0, 62.0), Some(Handle::Resize));
+        assert_eq!(grips.at(110.0, 52.0), Some(Handle::Move));
+        assert_eq!(grips.at(160.0, 70.0), Some(Handle::Move));
+        assert_eq!(grips.at(232.0, 62.0), Some(Handle::Link { right: true }));
+        assert_eq!(grips.at(88.0, 62.0), Some(Handle::Link { right: false }));
+        assert_eq!(grips.at(0.0, 0.0), None);
     }
 
     #[test]
