@@ -54,6 +54,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&listen)
         .await
         .expect("the address binds");
-    eprintln!("listening on {listen}");
+    eprintln!("listening on http://{listen}");
     axum::serve(listener, app).await.expect("the server runs");
 }
