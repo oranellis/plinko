@@ -12,7 +12,10 @@ use plinko::{
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
+    planner::{
+        plan::{NewPlan, PlanSchedulerDataPatch},
+        plan_update::PlanUpdate,
+    },
     scheduler::{
         prepare, solve_tenant,
         state::{Baseline, PlanVolatileState, UnscheduledReason},
@@ -950,4 +953,21 @@ fn a_snapshot_of_a_tenant_schedules_the_same() {
     let state = loaded.schedule().unwrap().plans[&world.plan].clone();
     assert_eq!(state, expected);
     assert!(!state.tasks.is_empty() && !state.task_groups.is_empty());
+}
+
+#[test]
+fn what_hangs_from_a_plan_start_in_the_future_begins_on_that_day_and_milestones_land_on_it() {
+    let mut world = World::new();
+    let alice = world.user();
+    // the plan starts on a Wednesday, well after today
+    let patch = PlanSchedulerDataPatch {
+        start_date: Some(d(10)),
+        priority: None,
+    };
+    world.plan_update(PlanUpdate::SchedulerData(patch));
+    let first = world.task(1, &[(user(alice), 8)], &[start()]);
+    let marker = world.milestone(&[start()]);
+    let state = world.solve();
+    assert_eq!(span(&state, first), (d(10), d(11)));
+    assert_eq!(state.milestones[&marker].date, d(10));
 }
