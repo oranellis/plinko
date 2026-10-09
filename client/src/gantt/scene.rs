@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 use plinko::{
+    availability::day_value::DayValue,
     planner::plan::Plan,
     scheduler::state::PlanVolatileState,
     types::{
@@ -121,9 +122,13 @@ impl Context<'_> {
                     PlanNode::TaskGroup(id) => self.entries(Parent::Node(id)),
                     _ => Vec::new(),
                 };
+                let (name, span) = match node {
+                    PlanNode::PlanBuffer(id) => self.buffer(id, span),
+                    _ => (node_name(self.plan, node), span),
+                };
                 Some(Entry {
                     node,
-                    name: node_name(self.plan, node),
+                    name,
                     kind: kind_of(node),
                     span,
                     look: model::look_of(self.plan, self.state, node),
@@ -139,6 +144,31 @@ impl Context<'_> {
                 })
             })
             .collect()
+    }
+}
+
+impl Context<'_> {
+    /// What a buffer reads as on the chart, its working days now and what it was given when they
+    /// differ, and the span it gets: a buffer with no days left still takes a day to click on
+    fn buffer(&self, id: Uuid, span: (NaiveDate, NaiveDate)) -> (String, (NaiveDate, NaiveDate)) {
+        let availability = self.plan.default_availability();
+        let now = span
+            .0
+            .iter_days()
+            .take_while(|d| *d < span.1)
+            .filter(|d| availability.value_on(*d).is_working())
+            .count();
+        let given = self
+            .plan
+            .plan_buffers()
+            .get(&id)
+            .map_or(0, |b| *b.duration() as usize);
+        let name = if now == given {
+            format!("{now}d")
+        } else {
+            format!("{now}d ({given}d)")
+        };
+        (name, (span.0, span.1.max(span.0 + chrono::Days::new(1))))
     }
 }
 

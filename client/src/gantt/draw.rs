@@ -533,18 +533,13 @@ fn paint_bar(
     hits: &mut Hits,
 ) {
     let rect = frame.viewport.bar(from, to, p.lane);
-    path_round(ctx, rect, RADIUS);
     if p.kind == Kind::Buffer {
-        ctx.set_fill_style_str("rgba(138,138,138,0.25)");
-        ctx.fill();
-        let _ = ctx.set_line_dash(&js_sys::Array::of2(&4.0.into(), &3.0.into()));
-        ctx.set_stroke_style_str("#8a8a8a");
-        ctx.stroke();
-        let _ = ctx.set_line_dash(&js_sys::Array::new());
-    } else {
-        ctx.set_fill_style_str(look_colour(p.look));
-        ctx.fill();
+        paint_buffer(ctx, frame, p, rect, marked, hits);
+        return;
     }
+    path_round(ctx, rect, RADIUS);
+    ctx.set_fill_style_str(look_colour(p.look));
+    ctx.fill();
     if p.leaf {
         leaf_wash(ctx, rect, |c| path_round(c, rect, RADIUS));
     }
@@ -588,6 +583,58 @@ fn paint_bar(
             hits,
         );
     }
+}
+
+/// A buffer is a dotted line between two dotted end bars, with its days written on it
+fn paint_buffer(
+    ctx: &CanvasRenderingContext2d,
+    frame: &Frame,
+    p: &Placed,
+    rect: Rect,
+    marked: &Marked,
+    hits: &mut Hits,
+) {
+    let middle = rect.y + rect.h / 2.0;
+    let reach = rect.h / 2.0;
+    let _ = ctx.set_line_dash(&js_sys::Array::of2(&3.0.into(), &3.0.into()));
+    ctx.set_stroke_style_str("#8a8a8a");
+    ctx.set_line_width(1.5);
+    ctx.begin_path();
+    ctx.move_to(rect.x, middle);
+    ctx.line_to(rect.x + rect.w, middle);
+    for x in [rect.x, rect.x + rect.w] {
+        ctx.move_to(x, middle - reach);
+        ctx.line_to(x, middle + reach);
+    }
+    ctx.stroke();
+    let _ = ctx.set_line_dash(&js_sys::Array::new());
+    ctx.set_line_width(1.0);
+    // the days sit on the line, which stops for them
+    ctx.set_font("13px sans-serif");
+    let width = ctx.measure_text(&p.name).map_or(0.0, |m| m.width());
+    let label = Rect {
+        x: rect.x + (rect.w - width) / 2.0 - 3.0,
+        y: middle - 8.0,
+        w: width + 6.0,
+        h: 16.0,
+    };
+    if label.w < rect.w {
+        ctx.set_fill_style_str(BACKGROUND);
+        ctx.fill_rect(label.x, label.y, label.w, label.h);
+        ctx.set_text_baseline("middle");
+        text(
+            ctx,
+            "#bbb",
+            "13px sans-serif",
+            &p.name,
+            label.x + 3.0,
+            middle,
+        );
+        ctx.set_text_baseline("alphabetic");
+    }
+    path_round(ctx, rect, RADIUS);
+    stroke_border(ctx, border(frame, p.mark, p.target, marked));
+    hits.items.push((p.mark, rect));
 }
 
 fn paint_violation(ctx: &CanvasRenderingContext2d, mark: Mark, x: f64, y: f64, hits: &mut Hits) {
