@@ -34,17 +34,21 @@ struct Server {
 }
 
 fn today() -> NaiveDate {
-    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()
+    chrono::Utc::now().date_naive()
 }
 
 async fn server() -> Server {
+    server_on(today()).await
+}
+
+async fn server_on(day: NaiveDate) -> Server {
     let admin = TenantLoginUser::new(
         "Admin".to_string(),
         "admin@example.com".to_string(),
         Role::Admin,
     );
     let admin_id = *admin.id();
-    let tenant = Tenant::new_with_login(ShortId::new(), "Tenant".to_string(), today(), admin);
+    let tenant = Tenant::new_with_login(ShortId::new(), "Tenant".to_string(), day, admin);
     let store = Arc::new(Store::open_in_memory().unwrap());
     store.create(&tenant).unwrap();
     store.set_password(admin_id, PASSWORD).unwrap();
@@ -377,8 +381,13 @@ async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
     let token = server.handle.store.start_session(server.admin).unwrap();
     let mut socket = connect(address, &token).await.unwrap();
     for request in 1..=10 {
-        let today = TenantUpdateType::SetToday(NaiveDate::from_ymd_opt(2024, 1, request).unwrap());
-        send(&mut socket, request, today).await;
+        let new = NewPlan {
+            id: ShortId::new(),
+            name: "Plan".to_string(),
+            start_date: today(),
+        };
+        let add = TenantUpdateType::Plan(PlanTenantUpdate::Add(new));
+        send(&mut socket, request, add).await;
     }
     assert_eq!(answer(&mut socket, 10).await.0, Ok(10));
     // the schedule can trail, but it gets there
@@ -389,25 +398,20 @@ async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
 }
 
 #[tokio::test]
-async fn the_clock_moves_on_by_itself_when_the_day_changes() {
-    let server = server().await;
+async fn the_server_sets_the_clock_to_today_and_nobody_else_does() {
+    // it starts on another day, which the server corrects as it starts and is not left to a client
+    let server = server_on(NaiveDate::from_ymd_opt(2024, 1, 1).unwrap()).await;
     let address = listen(&server).await;
     let token = server.handle.store.start_session(server.admin).unwrap();
     let mut socket = connect(address, &token).await.unwrap();
-    assert!(matches!(
-        next(&mut socket).await,
-        ServerMessage::Snapshot { .. }
-    ));
-    server.handle.commands.send(actor::Command::Tick).unwrap();
-    loop {
-        if let ServerMessage::Update { seq, update } = next(&mut socket).await {
-            assert_eq!(seq, 1);
-            let TenantUpdateType::SetToday(day) = update.update_type else {
-                panic!("the clock moves");
-            };
-            assert_eq!(day, chrono::Utc::now().date_naive());
-            assert_eq!(update.actor, server.admin);
-            break;
+    send(&mut socket, 1, TenantUpdateType::SetToday(today())).await;
+    assert!(answer(&mut socket, 1).await.0.is_err());
+    // the saved tenant is on today before long
+    for _ in 0..100 {
+        if server.handle.store.load().unwrap().0.today() == today() {
+            return;
         }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
+    panic!("the clock was not set");
 }
