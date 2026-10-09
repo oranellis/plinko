@@ -89,7 +89,7 @@ pub fn DatePicker(
                     format!("left:{x}px;top:{y}px")
                 }
             >
-                <div class="month">
+                <div class="calhead">
                     <button type="button" class="plain" title="Previous year" on:click=step(-12)>"«"</button>
                     <button type="button" class="plain" title="Previous month" on:click=step(-1)>"‹"</button>
                     <strong>{move || { let d = shown.get(); format!("{} {}", format::month(d), d.year()) }}</strong>

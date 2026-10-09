@@ -229,8 +229,8 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 
 /* the calendar of a date picker */
 .calendar { width: 264px; }
-.calendar .month { display: flex; align-items: center; justify-content: space-between; }
-.calendar .month button { font-size: 16px; padding: 2px 8px; }
+.calendar .calhead { display: flex; align-items: center; justify-content: space-between; }
+.calendar .calhead button { font-size: 16px; padding: 2px 8px; }
 .calendar .days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
 .calendar .head { font-size: 11px; color: var(--muted); padding: 4px 0; }
 .calendar .day { padding: 5px 0; min-height: 0; background: none; font-size: 13px; }
