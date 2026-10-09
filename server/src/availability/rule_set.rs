@@ -168,7 +168,11 @@ mod tests {
         RuleKind::Override(DayOverride {
             days,
             value: Workload::new(hours).unwrap(),
-            every: every.map(|(n, unit)| Every { n, unit }),
+            every: every.map(|(n, unit)| Every {
+                n,
+                unit,
+                from_end: false,
+            }),
         })
     }
 
@@ -287,6 +291,59 @@ mod tests {
         .unwrap();
         let results: Vec<_> = (1..=7).map(|day| hours(&set, 2024, 1, day)).collect();
         assert_eq!(results, [2, 8, 8, 2, 8, 0, 2]);
+    }
+
+    fn aligned(start: NaiveDate, from_end: bool) -> RuleSet<Workload> {
+        let mut set = RuleSet::<Workload>::default();
+        let every = Every {
+            n: 1,
+            unit: Unit::MonthAligned,
+            from_end,
+        };
+        let kind = RuleKind::Override(DayOverride {
+            days: 1,
+            value: Workload::new(1).unwrap(),
+            every: Some(every),
+        });
+        add(&mut set, start, None, kind).unwrap();
+        set
+    }
+
+    #[test]
+    fn aligned_months_follow_the_nth_weekday_of_the_month() {
+        // the second Monday of January 2024 is the 8th
+        let set = aligned(d(2024, 1, 8), false);
+        assert_eq!(hours(&set, 2024, 2, 12), 1);
+        assert_eq!(hours(&set, 2024, 3, 11), 1);
+        assert_eq!(hours(&set, 2024, 4, 8), 1);
+        // not the same day number, and not the other Mondays
+        assert_eq!(hours(&set, 2024, 2, 8), 8);
+        assert_eq!(hours(&set, 2024, 2, 5), 8);
+        assert_eq!(hours(&set, 2024, 2, 19), 8);
+    }
+
+    #[test]
+    fn aligned_months_can_count_weekdays_from_the_end() {
+        // the last Tuesday of January 2024 is the 30th
+        let set = aligned(d(2024, 1, 30), true);
+        assert_eq!(hours(&set, 2024, 2, 27), 1);
+        assert_eq!(hours(&set, 2024, 3, 26), 1);
+        assert_eq!(hours(&set, 2024, 2, 20), 8);
+        // counting from the start the same day is the fifth, which February does not have
+        let set = aligned(d(2024, 1, 30), false);
+        assert_eq!(hours(&set, 2024, 2, 27), 1);
+        assert_eq!(hours(&set, 2024, 2, 6), 8);
+    }
+
+    #[test]
+    fn a_month_without_the_weekday_that_many_times_uses_its_last() {
+        // the fifth Monday of January 2024 is the 29th, February and March have only four
+        let set = aligned(d(2024, 1, 29), false);
+        assert_eq!(hours(&set, 2024, 2, 26), 1);
+        assert_eq!(hours(&set, 2024, 3, 25), 1);
+        // April 2024 starts on a Monday so has five
+        assert_eq!(hours(&set, 2024, 4, 29), 1);
+        assert_eq!(hours(&set, 2024, 4, 22), 8);
     }
 
     #[test]

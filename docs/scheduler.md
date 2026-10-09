@@ -225,6 +225,12 @@ Rules start on a day and are applied in order: weekly schedules (later start win
 (`days` calendar days from the start, optionally every `n` days, weeks, months or years until the
 stop day) and holidays, which must have a stop day. Rules may start between 2000 and 2100.
 
+Every `n` months or years counts from the start day by day number, so a rule on the 31st falls on
+the last day of a shorter month (Feb 29, Mar 31). Every `n` months aligned goes by the weekday
+instead: a rule that starts on the second Monday lands on the second Monday of each month, or with
+"align from month end" on the second last. A month that has no such weekday that many times uses its
+last one.
+
 ### Removing items
 
 `Plan::removal` gives the updates that remove an item without breaking chains: whatever depended

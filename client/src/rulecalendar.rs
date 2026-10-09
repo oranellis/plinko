@@ -72,10 +72,11 @@ fn weekday(index: usize) -> Weekday {
     Weekday::try_from(index as u8).unwrap_or(Weekday::Mon)
 }
 
-const UNITS: [(Unit, &str, &str); 4] = [
+const UNITS: [(Unit, &str, &str); 5] = [
     (Unit::Day, "day", "Day(s)"),
     (Unit::Week, "week", "Week(s)"),
     (Unit::Month, "month", "Month(s)"),
+    (Unit::MonthAligned, "aligned", "Month(s) Aligned"),
     (Unit::Year, "year", "Year(s)"),
 ];
 
@@ -156,6 +157,7 @@ struct Draft {
     repeats: RwSignal<bool>,
     every: RwSignal<String>,
     unit: RwSignal<String>,
+    from_end: RwSignal<bool>,
     until_on: RwSignal<bool>,
     until: RwSignal<NaiveDate>,
 }
@@ -174,6 +176,7 @@ impl Draft {
             repeats: RwSignal::new(false),
             every: RwSignal::new("1".to_string()),
             unit: RwSignal::new("week".to_string()),
+            from_end: RwSignal::new(false),
             until_on: RwSignal::new(false),
             until: RwSignal::new(start),
         };
@@ -200,6 +203,7 @@ impl Draft {
                     draft.repeats.set(true);
                     draft.every.set(e.n.to_string());
                     draft.unit.set(unit_name(e.unit).to_string());
+                    draft.from_end.set(e.from_end);
                 }
             }
         }
@@ -237,6 +241,7 @@ impl Draft {
                         .iter()
                         .find(|u| u.1 == unit)
                         .map_or(Unit::Day, |u| u.0),
+                    from_end: self.from_end.get_untracked(),
                 });
                 let stop = (repeats && self.until_on.get_untracked()).then(|| until + Days::new(1));
                 let value = V::from_level(self.level.get_untracked());
@@ -603,6 +608,12 @@ fn RuleForm(
                             on_change=Callback::new(move |v| draft.unit.set(v))
                         />
                     </div>
+                    <Show when=move || draft.unit.get() == "aligned">
+                        <label class="check" title="Counts the weekday from the end of the month, so the last Monday and not the fourth">
+                            <input type="checkbox" prop:checked=move || draft.from_end.get() on:change=move |ev| draft.from_end.set(event_target_checked(&ev)) />
+                            "Align from month end"
+                        </label>
+                    </Show>
                     <label class="check">
                         <input type="checkbox" prop:checked=move || draft.until_on.get() on:change=move |ev| draft.until_on.set(event_target_checked(&ev)) />
                         "Until"

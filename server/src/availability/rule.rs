@@ -179,6 +179,9 @@ pub struct DayOverride<V> {
 pub struct Every {
     pub n: u32,
     pub unit: Unit,
+    /// For aligned months: count weekdays from the end of the month instead of from its start
+    #[serde(default)]
+    pub from_end: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -186,33 +189,79 @@ pub enum Unit {
     Day,
     Week,
     Month,
+    /// Months by the weekday: the second Monday of each, say, rather than the same day number
+    MonthAligned,
     Year,
 }
 
 impl Every {
-    /// The first day of the occurrence that starts last on or before `day`, counting from `start`
+    /// The first day of the occurrence that starts last on or before `day`, counting from `start`.
+    /// Months and years go by the day of the month, so the 31st falls on the last day of a shorter
+    /// month. Aligned months go by which weekday of the month `start` is, such as the second Monday,
+    /// or counting from the end of the month, the second last. A month without one has its last.
     fn occurrence(&self, start: NaiveDate, day: NaiveDate) -> Option<NaiveDate> {
         let n = i64::from(self.n.max(1));
         let elapsed = (day - start).num_days();
         if elapsed < 0 {
             return None;
         }
-        match self.unit {
-            Unit::Day => Some(start + Days::new((elapsed / n) as u64 * n as u64)),
-            Unit::Week => Some(start + Days::new((elapsed / (7 * n)) as u64 * 7 * n as u64)),
-            Unit::Month | Unit::Year => {
-                let step = if self.unit == Unit::Year { 12 * n } else { n };
-                let months = i64::from(day.year() - start.year()) * 12 + i64::from(day.month0())
-                    - i64::from(start.month0());
-                // shorter months pull a start earlier, so the guess may be one too many
-                let guess = (months / step).max(0);
-                [guess, guess - 1]
-                    .into_iter()
-                    .filter(|k| *k >= 0)
-                    .filter_map(|k| start.checked_add_months(Months::new((k * step) as u32)))
-                    .find(|occurrence| *occurrence <= day)
+        let step = match self.unit {
+            Unit::Day => return Some(start + Days::new((elapsed / n) as u64 * n as u64)),
+            Unit::Week => {
+                return Some(start + Days::new((elapsed / (7 * n)) as u64 * 7 * n as u64));
             }
+            Unit::Year => 12 * n,
+            Unit::Month | Unit::MonthAligned => n,
+        };
+        let months = i64::from(day.year() - start.year()) * 12 + i64::from(day.month0())
+            - i64::from(start.month0());
+        // an occurrence can fall after `day` in the same month, so the guess may be one too many
+        let guess = (months / step).max(0);
+        [guess, guess - 1]
+            .into_iter()
+            .filter(|k| *k >= 0)
+            .filter_map(|k| self.in_month(start, (k * step) as u32))
+            .find(|occurrence| *occurrence <= day)
+    }
+
+    /// The occurrence `months` months after `start`
+    fn in_month(&self, start: NaiveDate, months: u32) -> Option<NaiveDate> {
+        if self.unit != Unit::MonthAligned {
+            return start.checked_add_months(Months::new(months));
         }
+        let first = start.with_day(1)?.checked_add_months(Months::new(months))?;
+        let last_day = |month: NaiveDate| {
+            month
+                .checked_add_months(Months::new(1))
+                .and_then(|next| next.pred_opt())
+                .map_or(28, |d| d.day())
+        };
+        let length = last_day(start.with_day(1)?);
+        let (weekday, length_here) = (start.weekday(), last_day(first));
+        let from_start = |index: u32| {
+            let offset =
+                (weekday.num_days_from_monday() + 7 - first.weekday().num_days_from_monday()) % 7;
+            let mut day = 1 + offset + 7 * index;
+            while day > length_here {
+                day -= 7;
+            }
+            day
+        };
+        let from_end = |index: u32| {
+            let end_weekday = (first.weekday().num_days_from_monday() + length_here - 1) % 7;
+            let offset = (end_weekday + 7 - weekday.num_days_from_monday()) % 7;
+            let mut day = i64::from(length_here) - i64::from(offset) - 7 * i64::from(index);
+            while day < 1 {
+                day += 7;
+            }
+            day as u32
+        };
+        let day = if self.from_end {
+            from_end((length - start.day()) / 7)
+        } else {
+            from_start((start.day() - 1) / 7)
+        };
+        first.with_day(day)
     }
 }
 
