@@ -66,12 +66,15 @@ pub fn Gantt(
     jump: RwSignal<u32>,
     /// An item to scroll to and flash
     focus: RwSignal<Option<Mark>>,
+    /// An item to put in the middle, with a light outline that fades away
+    #[prop(optional)]
+    reveal: Option<RwSignal<Option<Mark>>>,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
     let size = RwSignal::new((800.0, 600.0));
     let hover = RwSignal::new(None::<Mark>);
     let pointer = RwSignal::new((0.0, 0.0));
-    let flash = RwSignal::new(None::<(Mark, f64)>);
+    let flash = RwSignal::new(None::<(Mark, f64, &'static str)>);
     let hits = StoredValue::new_local(Hits::default());
     let gesture = StoredValue::new_local(Gesture::default());
 
@@ -168,6 +171,40 @@ pub fn Gantt(
         vp.centre_on_lane(found.1, b);
         viewport.set(Some(vp));
         flash_item(flash, mark);
+    });
+
+    // coming from elsewhere: once the chart has its size, centre the item and fade an outline
+    Effect::new(move |_| {
+        let Some(mark) = reveal.and_then(|r| r.get()) else {
+            return;
+        };
+        if let Some(r) = reveal {
+            r.set(None);
+        }
+        set_timeout(
+            move || {
+                let Some(found) = scene.with_untracked(|s| {
+                    let placed = s.arrangement.placed.iter().find(|p| p.mark == mark)?;
+                    Some((
+                        (placed.span.0 - s.plan_start).num_days() as f64,
+                        placed.lane,
+                    ))
+                }) else {
+                    return;
+                };
+                let (Some(current), Some(b)) =
+                    (viewport.try_get_untracked(), bounds.try_get_untracked())
+                else {
+                    return;
+                };
+                let mut vp = current.unwrap_or_default();
+                vp.centre_on_day(found.0, b);
+                vp.centre_on_lane(found.1, b);
+                viewport.try_set(Some(vp));
+                fade_item(flash, mark, LIGHT);
+            },
+            Duration::from_millis(150),
+        );
     });
 
     // draw
@@ -421,29 +458,40 @@ fn flick(
     request_animation_frame(move || flick(viewport, bounds, gesture, generation, (vx, vy)));
 }
 
+/// The colours an outline can flash in, as red green blue
+const RED: &str = "229,57,53";
+const LIGHT: &str = "200,200,205";
+
+type Flash = RwSignal<Option<(Mark, f64, &'static str)>>;
+
+/// Lets an outline fade away
+fn fade_item(flash: Flash, mark: Mark, rgb: &'static str) {
+    fn fade(flash: Flash, mark: Mark, rgb: &'static str, alpha: f64) {
+        if alpha <= 0.0 {
+            flash.try_set(None);
+            return;
+        }
+        flash.try_set(Some((mark, alpha, rgb)));
+        set_timeout(
+            move || fade(flash, mark, rgb, alpha - 0.06),
+            Duration::from_millis(70),
+        );
+    }
+    fade(flash, mark, rgb, 1.0);
+}
+
 /// Flashes an outline on and off, three times, then lets it fade away
-fn flash_item(flash: RwSignal<Option<(Mark, f64)>>, mark: Mark) {
-    fn step(flash: RwSignal<Option<(Mark, f64)>>, mark: Mark, count: u32) {
+fn flash_item(flash: Flash, mark: Mark) {
+    fn step(flash: Flash, mark: Mark, count: u32) {
         if count < 5 {
-            flash.try_set(count.is_multiple_of(2).then_some((mark, 1.0)));
+            flash.try_set(count.is_multiple_of(2).then_some((mark, 1.0, RED)));
             set_timeout(
                 move || step(flash, mark, count + 1),
                 Duration::from_millis(500),
             );
         } else {
-            fade(flash, mark, 1.0);
+            fade_item(flash, mark, RED);
         }
-    }
-    fn fade(flash: RwSignal<Option<(Mark, f64)>>, mark: Mark, alpha: f64) {
-        if alpha <= 0.0 {
-            flash.try_set(None);
-            return;
-        }
-        flash.try_set(Some((mark, alpha)));
-        set_timeout(
-            move || fade(flash, mark, alpha - 0.1),
-            Duration::from_millis(70),
-        );
     }
     set_timeout(move || step(flash, mark, 0), Duration::from_millis(300));
 }

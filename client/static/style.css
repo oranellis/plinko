@@ -168,7 +168,7 @@ input.search.nothing { border-color: var(--danger); }
 .page .items, .main > .items { padding: 8px 12px; }
 .item { flex: 1; text-align: left; display: grid; gap: 2px; border-left: 4px solid #555; background: var(--panel); }
 .item:hover { background: var(--raised); }
-.item.in-progress { border-left-color: var(--amber); } .item.on-hold { border-left-color: #b39ddb; } .item.completed { border-left-color: var(--ok); }
+.item.in-progress, .item.running { border-left-color: var(--amber); } .item.on-hold { border-left-color: #b39ddb; } .item.completed { border-left-color: var(--ok); }
 .item .dates { color: var(--muted); font-size: 12px; }
 
 /* tables and calendars */
@@ -308,7 +308,8 @@ table.grid.fixed th:first-child, table.grid.fixed td:first-child { width: 200px;
 .allocbar { padding: 8px 12px; margin: 0; }
 .alloc { height: 100%; max-height: none; border-radius: 0; border-left: none; border-right: none; }
 table.alloctable thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
-table.alloctable thead tr.available th { top: 44px; }
+table.alloctable thead tr:first-child th { height: 48px; }
+table.alloctable thead tr.available th { top: 48px; border-bottom: 2px solid var(--line); }
 table.grid.fixed.alloctable th.name, table.grid.fixed.alloctable td.name { position: sticky; left: 0; z-index: 3; background: var(--panel); text-align: left; width: 240px; min-width: 240px; max-width: 240px; }
 table.grid.fixed.alloctable thead th.name { z-index: 4; }
 table.alloctable th.today { color: var(--accent); }
@@ -341,7 +342,7 @@ a.icon:hover, button.icon:hover { background: var(--raised); border-color: var(-
 .hourboxes .num { position: absolute; font-size: 11px; font-weight: 600; color: var(--title); padding: 0 8px; line-height: 15px; background: radial-gradient(ellipse at center, rgba(30, 30, 30, 1) 35%, rgba(30, 30, 30, 0) 75%); }
 table.alloctable th.booked { height: 34px; padding: 3px 2px; }
 table.alloctable th.booked.over .num { color: var(--danger-text); }
-table.alloctable td.runs { border-top: 1px solid color-mix(in srgb, var(--run) 35%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--run) 35%, transparent); }
-table.alloctable td.runs.first { border-left: 1px solid color-mix(in srgb, var(--run) 35%, transparent); }
-table.alloctable td.runs.last { border-right: 1px solid color-mix(in srgb, var(--run) 35%, transparent); }
+table.alloctable td.runs::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-top: 1px solid color-mix(in srgb, var(--run) 55%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--run) 55%, transparent); }
+table.alloctable td.runs.first::after { border-left: 1px solid color-mix(in srgb, var(--run) 55%, transparent); }
+table.alloctable td.runs.last::after { border-right: 1px solid color-mix(in srgb, var(--run) 55%, transparent); }
 .list .row.line { min-height: 26px; padding: 0 2px 0 8px; font-size: 14px; }

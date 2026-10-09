@@ -133,6 +133,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let viewport = RwSignal::new(None::<Viewport>);
     let jump = RwSignal::new(0u32);
     let focus = RwSignal::new(None::<Mark>);
+    // a task asked for from another page is put in the middle of the chart
+    let reveal = RwSignal::new(None::<Mark>);
+    let asked = expect_context::<crate::nav::Reveal>().0;
+    if let Some((_, task)) = asked.get_untracked().filter(|(of, _)| *of == plan) {
+        reveal.set(Some(Mark::Node(PlanNode::Task(task))));
+        asked.set(None);
+    }
     let searching = RwSignal::new(false);
     let listing = RwSignal::new(false);
 
@@ -401,6 +408,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 on_open=on_open
                                 on_toggle=on_toggle
                                 on_blank=on_blank
+                                reveal=reveal
                                 jump=jump
                                 focus=focus
                             />

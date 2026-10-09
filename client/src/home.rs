@@ -8,7 +8,7 @@ use crate::{
     format,
     icons::{Icon, IconKind},
     mine::{MyTask, set_status, use_my_tasks},
-    nav::{PlanTab, Route},
+    nav::{PlanTab, Reveal, Route},
     plans::{PlanCards, use_cards},
     ui::use_sync,
 };
@@ -85,7 +85,6 @@ pub fn Home() -> impl IntoView {
             <section>
                 <h2>"Quick Access Plans"</h2>
                 <PlanCards cards=quick />
-                <a href=Route::Plans.path()>"All plans"</a>
             </section>
         </div>
     }
@@ -101,6 +100,8 @@ fn Row(task: MyTask, today: NaiveDate) -> impl IntoView {
         task.start < today
     };
     let (plan, id) = (task.plan, task.task);
+    let reveal = expect_context::<Reveal>().0;
+    let href = Route::Plan(plan, PlanTab::Gantt, None).path();
     let (title, next, icon, class) = if running {
         (
             "Mark complete",
@@ -122,7 +123,12 @@ fn Row(task: MyTask, today: NaiveDate) -> impl IntoView {
             >
                 <Icon kind=icon size=16 />
             </button>
-            <a class="item" href=Route::Plan(plan, PlanTab::Gantt, Some(id)).path()>
+            <a
+                class="item"
+                class:running=running
+                href=href
+                on:click=move |_| reveal.set(Some((plan, id)))
+            >
                 <strong>{task.name.clone()}</strong>
                 <span class="dates" class:late=late>
                     {format!(

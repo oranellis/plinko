@@ -32,6 +32,7 @@ use crate::{login::Login, shell::Shell, sync::Sync};
 fn App() -> impl IntoView {
     let sync = Sync::new();
     provide_context(sync);
+    provide_context(nav::Reveal(RwSignal::new(None)));
     format::provide_preferences();
     let booted = RwSignal::new(false);
     spawn_local(async move {

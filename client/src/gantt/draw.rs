@@ -67,7 +67,7 @@ pub struct Frame<'a> {
     pub hover: Option<Mark>,
     pub links: &'a [Link],
     /// Something to outline in red, and how strongly
-    pub flash: Option<(Mark, f64)>,
+    pub flash: Option<(Mark, f64, &'static str)>,
     /// What to say about the item under the pointer, the title first
     pub info: &'a [String],
     /// A short note by the pointer for a violation under it, and where the pointer is
@@ -168,8 +168,8 @@ impl Marked {
 
 fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(String, f64)> {
     match frame.flash {
-        Some((flashed, alpha)) if flashed == mark => {
-            return Some((format!("rgba(229,57,53,{alpha})"), 4.0));
+        Some((flashed, alpha, rgb)) if flashed == mark => {
+            return Some((format!("rgba({rgb},{alpha})"), 4.0));
         }
         _ => {}
     }

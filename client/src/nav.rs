@@ -94,6 +94,10 @@ impl Route {
     }
 }
 
+/// A task to show when the chart of its plan opens, asked for from another page
+#[derive(Clone, Copy)]
+pub struct Reveal(pub RwSignal<Option<(ShortId, Uuid)>>);
+
 pub fn navigate(route: Route) {
     if let Some(window) = web_sys::window() {
         let _ = window.location().set_hash(&route.path());

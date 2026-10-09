@@ -40,7 +40,7 @@ fn colour_of(task: Uuid) -> &'static str {
     COLOURS[(task.as_u128() % COLOURS.len() as u128) as usize]
 }
 
-/// Eight boxes, two wide and four tall, which the hours fill a row at a time from the bottom, with
+/// Eight boxes, two wide and four tall, which the hours fill a column at a time from the bottom, with
 /// the hours written over them. The boxes go from grey to green as the day fills.
 #[component]
 fn HourBoxes(hours: u32, #[prop(into)] title: String) -> impl IntoView {
@@ -57,11 +57,11 @@ fn HourBoxes(hours: u32, #[prop(into)] title: String) -> impl IntoView {
                         } else {
                             "#2c2c2e".to_string()
                         };
-                        // rows fill from the bottom, left to right
+                        // columns fill from the bottom up, left to right
                         let place = format!(
                             "grid-row:{};grid-column:{};background:{colour}",
-                            4 - k / 2,
-                            1 + k % 2,
+                            4 - k % 4,
+                            1 + k / 4,
                         );
                         view! { <i style=place></i> }
                     })
