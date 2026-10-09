@@ -120,6 +120,8 @@ pub fn start(store: Arc<Store>) -> crate::types::error::PlinkoResult<Handle> {
     };
     tokio::spawn(actor.run(receiver));
     let ticks = commands.clone();
+    // the day is brought up to date as soon as the server starts, not a minute after
+    let _ = ticks.send(Command::Tick);
     tokio::spawn(async move {
         let minute = std::time::Duration::from_secs(60);
         let mut every_minute =
@@ -210,6 +212,11 @@ impl Actor {
             return;
         };
         let (user, out) = (connection.user, connection.out.clone());
+        if matches!(update_type, TenantUpdateType::SetToday(_)) {
+            let error = "The date is always today".to_string();
+            let _ = out.send(ServerMessage::Rejected { request, error });
+            return;
+        }
         let answer = match self.apply(user, update_type) {
             Ok((seq, created)) => ServerMessage::Ack {
                 request,
@@ -267,7 +274,8 @@ impl Actor {
         Ok((seq, created))
     }
 
-    /// Moves the tenant's clock on when the day has changed, as the first admin
+    /// Sets the tenant's clock to today when it is not, as the first admin. Only the server does
+    /// this, a client cannot set the date.
     fn tick(&mut self) {
         let today = Utc::now().date_naive();
         let users = self.tenant.users().iter();
@@ -275,7 +283,7 @@ impl Actor {
             .filter(|(_, u)| u.role() == Role::Admin)
             .map(|(id, _)| *id)
             .min();
-        let (true, Some(admin)) = (today > self.tenant.today(), admin) else {
+        let (true, Some(admin)) = (today != self.tenant.today(), admin) else {
             return;
         };
         if let Err(error) = self.apply(admin, TenantUpdateType::SetToday(today)) {

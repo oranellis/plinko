@@ -575,3 +575,15 @@ fn people_star_the_plans_they_are_in_for_themselves() {
     apply(&mut tenant, root, remove).unwrap();
     assert!(tenant.users()[&root].favourites().is_empty());
 }
+
+#[test]
+fn nobody_removes_their_own_login() {
+    let (mut tenant, root) = new_tenant();
+    let other = add_user(&mut tenant, root, Role::Admin);
+    let remove = |id| TenantUpdateType::User(Crud::Remove(id));
+    assert!(apply(&mut tenant, other, remove(other)).is_err());
+    assert!(tenant.users().contains_key(&other));
+    // another admin can
+    apply(&mut tenant, root, remove(other)).unwrap();
+    assert!(!tenant.users().contains_key(&other));
+}

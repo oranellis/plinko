@@ -1,4 +1,4 @@
-//! Managing the tenant: who has a login, the groups they are in, and the clock. For admins.
+//! Managing the tenant: who has a login and the groups they are in. For admins.
 
 use std::collections::HashSet;
 
@@ -16,7 +16,6 @@ use uuid::Uuid;
 
 use crate::{
     api,
-    datepicker::DateInput,
     nav::{Availability, Route},
     ui::{Actions, Block, Field, Modal, Select, Text, use_sync},
 };
@@ -86,11 +85,6 @@ pub fn People() -> impl IntoView {
     });
     let editing = RwSignal::new(None::<Option<Uuid>>);
     let editing_group = RwSignal::new(None::<Option<Uuid>>);
-    let today = Memo::new(move |_| {
-        sync.tenant
-            .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
-    });
-    let clock = RwSignal::new(today.get_untracked());
     view! {
         <div class="people">
             <div class="bar"><h1>"People"</h1></div>
@@ -108,9 +102,11 @@ pub fn People() -> impl IntoView {
                                 <span class="small">{p.email.clone()}{if p.admin { " · admin" } else { "" }}</span>
                                 <a href=Route::Availability(Availability::User(id)).path()>"Hours"</a>
                                 <button type="button" on:click=move |_| editing.set(Some(Some(id)))>"Edit"</button>
-                                <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
-                                    sync.send(TenantUpdateType::User(Crud::Remove(id)));
-                                }>"✕"</button>
+                                <Show when=move || sync.me.with(|m| m.as_ref().map(|m| m.id)) != Some(id)>
+                                    <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
+                                        sync.send(TenantUpdateType::User(Crud::Remove(id)));
+                                    }>"✕"</button>
+                                </Show>
                             </li>
                         }
                     } />
@@ -136,14 +132,6 @@ pub fn People() -> impl IntoView {
                         }
                     } />
                 </ul>
-            </section>
-            <section>
-                <h2>"Today"</h2>
-                <p class="small">"The day every plan is scheduled from. It moves on by itself each day."</p>
-                <div class="row">
-                    <DateInput day=clock />
-                    <button type="button" on:click=move |_| sync.send(TenantUpdateType::SetToday(clock.get_untracked()))>"Set today"</button>
-                </div>
             </section>
         </div>
         {move || editing.get().map(|which| view! {

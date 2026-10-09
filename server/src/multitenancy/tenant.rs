@@ -176,6 +176,10 @@ impl Tenant {
                 let own_profile =
                     matches!(&update, Crud::Update(p) if p.id == u.actor && p.role.is_none());
                 allow(is_admin || own_profile, u.actor)?;
+                allow(
+                    !matches!(&update, Crud::Remove(id) if *id == u.actor),
+                    u.actor,
+                )?;
                 let removed = match &update {
                     Crud::Remove(id) => Some(*id),
                     _ => None,
