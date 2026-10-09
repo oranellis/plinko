@@ -237,26 +237,29 @@ pub fn Allocations() -> impl IntoView {
                                 <thead>
                                     <tr class="months">
                                         <th class="name"></th>
-                                        {move || days.get().into_iter().enumerate().map(|(i, d)| {
-                                            // the month is named where it starts, and above each week after that
-                                            let label = if i == 0 || d.day() == 1 {
-                                                Some(format!("{} {}", format::month(d), d.year()))
-                                            } else if d.weekday() == Weekday::Mon {
-                                                Some(format::month(d).to_string())
-                                            } else {
-                                                None
-                                            };
-                                            view! {
-                                                <th class="month" class:first=d.day() == 1>
-                                                    {label.map(|label| view! { <span>{label}</span> })}
-                                                </th>
-                                            }
-                                        }).collect_view()}
+                                        {move || {
+                                            let days = days.get();
+                                            days.iter().enumerate().map(|(i, d)| {
+                                                // a month is named once, over all of its days that are shown
+                                                let starts = i == 0 || d.day() == 1;
+                                                let shown = days[i..].iter().take_while(|x| x.month() == d.month() && x.year() == d.year()).count();
+                                                let label = format!("{} {}", format::month(*d), d.year());
+                                                view! {
+                                                    <th class="month" class:starts=starts class:m1=d.day() == 1>
+                                                        {starts.then(|| view! {
+                                                            <span class="monthbox" style=format!("width:{}px", shown as f64 * DAY_WIDTH)>
+                                                                <span class="monthname">{label}</span>
+                                                            </span>
+                                                        })}
+                                                    </th>
+                                                }
+                                            }).collect_view()
+                                        }}
                                     </tr>
                                     <tr class="daynames">
                                         <th class="name">"Task"</th>
                                         {move || days.get().into_iter().map(|d| view! {
-                                            <th class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun) class:today=d == today.get()>
+                                            <th class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun) class:today=d == today.get() class:m1=d.day() == 1>
                                                 <span class="small">{format::weekday(d)}</span>
                                                 <br />
                                                 {d.day()}
@@ -267,7 +270,7 @@ pub fn Allocations() -> impl IntoView {
                                         <th class="name">"Hours booked"</th>
                                         {move || days.get().into_iter().zip(hours.get().unwrap_or_default()).map(|(d, (booked, capacity))| {
                                             view! {
-                                            <th class="booked" class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun)>
+                                            <th class="booked" class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun) class:today=d == today.get() class:m1=d.day() == 1>
                                                 {(booked > 0).then(|| view! {
                                                     <HourPie booked=booked capacity=capacity title=format!("{booked} of the {capacity} hours you have") />
                                                 })}
@@ -298,6 +301,8 @@ pub fn Allocations() -> impl IntoView {
                                                         <td
                                                             class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun)
                                                             class:runs=runs
+                                                            class:today=d == today.get_untracked()
+                                                            class:m1=d.day() == 1
                                                             class:first=d == from
                                                             class:last=d == to
                                                             title=format!("{worked} h on {}", format::day(d))
