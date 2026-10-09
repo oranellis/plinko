@@ -343,9 +343,8 @@ table.alloctable td.runs { padding: 0; --bar: 30px; }
 .runbar { position: absolute; top: 3px; bottom: 3px; left: 0; right: 0; background: #343436; overflow: hidden; }
 table.alloctable td.runs.first .runbar { left: 4px; border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
 table.alloctable td.runs.last .runbar { right: 4px; border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
-/* a faint line for each hour across what is filled, and a stronger one at four hours */
-.runbar .fill { position: absolute; left: 0; right: 0; bottom: 0; background-color: #3f8fe0; background-image: linear-gradient(to top, transparent calc(25% - 1px), rgba(255, 255, 255, 0.2) calc(25% - 1px), rgba(255, 255, 255, 0.2) 25%, transparent 25%, transparent calc(75% - 1px), rgba(255, 255, 255, 0.2) calc(75% - 1px), rgba(255, 255, 255, 0.2) 75%, transparent 75%); background-size: 100% var(--bar); background-repeat: no-repeat; background-position: bottom; }
-.runbar::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid rgba(255, 255, 255, 0.4); pointer-events: none; }
+/* eight blocks of blue, the darkest at the bottom, of which a day fills as many as it has hours */
+.runbar .fill { position: absolute; left: 0; right: 0; bottom: 0; background-image: linear-gradient(to top, #183f73 0.0%, #183f73 12.5%, #1f4f8c 12.5%, #1f4f8c 25.0%, #2760a8 25.0%, #2760a8 37.5%, #3173c4 37.5%, #3173c4 50.0%, #3f86db 50.0%, #3f86db 62.5%, #5599ea 62.5%, #5599ea 75.0%, #76b0f4 75.0%, #76b0f4 87.5%, #9ccaff 87.5%, #9ccaff 100.0%); background-size: 100% var(--bar); background-repeat: no-repeat; background-position: bottom; }
 svg.pie { display: block; margin: 0 auto; }
 .list .row.line { min-height: 26px; padding: 0 2px 0 8px; font-size: 14px; }
 table.grid.fixed.alloctable th:not(.name), table.grid.fixed.alloctable td:not(.name) { width: 36px; min-width: 36px; max-width: 36px; }
