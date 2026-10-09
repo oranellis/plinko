@@ -16,6 +16,9 @@ use crate::{
 pub const RULE_START_RANGE: std::ops::RangeInclusive<NaiveDate> =
     NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()..=NaiveDate::from_ymd_opt(2100, 12, 31).unwrap();
 
+/// The longest a rule's name may be
+pub const MAX_NAME: usize = 60;
+
 /// The weekly schedule every rule set starts with, from before any date that matters, so there is
 /// always one to change. It cannot be removed or moved.
 pub const DEFAULT_RULE: Uuid = Uuid::max();
@@ -31,6 +34,8 @@ pub struct Rule<V> {
     /// The first day the rule no longer applies
     stop_day: Option<NaiveDate>,
     kind: RuleKind<V>,
+    /// What the rule is called, empty to go by its kind. At most `MAX_NAME` characters.
+    name: String,
 }
 
 // impl Rule{{{
@@ -41,6 +46,7 @@ impl<V: DayValue> Rule<V> {
             start_day: EPOCH,
             stop_day: None,
             kind: RuleKind::Weekly(WeeklySchedule::default()),
+            name: String::new(),
         }
     }
 }
@@ -60,6 +66,10 @@ impl<V> Rule<V> {
 
     pub fn kind(&self) -> &RuleKind<V> {
         &self.kind
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Whether the rule has started and not been stopped on `day`
@@ -85,6 +95,7 @@ impl<V> From<NewRule<V>> for Rule<V> {
             start_day: new.start_day,
             stop_day: new.stop_day,
             kind: new.kind,
+            name: new.name,
         }
     }
 }
@@ -100,6 +111,9 @@ impl<V> Patchable<RulePatch<V>> for Rule<V> {
         }
         if let Some(k) = patch.kind {
             self.kind = k;
+        }
+        if let Some(n) = patch.name {
+            self.name = n;
         }
         Ok(())
     }
@@ -117,6 +131,8 @@ pub enum RuleKind<V> {
     /// Sets the default value (no availability, or no days allowed) from the start day up to the
     /// stop day, which a holiday must have
     Holiday,
+    /// Goes back to the default weekly schedule from the start day, until another weekly schedule
+    ResetWeekly,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -219,6 +235,8 @@ pub struct NewRule<V> {
     #[serde(default)]
     pub stop_day: Option<NaiveDate>,
     pub kind: RuleKind<V>,
+    #[serde(default)]
+    pub name: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -232,4 +250,5 @@ pub struct RulePatch<V> {
     )]
     pub stop_day: Option<Option<NaiveDate>>,
     pub kind: Option<RuleKind<V>>,
+    pub name: Option<String>,
 }

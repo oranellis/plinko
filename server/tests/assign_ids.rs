@@ -33,6 +33,7 @@ const CLIENT_ID: Uuid = Uuid::nil();
 
 fn rule_update<V>(kind: RuleKind<V>) -> RuleSetUpdate<V> {
     RuleSetUpdate::Rule(Crud::Add(NewRule {
+        name: String::new(),
         stop_day: None,
         id: CLIENT_ID,
         start_day: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),

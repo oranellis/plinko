@@ -10,7 +10,7 @@ use plinko::{
     availability::{
         day_value::DayValue,
         rule::{
-            DEFAULT_RULE, DayOverride, Every, NewRule, Rule, RuleKind, RulePatch, Unit,
+            DEFAULT_RULE, DayOverride, Every, MAX_NAME, NewRule, Rule, RuleKind, RulePatch, Unit,
             WeeklySchedule,
         },
         rule_set::{RuleSet, RuleSetUpdate},
@@ -32,8 +32,6 @@ pub trait Value: DayValue + Send + Sync {
     fn from_level(level: u8) -> Self;
     /// The level said in full, as in `4 h`
     fn level_text(level: u8) -> String;
-    /// The level in a cell
-    fn cell_text(level: u8) -> String;
     /// What a holiday rule means
     fn off_text() -> &'static str;
 }
@@ -48,9 +46,6 @@ impl Value for Workload {
     }
     fn level_text(level: u8) -> String {
         format!("{level} h")
-    }
-    fn cell_text(level: u8) -> String {
-        level.to_string()
     }
     fn off_text() -> &'static str {
         "Time off"
@@ -68,9 +63,6 @@ impl Value for bool {
     fn level_text(level: u8) -> String {
         if level > 0 { "allowed" } else { "not allowed" }.to_string()
     }
-    fn cell_text(level: u8) -> String {
-        if level > 0 { "✓" } else { "–" }.to_string()
-    }
     fn off_text() -> &'static str {
         "Not allowed"
     }
@@ -78,10 +70,6 @@ impl Value for bool {
 
 fn weekday(index: usize) -> Weekday {
     Weekday::try_from(index as u8).unwrap_or(Weekday::Mon)
-}
-
-fn weekday_name(day: Weekday) -> &'static str {
-    format::WEEKDAYS[day.num_days_from_monday() as usize]
 }
 
 const UNITS: [(Unit, &str, &str); 4] = [
@@ -95,49 +83,62 @@ fn unit_name(unit: Unit) -> &'static str {
     UNITS.iter().find(|u| u.0 == unit).map_or("day", |u| u.1)
 }
 
-/// A rule in words
-pub fn describe<V: Value>(rule: &Rule<V>) -> String {
-    let span = match rule.stop_day() {
+/// What a rule is called: the name it was given, or its kind
+fn title<V: Value>(rule: &Rule<V>, off: &str) -> String {
+    if *rule.id() == DEFAULT_RULE {
+        return "Default week".to_string();
+    }
+    if !rule.name().is_empty() {
+        return rule.name().to_string();
+    }
+    match rule.kind() {
+        RuleKind::Weekly(_) => "Weekly schedule change",
+        RuleKind::ResetWeekly => "Reset weekly schedule",
+        RuleKind::Override(_) => "Day(s) override",
+        RuleKind::Holiday => off,
+    }
+    .to_string()
+}
+
+/// When a rule starts, with when it ends if it does
+fn when<V>(rule: &Rule<V>) -> String {
+    if *rule.id() == DEFAULT_RULE {
+        return String::new();
+    }
+    match rule.stop_day() {
         Some(stop) => format!(
             "{} to {}",
             format::day(rule.start_day()),
             format::day(stop.pred_opt().unwrap_or(stop))
         ),
         None => format!("from {}", format::day(rule.start_day())),
+    }
+}
+
+/// The rules to list for a day, latest first and the default week last. Only the latest change of
+/// weekly schedule is listed, the earlier ones are replaced by it.
+fn for_day<V: Value>(set: &RuleSet<V>, day: Option<NaiveDate>) -> Vec<&Rule<V>> {
+    let weekly = |r: &Rule<V>| matches!(r.kind(), RuleKind::Weekly(_) | RuleKind::ResetWeekly);
+    let mut rules: Vec<&Rule<V>> = match day {
+        Some(day) => set.active_rules(day),
+        None => set.rules().get(&DEFAULT_RULE).into_iter().collect(),
     };
-    let what = match rule.kind() {
-        RuleKind::Weekly(week) => {
-            let days: Vec<String> = (0..7)
-                .map(|i| {
-                    let day = weekday(i);
-                    format!(
-                        "{} {}",
-                        weekday_name(day),
-                        V::cell_text(week.on(day).level())
-                    )
-                })
-                .collect();
-            let days = days.join(", ");
-            // the default starts before there is anything to say about it
-            if *rule.id() == DEFAULT_RULE {
-                return format!("Default week: {days}");
-            }
-            format!("Weekly schedule: {days}")
-        }
-        RuleKind::Holiday => V::off_text().to_string(),
-        RuleKind::Override(o) => {
-            let days = if o.days == 1 {
-                "1 day".to_string()
-            } else {
-                format!("{} days", o.days)
-            };
-            let every = o.every.map_or(String::new(), |e| {
-                format!(", every {} {}", e.n, unit_name(e.unit))
-            });
-            format!("{days}: {}{every}", V::level_text(o.value.level()))
-        }
-    };
-    format!("{what}, {span}")
+    let latest_weekly = rules
+        .iter()
+        .filter(|r| weekly(r) && *r.id() != DEFAULT_RULE)
+        .map(|r| (r.start_day(), *r.id()))
+        .max();
+    rules.retain(|r| {
+        !weekly(r) || *r.id() == DEFAULT_RULE || Some((r.start_day(), *r.id())) == latest_weekly
+    });
+    rules.sort_by_key(|r| {
+        (
+            *r.id() == DEFAULT_RULE,
+            std::cmp::Reverse(r.start_day()),
+            *r.id(),
+        )
+    });
+    rules
 }
 
 /// The fields of a rule being written, before it is saved
@@ -148,6 +149,7 @@ struct Draft {
     /// The day the rule starts on, which is the day that was picked
     start: NaiveDate,
     kind: RwSignal<String>,
+    name: RwSignal<String>,
     week: RwSignal<[u8; 7]>,
     days: RwSignal<String>,
     level: RwSignal<u8>,
@@ -165,6 +167,7 @@ impl Draft {
             rule: existing.map(|r| *r.id()),
             start,
             kind: RwSignal::new("override".to_string()),
+            name: RwSignal::new(existing.map_or(String::new(), |r| r.name().to_string())),
             week: RwSignal::new(V::default_week().map(|v| v.level())),
             days: RwSignal::new("1".to_string()),
             level: RwSignal::new(0),
@@ -189,6 +192,7 @@ impl Draft {
                     .set(std::array::from_fn(|i| w.on(weekday(i)).level()));
             }
             RuleKind::Holiday => draft.kind.set("holiday".to_string()),
+            RuleKind::ResetWeekly => draft.kind.set("reset".to_string()),
             RuleKind::Override(o) => {
                 draft.days.set(o.days.to_string());
                 draft.level.set(o.value.level());
@@ -209,8 +213,16 @@ impl Draft {
     fn update<V: Value>(&self) -> RuleSetUpdate<V> {
         let until = self.until.get_untracked().max(self.start);
         let repeats = self.repeats.get_untracked();
+        let name: String = self
+            .name
+            .get_untracked()
+            .trim()
+            .chars()
+            .take(MAX_NAME)
+            .collect();
         let (kind, stop) = match self.kind.get_untracked().as_str() {
             "holiday" => (RuleKind::Holiday, Some(until + Days::new(1))),
+            "reset" => (RuleKind::ResetWeekly, None),
             "weekly" => (
                 RuleKind::Weekly(WeeklySchedule::new(
                     self.week.get_untracked().map(V::from_level),
@@ -244,12 +256,14 @@ impl Draft {
                 start_day: Some(self.start),
                 stop_day: Some(stop),
                 kind: Some(kind),
+                name: Some(name),
             }),
             None => Crud::Add(NewRule {
                 id: Uuid::nil(),
                 start_day: self.start,
                 stop_day: stop,
                 kind,
+                name,
             }),
         })
     }
@@ -349,18 +363,15 @@ pub fn RuleCalendar<V: Value>(
                 .collect::<std::collections::HashSet<_>>()
         })
     });
-    // the rules with a say in the picked day, or just the default week until a day is picked
+    // the rules to list, latest first
     let listed = Memo::new(move |_| {
         let Some(set) = rules.get() else {
             return Vec::new();
         };
-        match selected.get() {
-            Some(day) => set.active_rules(day),
-            None => set.rules().get(&DEFAULT_RULE).into_iter().collect(),
-        }
-        .into_iter()
-        .map(|r| (*r.id(), describe(r)))
-        .collect::<Vec<_>>()
+        for_day(&set, selected.get())
+            .into_iter()
+            .map(|r| (*r.id(), title(r, V::off_text()), when(r)))
+            .collect::<Vec<_>>()
     });
     let measure = move || {
         if let Some(element) = scroller.get_untracked() {
@@ -457,9 +468,9 @@ pub fn RuleCalendar<V: Value>(
                         <Show when=move || editing.with(|e| e.as_ref().is_some_and(|d| d.rule.is_none()))>
                             <div class="rule draft"><span>"New rule (not saved yet)"</span></div>
                         </Show>
-                        <For each=move || listed.get() key=|(id, text)| format!("{id}{text}") children=move |(id, text)| view! {
+                        <For each=move || listed.get() key=|r| format!("{r:?}") children=move |(id, name, from)| view! {
                             <div class="rule" class:picked=move || editing.with(|e| e.as_ref().is_some_and(|d| d.rule == Some(id)))>
-                                <span>{text}</span>
+                                <span><strong>{name}</strong><br /><span class="small">{from}</span></span>
                                 <button type="button" class="plain" on:click=move |_| edit(id)>"Edit"</button>
                                 <Show when=move || id != DEFAULT_RULE>
                                     <button type="button" class="plain" aria-label="Delete rule" on:click=move |_| {
@@ -525,9 +536,19 @@ fn RuleForm(
                         options=options([
                             ("override", "Day(s) override"),
                             ("weekly", "Weekly schedule change"),
+                            ("reset", "Reset weekly schedule"),
                             ("holiday", off),
                         ])
                         on_change=Callback::new(move |v| kind.set(v))
+                    />
+                </Field>
+                <Field label="Name (optional)">
+                    <input
+                        type="text"
+                        maxlength=MAX_NAME.to_string()
+                        placeholder="Shown instead of the kind of rule"
+                        prop:value=move || draft.name.get()
+                        on:input=move |ev| draft.name.set(event_target_value(&ev))
                     />
                 </Field>
                 <p class="small">{format!("Starts {}", format::day(draft.start))}</p>
@@ -607,56 +628,78 @@ mod tests {
         NaiveDate::from_ymd_opt(2024, 1, day).unwrap()
     }
 
-    fn rule<V: Value>(kind: RuleKind<V>, stop: Option<NaiveDate>) -> String {
-        let mut set = RuleSet::<V>::default();
-        let new = NewRule {
-            id: Uuid::from_u128(1),
-            start_day: d(8),
-            stop_day: stop,
-            kind,
-        };
-        set.apply_update(RuleSetUpdate::Rule(Crud::Add(new)))
-            .unwrap();
-        describe(&set.rules()[&Uuid::from_u128(1)])
+    fn set_with(rules: &[(u32, RuleKind<Workload>)]) -> (RuleSet<Workload>, Vec<Uuid>) {
+        let mut set = RuleSet::<Workload>::default();
+        let mut ids = Vec::new();
+        for (day, kind) in rules {
+            let id = Uuid::now_v7();
+            let new = NewRule {
+                name: String::new(),
+                id,
+                start_day: d(*day),
+                stop_day: None,
+                kind: kind.clone(),
+            };
+            set.apply_update(RuleSetUpdate::Rule(Crud::Add(new)))
+                .unwrap();
+            ids.push(id);
+        }
+        (set, ids)
     }
 
     #[test]
-    fn rules_are_described_in_words() {
-        assert_eq!(
-            rule::<Workload>(RuleKind::Holiday, Some(d(13))),
-            "Time off, Mon 8 Jan to Fri 12 Jan"
-        );
+    fn rules_are_named_by_their_kind_unless_given_a_name() {
         let hours = Workload::new(4).unwrap();
         let once = DayOverride {
             days: 3,
             value: hours,
             every: None,
         };
+        let (set, ids) = set_with(&[(8, RuleKind::Override(once)), (9, RuleKind::ResetWeekly)]);
+        let rule = |i: usize| &set.rules()[&ids[i]];
+        assert_eq!(title(rule(0), "Time off"), "Day(s) override");
+        assert_eq!(when(rule(0)), "from Mon 8 Jan");
+        assert_eq!(title(rule(1), "Time off"), "Reset weekly schedule");
         assert_eq!(
-            rule(RuleKind::Override(once), None),
-            "3 days: 4 h, from Mon 8 Jan"
+            title(&set.rules()[&DEFAULT_RULE], "Time off"),
+            "Default week"
         );
-        let often = DayOverride {
-            days: 1,
-            value: hours,
-            every: Some(Every {
-                n: 2,
-                unit: Unit::Week,
-            }),
+        assert_eq!(when(&set.rules()[&DEFAULT_RULE]), "");
+        let patch = RulePatch {
+            id: ids[0],
+            start_day: None,
+            stop_day: None,
+            kind: None,
+            name: Some("Dentist".to_string()),
         };
-        assert_eq!(
-            rule(RuleKind::Override(often), Some(d(31))),
-            "1 day: 4 h, every 2 week, Mon 8 Jan to Tue 30 Jan"
-        );
-        let week = WeeklySchedule::from_hours([8, 8, 8, 8, 4, 0, 0]).unwrap();
-        assert_eq!(
-            rule(RuleKind::Weekly(week), None),
-            "Weekly schedule: Mon 8, Tue 8, Wed 8, Thu 8, Fri 4, Sat 0, Sun 0, from Mon 8 Jan"
-        );
-        assert_eq!(
-            rule::<bool>(RuleKind::Holiday, Some(d(9))),
-            "Not allowed, Mon 8 Jan to Mon 8 Jan"
-        );
+        let mut set = set;
+        set.apply_update(RuleSetUpdate::Rule(Crud::Update(patch)))
+            .unwrap();
+        assert_eq!(title(&set.rules()[&ids[0]], "Time off"), "Dentist");
+    }
+
+    #[test]
+    fn a_day_lists_latest_first_with_only_the_latest_weekly_change_and_the_default_last() {
+        let week = |h| RuleKind::Weekly(WeeklySchedule::from_hours([h; 7]).unwrap());
+        let hours = Workload::new(4).unwrap();
+        let once = RuleKind::Override(DayOverride {
+            days: 30,
+            value: hours,
+            every: None,
+        });
+        let (set, ids) = set_with(&[
+            (2, week(1)),
+            (3, once),
+            (4, week(2)),
+            (5, RuleKind::ResetWeekly),
+        ]);
+        let listed: Vec<Uuid> = for_day(&set, Some(d(10))).iter().map(|r| *r.id()).collect();
+        // the reset is the latest weekly change, so the two before it are left out
+        assert_eq!(listed, [ids[3], ids[1], DEFAULT_RULE]);
+        let before: Vec<Uuid> = for_day(&set, Some(d(4))).iter().map(|r| *r.id()).collect();
+        assert_eq!(before, [ids[2], ids[1], DEFAULT_RULE]);
+        let none: Vec<Uuid> = for_day(&set, None).iter().map(|r| *r.id()).collect();
+        assert_eq!(none, [DEFAULT_RULE]);
     }
 
     #[test]
@@ -665,6 +708,7 @@ mod tests {
         let mut set = RuleSet::<Workload>::default();
         let id = Uuid::from_u128(1);
         let new = NewRule {
+            name: String::new(),
             id,
             start_day: d(8),
             stop_day: None,

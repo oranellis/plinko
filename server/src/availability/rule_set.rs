@@ -9,7 +9,9 @@ use crate::{
     availability::{
         calendar::rank_of,
         day_value::DayValue,
-        rule::{DEFAULT_RULE, EPOCH, NewRule, RULE_START_RANGE, Rule, RuleKind, RulePatch},
+        rule::{
+            DEFAULT_RULE, EPOCH, MAX_NAME, NewRule, RULE_START_RANGE, Rule, RuleKind, RulePatch,
+        },
     },
     traits::entity::Entity,
     types::{
@@ -100,9 +102,18 @@ impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
             let bad_kind = match rule.kind() {
                 RuleKind::Holiday => rule.stop_day().is_none(),
                 RuleKind::Override(o) => o.days == 0 || o.every.is_some_and(|e| e.n == 0),
-                RuleKind::Weekly(_) => false,
+                RuleKind::Weekly(_) | RuleKind::ResetWeekly => false,
             };
-            stops_before_start || out_of_range || bad_kind
+            // only one change of weekly schedule starts on a day
+            let clashes = is_weekly(rule.kind())
+                && set.rules.values().any(|other| {
+                    other.id() != rule.id()
+                        && *other.id() != DEFAULT_RULE
+                        && is_weekly(other.kind())
+                        && other.start_day() == rule.start_day()
+                });
+            let name_too_long = rule.name().chars().count() > MAX_NAME;
+            stops_before_start || out_of_range || bad_kind || clashes || name_too_long
         };
         match invalid {
             true => Err(PlinkoError::InvalidRule(id)),
@@ -113,6 +124,10 @@ impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
     fn in_use(_set: &RuleSet<V>, id: Uuid) -> bool {
         id == DEFAULT_RULE
     }
+}
+
+fn is_weekly<V>(kind: &RuleKind<V>) -> bool {
+    matches!(kind, RuleKind::Weekly(_) | RuleKind::ResetWeekly)
 }
 
 #[cfg(test)]
@@ -139,6 +154,7 @@ mod tests {
     ) -> PlinkoResult<Uuid> {
         let id = Uuid::now_v7();
         let new = NewRule {
+            name: String::new(),
             stop_day,
             id,
             start_day,
@@ -177,6 +193,7 @@ mod tests {
                 start_day,
                 stop_day: None,
                 kind,
+                name: None,
             }))
         };
         assert!(set.apply_update(patch(Some(d(2024, 1, 1)), None)).is_err());
@@ -382,6 +399,7 @@ mod tests {
             start_day: None,
             stop_day: Some(Some(d(2024, 1, 8))),
             kind: None,
+            name: None,
         };
         assert!(
             set.apply_update(RuleSetUpdate::Rule(Crud::Update(stop)))
@@ -402,11 +420,56 @@ mod tests {
     }
 
     #[test]
+    fn resetting_goes_back_to_the_default_week_and_one_weekly_change_starts_a_day() {
+        let mut set = RuleSet::<Workload>::default();
+        let part_time = WeeklySchedule::from_hours([4, 4, 4, 4, 4, 0, 0]).unwrap();
+        add(
+            &mut set,
+            d(2024, 1, 8),
+            None,
+            RuleKind::Weekly(part_time.clone()),
+        )
+        .unwrap();
+        add(&mut set, d(2024, 1, 22), None, RuleKind::ResetWeekly).unwrap();
+        assert_eq!(hours(&set, 2024, 1, 15), 4);
+        assert_eq!(hours(&set, 2024, 1, 22), 8);
+        assert_eq!(
+            set.calendar(d(2024, 1, 15), d(2024, 1, 23))
+                .on(d(2024, 1, 23)),
+            Some(Workload::new(8).unwrap())
+        );
+        // not on a day that already has a weekly change, whichever comes second
+        assert!(add(&mut set, d(2024, 1, 8), None, RuleKind::ResetWeekly).is_err());
+        assert!(add(&mut set, d(2024, 1, 22), None, RuleKind::Weekly(part_time)).is_err());
+        // but other rules may share the day
+        add(&mut set, d(2024, 1, 22), None, over(1, 2, None)).unwrap();
+    }
+
+    #[test]
+    fn names_are_kept_and_limited() {
+        let mut set = RuleSet::<Workload>::default();
+        let mut new = |name: String| {
+            let new = NewRule {
+                name,
+                stop_day: None,
+                id: Uuid::now_v7(),
+                start_day: d(2024, 1, 8),
+                kind: over(1, 2, None),
+            };
+            set.apply_update(RuleSetUpdate::Rule(Crud::Add(new)))
+        };
+        assert!(new("a".repeat(MAX_NAME)).is_ok());
+        assert!(new("a".repeat(MAX_NAME + 1)).is_err());
+        assert!(new("é".repeat(MAX_NAME)).is_ok());
+    }
+
+    #[test]
     fn boolean_rule_sets_default_to_every_day_and_use_the_same_rules() {
         let mut set = RuleSet::<bool>::default();
         let allowed = |set: &RuleSet<bool>, day| set.value_on(d(2024, 1, day));
         assert!((1..=7).all(|day| allowed(&set, day)));
         let new = NewRule {
+            name: String::new(),
             stop_day: None,
             id: Uuid::now_v7(),
             start_day: d(2024, 1, 3),

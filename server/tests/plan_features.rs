@@ -202,6 +202,7 @@ fn add_affinity(plan: &mut Plan, weekly: [bool; 7]) -> Uuid {
     plan.apply_update(PlanUpdate::Affinity(Crud::Add(new)))
         .unwrap();
     let rule = NewRule {
+        name: String::new(),
         stop_day: None,
         id: Uuid::now_v7(),
         start_day: d(2000, 1, 1),

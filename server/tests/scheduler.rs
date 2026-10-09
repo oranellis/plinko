@@ -133,6 +133,7 @@ impl World {
     fn weekly_hours(&mut self, user: Uuid, week: [u8; 7]) {
         let kind = RuleKind::Weekly(WeeklySchedule::new(week.map(h)));
         let new = NewRule {
+            name: String::new(),
             stop_day: None,
             id: self.id(),
             start_day: NaiveDate::from_ymd_opt(2000, 1, 3).unwrap(),
@@ -725,6 +726,7 @@ fn affinities_limit_the_days_worked() {
         world.plan_update(PlanUpdate::Affinity(Crud::Add(new)));
         let kind = RuleKind::Weekly(WeeklySchedule::new(allowed));
         let rule = NewRule {
+            name: String::new(),
             stop_day: None,
             id: world.id(),
             start_day: NaiveDate::from_ymd_opt(2000, 1, 3).unwrap(),

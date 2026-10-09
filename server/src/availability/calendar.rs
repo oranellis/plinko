@@ -3,7 +3,7 @@ use chrono::{Datelike, NaiveDate};
 
 use crate::availability::{
     day_value::DayValue,
-    rule::{Rule, RuleKind},
+    rule::{DEFAULT_RULE, Rule, RuleKind, WeeklySchedule},
     rule_set::RuleSet,
 };
 // }}}
@@ -77,6 +77,10 @@ impl<V: DayValue> RuleSet<V> {
             start: from,
             values: vec![V::default(); len],
         };
+        let default_week = match self.rules().get(&DEFAULT_RULE).map(Rule::kind) {
+            Some(RuleKind::Weekly(week)) => week.clone(),
+            _ => WeeklySchedule::default(),
+        };
         for (kind, rules) in self.by_priority() {
             for rule in rules {
                 let stop = rule
@@ -85,6 +89,7 @@ impl<V: DayValue> RuleSet<V> {
                 calendar.for_days(rule.start_day(), stop, |day, slot| {
                     match (kind, rule.kind()) {
                         (_, RuleKind::Weekly(week)) => *slot = week.on(day.weekday()),
+                        (_, RuleKind::ResetWeekly) => *slot = default_week.on(day.weekday()),
                         (_, RuleKind::Override(o)) if o.sets(rule.start_day(), day) => {
                             *slot = o.value
                         }
@@ -116,7 +121,7 @@ impl<V: DayValue> RuleSet<V> {
 
 pub(super) fn rank_of<V>(kind: &RuleKind<V>) -> u8 {
     match kind {
-        RuleKind::Weekly(_) => 0,
+        RuleKind::Weekly(_) | RuleKind::ResetWeekly => 0,
         RuleKind::Override(_) => 1,
         RuleKind::Holiday => 2,
     }
