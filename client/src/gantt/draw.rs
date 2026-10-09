@@ -25,6 +25,7 @@ const HEADER: &str = "#252526";
 const WEEKEND: &str = "#1e1e1e";
 const BORDER: &str = "#3a3a3c";
 const GRID: &str = "#2a2a2c";
+const MONTH_LINE: &str = "#4a4a4e";
 const TODAY_BAND: &str = "rgba(64,91,200,0.18)";
 const TODAY_TEXT: &str = "#4a90d9";
 const TARGET: &str = "#ffd600";
@@ -307,13 +308,6 @@ fn paint_header(ctx: &CanvasRenderingContext2d, frame: &Frame, start: NaiveDate)
             continue;
         };
         let x = vp.x(offset as f64);
-        if date.day() == 1 {
-            ctx.set_stroke_style_str(BORDER);
-            ctx.begin_path();
-            ctx.move_to(x, 0.0);
-            ctx.line_to(x, MONTH_HEIGHT);
-            ctx.stroke();
-        }
         // each month is named once, when its first day or the first day on screen comes round
         let this_month = date.with_day(1).unwrap_or(date);
         if month_from != Some(this_month) {
@@ -342,9 +336,9 @@ fn paint_header(ctx: &CanvasRenderingContext2d, frame: &Frame, start: NaiveDate)
             );
             ctx.set_text_align("left");
         }
-        ctx.set_stroke_style_str(GRID);
+        ctx.set_stroke_style_str(if date.day() == 1 { MONTH_LINE } else { GRID });
         ctx.begin_path();
-        ctx.move_to(x, MONTH_HEIGHT);
+        ctx.move_to(x, if date.day() == 1 { 0.0 } else { MONTH_HEIGHT });
         ctx.line_to(x, frame.height);
         ctx.stroke();
     }

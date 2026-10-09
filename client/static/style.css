@@ -396,8 +396,7 @@ table.grid.fixed.alloctable thead tr.available th { top: 56px; }
 table.grid.fixed.alloctable th.off:not(.daynames th), table.grid.fixed.alloctable td.off { background: transparent; }
 table.grid.fixed.alloctable thead tr.daynames th.today { background-image: none; }
 /* a stronger line only where a month starts, in the month row */
-table.alloctable td.m1::before, table.alloctable thead tr.daynames th.m1::before, table.alloctable thead tr.available th.m1::before { display: none; }
-table.alloctable thead tr.months th.m1::before { background: #3a3a3c; bottom: 0; }
+table.alloctable th.m1::before, table.alloctable td.m1::before { left: -1px; background: #4a4a4e; }
 .monthbox { align-items: flex-start; padding: 4px 0 0 4px; box-sizing: border-box; }
 .monthname { left: calc(var(--name-w) + 4px); padding-left: 0; font-size: 13px; line-height: 15px; color: #888; font-weight: 400; }
 table.grid.fixed.alloctable td.today, table.grid.fixed.alloctable thead tr.available th.today { background-image: linear-gradient(rgba(64, 91, 200, 0.18), rgba(64, 91, 200, 0.18)); }
