@@ -60,6 +60,8 @@ pub fn Gantt(
     /// What went wrong for an item that misses its date
     violation: Callback<Mark, Vec<String>>,
     on_open: Callback<PlanNode>,
+    /// Double clicking an item
+    on_edit: Callback<PlanNode>,
     /// What dragging handles with shift held does to the plan
     editing: Editing,
     /// The item selected, whose dependency lines stay on show
@@ -371,18 +373,46 @@ pub fn Gantt(
                         .map_or(at, |(_, p)| *p),
                     over: target(node),
                 },
-                Drag::Move(node) => DragView::Move { over: target(node) },
+                Drag::Move(node) => {
+                    let (from_x, from_y) = grabbed_at.get_value();
+                    let name = scene.with_untracked(|s| {
+                        s.arrangement
+                            .placed
+                            .iter()
+                            .find(|p| p.mark == Mark::Node(node))
+                            .map(|p| p.name.clone())
+                            .unwrap_or_default()
+                    });
+                    DragView::Move {
+                        over: target(node),
+                        origin: rect_of(Mark::Node(node)).unwrap_or(Rect {
+                            x: at.0,
+                            y: at.1,
+                            w: 0.0,
+                            h: 0.0,
+                        }),
+                        by: (at.0 - from_x, at.1 - from_y),
+                        name,
+                    }
+                }
                 Drag::Resize {
                     node,
                     last_day,
                     duration,
                 } => {
-                    let day = viewport.get_untracked().unwrap_or_default().day_at(at.0);
-                    let (delta, new) = shift::resized(day, last_day, duration);
-                    let above = rect_of(Mark::Node(node)).map_or(at, |r| (at.0, r.y));
+                    let vp = viewport.get_untracked().unwrap_or_default();
+                    let (delta, new) = shift::resized(vp.day_at(at.0), last_day, duration);
+                    let origin = rect_of(Mark::Node(node)).unwrap_or(Rect {
+                        x: at.0,
+                        y: at.1,
+                        w: 0.0,
+                        h: 0.0,
+                    });
                     DragView::Resize {
                         label: shift::resize_label(delta, new),
-                        above,
+                        origin,
+                        width: (origin.w + f64::from(delta) * vp.day_width)
+                            .max(layout::MIN_BAR_WIDTH),
                     }
                 }
             });
@@ -646,6 +676,11 @@ pub fn Gantt(
             on:pointerdown=down
             on:pointermove=moved
             on:pointerup=up
+            on:dblclick=move |ev| {
+                if let Some((Mark::Node(node), false)) = hit(f64::from(ev.offset_x()), f64::from(ev.offset_y())) {
+                    on_edit.run(node);
+                }
+            }
             on:pointercancel=cancelled
             on:pointerleave=move |ev| {
                 if ev.pointer_type() == "mouse" {

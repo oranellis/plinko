@@ -170,8 +170,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let violation =
         Callback::new(move |mark: Mark| gantt::info::violation(state_of().as_ref(), mark));
 
-    let open_node_exists = Memo::new(move |_| node.get().is_some());
     let selected = RwSignal::new(None::<PlanNode>);
+    let any_selected = Memo::new(move |_| selected.get().is_some());
+    crate::escape::on_escape(
+        move || any_selected.get(),
+        Callback::new(move |()| selected.set(None)),
+    );
+    let open_node_exists = Memo::new(move |_| node.get().is_some());
     let data_of = RwSignal::new(None::<PlanNode>);
     // the selected item, until it is taken away
     let chosen = Memo::new(move |_| {
@@ -444,6 +449,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 info=info
                                 violation=violation
                                 on_open=on_tap
+                                on_edit=on_open
                                 editing=chart_edit::editing(plan)
                                 selected=Signal::derive(move || chosen.get().map(Mark::Node))
                                 on_toggle=on_toggle
@@ -646,6 +652,12 @@ fn SearchWindow(
 ) -> impl IntoView {
     let sync = use_sync();
     let filter = RwSignal::new(String::new());
+    let input = NodeRef::<leptos::html::Input>::new();
+    Effect::new(move |_| {
+        if let Some(input) = input.get() {
+            let _ = input.focus();
+        }
+    });
     let results = Memo::new(move |_| {
         let wanted = filter.get().to_lowercase();
         sync.tenant
@@ -666,8 +678,8 @@ fn SearchWindow(
             <input
                 type="text"
                 class="search"
+                node_ref=input
                 placeholder="Filter tasks and milestones…"
-                autofocus
                 prop:value=move || filter.get()
                 class:nothing=move || !filter.with(String::is_empty) && results.with(Vec::is_empty)
                 on:input=move |ev| filter.set(event_target_value(&ev))

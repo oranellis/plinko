@@ -127,13 +127,19 @@ pub enum DragView {
         from: (f64, f64),
         over: Option<Rect>,
     },
-    /// The group or item it would land in
+    /// A ghost of the item following the pointer, its outline left where it was, and the group or
+    /// item it would land in
     Move {
         over: Option<Rect>,
+        origin: Rect,
+        by: (f64, f64),
+        name: String,
     },
+    /// A ghost of the item with the length it would have, its outline left as it was
     Resize {
         label: String,
-        above: (f64, f64),
+        origin: Rect,
+        width: f64,
     },
 }
 
@@ -146,21 +152,18 @@ pub fn paint(ctx: &CanvasRenderingContext2d, overlay: &Overlay) {
         ctx.set_fill_style_str(if lit { COLOUR } else { "#2c2c2e" });
         ctx.set_stroke_style_str(COLOUR);
         ctx.set_line_width(2.0);
+        if dragging {
+            continue;
+        }
         ctx.begin_path();
         match handle {
-            Handle::Resize => {
-                ctx.rect(x - 2.5, y - 8.0, 5.0, 16.0);
-            }
-            Handle::Move => {
-                let _ = ctx.arc(*x, *y, 6.0, 0.0, std::f64::consts::TAU);
-            }
+            Handle::Resize => slot(ctx, *x, *y),
+            Handle::Move => grip(ctx, *x, *y),
             Handle::Link { .. } => {
                 let _ = ctx.arc(*x, *y, 5.0, 0.0, std::f64::consts::TAU);
+                ctx.fill();
+                ctx.stroke();
             }
-        }
-        if !dragging {
-            ctx.fill();
-            ctx.stroke();
         }
     }
     match &overlay.drag {
@@ -174,19 +177,99 @@ pub fn paint(ctx: &CanvasRenderingContext2d, overlay: &Overlay) {
             ctx.stroke();
             dot(ctx, overlay.pointer);
         }
-        Some(DragView::Move { over }) => {
+        Some(DragView::Move {
+            over,
+            origin,
+            by,
+            name,
+        }) => {
             highlight(ctx, *over);
-            dot(ctx, overlay.pointer);
+            leave_outline(ctx, *origin);
+            ghost(
+                ctx,
+                Rect {
+                    x: origin.x + by.0,
+                    y: origin.y + by.1,
+                    ..*origin
+                },
+                name,
+            );
         }
-        Some(DragView::Resize { label, above }) => {
+        Some(DragView::Resize {
+            label,
+            origin,
+            width,
+        }) => {
+            leave_outline(ctx, *origin);
+            let grown = Rect {
+                w: *width,
+                ..*origin
+            };
+            ghost(ctx, grown, "");
             ctx.set_font("bold 13px sans-serif");
             ctx.set_text_align("center");
             ctx.set_fill_style_str("#fff");
-            let _ = ctx.fill_text(label, above.0, above.1 - 6.0);
+            let _ = ctx.fill_text(label, grown.x + grown.w / 2.0, grown.y - 6.0);
         }
         None => {}
     }
     ctx.restore();
+}
+
+/// The dashed outline left where an item was while a ghost of it is dragged
+fn leave_outline(ctx: &CanvasRenderingContext2d, r: Rect) {
+    ctx.set_stroke_style_str(COLOUR);
+    ctx.set_line_width(1.5);
+    let _ = ctx.set_line_dash(&js_sys::Array::of2(&4.0.into(), &3.0.into()));
+    ctx.stroke_rect(r.x, r.y, r.w, r.h);
+    let _ = ctx.set_line_dash(&js_sys::Array::new());
+}
+
+/// A see-through copy of an item
+fn ghost(ctx: &CanvasRenderingContext2d, r: Rect, name: &str) {
+    ctx.set_fill_style_str("rgba(30,136,229,0.45)");
+    ctx.fill_rect(r.x, r.y, r.w, r.h);
+    ctx.set_stroke_style_str(COLOUR);
+    ctx.set_line_width(2.0);
+    ctx.stroke_rect(r.x, r.y, r.w, r.h);
+    if !name.is_empty() {
+        ctx.save();
+        ctx.begin_path();
+        ctx.rect(r.x, r.y, r.w, r.h);
+        ctx.clip();
+        ctx.set_font("14px sans-serif");
+        ctx.set_text_align("left");
+        ctx.set_text_baseline("middle");
+        ctx.set_fill_style_str("#fff");
+        let _ = ctx.fill_text(name, r.x + 6.0, r.y + r.h / 2.0);
+        ctx.restore();
+    }
+}
+
+/// The move handle: three horizontal lines
+fn grip(ctx: &CanvasRenderingContext2d, x: f64, y: f64) {
+    ctx.rect(x - 8.0, y - 7.0, 16.0, 14.0);
+    ctx.fill();
+    ctx.stroke();
+    ctx.begin_path();
+    ctx.set_line_width(1.5);
+    for dy in [-3.5, 0.0, 3.5] {
+        ctx.move_to(x - 4.0, y + dy);
+        ctx.line_to(x + 4.0, y + dy);
+    }
+    ctx.stroke();
+}
+
+/// The resize handle: a tall slot
+fn slot(ctx: &CanvasRenderingContext2d, x: f64, y: f64) {
+    ctx.rect(x - 3.5, y - 9.0, 7.0, 18.0);
+    ctx.fill();
+    ctx.stroke();
+    ctx.begin_path();
+    ctx.set_line_width(1.5);
+    ctx.move_to(x, y - 5.0);
+    ctx.line_to(x, y + 5.0);
+    ctx.stroke();
 }
 
 fn dot(ctx: &CanvasRenderingContext2d, (x, y): (f64, f64)) {
