@@ -350,10 +350,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                             <Show when=move || tab.get() == PlanTab::Gantt>
                                 {icon_button("Jump to today", IconKind::Today, Callback::new(move |_| jump.update(|n| *n += 1)))}
                             </Show>
-                            {icon_button("Add task", IconKind::AddTask, Callback::new(move |_| add(Kind::Task)))}
-                            {icon_button("Add milestone", IconKind::AddMilestone, Callback::new(move |_| add(Kind::Milestone)))}
-                            {icon_button("Add task group", IconKind::AddGroup, Callback::new(move |_| add(Kind::Group)))}
-                            {icon_button("Add buffer", IconKind::AddBuffer, Callback::new(move |_| add(Kind::Buffer)))}
+                            <AddMenu on_add=Callback::new(move |kind: Kind| add(kind)) />
                             {icon_button("Search", IconKind::Search, Callback::new(move |_| searching.set(true)))}
                         </Show>
                     </div>
@@ -439,6 +436,59 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 </Show>
             </div>
         </Show>
+    }
+}
+
+/// The plus button of the toolbar, which lists what can be added when the pointer is over it and
+/// stays listed once it has been clicked
+#[component]
+fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
+    let over = RwSignal::new(false);
+    let pinned = RwSignal::new(false);
+    let shown = move || over.get() || pinned.get();
+    let item = move |kind: Kind, icon: IconKind, label: &'static str, title: &'static str| {
+        view! {
+            <button
+                type="button"
+                class="additem"
+                title=title
+                aria-label=title
+                on:click=move |_| {
+                    over.set(false);
+                    pinned.set(false);
+                    on_add.run(kind);
+                }
+            >
+                <Icon kind=icon size=20 />
+                <span>{label}</span>
+            </button>
+        }
+    };
+    view! {
+        <div class="addmenu" on:mouseenter=move |_| over.set(true) on:mouseleave=move |_| over.set(false)>
+            <button
+                type="button"
+                class="toolbar-btn"
+                class:active=shown
+                title="Add"
+                aria-label="Add"
+                aria-expanded=move || shown().to_string()
+                on:click=move |_| pinned.update(|p| *p = !*p)
+            >
+                <Icon kind=IconKind::Plus />
+            </button>
+            <Show when=shown>
+                <div class="addpop">
+                    {item(Kind::Task, IconKind::AddTask, "Task", "Add task")}
+                    {item(Kind::Milestone, IconKind::AddMilestone, "Milestone", "Add milestone")}
+                    {item(Kind::Group, IconKind::AddGroup, "Group", "Add task group")}
+                    {item(Kind::Buffer, IconKind::AddBuffer, "Buffer", "Add buffer")}
+                </div>
+            </Show>
+            <Show when=move || pinned.get()>
+                <div class="menu-backdrop" on:click=move |_| pinned.set(false)></div>
+            </Show>
+        </div>
     }
 }
 

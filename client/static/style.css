@@ -405,3 +405,11 @@ button.day.today { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; 
 .ghost, .popover li button.ghost { color: var(--faint); }
 .adds { display: flex; gap: 6px; align-items: center; }
 .adds button.icon { border: 1px solid var(--line); border-radius: 6px; width: 32px; height: 32px; }
+
+/* the add menu of the plan toolbar, and the width of the buffer's set button */
+.addmenu { position: relative; display: flex; }
+.addpop { position: absolute; top: 100%; left: 0; z-index: 42; min-width: 150px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); display: grid; gap: 2px; }
+.addmenu .menu-backdrop { z-index: 41; }
+.additem { display: flex; align-items: center; gap: 10px; justify-content: flex-start; background: none; padding: 6px 10px; min-height: 0; font-size: 14px; color: var(--text); }
+.additem:hover { background: var(--raised); }
+button.setbtn { min-width: 84px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }

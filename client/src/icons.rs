@@ -11,7 +11,7 @@ pub fn Icon(
 ) -> impl IntoView {
     let body = match kind {
         IconKind::Back => view! {
-            <polyline points="9,3 4,8 9,13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            <polyline points="8.6,4.6 5.2,8 8.6,11.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
         }
         .into_any(),
         IconKind::Gantt => view! {

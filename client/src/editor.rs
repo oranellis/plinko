@@ -854,6 +854,7 @@ fn BufferForm(
                     <button
                         type="button"
                         title="Set the start to the day the buffer is scheduled to start on"
+                        class="setbtn"
                         class:done=here
                         on:click=move |_| {
                             let state = sync.schedule.with_untracked(|s| {
@@ -866,6 +867,8 @@ fn BufferForm(
                     >
                         {move || if here() {
                             view! { "Set " <Icon kind=IconKind::Tick size=14 /> }.into_any()
+                        } else if set.with(Option::is_some) {
+                            "Reset?".into_any()
                         } else {
                             "Set Here?".into_any()
                         }}

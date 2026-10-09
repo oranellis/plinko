@@ -18,6 +18,8 @@ const click = (page, label) => page.evaluate((label) => {
   const b = [...document.querySelectorAll("button, a")].find((b) => same(b) && b.offsetParent !== null);
   if (!b) throw new Error("no button " + label); b.click();
 }, label);
+// the plus of the toolbar lists what can be added once it is clicked
+const add = async (page, label) => { await click(page, "Add"); await click(page, label); };
 const fill = async (page, selector, text) => {
   await page.focus(selector);
   await page.keyboard.down("Control"); await page.keyboard.press("A"); await page.keyboard.up("Control");
@@ -41,7 +43,7 @@ await click(a, "New Plan"); await sleep(200);
 await a.type(".modal input[type=text]", "Collab plan");
 await a.click(".modal button[type=submit]");
 await a.waitForSelector(".plan");
-await click(a, "Add task"); await a.waitForSelector(".editor form");
+await add(a, "Add task"); await a.waitForSelector(".editor form");
 await fill(a, ".editor input[type=text]", "Design");
 await click(a, "Save"); await a.waitForFunction(() => !document.querySelector(".editor"));
 await sleep(1000);
