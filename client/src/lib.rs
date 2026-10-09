@@ -12,6 +12,7 @@ mod nav;
 mod people;
 mod plan;
 mod plans;
+mod preferences;
 mod resources;
 mod settings;
 mod shell;
@@ -28,7 +29,7 @@ use crate::{login::Login, shell::Shell, sync::Sync};
 fn App() -> impl IntoView {
     let sync = Sync::new();
     provide_context(sync);
-    format::provide_date_format();
+    format::provide_preferences();
     let booted = RwSignal::new(false);
     spawn_local(async move {
         if let Some(profile) = api::me().await {

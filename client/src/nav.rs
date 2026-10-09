@@ -37,6 +37,7 @@ pub enum Route {
     Work,
     Resources,
     People,
+    Preferences,
     /// Availability of a user, or the plan default of a plan
     Availability(Availability),
 }
@@ -58,6 +59,7 @@ impl Route {
             Route::Work => "#/work".to_string(),
             Route::Resources => "#/resources".to_string(),
             Route::People => "#/people".to_string(),
+            Route::Preferences => "#/preferences".to_string(),
             Route::Availability(Availability::User(user)) => format!("#/availability/user/{user}"),
             Route::Availability(Availability::Plan(plan)) => format!("#/availability/plan/{plan}"),
         }
@@ -78,6 +80,7 @@ impl Route {
             ["work"] => Route::Work,
             ["resources"] => Route::Resources,
             ["people"] => Route::People,
+            ["preferences"] => Route::Preferences,
             ["availability", "user", user] => match Uuid::parse_str(user) {
                 Ok(user) => Route::Availability(Availability::User(user)),
                 Err(_) => Route::Plans,
@@ -128,6 +131,7 @@ mod tests {
             Route::Work,
             Route::Resources,
             Route::People,
+            Route::Preferences,
             Route::Availability(Availability::User(item)),
             Route::Availability(Availability::Plan(plan)),
         ] {

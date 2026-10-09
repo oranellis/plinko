@@ -98,6 +98,12 @@ pub fn Icon(
             <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::Person => view! {
+            <circle cx="8" cy="8" r="6.9" stroke="currentColor" stroke-width="1.2" />
+            <circle cx="8" cy="6.3" r="2.2" fill="currentColor" />
+            <path d="M3.6 12.6C4.6 10.7 6.1 9.9 8 9.9S11.4 10.7 12.4 12.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+        }
+        .into_any(),
         IconKind::Alert => view! {
             <path d="M8 2L14.5 13.5H1.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
             <line x1="8" y1="6.3" x2="8" y2="9.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
@@ -128,4 +134,5 @@ pub enum IconKind {
     AddGroup,
     AddBuffer,
     Alert,
+    Person,
 }

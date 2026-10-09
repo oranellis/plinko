@@ -6,14 +6,14 @@ use plinko::multitenancy::user::Role;
 use crate::{
     api,
     availability::Availability,
-    format::{DateFormat, use_date_format},
     icons::{Icon, IconKind},
     nav::{Route, navigate, use_route},
     people::People,
     plan::PlanPage,
     plans::Plans,
+    preferences::Preferences,
     resources::Resources,
-    ui::{Select, Status, use_sync},
+    ui::{Status, use_sync},
     work::Work,
 };
 
@@ -24,6 +24,7 @@ enum Page {
     Work,
     Resources,
     People,
+    Preferences,
     Availability(crate::nav::Availability),
 }
 
@@ -39,16 +40,16 @@ pub fn Shell() -> impl IntoView {
         Route::Work => Page::Work,
         Route::Resources => Page::Resources,
         Route::People => Page::People,
+        Route::Preferences => Page::Preferences,
         Route::Availability(of) => Page::Availability(of),
     });
     let name = move || {
         sync.tenant
             .with(|t| t.as_ref().map(|t| t.name().to_string()).unwrap_or_default())
     };
-    let layout = use_date_format();
     let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
     let _ = Role::Admin;
-    let logout = move |_| {
+    let logout = move |()| {
         spawn_local(async move {
             api::logout().await;
             sync.me.set(None);
@@ -83,23 +84,7 @@ pub fn Shell() -> impl IntoView {
                     <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
                 </nav>
                 <Status />
-                <span class="date-format" title="How dates are written">
-                    <Select
-                        value=Signal::derive(move || layout.get().label().to_string())
-                        options=Signal::stored(
-                            DateFormat::ALL.map(|f| (f.label().to_string(), f.label().to_string())).to_vec(),
-                        )
-                        on_change=Callback::new(move |v: String| {
-                            if let Some(f) = DateFormat::ALL.into_iter().find(|f| f.label() == v) {
-                                layout.set(f);
-                            }
-                        })
-                    />
-                </span>
-                <button type="button" class="plain" on:click=logout>
-                    {move || sync.me.with(|m| m.as_ref().map(|m| m.name.clone()).unwrap_or_default())}
-                    " · Log out"
-                </button>
+                <UserMenu on_logout=Callback::new(logout) />
             </header>
             <Show when=move || sync.notice.with(Option::is_some)>
                 <div class="notice" role="alert">
@@ -114,6 +99,7 @@ pub fn Shell() -> impl IntoView {
                     Page::Work => view! { <Work /> }.into_any(),
                     Page::Resources => view! { <Resources /> }.into_any(),
                     Page::People => view! { <People /> }.into_any(),
+                    Page::Preferences => view! { <Preferences /> }.into_any(),
                     Page::Availability(of) => view! { <Availability of=of /> }.into_any(),
                 }}
             </main>
@@ -125,6 +111,68 @@ pub fn Shell() -> impl IntoView {
             </nav>
         </div>
     }
+}
+
+/// The person circle at the top right, and the menu it opens
+#[component]
+fn UserMenu(on_logout: Callback<()>) -> impl IntoView {
+    let sync = use_sync();
+    let open = RwSignal::new(false);
+    let (name, email) = account_names(sync);
+    view! {
+        <div class="user-menu">
+            <button
+                type="button"
+                class="plain avatar"
+                title="Your account"
+                aria-label="Your account"
+                aria-haspopup="menu"
+                aria-expanded=move || open.get().to_string()
+                on:click=move |_| open.update(|o| *o = !*o)
+            >
+                <Icon kind=IconKind::Person size=26 />
+            </button>
+            <Show when=move || open.get()>
+                <div class="menu-backdrop" on:click=move |_| open.set(false)></div>
+                <div class="menu" role="menu">
+                    <div class="who">
+                        <strong>{name}</strong>
+                        <span class="small">{email}</span>
+                    </div>
+                    <a role="menuitem" href=Route::Preferences.path() on:click=move |_| open.set(false)>"Preferences"</a>
+                    <button type="button" role="menuitem" on:click=move |_| { open.set(false); on_logout.run(()); }>
+                        "Log out"
+                    </button>
+                </div>
+            </Show>
+        </div>
+    }
+}
+
+/// The name and email of the person signed in, which follow their profile as it changes
+fn account_names(sync: crate::sync::Sync) -> (Signal<String>, Signal<String>) {
+    let me = move || sync.me.with(|m| m.as_ref().map(|m| m.id));
+    let name = move || {
+        let id = me()?;
+        let known = sync.tenant.with(|t| {
+            t.as_ref()
+                .and_then(|t| t.users().get(&id))
+                .map(|u| u.name().to_string())
+        });
+        known.or_else(|| sync.me.with(|m| m.as_ref().map(|m| m.name.clone())))
+    };
+    let email = move || {
+        let id = me()?;
+        sync.tenant.with(|t| {
+            t.as_ref()
+                .and_then(|t| t.users().get(&id))
+                .map(|u| u.email().to_string())
+        })
+    };
+    (
+        Signal::derive(move || name().unwrap_or_default()),
+        Signal::derive(move || email().unwrap_or_default()),
+    )
 }
 
 pub fn open_plan(plan: plinko::types::short_id::ShortId) {

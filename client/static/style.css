@@ -183,7 +183,7 @@ table.grid th:first-child, table.grid td:first-child { text-align: left; positio
 
 @media (max-width: 719px) {
   :root { --top: 40px; }
-  .top .tabs, .top .tenant, .top button, .top .date-format { display: none; }
+  .top .tabs, .top .tenant { display: none; }
   .bottom { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; height: var(--bottom); background: var(--bg); border-top: 1px solid var(--soft); position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; padding-bottom: env(safe-area-inset-bottom); }
   .bottom a { color: var(--muted); text-decoration: none; justify-content: center; border-radius: 0; flex-direction: column; gap: 2px; font-size: 11px; }
   .bottom a.active { color: #fff; background: var(--raised); }
@@ -231,4 +231,12 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .calendar .day.today { border: 1px solid var(--accent); }
 .calendar .day.on { background: var(--accent); color: #fff; }
 .calendar .foot { display: flex; justify-content: space-between; }
-.date-format select { font-size: 12px; min-height: 26px; padding: 2px 6px; }
+
+/* the account menu */
+.user-menu { position: relative; }
+.user-menu .avatar { padding: 2px; min-height: 0; border-radius: 50%; display: flex; }
+.menu-backdrop { position: fixed; inset: 0; z-index: 40; }
+.menu { position: absolute; right: 0; top: 36px; min-width: 200px; z-index: 41; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); display: grid; padding: 4px 0; }
+.menu .who { display: grid; gap: 2px; padding: 8px 14px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.menu a, .menu button { text-align: left; background: none; border-radius: 0; padding: 8px 14px; min-height: 0; font-size: 14px; color: var(--text); text-decoration: none; }
+.menu a:hover, .menu button:hover { background: var(--raised); }

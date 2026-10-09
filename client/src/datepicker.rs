@@ -5,7 +5,7 @@ use leptos::{html, prelude::*};
 use wasm_bindgen::JsValue;
 
 use crate::{
-    format::{self, use_date_format},
+    format::{self, WeekStart, use_date_format, use_preferences},
     ui::use_sync,
 };
 
@@ -15,9 +15,9 @@ fn month_shifted(day: NaiveDate, months: i32) -> NaiveDate {
     NaiveDate::from_ymd_opt(index.div_euclid(12), index.rem_euclid(12) as u32 + 1, 1).unwrap_or(day)
 }
 
-/// The days of the month `first` starts, a week to a row from Monday, with blanks to line them up
-fn month_cells(first: NaiveDate) -> Vec<Option<NaiveDate>> {
-    let blanks = first.weekday().num_days_from_monday() as usize;
+/// The days of the month `first` starts, a week to a row, with blanks to line them up
+fn month_cells(first: NaiveDate, week: WeekStart) -> Vec<Option<NaiveDate>> {
+    let blanks = week.offset(first);
     let days = month_shifted(first, 1)
         .pred_opt()
         .map_or(28, |last| last.day());
@@ -36,6 +36,7 @@ pub fn DatePicker(
 ) -> impl IntoView {
     let sync = use_sync();
     let layout = use_date_format();
+    let week = use_preferences().week_start;
     let today = sync
         .tenant
         .with_untracked(|t| t.as_ref().map(|t| t.today()))
@@ -96,11 +97,15 @@ pub fn DatePicker(
                     <button type="button" class="plain" title="Next year" on:click=step(12)>"»"</button>
                 </div>
                 <div class="days">
-                    {(0..7)
-                        .map(|i| view! { <span class="head">{format::WEEKDAYS[i]}</span> })
-                        .collect_view()}
                     {move || {
-                        month_cells(shown.get())
+                        week.get()
+                            .weekdays()
+                            .into_iter()
+                            .map(|name| view! { <span class="head">{name}</span> })
+                            .collect_view()
+                    }}
+                    {move || {
+                        month_cells(shown.get(), week.get())
                             .into_iter()
                             .map(|cell| match cell {
                                 None => view! { <span></span> }.into_any(),
@@ -186,9 +191,18 @@ mod tests {
     #[test]
     fn a_month_starts_under_its_weekday() {
         // 1 Mar 2024 was a Friday, and the month has 31 days
-        let cells = month_cells(d(2024, 3, 1));
+        let cells = month_cells(d(2024, 3, 1), WeekStart::Monday);
         assert_eq!(cells.iter().take_while(|c| c.is_none()).count(), 4);
         assert_eq!(cells.iter().flatten().count(), 31);
-        assert_eq!(month_cells(d(2024, 2, 1)).iter().flatten().count(), 29);
+        assert_eq!(
+            month_cells(d(2024, 2, 1), WeekStart::Monday)
+                .iter()
+                .flatten()
+                .count(),
+            29
+        );
+        // and one place later when weeks start on Sunday
+        let cells = month_cells(d(2024, 3, 1), WeekStart::Sunday);
+        assert_eq!(cells.iter().take_while(|c| c.is_none()).count(), 5);
     }
 }

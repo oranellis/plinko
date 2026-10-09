@@ -42,26 +42,88 @@ impl DateFormat {
     }
 }
 
-const STORED: &str = "plinko.date_format";
+/// The day calendars start their weeks on
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WeekStart {
+    #[default]
+    Monday,
+    Sunday,
+}
 
-/// The format this browser uses, kept between visits. Call once, above everything that shows dates.
-pub fn provide_date_format() {
+impl WeekStart {
+    pub const ALL: [WeekStart; 2] = [WeekStart::Monday, WeekStart::Sunday];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            WeekStart::Monday => "Monday",
+            WeekStart::Sunday => "Sunday",
+        }
+    }
+
+    /// How many days after the start of the week a day falls
+    pub fn offset(self, date: NaiveDate) -> usize {
+        match self {
+            WeekStart::Monday => date.weekday().num_days_from_monday() as usize,
+            WeekStart::Sunday => date.weekday().num_days_from_sunday() as usize,
+        }
+    }
+
+    /// The weekday names in the order a calendar shows them
+    pub fn weekdays(self) -> [&'static str; 7] {
+        let mut names = WEEKDAYS;
+        if self == WeekStart::Sunday {
+            names.rotate_right(1);
+        }
+        names
+    }
+}
+
+/// What a person has chosen for how things look, kept in this browser between visits
+#[derive(Clone, Copy)]
+pub struct Preferences {
+    pub date_format: RwSignal<DateFormat>,
+    pub week_start: RwSignal<WeekStart>,
+}
+
+const DATE_FORMAT: &str = "plinko.date_format";
+const WEEK_START: &str = "plinko.week_start";
+
+/// Reads the saved choices and keeps saving them. Call once, above everything that shows dates.
+pub fn provide_preferences() {
     let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
-    let saved = storage
-        .as_ref()
-        .and_then(|s| s.get_item(STORED).ok().flatten())
-        .and_then(|label| DateFormat::ALL.into_iter().find(|f| f.label() == label));
-    let chosen = RwSignal::new(saved.unwrap_or_default());
+    let saved = |key: &str| {
+        storage
+            .as_ref()
+            .and_then(|s| s.get_item(key).ok().flatten())
+    };
+    let date_format = RwSignal::new(
+        saved(DATE_FORMAT)
+            .and_then(|label| DateFormat::ALL.into_iter().find(|f| f.label() == label))
+            .unwrap_or_default(),
+    );
+    let week_start = RwSignal::new(
+        saved(WEEK_START)
+            .and_then(|label| WeekStart::ALL.into_iter().find(|w| w.label() == label))
+            .unwrap_or_default(),
+    );
     Effect::new(move |_| {
         if let Some(s) = &storage {
-            let _ = s.set_item(STORED, chosen.get().label());
+            let _ = s.set_item(DATE_FORMAT, date_format.get().label());
+            let _ = s.set_item(WEEK_START, week_start.get().label());
         }
     });
-    provide_context(chosen);
+    provide_context(Preferences {
+        date_format,
+        week_start,
+    });
+}
+
+pub fn use_preferences() -> Preferences {
+    expect_context()
 }
 
 pub fn use_date_format() -> RwSignal<DateFormat> {
-    expect_context()
+    use_preferences().date_format
 }
 
 pub fn month(date: NaiveDate) -> &'static str {
@@ -111,6 +173,15 @@ mod tests {
         assert_eq!(DateFormat::default().show(date), "04 / 03 / 2024");
         assert_eq!(DateFormat::MonthDayYear.show(date), "03 / 04 / 2024");
         assert_eq!(DateFormat::YearMonthDay.show(date), "2024 / 03 / 04");
+    }
+
+    #[test]
+    fn weeks_start_where_asked() {
+        let sunday = d(2024, 3, 3);
+        assert_eq!(WeekStart::Monday.offset(sunday), 6);
+        assert_eq!(WeekStart::Sunday.offset(sunday), 0);
+        assert_eq!(WeekStart::Sunday.weekdays()[0], "Sun");
+        assert_eq!(WeekStart::Monday.weekdays()[0], "Mon");
     }
 
     #[test]
