@@ -20,6 +20,8 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
+    context::ContextBar,
+    data::DataWindow,
     editor::{ItemEditor, remove_item},
     format,
     gantt::{self, Gantt, arrange::Mark, layout::Viewport, scene},
@@ -167,6 +169,37 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let violation =
         Callback::new(move |mark: Mark| gantt::info::violation(state_of().as_ref(), mark));
 
+    let open_node_exists = Memo::new(move |_| node.get().is_some());
+    let selected = RwSignal::new(None::<PlanNode>);
+    let data_of = RwSignal::new(None::<PlanNode>);
+    // the selected item, until it is taken away
+    let chosen = Memo::new(move |_| {
+        let node = selected.get()?;
+        scene
+            .with(|s| {
+                s.arrangement
+                    .placed
+                    .iter()
+                    .any(|p| p.mark == Mark::Node(node))
+            })
+            .then_some(node)
+    });
+    // where the bar under it goes on the chart
+    let bar_at = Memo::new(move |_| {
+        let node = chosen.get()?;
+        let vp = viewport.get().unwrap_or_default();
+        scene.with(|s| {
+            let placed = s
+                .arrangement
+                .placed
+                .iter()
+                .find(|p| p.mark == Mark::Node(node))?;
+            let day = (placed.span.0 - s.plan_start).num_days() as f64;
+            let left = vp.x(day).max(4.0);
+            let top = vp.lane_top(placed.lane) + gantt::layout::ROW_HEIGHT;
+            Some((left, top))
+        })
+    });
     // an item just added and not saved yet, which is dropped again if the window is cancelled
     let fresh = RwSignal::new(None::<Uuid>);
     let go = move |tab: PlanTab, open: Option<Uuid>| navigate(Route::Plan(plan, tab, open));
@@ -176,6 +209,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         guard.then(Callback::new(move |()| {
             go(tab.get_untracked(), Some(node.id()))
         }));
+    });
+    // a tap on the chart selects, and with an edit pane open that moves to the item tapped
+    let on_tap = Callback::new(move |node: PlanNode| {
+        selected.set(Some(node));
+        if tab.get_untracked() == PlanTab::Gantt && open_node_exists.get_untracked() {
+            on_open.run(node);
+        }
     });
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
     // leaving a new item that was never saved takes it away again, as Cancel does
@@ -188,6 +228,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         on_close.run(());
     });
     let on_blank = Callback::new(move |()| {
+        selected.set(None);
         if node.get_untracked().is_some() {
             guard.then(leave);
         }
@@ -401,7 +442,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 links=links
                                 info=info
                                 violation=violation
-                                on_open=on_open
+                                on_open=on_tap
+                                selected=Signal::derive(move || chosen.get().map(Mark::Node))
                                 on_toggle=on_toggle
                                 on_blank=on_blank
                                 reveal=reveal
@@ -412,7 +454,23 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         PlanTab::List => view! { <List rows=rows on_open=on_open on_toggle=on_toggle /> }.into_any(),
                         PlanTab::Settings => view! { <PlanSettings plan=plan /> }.into_any(),
                     }}
+                    {move || {
+                        let (plan_node, at) = (chosen.get()?, bar_at.get()?);
+                        (tab.get() == PlanTab::Gantt).then(|| view! {
+                            <ContextBar
+                                plan=plan
+                                node=plan_node
+                                left=at.0
+                                top=at.1
+                                on_edit=Callback::new(move |()| go(tab.get_untracked(), Some(plan_node.id())))
+                                on_data=Callback::new(move |()| data_of.set(Some(plan_node)))
+                            />
+                        })
+                    }}
                 </div>
+                {move || data_of.get().map(|data_node| view! {
+                    <DataWindow plan=plan node=data_node on_close=Callback::new(move |()| data_of.set(None)) />
+                })}
                 {move || {
                     node.get()
                         .filter(|_| tab.get() != PlanTab::Settings)

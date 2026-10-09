@@ -86,3 +86,7 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 - Dragging bars on the Gantt, and the data blocks of tasks, are not in the client.
 - Reverting a change, and a history view, need the log exposed to the client.
 - Brute force limits on login, and a way to make a tenant without the environment variables.
+
+## Gantt selection
+
+Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane.

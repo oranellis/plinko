@@ -48,18 +48,20 @@ await fill(a, ".editor input[type=text]", "Design");
 await click(a, "Save"); await a.waitForFunction(() => !document.querySelector(".editor"));
 await sleep(1000);
 
-// tapping a row in the chart opens it
+// tapping a row in the chart selects it, and its bar opens the editor
 // a new task starts on the first working day after the plan starts, in the first or second lane
 // depending on how far off that is, so try them until one opens it
 const box = await a.evaluate(() => { const r = document.querySelector("canvas.gantt").getBoundingClientRect(); return { x: r.x, y: r.y }; });
-for (let day = 1; day < 5 && !(await a.$(".editor form")); day++) {
+for (let day = 1; day < 5 && !(await a.$(".contextbar")); day++) {
   for (const lane of [0, 1]) {
-    if (await a.$(".editor form")) break;
+    if (await a.$(".contextbar")) break;
     await a.mouse.click(box.x + 34 * day + 17, box.y + 56 + 36 * lane + 18);
     await sleep(300);
   }
 }
-expect(await a.evaluate(() => !!document.querySelector(".editor")), "tapping a row in the chart opens its editor");
+expect(await a.evaluate(() => !!document.querySelector(".contextbar")), "tapping a row in the chart shows its bar");
+await click(a, "Edit");
+expect(await a.evaluate(() => !!document.querySelector(".editor")), "the bar's pencil opens the editor");
 await click(a, "Close");
 // dragging pans, the wheel zooms: the day labels change
 const before = await a.screenshot({ encoding: "base64" });

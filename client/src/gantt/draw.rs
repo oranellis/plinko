@@ -66,6 +66,7 @@ pub struct Frame<'a> {
     pub scene: &'a Scene,
     pub today: NaiveDate,
     pub hover: Option<Mark>,
+    pub selected: Option<Mark>,
     pub links: &'a [Link],
     /// Something to outline in red, and how strongly
     pub flash: Option<(Mark, f64, &'static str)>,
@@ -176,7 +177,7 @@ fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(S
     }
     if target {
         Some((TARGET.to_string(), 3.0))
-    } else if frame.hover == Some(mark) {
+    } else if frame.hover == Some(mark) || frame.selected == Some(mark) {
         Some((HOVERED.to_string(), 3.5))
     } else if marked.inside.contains(&mark) {
         Some((INSIDE.to_string(), 3.0))

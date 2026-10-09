@@ -58,6 +58,8 @@ pub fn Gantt(
     /// What went wrong for an item that misses its date
     violation: Callback<Mark, Vec<String>>,
     on_open: Callback<PlanNode>,
+    /// The item selected, whose dependency lines stay on show
+    selected: Signal<Option<Mark>>,
     on_toggle: Callback<PlanNode>,
     /// A tap on nothing
     #[prop(optional)]
@@ -210,6 +212,7 @@ pub fn Gantt(
     // draw
     Effect::new(move |_| {
         let (width, height) = size.get();
+        let picked = selected.get();
         let (vp, hovered, flashed, today) = (
             viewport.get().unwrap_or_default(),
             hover.get(),
@@ -232,7 +235,8 @@ pub fn Gantt(
             return;
         };
         let _ = ctx.set_transform(ratio, 0.0, 0.0, ratio, 0.0, 0.0);
-        let linked: Vec<Link> = hovered.map(|m| links.run(m)).unwrap_or_default();
+        // what is under the pointer shows its lines, and otherwise the selected item does
+        let linked: Vec<Link> = hovered.or(picked).map(|m| links.run(m)).unwrap_or_default();
         let info: Vec<String> = hovered.map(|m| info.run(m)).unwrap_or_default();
         scene.with(|scene| {
             let over_violation = hovered.filter(|m| {
@@ -250,6 +254,7 @@ pub fn Gantt(
                 scene,
                 today,
                 hover: hovered,
+                selected: picked,
                 links: &linked,
                 flash: flashed,
                 info: if over_violation.is_some() { &[] } else { &info },

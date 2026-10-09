@@ -98,6 +98,35 @@ pub fn Icon(
             <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::Circle => view! {
+            <circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="1.4" />
+        }
+        .into_any(),
+        IconKind::Pause => view! {
+            <rect x="4.6" y="3.6" width="2.4" height="8.8" rx="0.6" fill="currentColor" />
+            <rect x="9" y="3.6" width="2.4" height="8.8" rx="0.6" fill="currentColor" />
+        }
+        .into_any(),
+        IconKind::Drop => view! {
+            <circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="1.4" />
+            <line x1="4.5" y1="11.5" x2="11.5" y2="4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+        }
+        .into_any(),
+        IconKind::Pin => view! {
+            <path d="M8 14V9.4M5.4 3.4H10.6L10 8.4H6Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" />
+        }
+        .into_any(),
+        IconKind::Reset => view! {
+            <path d="M12.8 8A4.8 4.8 0 1 1 11.4 4.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+            <polyline points="12.2,2.2 12.2,5 9.4,5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        }
+        .into_any(),
+        IconKind::Data => view! {
+            <rect x="2.4" y="3" width="11.2" height="3.2" rx="1" stroke="currentColor" stroke-width="1.2" />
+            <rect x="2.4" y="9.8" width="11.2" height="3.2" rx="1" stroke="currentColor" stroke-width="1.2" />
+            <line x1="8" y1="6.2" x2="8" y2="9.8" stroke="currentColor" stroke-width="1.2" />
+        }
+        .into_any(),
         IconKind::Placeholder => view! {
             <circle cx="8" cy="5.6" r="2.4" stroke="currentColor" stroke-width="1.2" stroke-dasharray="1.4 1.4" />
             <path d="M3.2 13.2C3.6 10.8 5.4 9.6 8 9.6S12.4 10.8 12.8 13.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="1.4 1.6" />
@@ -173,6 +202,12 @@ pub enum IconKind {
     Tick,
     Calendar,
     Placeholder,
+    Circle,
+    Pause,
+    Drop,
+    Pin,
+    Reset,
+    Data,
     Pencil,
     Close,
     Plus,
