@@ -456,11 +456,20 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
             count=Signal::derive(move || allocations.with(Vec::len))
             on_add=Callback::new(move |()| {
                 // the first person, tag or group not yet asked for, which the row's picker changes
-                let next = named
+                let me = use_sync().me.get_untracked().map(|m| Worker::User(m.id));
+                let taken = move |w: &Worker| allocations.with_untracked(|a| a.iter().any(|(x, _)| x == w));
+                let others = named
                     .get_untracked()
                     .into_iter()
                     .filter_map(|(v, _)| forms::parse_worker(&v))
-                    .find(|w| *w != Worker::Placeholder && !allocations.with_untracked(|a| a.iter().any(|(x, _)| x == w)));
+                    .filter(|w| *w != Worker::Placeholder);
+                // yourself first when you are in the plan, then whoever is next
+                let people: Vec<Worker> = others.collect();
+                let next = me
+                    .filter(|m| people.contains(m))
+                    .into_iter()
+                    .chain(people.iter().copied())
+                    .find(|w| !taken(w));
                 if let Some(worker) = next {
                     allocations.update(|a| a.push((worker, 4)));
                 }
@@ -832,7 +841,23 @@ fn BufferForm(
                 <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=0 max=3650 />
             </Field>
             <Field label="Set Start (it grows or shrinks to keep its end)">
-                <OptionalDate value=set />
+                <div class="row">
+                    <OptionalDate value=set />
+                    <button
+                        type="button"
+                        title="Set the start to the day the buffer is scheduled to start on"
+                        on:click=move |_| {
+                            let state = sync.schedule.with_untracked(|s| {
+                                s.as_ref().and_then(|(_, s)| s.plans.get(&plan)).cloned()
+                            });
+                            if let Some((start, _)) = model::span_of(state.as_ref(), node) {
+                                set.set(Some(start));
+                            }
+                        }
+                    >
+                        "Scheduled"
+                    </button>
+                </div>
             </Field>
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />

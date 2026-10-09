@@ -455,6 +455,19 @@ pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
         })
 }
 
+/// Puts the cursor in the first box of the pane's form, with what it holds selected
+fn focus_first_box() {
+    use wasm_bindgen::JsCast;
+    let input = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector(".pane form input").ok().flatten())
+        .and_then(|i| i.dyn_into::<web_sys::HtmlInputElement>().ok());
+    if let Some(input) = input {
+        let _ = input.focus();
+        input.select();
+    }
+}
+
 /// The pane beside the chart for editing the item that is open
 #[component]
 pub fn ItemPane(
@@ -466,6 +479,10 @@ pub fn ItemPane(
 ) -> impl IntoView {
     guard.opened();
     on_cleanup(move || guard.closed());
+    // a new item has its first box ready to type in, its name or for a buffer its days
+    if fresh.get_untracked() == Some(node.id()) {
+        set_timeout(focus_first_box, std::time::Duration::from_millis(80));
+    }
     let title = match node {
         PlanNode::Task(_) => "Edit Task",
         PlanNode::Milestone(_) => "Edit Milestone",
