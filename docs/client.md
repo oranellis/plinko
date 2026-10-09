@@ -67,8 +67,12 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
 
 - The Gantt is one canvas in the style of Plinko 1 (`plinko1-ui.md`), on desktop and phones alike:
   packed lanes, group outlines, hover dependency lines, momentum drag, pinch and wheel zoom.
-- Items open in a pane beside the chart. A "my work" agenda comes from `UserSchedule` (per day, across
-  plans), and a plan can also be shown as a list.
+- Items open in a pane beside the chart. A plan can also be shown as a list.
+- Home shows your tasks in progress and the next ones to start, with buttons to start or finish them,
+  and your favourite plans. Allocations is a chart with a row for each of your tasks across plans.
+- Availability, and the days an affinity allows, are edited from a calendar (`rulecalendar.rs`): a
+  window from plan settings, a full page for your own hours. Dates and week start follow the
+  preferences of the browser.
 - Everything except the Gantt canvas is real DOM elements, which is most of the accessibility.
 
 ## Status

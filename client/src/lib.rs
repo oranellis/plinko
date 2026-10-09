@@ -17,6 +17,7 @@ mod plan;
 mod plans;
 mod preferences;
 mod resources;
+mod rulecalendar;
 mod settings;
 mod shell;
 mod sync;

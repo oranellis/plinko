@@ -11,16 +11,19 @@ pub fn use_sync() -> Sync {
 /// A panel over the page, a sheet from the bottom on a phone
 #[component]
 pub fn Modal(
-    #[prop(into)] title: String,
+    #[prop(into)] title: Signal<String>,
     on_close: Callback<()>,
+    /// A big window, for a calendar
+    #[prop(optional)]
+    wide: bool,
     children: Children,
 ) -> impl IntoView {
-    let label = title.clone();
+    let label = move || title.get();
     view! {
         <div class="backdrop" on:click=move |_| on_close.run(())>
-            <div class="modal" role="dialog" aria-label=label on:click=|ev| ev.stop_propagation()>
+            <div class="modal" class:wide=wide role="dialog" aria-label=label on:click=|ev| ev.stop_propagation()>
                 <header>
-                    <h2>{title}</h2>
+                    <h2>{move || title.get()}</h2>
                     <button type="button" class="plain" aria-label="Close" on:click=move |_| on_close.run(())>"✕"</button>
                 </header>
                 <div class="body">{children()}</div>

@@ -3,13 +3,8 @@
 
 use std::collections::HashSet;
 
-use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
-    availability::{
-        rule::{NewRule, RuleKind, WeeklySchedule},
-        rule_set::RuleSetUpdate,
-    },
     multitenancy::tenant_update::{PlanTenantUpdate, TenantUpdateType},
     planner::{plan::PlanSchedulerDataPatch, plan_update::PlanUpdate},
     types::{
@@ -24,13 +19,12 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
+    availability::{AffinityWindow, AvailabilityWindow},
     datepicker::DateInput,
     model::{self, node_name},
     nav::{Availability, Route, navigate},
     ui::{Field, Number, Select, Text, use_sync},
 };
-
-const DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 #[component]
 pub fn PlanSettings(plan: ShortId) -> impl IntoView {
@@ -46,6 +40,7 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
     let Some((start, priority)) = current else {
         return view! { <p>"This plan is gone."</p> }.into_any();
     };
+    let hours = RwSignal::new(false);
     let start = RwSignal::new(start);
     let priority = RwSignal::new(i64::from(priority));
     let save = move |_| {
@@ -68,9 +63,12 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
                     <Number value=priority on_input=Callback::new(move |n| priority.set(n)) />
                 </Field>
                 <button type="button" class="primary" on:click=save>"Save Plan Settings"</button>
-                <a href=Route::Availability(Availability::Plan(plan)).path()>
+                <button type="button" on:click=move |_| hours.set(true)>
                     "Hours of placeholders (the plan's default availability)"
-                </a>
+                </button>
+                <Show when=move || hours.get()>
+                    <AvailabilityWindow of=Availability::Plan(plan) on_close=Callback::new(move |()| hours.set(false)) />
+                </Show>
             </section>
             <Targets plan=plan />
             <People plan=plan />
@@ -357,13 +355,6 @@ fn Tags(plan: ShortId) -> impl IntoView {
     }
 }
 
-/// Monday first, the days an affinity allows
-fn allowed_days(allows: impl Fn(NaiveDate) -> bool) -> [bool; 7] {
-    // a Monday
-    let monday = NaiveDate::from_ymd_opt(2024, 1, 1).expect("a date");
-    std::array::from_fn(|i| allows(monday + chrono::Days::new(i as u64)))
-}
-
 #[component]
 fn Affinities(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -371,18 +362,10 @@ fn Affinities(plan: ShortId) -> impl IntoView {
         sync.tenant
             .with(|t| {
                 let p = t.as_ref()?.plans().get(&plan)?;
-                let mut all: Vec<(Uuid, String, [bool; 7], Vec<Uuid>)> = p
+                let mut all: Vec<(Uuid, String)> = p
                     .affinities()
                     .iter()
-                    .map(|(id, a)| {
-                        let rules = a.rules().rules().keys().copied().collect();
-                        (
-                            *id,
-                            a.name().to_string(),
-                            allowed_days(|d| a.allows(d)),
-                            rules,
-                        )
-                    })
+                    .map(|(id, a)| (*id, a.name().to_string()))
                     .collect();
                 all.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
                 Some(all)
@@ -390,53 +373,36 @@ fn Affinities(plan: ShortId) -> impl IntoView {
             .unwrap_or_default()
     });
     let name = RwSignal::new(String::new());
+    let editing = RwSignal::new(None::<Uuid>);
     view! {
-           <section>
-               <h2>"Days work may be done on"</h2>
-               <p class="small">"Link a task to one of these and it is only worked on the days ticked."</p>
-               <For each=move || all.get() key=|a| format!("{a:?}") children=move |(id, label, days, rules)| {
-                   view! {
-                       <div class="row">
-                           <strong>{label}</strong>
-                           {DAYS.iter().enumerate().map(|(i, day)| {
-                               let rules = rules.clone();
-                               view! {
-                                   <label class="check">
-                                       <input type="checkbox" prop:checked=days[i] on:change=move |ev| {
-                                           let mut next = days;
-                                           next[i] = event_target_checked(&ev);
-                                           for rule in &rules {
-                                               sync.plan(plan, PlanUpdate::AffinityRules(id, RuleSetUpdate::Rule(Crud::Remove(*rule))));
-                                           }
-                                           let rule = NewRule {
-    stop_day: None,
-                                               id: Uuid::nil(),
-                                               start_day: NaiveDate::from_ymd_opt(2000, 1, 3).expect("a date"),
-                                               kind: RuleKind::Weekly(WeeklySchedule::new(next)),
-                                           };
-                                           sync.plan(plan, PlanUpdate::AffinityRules(id, RuleSetUpdate::Rule(Crud::Add(rule))));
-                                       } />
-                                       {*day}
-                                   </label>
-                               }
-                           }).collect_view()}
-                           <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
-                               sync.plan(plan, PlanUpdate::Affinity(Crud::Remove(id)));
-                           }>"✕"</button>
-                       </div>
-                   }
-               } />
-               <form class="row" on:submit=move |ev| {
-                   ev.prevent_default();
-                   let text = name.get_untracked();
-                   if !text.trim().is_empty() {
-                       sync.plan(plan, PlanUpdate::Affinity(Crud::Add(NewAffinity { id: Uuid::nil(), name: text.trim().to_string() })));
-                       name.set(String::new());
-                   }
-               }>
-                   <Text value=name on_input=Callback::new(move |v| name.set(v)) placeholder="Client meeting days" />
-                   <button type="submit">"Add"</button>
-               </form>
-           </section>
-       }
+        <section>
+            <h2>"Days work may be done on"</h2>
+            <p class="small">"Link a task to one of these and it is only worked on the days the calendar allows."</p>
+            <For each=move || all.get() key=|a| a.clone() children=move |(id, label)| {
+                view! {
+                    <div class="row">
+                        <strong>{label}</strong>
+                        <button type="button" on:click=move |_| editing.set(Some(id))>"Edit calendar"</button>
+                        <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
+                            sync.plan(plan, PlanUpdate::Affinity(Crud::Remove(id)));
+                        }>"✕"</button>
+                    </div>
+                }
+            } />
+            <form class="row" on:submit=move |ev| {
+                ev.prevent_default();
+                let text = name.get_untracked();
+                if !text.trim().is_empty() {
+                    sync.plan(plan, PlanUpdate::Affinity(Crud::Add(NewAffinity { id: Uuid::nil(), name: text.trim().to_string() })));
+                    name.set(String::new());
+                }
+            }>
+                <Text value=name on_input=Callback::new(move |v| name.set(v)) placeholder="Client meeting days" />
+                <button type="submit">"Add"</button>
+            </form>
+        </section>
+               {move || editing.get().map(|id| view! {
+            <AffinityWindow plan=plan affinity=id on_close=Callback::new(move |()| editing.set(None)) />
+        })}
+    }
 }
