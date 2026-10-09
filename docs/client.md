@@ -69,7 +69,8 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
   packed lanes, group outlines, hover dependency lines, momentum drag, pinch and wheel zoom.
 - Items open in a pane beside the chart. A plan can also be shown as a list.
 - Home shows your tasks in progress and the next ones to start, with buttons to start or finish them,
-  and your favourite plans. Allocations is a chart with a row for each of your tasks across plans.
+  and your favourite plans. Allocations is a table with a row for each of your tasks across plans and the hours you work on
+  each day, under a row of the hours you have. Availability opens your own calendar.
 - Availability, and the days an affinity allows, are edited from a calendar (`rulecalendar.rs`): a
   window from plan settings, a full page for your own hours. Dates and week start follow the
   preferences of the browser.

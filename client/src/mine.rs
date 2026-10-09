@@ -1,5 +1,7 @@
 //! The tasks the person signed in is down to do, across every plan they can see.
 
+use std::collections::BTreeMap;
+
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
@@ -24,7 +26,8 @@ pub struct MyTask {
     pub start: NaiveDate,
     /// The last day it runs
     pub end: NaiveDate,
-    pub hours: u32,
+    /// Hours worked on each day it runs
+    pub days: BTreeMap<NaiveDate, u8>,
 }
 
 /// Every task scheduled with the person on it, soonest first
@@ -63,7 +66,7 @@ pub fn use_my_tasks() -> Memo<Vec<MyTask>> {
                         status: task.persistent_state().status,
                         start: range.start(),
                         end: range.end().pred_opt().unwrap_or(range.start()),
-                        hours: days.values().map(|h| u32::from(h.get())).sum(),
+                        days: days.iter().map(|(d, h)| (*d, h.get())).collect(),
                     });
                 }
             }

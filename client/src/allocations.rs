@@ -1,8 +1,9 @@
-//! Every task you are down for, across all plans, as rows on a chart in the order they start.
+//! Every task you are down for, across all plans, in the order they start. Your tasks are down the
+//! left and a row of days runs across, each task showing the hours it takes you that day, and the
+//! row at the top showing the hours you have each day and how many of them are booked.
 
-use std::collections::HashMap;
-
-use leptos::prelude::*;
+use chrono::{Datelike, Days, NaiveDate, Weekday};
+use leptos::{html, prelude::*};
 use plinko::{
     scheduler::state::PlanVolatileState,
     types::{dependency::PlanNode, short_id::ShortId},
@@ -10,101 +11,149 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
-    gantt::{
-        Gantt,
-        arrange::{Entry, Kind, Mark, arrange_rows},
-        info::info,
-        layout::Viewport,
-        links::Link,
-        scene::Scene,
-    },
-    icons::{Icon, IconKind},
+    format,
+    gantt::{arrange::Mark, info::info},
     mine::{MyTask, use_my_tasks},
-    model::Look,
     plan::ItemPane,
     ui::use_sync,
 };
+
+/// How wide a day is and the column of names, which scrolling is worked out from
+const DAY_WIDTH: f64 = 44.0;
+const NAME_WIDTH: f64 = 240.0;
+/// The weeks shown from before the current one
+const BEFORE: u64 = 2;
+/// The fewest weeks shown, and how many more than the scroll has reached
+const LEAST: u64 = 12;
+const AHEAD: u64 = 4;
+/// The most a day holds, which the bars are drawn against
+const FULL_DAY: f64 = 8.0;
+
+const COLOURS: [&str; 10] = [
+    "#4a90d9", "#7ed321", "#f5a623", "#d0021b", "#9b59b6", "#1abc9c", "#e67e22", "#2ecc71",
+    "#e74c3c", "#3498db",
+];
+
+/// The colour a task is drawn in, the same every time
+fn colour_of(task: Uuid) -> &'static str {
+    COLOURS[(task.as_u128() % COLOURS.len() as u128) as usize]
+}
+
+fn heat(booked: u32, capacity: u8) -> &'static str {
+    match (booked, capacity) {
+        (0, 0) => "off",
+        (_, 0) => "heat-4",
+        (0, _) => "heat-0",
+        (b, c) => {
+            let ratio = f64::from(b) / f64::from(c);
+            if ratio < 0.5 {
+                "heat-1"
+            } else if ratio < 0.85 {
+                "heat-2"
+            } else if ratio <= 1.0 {
+                "heat-3"
+            } else {
+                "heat-4"
+            }
+        }
+    }
+}
 
 #[component]
 pub fn Allocations() -> impl IntoView {
     let sync = use_sync();
     let mine = use_my_tasks();
-    let today = Signal::derive(move || {
+    let today = Memo::new(move |_| {
         sync.tenant
             .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
     });
-    // where each task lives, to find its plan from the chart
-    let plans = Memo::new(move |_| {
-        mine.with(|m| {
-            m.iter()
-                .map(|t| (t.task, t.clone()))
-                .collect::<HashMap<Uuid, MyTask>>()
-        })
+    let scroller = NodeRef::<html::Div>::new();
+    // weeks shown, which grow as the table is scrolled forward and shrink as it comes back
+    let weeks = RwSignal::new(LEAST);
+    let first = Memo::new(move |_| {
+        let today = today.get();
+        let earliest = mine.with(|m| m.iter().map(|t| t.start).min());
+        let from = earliest.map_or(today, |e| e.min(today));
+        let monday = from - Days::new(u64::from(from.weekday().num_days_from_monday()));
+        monday - Days::new(BEFORE * 7)
     });
-    let scene = Memo::new(move |_| {
-        let entries: Vec<Entry> = mine.with(|m| m.iter().map(entry).collect());
-        let first = mine.with(|m| m.iter().map(|t| t.start).min());
-        let plan_start = first.map_or(today.get(), |f| f.min(today.get()));
-        let arrangement = arrange_rows(&entries);
-        let last = mine
-            .with(|m| m.iter().map(|t| t.end).max())
-            .unwrap_or(plan_start);
-        Scene {
-            plan_start,
-            arrangement,
-            unplaced: Vec::new(),
-            last_day: (last - plan_start).num_days() as f64 + 1.0,
+    let measure = move || {
+        if let Some(element) = scroller.get_untracked() {
+            let reached = f64::from(element.scroll_left() + element.client_width());
+            let days = ((reached - NAME_WIDTH) / DAY_WIDTH).max(0.0) as u64;
+            weeks.set((days / 7 + 1 + AHEAD).max(LEAST));
+        }
+    };
+    let to_today = move || {
+        if let Some(element) = scroller.get_untracked() {
+            let at = (today.get_untracked() - first.get_untracked()).num_days() as f64 * DAY_WIDTH;
+            // today a little in from the names
+            element.set_scroll_left((at - 2.0 * DAY_WIDTH).max(0.0) as i32);
+            measure();
+        }
+    };
+    Effect::new(move |_| {
+        if scroller.get().is_some() {
+            to_today();
         }
     });
-    let viewport = RwSignal::new(None::<Viewport>);
-    let jump = RwSignal::new(0u32);
-    let focus = RwSignal::new(None::<Mark>);
-    let open = RwSignal::new(None::<(ShortId, PlanNode)>);
-    let fresh = RwSignal::new(None::<Uuid>);
-    let info = Callback::new(move |mark: Mark| {
-        let Mark::Node(node) = mark else {
-            return Vec::new();
-        };
-        let Some(mine) = plans.with(|p| p.get(&node.id()).cloned()) else {
-            return Vec::new();
-        };
+    let days = Memo::new(move |_| {
+        let first = first.get();
+        (0..weeks.get() * 7)
+            .map(|d| first + Days::new(d))
+            .collect::<Vec<NaiveDate>>()
+    });
+    // the hours the person has and has booked each day shown
+    let hours = Memo::new(move |_| {
+        let me = sync.me.with(|m| m.as_ref().map(|m| m.id))?;
+        let days = days.get();
+        let (first, last) = (*days.first()?, *days.last()?);
+        let schedule = sync.schedule.get();
+        sync.tenant.with(|t| {
+            let user = t.as_ref()?.users().get(&me)?;
+            let calendar = user.availability().calendar(first, last);
+            let booked = schedule.as_ref().and_then(|(_, s)| s.users.get(&me));
+            Some(
+                days.iter()
+                    .map(|d| {
+                        (
+                            booked.map_or(0, |b| b.booked_on(*d)),
+                            calendar.on(*d).map_or(0, |h| h.get()),
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+    });
+    // what is said of a task when the pointer rests on it, as in the chart
+    let said = move |task: &MyTask| {
         let state: Option<PlanVolatileState> = sync.schedule.with(|s| {
             s.as_ref()
-                .and_then(|(_, s)| s.plans.get(&mine.plan).cloned())
+                .and_then(|(_, s)| s.plans.get(&task.plan).cloned())
         });
-        let mut lines = sync
+        let lines = sync
             .tenant
             .with(|t| {
                 let t = t.as_ref()?;
-                Some(info(t, t.plans().get(&mine.plan)?, state.as_ref(), mark))
+                Some(info(
+                    t,
+                    t.plans().get(&task.plan)?,
+                    state.as_ref(),
+                    Mark::Node(PlanNode::Task(task.task)),
+                ))
             })
             .unwrap_or_default();
-        // the title first, then which plan it is from
-        lines.insert(1.min(lines.len()), format!("Plan: {}", mine.plan_name));
-        lines
-    });
-    let on_open = Callback::new(move |node: PlanNode| {
-        if let Some(mine) = plans.with_untracked(|p| p.get(&node.id()).cloned()) {
-            open.set(Some((mine.plan, node)));
-        }
-    });
+        let mut lines = lines;
+        lines.insert(1.min(lines.len()), format!("Plan: {}", task.plan_name));
+        lines.join("\n")
+    };
+    let open = RwSignal::new(None::<(ShortId, PlanNode)>);
+    let fresh = RwSignal::new(None::<Uuid>);
     view! {
         <div class="plan">
-            <div class="toolbar">
-                <div class="toolbar-buttons">
-                    <div class="toolbar-left">
-                        <button
-                            type="button"
-                            class="toolbar-btn"
-                            title="Jump to today"
-                            aria-label="Jump to today"
-                            on:click=move |_| jump.update(|n| *n += 1)
-                        >
-                            <Icon kind=IconKind::Today />
-                        </button>
-                    </div>
-                    <span class="toolbar-title"><span class="toolbar-title-text">"Allocations"</span></span>
-                </div>
+            <div class="bar allocbar">
+                <h1>"Allocations"</h1>
+                <button type="button" on:click=move |_| to_today()>"Today"</button>
             </div>
             <div class="workspace">
                 <div class="main">
@@ -112,18 +161,67 @@ pub fn Allocations() -> impl IntoView {
                         when=move || mine.with(|m| !m.is_empty())
                         fallback=|| view! { <p class="empty">"No tasks are scheduled for you."</p> }
                     >
-                        <Gantt
-                            scene=scene.into()
-                            today=today
-                            viewport=viewport
-                            links=Callback::new(|_| Vec::<Link>::new())
-                            info=info
-                            violation=Callback::new(|_| Vec::new())
-                            on_open=on_open
-                            on_toggle=Callback::new(|_| {})
-                            jump=jump
-                            focus=focus
-                        />
+                        <div class="alloc scroll" node_ref=scroller on:scroll=move |_| measure()>
+                            <table class="grid fixed alloctable">
+                                <thead>
+                                    <tr>
+                                        <th class="name">"Task"</th>
+                                        {move || days.get().into_iter().map(|d| view! {
+                                            <th class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun) class:today=d == today.get()>
+                                                <span class="small">{format::weekday(d)}</span>
+                                                <br />
+                                                {if d.day() == 1 { format!("{} {}", d.day(), format::month(d)) } else { d.day().to_string() }}
+                                            </th>
+                                        }).collect_view()}
+                                    </tr>
+                                    <tr class="available">
+                                        <th class="name">"Hours available"</th>
+                                        {move || hours.get().unwrap_or_default().into_iter().map(|(booked, capacity)| view! {
+                                            <th class=heat(booked, capacity) title="Booked of the hours you have">
+                                                {if capacity == 0 && booked == 0 { String::new() } else { format!("{booked}/{capacity}") }}
+                                            </th>
+                                        }).collect_view()}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <For each=move || mine.get() key=|t| format!("{t:?}") children=move |task| {
+                                        let (plan, id) = (task.plan, task.task);
+                                        let title = said(&task);
+                                        let colour = colour_of(id);
+                                        let by_day = task.days.clone();
+                                        view! {
+                                            <tr class:picked=move || open.with(|o| o.is_some_and(|(_, n)| n.id() == id))>
+                                                <td class="name" title=title>
+                                                    <button type="button" class="plain" on:click=move |_| open.set(Some((plan, PlanNode::Task(id))))>
+                                                        <strong>{task.name.clone()}</strong>
+                                                        <span class="small">{task.plan_name.clone()}</span>
+                                                    </button>
+                                                </td>
+                                                {move || days.get().into_iter().map(|d| {
+                                                    let worked = by_day.get(&d).copied().unwrap_or(0);
+                                                    view! {
+                                                        <td class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun)>
+                                                            {(worked > 0).then(|| view! {
+                                                                <div
+                                                                    class="worked"
+                                                                    style=format!(
+                                                                        "height:{}px;background:{colour}",
+                                                                        (f64::from(worked) / FULL_DAY).min(1.0) * 26.0 + 2.0,
+                                                                    )
+                                                                    title=format!("{worked} h on {}", format::day(d))
+                                                                >
+                                                                    {format!("{worked}h")}
+                                                                </div>
+                                                            })}
+                                                        </td>
+                                                    }
+                                                }).collect_view()}
+                                            </tr>
+                                        }
+                                    } />
+                                </tbody>
+                            </table>
+                        </div>
                     </Show>
                 </div>
                 {move || {
@@ -141,17 +239,25 @@ pub fn Allocations() -> impl IntoView {
     }
 }
 
-fn entry(task: &MyTask) -> Entry {
-    Entry {
-        node: PlanNode::Task(task.task),
-        name: task.name.clone(),
-        kind: Kind::Task,
-        span: (task.start, task.end + chrono::Days::new(1)),
-        look: Look::from(task.status),
-        violated: false,
-        leaf: false,
-        target: false,
-        members: Vec::new(),
-        collapsed: false,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_task_always_has_the_same_colour() {
+        let id = Uuid::from_u128(12345);
+        assert_eq!(colour_of(id), colour_of(id));
+        assert!(COLOURS.contains(&colour_of(Uuid::from_u128(7))));
+    }
+
+    #[test]
+    fn days_are_coloured_by_how_full_they_are() {
+        assert_eq!(heat(0, 0), "off");
+        assert_eq!(heat(3, 0), "heat-4");
+        assert_eq!(heat(0, 8), "heat-0");
+        assert_eq!(heat(2, 8), "heat-1");
+        assert_eq!(heat(6, 8), "heat-2");
+        assert_eq!(heat(8, 8), "heat-3");
+        assert_eq!(heat(9, 8), "heat-4");
     }
 }

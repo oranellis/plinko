@@ -63,7 +63,7 @@ fn title_of(of: Of) -> Signal<String> {
 pub fn Availability(of: Of) -> impl IntoView {
     let (rules, send) = hours_of(of);
     let back = match of {
-        Of::User(_) => Route::Resources,
+        Of::User(_) => Route::Home,
         Of::Plan(id) => Route::Plan(id, PlanTab::Settings, None),
     };
     view! {

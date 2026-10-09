@@ -6,15 +6,15 @@ use plinko::multitenancy::user::Role;
 use crate::{
     allocations::Allocations,
     api,
-    availability::Availability,
+    availability::Availability as AvailabilityPage,
     home::Home,
     icons::{Icon, IconKind},
+    nav::Availability,
     nav::{Route, navigate, use_route},
     people::People,
     plan::PlanPage,
     plans::Plans,
     preferences::Preferences,
-    resources::Resources,
     ui::{Status, use_sync},
 };
 
@@ -24,7 +24,6 @@ enum Page {
     Plans,
     Plan(plinko::types::short_id::ShortId),
     Allocations,
-    Resources,
     People,
     Preferences,
     Availability(crate::nav::Availability),
@@ -41,7 +40,6 @@ pub fn Shell() -> impl IntoView {
         Route::Plans => Page::Plans,
         Route::Plan(plan, _, _) => Page::Plan(plan),
         Route::Allocations => Page::Allocations,
-        Route::Resources => Page::Resources,
         Route::People => Page::People,
         Route::Preferences => Page::Preferences,
         Route::Availability(of) => Page::Availability(of),
@@ -70,8 +68,9 @@ pub fn Shell() -> impl IntoView {
     let on_home = Signal::derive(move || route.get() == Route::Home);
     let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
     let on_allocations = Signal::derive(move || route.get() == Route::Allocations);
-    let on_resources =
-        Signal::derive(move || matches!(route.get(), Route::Resources | Route::Availability(_)));
+    let me = sync.me.get_untracked().map(|m| m.id).unwrap_or_default();
+    let mine = Route::Availability(Availability::User(me));
+    let on_availability = Signal::derive(move || matches!(route.get(), Route::Availability(_)));
     let on_people = Signal::derive(move || route.get() == Route::People);
     view! {
         <div class="shell">
@@ -85,7 +84,7 @@ pub fn Shell() -> impl IntoView {
                     {link("Home", IconKind::Home, Route::Home, on_home)}
                 {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
                     {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
-                    {link("Resources", IconKind::Resources, Route::Resources, on_resources)}
+                    {link("Availability", IconKind::Resources, mine, on_availability)}
                     <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
                 </nav>
                 <Status />
@@ -103,17 +102,16 @@ pub fn Shell() -> impl IntoView {
                     Page::Plans => view! { <Plans /> }.into_any(),
                     Page::Plan(plan) => view! { <PlanPage plan=plan /> }.into_any(),
                     Page::Allocations => view! { <Allocations /> }.into_any(),
-                    Page::Resources => view! { <Resources /> }.into_any(),
                     Page::People => view! { <People /> }.into_any(),
                     Page::Preferences => view! { <Preferences /> }.into_any(),
-                    Page::Availability(of) => view! { <Availability of=of /> }.into_any(),
+                    Page::Availability(of) => view! { <AvailabilityPage of=of /> }.into_any(),
                 }}
             </main>
             <nav class="bottom" aria-label="Main">
                 {link("Home", IconKind::Home, Route::Home, on_home)}
                 {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
                 {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
-                {link("Resources", IconKind::Resources, Route::Resources, on_resources)}
+                {link("Availability", IconKind::Resources, mine, on_availability)}
                 <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
             </nav>
         </div>

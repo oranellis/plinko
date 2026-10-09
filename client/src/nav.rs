@@ -36,7 +36,6 @@ pub enum Route {
     /// A plan, and the item open in its editor
     Plan(ShortId, PlanTab, Option<Uuid>),
     Allocations,
-    Resources,
     People,
     Preferences,
     /// Availability of a user, or the plan default of a plan
@@ -59,7 +58,6 @@ impl Route {
                 format!("#/plan/{plan}/{}{open}", tab.name())
             }
             Route::Allocations => "#/allocations".to_string(),
-            Route::Resources => "#/resources".to_string(),
             Route::People => "#/people".to_string(),
             Route::Preferences => "#/preferences".to_string(),
             Route::Availability(Availability::User(user)) => format!("#/availability/user/{user}"),
@@ -81,7 +79,6 @@ impl Route {
             }
             ["plans"] => Route::Plans,
             ["allocations"] => Route::Allocations,
-            ["resources"] => Route::Resources,
             ["people"] => Route::People,
             ["preferences"] => Route::Preferences,
             ["availability", "user", user] => match Uuid::parse_str(user) {
@@ -133,7 +130,6 @@ mod tests {
             Route::Plan(plan, PlanTab::List, None),
             Route::Plan(plan, PlanTab::Gantt, Some(item)),
             Route::Allocations,
-            Route::Resources,
             Route::People,
             Route::Preferences,
             Route::Availability(Availability::User(item)),

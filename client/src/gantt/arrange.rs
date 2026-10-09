@@ -155,20 +155,6 @@ fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>)
     }
 }
 
-/// Gives every entry a lane of its own, soonest start first, for a list of tasks from many plans
-pub fn arrange_rows(entries: &[Entry]) -> Arrangement {
-    let mut sorted: Vec<&Entry> = entries.iter().collect();
-    sorted.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
-    Arrangement {
-        lanes: sorted.len(),
-        placed: sorted
-            .into_iter()
-            .enumerate()
-            .map(|(lane, entry)| placed(entry, lane, 0))
-            .collect(),
-    }
-}
-
 /// Packs a plan's items. The plan's start is a milestone of its own, always the first thing in the
 /// first lane.
 pub fn arrange(plan_start: NaiveDate, entries: &[Entry]) -> Arrangement {
@@ -256,20 +242,6 @@ mod tests {
         assert_eq!(lane_of(&arranged, "C"), 1);
         assert_eq!(lane_of(&arranged, "D"), 0);
         assert_eq!(arranged.lanes, 2);
-    }
-
-    #[test]
-    fn rows_take_a_lane_each_by_start() {
-        let entries = [
-            entry(1, "B", 5, 6),
-            entry(2, "A", 2, 3),
-            entry(3, "C", 2, 9),
-        ];
-        let arranged = arrange_rows(&entries);
-        assert_eq!(arranged.lanes, 3);
-        assert_eq!(lane_of(&arranged, "A"), 0);
-        assert_eq!(lane_of(&arranged, "C"), 1);
-        assert_eq!(lane_of(&arranged, "B"), 2);
     }
 
     #[test]

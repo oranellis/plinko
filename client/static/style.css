@@ -301,3 +301,19 @@ table.grid.fixed { table-layout: fixed; }
 table.grid.fixed th, table.grid.fixed td { width: 56px; min-width: 56px; }
 table.grid.fixed th:first-child, table.grid.fixed td:first-child { width: 200px; min-width: 200px; z-index: 1; }
 .scroll.wide { max-width: 100%; }
+
+/* the allocations table */
+.allocbar { padding: 8px 12px; margin: 0; }
+.alloc { height: 100%; max-height: none; border-radius: 0; border-left: none; border-right: none; }
+table.alloctable thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
+table.alloctable thead tr.available th { top: 44px; }
+table.grid.fixed.alloctable th.name, table.grid.fixed.alloctable td.name { position: sticky; left: 0; z-index: 3; background: var(--panel); text-align: left; width: 240px; min-width: 240px; max-width: 240px; }
+table.grid.fixed.alloctable thead th.name { z-index: 4; }
+table.alloctable th.today { color: var(--accent); }
+table.alloctable td { height: 34px; padding: 3px 2px; vertical-align: bottom; position: relative; }
+table.alloctable td.name { padding: 0; vertical-align: middle; }
+table.alloctable td.name button { display: grid; text-align: left; width: 100%; padding: 4px 10px; min-height: 0; overflow: hidden; }
+table.alloctable td.name strong, table.alloctable td.name .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.alloctable tr.picked td.name { background: var(--raised); }
+.worked { display: grid; place-items: center; font-size: 10px; color: #fff; border-radius: 3px; min-height: 12px; }
+.main > .alloc { flex: 1; }
