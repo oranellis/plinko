@@ -339,12 +339,6 @@ a.icon:hover, button.icon:hover { background: var(--raised); border-color: var(-
 
 /* the pie of hours booked and the bar a task runs along */
 table.alloctable th.booked { height: 36px; padding: 2px; }
-table.alloctable td.runs { padding: 0; --bar: 30px; }
-.runbar { position: absolute; top: 3px; bottom: 3px; left: 0; right: 0; background: #343436; overflow: hidden; }
-table.alloctable td.runs.first .runbar { left: 4px; border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
-table.alloctable td.runs.last .runbar { right: 4px; border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
-/* eight blocks of blue, the darkest at the bottom, of which a day fills as many as it has hours */
-.runbar .fill { position: absolute; left: 0; right: 0; bottom: 0; background-image: linear-gradient(to top, #183f73 0.0%, #183f73 12.5%, #1f4f8c 12.5%, #1f4f8c 25.0%, #2760a8 25.0%, #2760a8 37.5%, #3173c4 37.5%, #3173c4 50.0%, #3f86db 50.0%, #3f86db 62.5%, #5599ea 62.5%, #5599ea 75.0%, #76b0f4 75.0%, #76b0f4 87.5%, #9ccaff 87.5%, #9ccaff 100.0%); background-size: 100% var(--bar); background-repeat: no-repeat; background-position: bottom; }
 svg.pie { display: block; margin: 0 auto; }
 .list .row.line { min-height: 26px; padding: 0 2px 0 8px; font-size: 14px; }
 table.grid.fixed.alloctable th:not(.name), table.grid.fixed.alloctable td:not(.name) { width: 36px; min-width: 36px; max-width: 36px; }
@@ -365,8 +359,6 @@ table.alloctable th.m1::before, table.alloctable td.m1::before { content: ''; po
 table.alloctable th.name::after, table.alloctable td.name::after { content: ''; position: absolute; right: 0; top: 0; bottom: -1px; width: 3px; background: #77777e; z-index: 5; pointer-events: none; }
 table.alloctable thead tr.available th:not(.name)::after { content: ''; position: absolute; left: 0; right: -1px; bottom: -1px; height: 3px; background: var(--line); z-index: 6; pointer-events: none; }
 table.alloctable thead tr.available th.name { box-shadow: inset 0 -2px 0 var(--line); }
-table.alloctable td.runs:not(.first) .runbar { left: -1px; }
-table.alloctable td.runs:not(.last) .runbar { right: -1px; }
 
 /* the lines of the allocations table, built up from the back: the faint grid is the right and bottom
    edge of each cell, and each stronger line belongs to a cell that sits above the cells it crosses */
@@ -400,3 +392,10 @@ table.alloctable th.m1::before, table.alloctable td.m1::before { left: -1px; bac
 .monthbox { align-items: flex-start; padding: 4px 0 0 4px; box-sizing: border-box; }
 .monthname { left: calc(var(--name-w) + 4px); padding-left: 0; font-size: 13px; line-height: 15px; color: #888; font-weight: 400; }
 table.grid.fixed.alloctable td.today, table.grid.fixed.alloctable thead tr.available th.today { background-image: linear-gradient(rgba(64, 91, 200, 0.18), rgba(64, 91, 200, 0.18)); }
+
+/* a day of a task: a bar from the bottom with the hours written over the middle of the day */
+.daybar { position: absolute; left: 1px; right: 1px; bottom: 2px; display: block; }
+.daylabel { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 0 4px; border-radius: 3px; background: rgba(0, 0, 0, 0.5); color: #bbb; font-size: 10px; line-height: 14px; pointer-events: none; }
+/* today on a calendar: ringed and bold */
+button.day.today { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; color: #fff; }
+.calendar .day.today { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; color: #fff; }

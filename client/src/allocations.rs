@@ -1,5 +1,5 @@
 //! Every task you are down for, across all plans, in the order they start. Your tasks are down the
-//! left and a row of days runs across, each task showing the hours it takes you that day, and the
+//! left and a row of days runs across, each task showing the hours it takes you that day as a bar, and the
 //! row at the top showing the hours you have each day and how many of them are booked.
 
 use chrono::{Datelike, Days, NaiveDate, Weekday};
@@ -34,6 +34,18 @@ const LEAST: u64 = 12;
 const AHEAD: u64 = 4;
 /// The hours a day holds, which the pies and bars are drawn against
 const FULL_DAY: u8 = 8;
+/// How tall a full day's bar is
+const BAR_ROOM: f64 = 30.0;
+
+/// The colours tasks are drawn in, one of them for each task, the same each time
+const COLOURS: [&str; 10] = [
+    "#4a90d9", "#7ed321", "#f5a623", "#d0021b", "#9b59b6", "#1abc9c", "#e67e22", "#2ecc71",
+    "#e74c3c", "#3498db",
+];
+
+fn colour_of(task: Uuid) -> &'static str {
+    COLOURS[(task.as_u128() % COLOURS.len() as u128) as usize]
+}
 
 /// A day as a pie of eight slices, one to an hour, with the hours booked filled in. A day with
 /// nothing booked has no pie. The slices are green when the hours booked are all the hours the
@@ -281,7 +293,7 @@ pub fn Allocations() -> impl IntoView {
                                         let (plan, id) = (task.plan, task.task);
                                         let title = said(&task);
                                         let by_day = task.days.clone();
-                                        let (from, to) = (task.start, task.end);
+                                        let colour = colour_of(id);
                                         view! {
                                             <tr class:picked=move || open.with(|o| o.is_some_and(|(_, n)| n.id() == id))>
                                                 <td class="name" title=title>
@@ -292,23 +304,18 @@ pub fn Allocations() -> impl IntoView {
                                                 </td>
                                                 {move || days.get().into_iter().map(|d| {
                                                     let worked = by_day.get(&d).copied().unwrap_or(0);
-                                                    let runs = d >= from && d <= to;
-                                                    // the day's hours fill from the bottom of the task's bar
-                                                    let filled = f64::from(worked.min(FULL_DAY)) / f64::from(FULL_DAY) * 100.0;
+                                                    // the bar grows from the bottom of the day with the hours, up to a full day
+                                                    let height = f64::from(worked.min(FULL_DAY)) / f64::from(FULL_DAY) * BAR_ROOM + 2.0;
                                                     view! {
                                                         <td
                                                             class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun)
-                                                            class:runs=runs
                                                             class:today=d == today.get_untracked()
                                                             class:m1=d.day() == 1
-                                                            class:first=d == from
-                                                            class:last=d == to
                                                             title=format!("{worked} h on {}", format::day(d))
                                                         >
-                                                            {runs.then(|| view! {
-                                                                <div class="runbar">
-                                                                    <i class="fill" style=format!("height:{filled}%")></i>
-                                                                </div>
+                                                            {(worked > 0).then(|| view! {
+                                                                <i class="daybar" style=format!("height:{height}px;background:{colour}")></i>
+                                                                <span class="daylabel">{format!("{worked}h")}</span>
                                                             })}
                                                         </td>
                                                     }
@@ -340,6 +347,13 @@ pub fn Allocations() -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_task_always_has_the_same_colour() {
+        let id = Uuid::from_u128(12345);
+        assert_eq!(colour_of(id), colour_of(id));
+        assert!(COLOURS.contains(&colour_of(Uuid::from_u128(7))));
+    }
 
     #[test]
     fn slices_go_round_from_the_top() {
