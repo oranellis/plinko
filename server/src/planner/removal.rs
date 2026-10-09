@@ -25,7 +25,7 @@ fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<Dependency>) {
 }
 
 /// Where an item is, and what it depends on
-fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>) {
+pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>) {
     match node {
         PlanNode::Task(id) => placed::<Task>(plan, id),
         PlanNode::Milestone(id) => placed::<Milestone>(plan, id),
@@ -34,7 +34,7 @@ fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>) {
     }
 }
 
-fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
+pub(super) fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
     let mut nodes = [
         graph::nodes::<Task>(plan),
         graph::nodes::<Milestone>(plan),
@@ -47,7 +47,7 @@ fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
 }
 
 /// Each node once, with the longest lag it was given
-fn merged(deps: Vec<Dependency>) -> Vec<Dependency> {
+pub(super) fn merged(deps: Vec<Dependency>) -> Vec<Dependency> {
     let mut out: Vec<Dependency> = Vec::new();
     for dep in deps {
         match out.iter_mut().find(|d| d.node == dep.node) {

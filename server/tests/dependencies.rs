@@ -406,3 +406,109 @@ fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
     assert_eq!(waits, members);
 }
 // }}}
+
+mod moving {
+    use plinko::planner::plan_update::PlanUpdate;
+    use plinko::{
+        planner::plan::*,
+        types::{
+            crud::Crud,
+            dependency::{Dependency, DependencyNode, PlanNode},
+            parent::Parent,
+            short_id::ShortId,
+            task::NewTask,
+            task_group::NewTaskGroup,
+        },
+    };
+    use uuid::Uuid;
+
+    fn plan() -> Plan {
+        Plan::from(NewPlan {
+            id: ShortId::new(),
+            name: "P".to_string(),
+            start_date: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+        })
+    }
+
+    fn task(plan: &mut Plan) -> Uuid {
+        let id = Uuid::now_v7();
+        let new = NewTask {
+            id,
+            name: "T".to_string(),
+            parent: Parent::PlanStart,
+        };
+        plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
+        id
+    }
+
+    fn on(id: Uuid) -> Dependency {
+        Dependency {
+            node: DependencyNode::Node(PlanNode::Task(id)),
+            lag: 0,
+        }
+    }
+
+    fn apply(plan: &mut Plan, updates: Vec<PlanUpdate>) {
+        for u in updates {
+            plan.apply_update(u).unwrap();
+        }
+    }
+
+    #[test]
+    fn into_and_out_of_a_group_carry_the_dependencies() {
+        let mut plan = plan();
+        let (before, x, after) = (task(&mut plan), task(&mut plan), task(&mut plan));
+        let group = Uuid::now_v7();
+        let new = NewTaskGroup {
+            id: group,
+            name: "G".to_string(),
+            parent: Parent::PlanStart,
+        };
+        plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
+            .unwrap();
+        let set = |plan: &mut Plan, id, deps| {
+            plan.apply_update(PlanUpdate::set_dependencies(PlanNode::Task(id), deps))
+                .unwrap();
+        };
+        set(&mut plan, x, vec![on(before)]);
+        set(&mut plan, after, vec![on(x)]);
+
+        let into = plan.moving(PlanNode::Task(x), Parent::Node(group)).unwrap();
+        apply(&mut plan, into);
+        let group_node = DependencyNode::Node(PlanNode::TaskGroup(group));
+        assert_eq!(plan.task_groups()[&group].dependencies(), &vec![on(before)]);
+        assert_eq!(
+            plan.tasks()[&x].dependencies(),
+            &vec![Dependency::default()]
+        );
+        assert_eq!(
+            plan.tasks()[&after].dependencies(),
+            &vec![Dependency {
+                node: group_node,
+                lag: 0
+            }]
+        );
+
+        let out = plan.moving(PlanNode::Task(x), Parent::PlanStart).unwrap();
+        apply(&mut plan, out);
+        assert_eq!(plan.tasks()[&x].parent(), Parent::PlanStart);
+        assert_eq!(plan.tasks()[&x].dependencies(), &vec![on(before)]);
+    }
+
+    #[test]
+    fn a_group_cannot_move_into_itself() {
+        let mut plan = plan();
+        let group = Uuid::now_v7();
+        let new = NewTaskGroup {
+            id: group,
+            name: "G".to_string(),
+            parent: Parent::PlanStart,
+        };
+        plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
+            .unwrap();
+        assert!(
+            plan.moving(PlanNode::TaskGroup(group), Parent::Node(group))
+                .is_err()
+        );
+    }
+}

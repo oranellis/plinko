@@ -514,3 +514,7 @@ dates, which could be made incremental.
 - Dependents of an on-hold task use its hold date as the end.
 - Defaulting actual dates on in progress and completed.
 - A task started with no stored schedule (nothing to record) resolves its tag and group workers itself until someone records them.
+
+## Moving between groups
+
+`Plan::moving(node, parent)` gives the updates. Entering a group: what the item waited on moves onto the group (except what is inside it), what waited on the item from outside waits on the group's end, and the item waits on the group's start. Leaving: the item's group-start dependency is replaced by the group's own dependencies. A group cannot move into itself.
