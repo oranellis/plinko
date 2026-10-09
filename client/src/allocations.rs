@@ -27,49 +27,49 @@ const BEFORE: u64 = 2;
 /// The fewest weeks shown, and how many more than the scroll has reached
 const LEAST: u64 = 12;
 const AHEAD: u64 = 4;
-/// The hours a day holds, which the boxes show
+/// The hours a day holds, which the pies and bars are drawn against
 const FULL_DAY: u8 = 8;
 
-const COLOURS: [&str; 10] = [
-    "#4a90d9", "#7ed321", "#f5a623", "#d0021b", "#9b59b6", "#1abc9c", "#e67e22", "#2ecc71",
-    "#e74c3c", "#3498db",
-];
-
-/// The colour a task is drawn in, the same every time
-fn colour_of(task: Uuid) -> &'static str {
-    COLOURS[(task.as_u128() % COLOURS.len() as u128) as usize]
+/// A day as a pie of eight slices, one to an hour, with the hours booked filled in. A day with
+/// nothing booked has no pie. The slices are green when the hours booked are all the hours the
+/// person has, orange while there are still hours left, and red when they are overbooked.
+#[component]
+fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoView {
+    let colour = if booked > u32::from(capacity) {
+        "#e57373"
+    } else if booked == u32::from(capacity) {
+        "#43c463"
+    } else {
+        "#c98a3c"
+    };
+    let slices = (0..FULL_DAY)
+        .map(|i| {
+            let fill = if u32::from(i) < booked {
+                colour
+            } else {
+                "#2f2f31"
+            };
+            view! { <path d=slice(i) fill=fill stroke="#252526" stroke-width="1.5" /> }
+        })
+        .collect_view();
+    view! {
+        <svg class="pie" width="26" height="26" viewBox="0 0 26 26">
+            <title>{title}</title>
+            {slices}
+        </svg>
+    }
 }
 
-/// Eight boxes, two wide and four tall, which the hours fill a column at a time from the bottom, with
-/// the hours written over them. The boxes go from grey to green as the day fills.
-#[component]
-fn HourBoxes(hours: u32, #[prop(into)] title: String) -> impl IntoView {
-    let filled = hours.min(u32::from(FULL_DAY));
-    let green = filled * 100 / u32::from(FULL_DAY);
-    view! {
-        <div class="hourboxes" title=title>
-            <div class="boxes">
-                {(0..FULL_DAY)
-                    .map(|k| {
-                        let on = u32::from(k) < filled;
-                        let colour = if on {
-                            format!("color-mix(in srgb, #7c7c80, #43c463 {green}%)")
-                        } else {
-                            "#2c2c2e".to_string()
-                        };
-                        // columns fill from the bottom up, left to right
-                        let place = format!(
-                            "grid-row:{};grid-column:{};background:{colour}",
-                            4 - k % 4,
-                            1 + k / 4,
-                        );
-                        view! { <i style=place></i> }
-                    })
-                    .collect_view()}
-            </div>
-            <span class="num">{hours}</span>
-        </div>
-    }
+/// The path of slice `i` of eight, which starts at the top and goes round clockwise
+fn slice(i: u8) -> String {
+    let (centre, radius) = (13.0_f64, 11.0_f64);
+    let at = |turn: f64| {
+        let angle =
+            (turn / f64::from(FULL_DAY)) * std::f64::consts::TAU - std::f64::consts::FRAC_PI_2;
+        (centre + radius * angle.cos(), centre + radius * angle.sin())
+    };
+    let ((x0, y0), (x1, y1)) = (at(f64::from(i)), at(f64::from(i) + 1.0));
+    format!("M{centre} {centre} L{x0:.2} {y0:.2} A{radius} {radius} 0 0 1 {x1:.2} {y1:.2} Z")
 }
 
 #[component]
@@ -198,11 +198,10 @@ pub fn Allocations() -> impl IntoView {
                                     <tr class="available">
                                         <th class="name">"Hours booked"</th>
                                         {move || hours.get().unwrap_or_default().into_iter().map(|(booked, capacity)| {
-                                            let over = booked > u32::from(capacity);
                                             view! {
-                                            <th class="booked" class:over=over>
-                                                {(booked > 0 || capacity > 0).then(|| view! {
-                                                    <HourBoxes hours=booked title=format!("{booked} of the {capacity} hours you have")  />
+                                            <th class="booked">
+                                                {(booked > 0).then(|| view! {
+                                                    <HourPie booked=booked capacity=capacity title=format!("{booked} of the {capacity} hours you have") />
                                                 })}
                                             </th>
                                         }}).collect_view()}
@@ -212,7 +211,6 @@ pub fn Allocations() -> impl IntoView {
                                     <For each=move || mine.get() key=|t| format!("{t:?}") children=move |task| {
                                         let (plan, id) = (task.plan, task.task);
                                         let title = said(&task);
-                                        let colour = colour_of(id);
                                         let by_day = task.days.clone();
                                         let (from, to) = (task.start, task.end);
                                         view! {
@@ -226,16 +224,20 @@ pub fn Allocations() -> impl IntoView {
                                                 {move || days.get().into_iter().map(|d| {
                                                     let worked = by_day.get(&d).copied().unwrap_or(0);
                                                     let runs = d >= from && d <= to;
+                                                    // the day's hours fill from the bottom of the task's bar
+                                                    let filled = f64::from(worked.min(FULL_DAY)) / f64::from(FULL_DAY) * 100.0;
                                                     view! {
                                                         <td
                                                             class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun)
                                                             class:runs=runs
                                                             class:first=d == from
                                                             class:last=d == to
-                                                            style=format!("--run:{colour}")
+                                                            title=format!("{worked} h on {}", format::day(d))
                                                         >
-                                                            {(worked > 0).then(|| view! {
-                                                                <HourBoxes hours=u32::from(worked) title=format!("{worked} h on {}", format::day(d)) />
+                                                            {runs.then(|| view! {
+                                                                <div class="runbar">
+                                                                    <i class="fill" style=format!("height:{filled}%")></i>
+                                                                </div>
                                                             })}
                                                         </td>
                                                     }
@@ -269,9 +271,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_task_always_has_the_same_colour() {
-        let id = Uuid::from_u128(12345);
-        assert_eq!(colour_of(id), colour_of(id));
-        assert!(COLOURS.contains(&colour_of(Uuid::from_u128(7))));
+    fn slices_go_round_from_the_top() {
+        assert!(slice(0).starts_with("M13 13 L13.00 2.00 A11 11 0 0 1 "));
+        assert_ne!(slice(0), slice(7));
+        assert!(slice(2).contains("L24.00 13.00"));
     }
 }

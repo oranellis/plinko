@@ -335,14 +335,14 @@ a.icon:hover, button.icon:hover { background: var(--raised); border-color: var(-
 .list a.icon, .list button.icon { width: 26px; height: 26px; }
 .brand .word.away { opacity: 0.6; }
 
-/* hours as boxes, and the run of a task */
-.hourboxes { position: relative; display: grid; place-items: center; height: 100%; }
-.hourboxes .boxes { display: grid; grid-template-columns: repeat(2, 10px); grid-template-rows: repeat(4, 5px); gap: 1px; }
-.hourboxes .boxes i { display: block; border-radius: 1px; }
-.hourboxes .num { position: absolute; font-size: 11px; font-weight: 600; color: var(--title); padding: 0 8px; line-height: 15px; background: radial-gradient(ellipse at center, rgba(30, 30, 30, 1) 35%, rgba(30, 30, 30, 0) 75%); }
+/* the pie of hours booked and the bar a task runs along */
 table.alloctable th.booked { height: 34px; padding: 3px 2px; }
-table.alloctable th.booked.over .num { color: var(--danger-text); }
-table.alloctable td.runs::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-top: 1px solid color-mix(in srgb, var(--run) 55%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--run) 55%, transparent); }
-table.alloctable td.runs.first::after { border-left: 1px solid color-mix(in srgb, var(--run) 55%, transparent); }
-table.alloctable td.runs.last::after { border-right: 1px solid color-mix(in srgb, var(--run) 55%, transparent); }
+table.alloctable td.runs { padding: 0; --bar: 28px; }
+.runbar { position: absolute; top: 3px; bottom: 3px; left: 0; right: 0; background: #343436; overflow: hidden; }
+table.alloctable td.runs.first .runbar { left: 4px; border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+table.alloctable td.runs.last .runbar { right: 4px; border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+/* a faint line for each hour across what is filled, and a stronger one at four hours */
+.runbar .fill { position: absolute; left: 0; right: 0; bottom: 0; background-color: #3f8fe0; background-image: linear-gradient(to top, rgba(255, 255, 255, 0.22) 1px, transparent 1px); background-size: 100% calc(var(--bar) / 8); background-position: bottom; }
+.runbar::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid rgba(255, 255, 255, 0.4); pointer-events: none; }
+svg.pie { display: block; margin: 0 auto; }
 .list .row.line { min-height: 26px; padding: 0 2px 0 8px; font-size: 14px; }
