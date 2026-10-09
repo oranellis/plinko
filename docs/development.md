@@ -18,7 +18,7 @@ The server reads the environment, and `run_debug.sh` passes these on if they are
 - `PLINKO_TENANT` the tenant's name, always needed. Its files are in `data/<name>` under the folder
   the server runs from. A name is letters, digits, `-` and `_`.
 - `PLINKO_ADMIN_EMAIL`, `PLINKO_ADMIN_PASSWORD` the first admin, read only when the tenant is made.
-- `PLINKO_LISTEN` the address, default `127.0.0.1:3000` (set it if the port is taken).
+- `PLINKO_LISTEN` the address, default `0.0.0.0:3000` so every interface (set it to `127.0.0.1:3000` to keep it to this machine, or if the port is taken).
 - `PLINKO_FILES` the client build, default `client/dist` under where it runs.
 - `PLINKO_INSECURE_COOKIES=1` lets the session cookie go over plain HTTP. Never set it when hosting.
 

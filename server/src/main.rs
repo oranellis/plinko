@@ -1,6 +1,6 @@
 //! The server of one tenant. Settings come from the environment:
 //! `PLINKO_TENANT` (the tenant's name, always needed, its files are in `data/<name>` under the
-//! directory the server runs from), `PLINKO_LISTEN` (default `127.0.0.1:3000`), `PLINKO_FILES`
+//! directory the server runs from), `PLINKO_LISTEN` (default `0.0.0.0:3000`, every interface), `PLINKO_FILES`
 //! (the client build, default `client/dist`), `PLINKO_INSECURE_COOKIES=1` for plain HTTP, and on
 //! the first run `PLINKO_ADMIN_EMAIL` and `PLINKO_ADMIN_PASSWORD`.
 
@@ -50,7 +50,7 @@ async fn main() {
     let files = PathBuf::from(setting("PLINKO_FILES").unwrap_or("client/dist".to_string()));
     let secure = setting("PLINKO_INSECURE_COOKIES").is_none();
     let app = http::router(handle, files.is_dir().then_some(files), secure);
-    let listen = setting("PLINKO_LISTEN").unwrap_or("127.0.0.1:3000".to_string());
+    let listen = setting("PLINKO_LISTEN").unwrap_or("0.0.0.0:3000".to_string());
     let listener = tokio::net::TcpListener::bind(&listen)
         .await
         .expect("the address binds");
