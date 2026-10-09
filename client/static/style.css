@@ -308,15 +308,18 @@ table.grid.fixed th:first-child, table.grid.fixed td:first-child { width: 200px;
 .allocbar { padding: 8px 12px; margin: 0; }
 .alloc { height: 100%; max-height: none; border-radius: 0; border-left: none; border-right: none; }
 table.alloctable thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
-table.alloctable thead tr:first-child th { height: 48px; }
-table.alloctable thead tr.available th { top: 48px; border-bottom: 2px solid var(--line); }
-table.grid.fixed.alloctable th.name, table.grid.fixed.alloctable td.name { position: sticky; left: 0; z-index: 3; background: var(--panel); text-align: left; width: 240px; min-width: 240px; max-width: 240px; }
+table.alloctable thead tr.months th { height: 22px; padding: 2px 6px; font-size: 12px; text-align: left; }
+table.alloctable thead tr.months th.month.first { border-left: 1px solid var(--line); }
+table.alloctable thead tr.daynames th { top: 22px; height: 44px; }
+table.alloctable thead tr.available th { top: 66px; border-bottom: 2px solid var(--line); }
+table.grid.fixed.alloctable th.name, table.grid.fixed.alloctable td.name { position: sticky; left: 0; z-index: 3; background: var(--panel); text-align: left; width: var(--name-w); min-width: var(--name-w); max-width: var(--name-w); }
 table.grid.fixed.alloctable thead th.name { z-index: 4; }
 table.alloctable th.today { color: var(--accent); }
-table.alloctable td { height: 34px; padding: 3px 2px; vertical-align: bottom; position: relative; }
+table.alloctable td { height: 30px; padding: 3px 2px; vertical-align: bottom; position: relative; }
 table.alloctable td.name { padding: 0; vertical-align: middle; }
-table.alloctable td.name button { display: grid; text-align: left; width: 100%; padding: 4px 10px; min-height: 0; overflow: hidden; }
-table.alloctable td.name strong, table.alloctable td.name .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+table.alloctable td.name button { display: flex; align-items: baseline; gap: 8px; text-align: left; width: 100%; padding: 4px 10px; min-height: 0; overflow: hidden; }
+table.alloctable td.name strong, table.alloctable td.name .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+table.alloctable td.name strong { flex: none; max-width: 70%; }
 table.alloctable tr.picked td.name { background: var(--raised); }
 .worked { display: grid; place-items: center; font-size: 10px; color: #fff; border-radius: 3px; min-height: 12px; }
 .main > .alloc { flex: 1; }
@@ -336,13 +339,20 @@ a.icon:hover, button.icon:hover { background: var(--raised); border-color: var(-
 .brand .word.away { opacity: 0.6; }
 
 /* the pie of hours booked and the bar a task runs along */
-table.alloctable th.booked { height: 34px; padding: 3px 2px; }
-table.alloctable td.runs { padding: 0; --bar: 28px; }
+table.alloctable th.booked { height: 30px; padding: 2px; }
+table.alloctable td.runs { padding: 0; --bar: 24px; }
 .runbar { position: absolute; top: 3px; bottom: 3px; left: 0; right: 0; background: #343436; overflow: hidden; }
 table.alloctable td.runs.first .runbar { left: 4px; border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
 table.alloctable td.runs.last .runbar { right: 4px; border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
 /* a faint line for each hour across what is filled, and a stronger one at four hours */
-.runbar .fill { position: absolute; left: 0; right: 0; bottom: 0; background-color: #3f8fe0; background-image: linear-gradient(to top, rgba(255, 255, 255, 0.22) 1px, transparent 1px); background-size: 100% calc(var(--bar) / 8); background-position: bottom; }
+.runbar .fill { position: absolute; left: 0; right: 0; bottom: 0; background-color: #3f8fe0; background-image: linear-gradient(to top, transparent calc(25% - 1px), rgba(255, 255, 255, 0.2) calc(25% - 1px), rgba(255, 255, 255, 0.2) 25%, transparent 25%, transparent calc(75% - 1px), rgba(255, 255, 255, 0.2) calc(75% - 1px), rgba(255, 255, 255, 0.2) 75%, transparent 75%); background-size: 100% var(--bar); background-repeat: no-repeat; background-position: bottom; }
 .runbar::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid rgba(255, 255, 255, 0.4); pointer-events: none; }
 svg.pie { display: block; margin: 0 auto; }
 .list .row.line { min-height: 26px; padding: 0 2px 0 8px; font-size: 14px; }
+table.grid.fixed.alloctable th:not(.name), table.grid.fixed.alloctable td:not(.name) { width: 36px; min-width: 36px; max-width: 36px; }
+table.alloctable th.off, table.alloctable td.off { background: #1b1b1c; }
+.alloc.edge, .alloc.grabbing { cursor: col-resize; }
+.alloc.grabbing { user-select: none; }
+.alloc.edge td.name button, .alloc.grabbing td.name button { cursor: col-resize; }
+table.alloctable thead tr.months th.month { overflow: visible; }
+table.alloctable thead tr.months th.month span { position: absolute; left: 4px; top: 3px; white-space: nowrap; z-index: 5; }

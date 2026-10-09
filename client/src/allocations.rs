@@ -20,8 +20,13 @@ use crate::{
 };
 
 /// How wide a day is and the column of names, which scrolling is worked out from
-const DAY_WIDTH: f64 = 44.0;
+const DAY_WIDTH: f64 = 36.0;
+/// How wide the column of names starts, and the least and most it can be dragged to
 const NAME_WIDTH: f64 = 240.0;
+const NAME_LEAST: f64 = 120.0;
+const NAME_MOST: f64 = 600.0;
+/// How close to the edge of the names a press has to be to take hold of it
+const GRIP: f64 = 5.0;
 /// The weeks shown from before the current one
 const BEFORE: u64 = 2;
 /// The fewest weeks shown, and how many more than the scroll has reached
@@ -49,7 +54,7 @@ fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoV
             } else {
                 "#2f2f31"
             };
-            view! { <path d=slice(i) fill=fill stroke="#252526" stroke-width="1.5" /> }
+            view! { <path d=slice(i) fill=fill stroke=fill stroke-width="0.8" stroke-linejoin="round" /> }
         })
         .collect_view();
     view! {
@@ -81,6 +86,15 @@ pub fn Allocations() -> impl IntoView {
             .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
     });
     let scroller = NodeRef::<html::Div>::new();
+    let name_width = RwSignal::new(NAME_WIDTH);
+    // dragging the edge of the names
+    let dragging = RwSignal::new(false);
+    let near_edge = move |ev: &leptos::ev::PointerEvent| {
+        let left = scroller
+            .get_untracked()
+            .map_or(0.0, |s| s.get_bounding_client_rect().left());
+        (f64::from(ev.client_x()) - left - name_width.get_untracked()).abs() <= GRIP
+    };
     // weeks shown, which grow as the table is scrolled forward and shrink as it comes back
     let weeks = RwSignal::new(LEAST);
     let first = Memo::new(move |_| {
@@ -93,7 +107,7 @@ pub fn Allocations() -> impl IntoView {
     let measure = move || {
         if let Some(element) = scroller.get_untracked() {
             let reached = f64::from(element.scroll_left() + element.client_width());
-            let days = ((reached - NAME_WIDTH) / DAY_WIDTH).max(0.0) as u64;
+            let days = ((reached - name_width.get_untracked()) / DAY_WIDTH).max(0.0) as u64;
             weeks.set((days / 7 + 1 + AHEAD).max(LEAST));
         }
     };
@@ -182,24 +196,78 @@ pub fn Allocations() -> impl IntoView {
                         when=move || mine.with(|m| !m.is_empty())
                         fallback=|| view! { <p class="empty">"No tasks are scheduled for you."</p> }
                     >
-                        <div class="alloc scroll" node_ref=scroller on:scroll=move |_| measure()>
+                        <div
+                            class="alloc scroll"
+                            class:grabbing=move || dragging.get()
+                            style=move || format!("--name-w:{}px", name_width.get())
+                            node_ref=scroller
+                            on:scroll=move |_| measure()
+                            on:pointerdown=move |ev| {
+                                if near_edge(&ev) {
+                                    dragging.set(true);
+                                    if let Some(s) = scroller.get_untracked() {
+                                        let _ = s.set_pointer_capture(ev.pointer_id());
+                                    }
+                                    ev.prevent_default();
+                                }
+                            }
+                            on:pointermove=move |ev| {
+                                if dragging.get_untracked() {
+                                    let left = scroller.get_untracked().map_or(0.0, |s| s.get_bounding_client_rect().left());
+                                    name_width.set((f64::from(ev.client_x()) - left).clamp(NAME_LEAST, NAME_MOST));
+                                } else if let Some(s) = scroller.get_untracked() {
+                                    let _ = s.class_list().toggle_with_force("edge", near_edge(&ev));
+                                }
+                            }
+                            on:pointerup=move |ev| {
+                                if dragging.get_untracked() {
+                                    dragging.set(false);
+                                    if let Some(s) = scroller.get_untracked() {
+                                        let _ = s.release_pointer_capture(ev.pointer_id());
+                                    }
+                                    measure();
+                                }
+                            }
+                        >
                             <table class="grid fixed alloctable">
+                                <colgroup>
+                                    <col style="width:var(--name-w)" />
+                                    {move || days.get().into_iter().map(|_| view! { <col style=format!("width:{DAY_WIDTH}px") /> }).collect_view()}
+                                </colgroup>
                                 <thead>
-                                    <tr>
+                                    <tr class="months">
+                                        <th class="name"></th>
+                                        {move || days.get().into_iter().enumerate().map(|(i, d)| {
+                                            // the month is named where it starts, and above each week after that
+                                            let label = if i == 0 || d.day() == 1 {
+                                                Some(format!("{} {}", format::month(d), d.year()))
+                                            } else if d.weekday() == Weekday::Mon {
+                                                Some(format::month(d).to_string())
+                                            } else {
+                                                None
+                                            };
+                                            view! {
+                                                <th class="month" class:first=d.day() == 1>
+                                                    {label.map(|label| view! { <span>{label}</span> })}
+                                                </th>
+                                            }
+                                        }).collect_view()}
+                                    </tr>
+                                    <tr class="daynames">
                                         <th class="name">"Task"</th>
                                         {move || days.get().into_iter().map(|d| view! {
                                             <th class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun) class:today=d == today.get()>
                                                 <span class="small">{format::weekday(d)}</span>
                                                 <br />
-                                                {if d.day() == 1 { format!("{} {}", d.day(), format::month(d)) } else { d.day().to_string() }}
+                                                {d.day()}
                                             </th>
                                         }).collect_view()}
                                     </tr>
                                     <tr class="available">
                                         <th class="name">"Hours booked"</th>
-                                        {move || hours.get().unwrap_or_default().into_iter().map(|(booked, capacity)| {
+                                        {move || days.get().into_iter().zip(hours.get().unwrap_or_default()).map(|(d, (booked, capacity))| {
                                             view! {
-                                            <th class="booked">
+                                            <th class="booked" class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun)>
                                                 {(booked > 0).then(|| view! {
                                                     <HourPie booked=booked capacity=capacity title=format!("{booked} of the {capacity} hours you have") />
                                                 })}
