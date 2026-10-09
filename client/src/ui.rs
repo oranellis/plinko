@@ -186,19 +186,23 @@ pub fn Picker(
     }
 }
 
-/// Hours of a day, out of eight: a thin cell for none, then eight, lit from the left
+/// A level out of `max`: a thin cell for none, then a cell for each step, lit from the left
 #[component]
-pub fn Hours(#[prop(into)] value: Signal<i64>, on_change: Callback<u8>) -> impl IntoView {
+pub fn Hours(
+    #[prop(into)] value: Signal<i64>,
+    on_change: Callback<u8>,
+    #[prop(default = 8)] max: u8,
+) -> impl IntoView {
     view! {
-        <div class="hours" role="group" aria-label="Hours a day">
+        <div class="hours" role="group" aria-label="Level">
             <button
                 type="button"
                 class="cell none"
                 class:lit=move || value.get() == 0
-                title="0/8"
+                title=format!("0/{max}")
                 on:click=move |_| on_change.run(0)
             ></button>
-            {(1u8..=8)
+            {(1..=max)
                 .map(|n| {
                     let lit = move || value.get() >= i64::from(n);
                     view! {
@@ -206,13 +210,13 @@ pub fn Hours(#[prop(into)] value: Signal<i64>, on_change: Callback<u8>) -> impl 
                             type="button"
                             class="cell"
                             class:lit=lit
-                            title=format!("{n}/8")
+                            title=format!("{n}/{max}")
                             on:click=move |_| on_change.run(n)
                         ></button>
                     }
                 })
                 .collect_view()}
-            <span class="small">{move || format!("{}/8", value.get())}</span>
+            <span class="small">{move || format!("{}/{max}", value.get())}</span>
         </div>
     }
 }

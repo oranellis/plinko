@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use chrono::{NaiveDate, Weekday};
+use chrono::NaiveDate;
 use plinko::{
     availability::{
         rule::{NewRule, RuleKind, WeeklySchedule},
@@ -264,7 +264,7 @@ fn affinities_must_exist_and_cannot_be_removed_while_linked() {
         .unwrap();
     assert_eq!(plan.affinities()[&affinity].name(), "Renamed");
     plan.apply_update(remove()).unwrap();
-    let rules = RuleSetUpdate::WeekStart(Weekday::Sun);
+    let rules = RuleSetUpdate::Rule(Crud::Remove(Uuid::now_v7()));
     assert!(
         plan.apply_update(PlanUpdate::AffinityRules(affinity, rules))
             .is_err()

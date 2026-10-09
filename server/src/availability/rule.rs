@@ -1,6 +1,6 @@
 // modules{{{
 use crate::helpers::double_option;
-use chrono::{NaiveDate, Weekday};
+use chrono::{Datelike, Days, Months, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -16,6 +16,13 @@ use crate::{
 pub const RULE_START_RANGE: std::ops::RangeInclusive<NaiveDate> =
     NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()..=NaiveDate::from_ymd_opt(2100, 12, 31).unwrap();
 
+/// The weekly schedule every rule set starts with, from before any date that matters, so there is
+/// always one to change. It cannot be removed or moved.
+pub const DEFAULT_RULE: Uuid = Uuid::max();
+
+/// The day the default weekly schedule starts on, which is outside `RULE_START_RANGE`
+pub const EPOCH: NaiveDate = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+
 /// Something that sets availability from `start_day` going forward until `stop_day`
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Rule<V> {
@@ -27,6 +34,17 @@ pub struct Rule<V> {
 }
 
 // impl Rule{{{
+impl<V: DayValue> Rule<V> {
+    pub(super) fn default_weekly() -> Self {
+        Self {
+            id: DEFAULT_RULE,
+            start_day: EPOCH,
+            stop_day: None,
+            kind: RuleKind::Weekly(WeeklySchedule::default()),
+        }
+    }
+}
+
 impl<V> Rule<V> {
     pub fn id(&self) -> &Uuid {
         &self.id
@@ -47,6 +65,16 @@ impl<V> Rule<V> {
     /// Whether the rule has started and not been stopped on `day`
     pub fn is_in_effect(&self, day: NaiveDate) -> bool {
         self.start_day <= day && self.stop_day.is_none_or(|stop| day < stop)
+    }
+
+    /// Whether the rule has a say in `day`: a weekly schedule or holiday that is in effect, or a
+    /// day an override sets
+    pub fn applies_on(&self, day: NaiveDate) -> bool {
+        self.is_in_effect(day)
+            && match &self.kind {
+                RuleKind::Override(o) => o.sets(self.start_day, day),
+                _ => true,
+            }
     }
 }
 
@@ -78,20 +106,16 @@ impl<V> Patchable<RulePatch<V>> for Rule<V> {
 }
 // }}}
 
-/// In increasing priority: a weekly schedule, special monthly days, a finite run of workdays, and
-/// holidays.
+/// In increasing priority: a weekly schedule, overrides of single days or runs of them, and
+/// holidays. A rule that starts later wins over an earlier one of its kind.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RuleKind<V> {
     /// Replaces the weekly schedule
     Weekly(WeeklySchedule<V>),
-    Monthly(MonthlyOverride<V>),
-    /// Sets the next `days` days that are working days under the weekly and monthly rules to
-    /// `value`, leaving the days between untouched
-    FiniteWorkdays {
-        days: u32,
-        value: V,
-    },
-    /// Sets the default value: no availability, or no days allowed
+    /// Sets a run of days from the start day, and again each time it comes round
+    Override(DayOverride<V>),
+    /// Sets the default value (no availability, or no days allowed) from the start day up to the
+    /// stop day, which a holiday must have
     Holiday,
 }
 
@@ -125,56 +149,65 @@ impl<V: DayValue> Default for WeeklySchedule<V> {
 }
 // }}}
 
-/// Sets `value` on the days picked by `ordinal` and `target` in every month
+/// Sets `value` on `days` calendar days from the rule's start day, and on the same again every
+/// `every` after that until the rule's stop day (the occurrences are cut off there). With no
+/// `every` it happens once.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct MonthlyOverride<V> {
-    pub ordinal: Ordinal,
-    pub target: MonthTarget,
+pub struct DayOverride<V> {
+    pub days: u32,
     pub value: V,
-    /// The higher priority wins where monthly rules overlap, then the later start day
-    pub priority: u32,
+    pub every: Option<Every>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MonthTarget {
-    /// The day of the month
+pub struct Every {
+    pub n: u32,
+    pub unit: Unit,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Unit {
     Day,
-    /// The weekday of the month, like the second Wednesday
-    Weekday(Weekday),
-    /// A full week (starting on the rule set's week start, entirely in the month), with a toggle
-    /// per weekday (Monday first) for which of its days are set
-    Week([bool; 7]),
+    Week,
+    Month,
+    Year,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Ordinal {
-    First,
-    Second,
-    Third,
-    Fourth,
-    Fifth,
-    Last,
-    SecondLast,
-    ThirdLast,
-    FourthLast,
-    FifthLast,
-}
-
-impl Ordinal {
-    /// The 1 based position and whether it counts from the end
-    pub fn index(self) -> (usize, bool) {
-        match self {
-            Ordinal::First => (1, false),
-            Ordinal::Second => (2, false),
-            Ordinal::Third => (3, false),
-            Ordinal::Fourth => (4, false),
-            Ordinal::Fifth => (5, false),
-            Ordinal::Last => (1, true),
-            Ordinal::SecondLast => (2, true),
-            Ordinal::ThirdLast => (3, true),
-            Ordinal::FourthLast => (4, true),
-            Ordinal::FifthLast => (5, true),
+impl Every {
+    /// The first day of the occurrence that starts last on or before `day`, counting from `start`
+    fn occurrence(&self, start: NaiveDate, day: NaiveDate) -> Option<NaiveDate> {
+        let n = i64::from(self.n.max(1));
+        let elapsed = (day - start).num_days();
+        if elapsed < 0 {
+            return None;
         }
+        match self.unit {
+            Unit::Day => Some(start + Days::new((elapsed / n) as u64 * n as u64)),
+            Unit::Week => Some(start + Days::new((elapsed / (7 * n)) as u64 * 7 * n as u64)),
+            Unit::Month | Unit::Year => {
+                let step = if self.unit == Unit::Year { 12 * n } else { n };
+                let months = i64::from(day.year() - start.year()) * 12 + i64::from(day.month0())
+                    - i64::from(start.month0());
+                // shorter months pull a start earlier, so the guess may be one too many
+                let guess = (months / step).max(0);
+                [guess, guess - 1]
+                    .into_iter()
+                    .filter(|k| *k >= 0)
+                    .filter_map(|k| start.checked_add_months(Months::new((k * step) as u32)))
+                    .find(|occurrence| *occurrence <= day)
+            }
+        }
+    }
+}
+
+impl<V> DayOverride<V> {
+    /// Whether `day` is one of the days set, for a rule that starts on `start`
+    pub fn sets(&self, start: NaiveDate, day: NaiveDate) -> bool {
+        let first = match &self.every {
+            None => Some(start),
+            Some(every) => every.occurrence(start, day),
+        };
+        first.is_some_and(|first| day >= first && (day - first).num_days() < i64::from(self.days))
     }
 }
 

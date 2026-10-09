@@ -265,7 +265,7 @@ fn group_members_edit_plans_their_group_is_assigned_to() {
 
 fn holiday(day: NaiveDate) -> RuleSetUpdate<Workload> {
     let new = NewRule {
-        stop_day: None,
+        stop_day: Some(day + chrono::Days::new(1)),
         id: Uuid::now_v7(),
         start_day: day,
         kind: RuleKind::Holiday,
@@ -289,7 +289,7 @@ fn availability_is_edited_by_the_user_or_an_admin() {
 
     assert!(apply(&mut tenant, bob, availability(alice, holiday(day))).is_err());
     apply(&mut tenant, root, availability(alice, holiday(day))).unwrap();
-    assert_eq!(tenant.users()[&alice].availability().rules().len(), 2);
+    assert_eq!(tenant.users()[&alice].availability().rules().len(), 3);
 
     let missing = availability(Uuid::now_v7(), holiday(day));
     assert!(apply(&mut tenant, root, missing).is_err());

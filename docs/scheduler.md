@@ -217,6 +217,14 @@ chain's lags add up to at least its lag (the plan start, a group's start and a g
 as links). Both the update and the follow-ups are logged, so replays do not recompute it
 (`Plan::simplifications`).
 
+### Availability rules
+
+A rule set (a person's hours, a plan's placeholder hours, an affinity's days) always holds a
+default weekly schedule from 1970-01-01 that cannot be removed or moved, only its days changed.
+Rules start on a day and are applied in order: weekly schedules (later start wins), day overrides
+(`days` calendar days from the start, optionally every `n` days, weeks, months or years until the
+stop day) and holidays, which must have a stop day. Rules may start between 2000 and 2100.
+
 ### Removing items
 
 `Plan::removal` gives the updates that remove an item without breaking chains: whatever depended

@@ -1,7 +1,7 @@
 //! How booked everyone is, day by day, and who the bottlenecks are.
 
 use chrono::{Datelike, Days, NaiveDate};
-use leptos::prelude::*;
+use leptos::{html, prelude::*};
 use uuid::Uuid;
 
 use crate::{
@@ -10,7 +10,14 @@ use crate::{
     ui::use_sync,
 };
 
-const WEEKS: u64 = 4;
+/// How wide a day is and the column of names, which scrolling is worked out from
+const DAY_WIDTH: f64 = 56.0;
+const NAME_WIDTH: f64 = 200.0;
+/// The weeks shown from before the current one
+const BEFORE: u64 = 2;
+/// The fewest weeks shown, and how many more than the scroll has reached
+const LEAST: u64 = 10;
+const AHEAD: u64 = 4;
 
 #[derive(Clone, PartialEq)]
 struct Person {
@@ -44,20 +51,42 @@ fn heat(booked: u32, capacity: u8) -> &'static str {
 #[component]
 pub fn Resources() -> impl IntoView {
     let sync = use_sync();
-    let offset = RwSignal::new(0i64);
+    let scroller = NodeRef::<html::Div>::new();
+    // weeks shown, which grow as the table is scrolled forward and shrink as it comes back
+    let weeks = RwSignal::new(LEAST);
     let first = Memo::new(move |_| {
         let today = sync.tenant.with(|t| t.as_ref().map(|t| t.today()))?;
         let monday = today - Days::new(u64::from(today.weekday().num_days_from_monday()));
-        let shift = Days::new(offset.get().unsigned_abs() * 7);
-        Some(if offset.get() < 0 {
-            monday - shift
-        } else {
-            monday + shift
-        })
+        Some(monday - Days::new(BEFORE * 7))
+    });
+    let measure = move || {
+        if let Some(element) = scroller.get_untracked() {
+            let reached = f64::from(element.scroll_left() + element.client_width());
+            let days = ((reached - NAME_WIDTH) / DAY_WIDTH).max(0.0) as u64;
+            weeks.set((days / 7 + 1 + AHEAD).max(LEAST));
+        }
+    };
+    let to_today = move || {
+        let (Some(first), Some(element)) = (first.get_untracked(), scroller.get_untracked()) else {
+            return;
+        };
+        let today = sync
+            .tenant
+            .with_untracked(|t| t.as_ref().map(|t| t.today()))
+            .unwrap_or(first);
+        let at = (today - first).num_days() as f64 * DAY_WIDTH;
+        element.set_scroll_left(at as i32);
+        measure();
+    };
+    Effect::new(move |_| {
+        if scroller.get().is_some() && first.get().is_some() {
+            to_today();
+        }
     });
     let people = Memo::new(move |_| {
         let first = first.get()?;
-        let last = first + Days::new(WEEKS * 7 - 1);
+        let days = weeks.get() * 7;
+        let last = first + Days::new(days - 1);
         let schedule = sync.schedule.get();
         sync.tenant.with(|t| {
             let t = t.as_ref()?;
@@ -71,7 +100,7 @@ pub fn Resources() -> impl IntoView {
                         id: *id,
                         name: user.name().to_string(),
                         load: booked.map_or(0.0, |b| b.bottleneck),
-                        days: (0..WEEKS * 7)
+                        days: (0..days)
                             .map(|d| {
                                 let day = first + Days::new(d);
                                 (
@@ -90,7 +119,7 @@ pub fn Resources() -> impl IntoView {
     let header = move || {
         let first = first.get()?;
         Some(
-            (0..WEEKS * 7)
+            (0..weeks.get() * 7)
                 .map(|d| first + Days::new(d))
                 .collect::<Vec<NaiveDate>>(),
         )
@@ -98,13 +127,11 @@ pub fn Resources() -> impl IntoView {
     view! {
         <div class="bar">
             <h1>"Resources"</h1>
-            <button type="button" on:click=move |_| offset.update(|o| *o -= 1)>"← Earlier"</button>
-            <button type="button" on:click=move |_| offset.set(0)>"This week"</button>
-            <button type="button" on:click=move |_| offset.update(|o| *o += 1)>"Later →"</button>
+            <button type="button" on:click=move |_| to_today()>"Today"</button>
         </div>
         <p class="small">"Hours booked of the hours each person has. Red is more than they have."</p>
-        <div class="scroll">
-            <table class="grid">
+        <div class="scroll wide" node_ref=scroller on:scroll=move |_| measure()>
+            <table class="grid fixed">
                 <thead>
                     <tr>
                         <th>"Person"</th>
