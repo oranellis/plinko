@@ -42,6 +42,7 @@ pub fn DatePicker(
         .with_untracked(|t| t.as_ref().map(|t| t.today()))
         .unwrap_or_default();
     let open = RwSignal::new(false);
+    crate::escape::on_escape(move || open.get(), Callback::new(move |()| open.set(false)));
     let shown = RwSignal::new(today);
     let anchor = RwSignal::new((0.0, 0.0));
     let button = NodeRef::<html::Button>::new();

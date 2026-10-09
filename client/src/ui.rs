@@ -49,6 +49,7 @@ pub fn Modal(
     children: Children,
 ) -> impl IntoView {
     let label = move || title.get();
+    crate::escape::on_escape(|| true, on_close);
     view! {
         <div class="backdrop" on:click=move |_| on_close.run(())>
             <div class="modal" class:wide=wide role="dialog" aria-label=label on:click=|ev| ev.stop_propagation()>
@@ -147,6 +148,7 @@ pub fn Picker(
     #[prop(optional, into)] placeholder: String,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
+    crate::escape::on_escape(move || open.get(), Callback::new(move |()| open.set(false)));
     let filter = RwSignal::new(String::new());
     let anchor = RwSignal::new((0.0, 0.0, 0.0));
     let button = NodeRef::<html::Button>::new();

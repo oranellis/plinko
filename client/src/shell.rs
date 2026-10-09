@@ -124,6 +124,7 @@ pub fn Shell() -> impl IntoView {
 fn UserMenu(on_logout: Callback<()>) -> impl IntoView {
     let sync = use_sync();
     let open = RwSignal::new(false);
+    crate::escape::on_escape(move || open.get(), Callback::new(move |()| open.set(false)));
     let (name, email) = account_names(sync);
     view! {
         <div class="user-menu">

@@ -3,6 +3,7 @@ mod api;
 mod availability;
 mod datepicker;
 mod editor;
+mod escape;
 mod format;
 mod forms;
 mod gantt;
@@ -31,6 +32,7 @@ use crate::{login::Login, shell::Shell, sync::Sync};
 #[component]
 fn App() -> impl IntoView {
     let sync = Sync::new();
+    escape::listen();
     provide_context(sync);
     provide_context(nav::Reveal(RwSignal::new(None)));
     format::provide_preferences();

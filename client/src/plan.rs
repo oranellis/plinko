@@ -184,7 +184,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         let item = node.get_untracked();
         if let Some(item) = item.filter(|i| fresh.get_untracked() == Some(i.id())) {
             fresh.set(None);
-            remove_item(plan, item);
+            remove_item(sync, plan, item);
         }
         on_close.run(());
     });
@@ -445,6 +445,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
 fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
     let over = RwSignal::new(false);
     let pinned = RwSignal::new(false);
+    crate::escape::on_escape(
+        move || pinned.get() || over.get(),
+        Callback::new(move |()| {
+            pinned.set(false);
+            over.set(false);
+        }),
+    );
     let shown = move || over.get() || pinned.get();
     let item = move |kind: Kind, icon: IconKind, label: &'static str, title: &'static str| {
         view! {
@@ -527,6 +534,7 @@ pub fn ItemPane(
     guard: Guard,
     on_close: Callback<()>,
 ) -> impl IntoView {
+    let sync = use_sync();
     guard.opened();
     on_cleanup(move || guard.closed());
     // a new item has its first box ready to type in, its name or for a buffer its days
@@ -546,10 +554,12 @@ pub fn ItemPane(
     let cancel = Callback::new(move |()| {
         if fresh.get_untracked() == Some(node.id()) {
             fresh.set(None);
-            remove_item(plan, node);
+            remove_item(sync, plan, node);
         }
         on_close.run(());
     });
+    // escape is the same as clicking off the pane: it asks first when something is unsaved
+    crate::escape::on_escape(|| true, Callback::new(move |()| guard.then(cancel)));
     view! {
         <aside class="pane">
             <header>

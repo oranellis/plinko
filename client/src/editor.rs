@@ -51,8 +51,7 @@ fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {
 }
 
 /// Takes an item out of its plan, joining what was around it back together
-pub fn remove_item(plan: ShortId, node: PlanNode) {
-    let sync = use_sync();
+pub fn remove_item(sync: Sync, plan: ShortId, node: PlanNode) {
     let updates = sync
         .tenant
         .with_untracked(|t| Some(t.as_ref()?.plans().get(&plan)?.removal(node)))
@@ -70,8 +69,9 @@ pub fn ItemEditor(
     on_close: Callback<()>,
     on_cancel: Callback<()>,
 ) -> impl IntoView {
+    let sync = use_sync();
     let remove = Callback::new(move |()| {
-        remove_item(plan, node);
+        remove_item(sync, plan, node);
         on_close.run(());
     });
     view! {
