@@ -265,6 +265,9 @@ pub fn List(
     #[prop(into)] add: String,
     #[prop(into)] count: Signal<usize>,
     on_add: Callback<()>,
+    /// A second way to add, as an icon beside the add button
+    #[prop(optional)]
+    extra: Option<(IconKind, &'static str, Callback<()>)>,
     children: Children,
 ) -> impl IntoView {
     view! {
@@ -276,7 +279,10 @@ pub fn List(
                 </Show>
                 {children()}
             </div>
-            <button type="button" class="add" on:click=move |_| on_add.run(())>{format!("+ {add}")}</button>
+            <div class="adds">
+                <button type="button" class="add" on:click=move |_| on_add.run(())>{format!("+ {add}")}</button>
+                {extra.map(|(kind, label, on_click)| view! { <IconButton kind=kind label=label on_click=on_click /> })}
+            </div>
         </div>
     }
 }

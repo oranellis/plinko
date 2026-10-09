@@ -400,3 +400,8 @@ table.grid.fixed.alloctable td.today, table.grid.fixed.alloctable thead tr.avail
 /* today on a calendar: ringed and bold */
 button.day.today { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; color: #fff; }
 .calendar .day.today { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; color: #fff; }
+
+/* the placeholder is not a person, so it is dimmer */
+.ghost, .popover li button.ghost { color: var(--faint); }
+.adds { display: flex; gap: 6px; align-items: center; }
+.adds button.icon { border: 1px solid var(--line); border-radius: 6px; width: 32px; height: 32px; }

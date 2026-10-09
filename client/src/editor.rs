@@ -24,6 +24,7 @@ use uuid::Uuid;
 use crate::{
     datepicker::{DatePicker, OptionalDate},
     format, forms,
+    icons::IconKind,
     model::{self, node_name},
     sync::Sync,
     ui::{
@@ -440,7 +441,11 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
         named
             .get()
             .into_iter()
-            .map(|(v, l)| Choice::new(v, l, ""))
+            .map(|(v, l)| {
+                // the placeholder is not a person, so it is shown greyed out
+                let tone = if v == "placeholder" { "ghost" } else { "" };
+                Choice::new(v, l, tone)
+            })
             .collect::<Vec<_>>()
     });
     view! {
@@ -450,12 +455,27 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
             add="Add Worker"
             count=Signal::derive(move || allocations.with(Vec::len))
             on_add=Callback::new(move |()| {
-                allocations.update(|a| {
-                    if !a.iter().any(|(w, _)| *w == Worker::Placeholder) {
-                        a.push((Worker::Placeholder, 4));
-                    }
-                });
+                // the first person, tag or group not yet asked for, which the row's picker changes
+                let next = named
+                    .get_untracked()
+                    .into_iter()
+                    .filter_map(|(v, _)| forms::parse_worker(&v))
+                    .find(|w| *w != Worker::Placeholder && !allocations.with_untracked(|a| a.iter().any(|(x, _)| x == w)));
+                if let Some(worker) = next {
+                    allocations.update(|a| a.push((worker, 4)));
+                }
             })
+            extra=(
+                IconKind::Placeholder,
+                "Add a placeholder, for work nobody is chosen for yet",
+                Callback::new(move |()| {
+                    allocations.update(|a| {
+                        if !a.iter().any(|(w, _)| *w == Worker::Placeholder) {
+                            a.push((Worker::Placeholder, 4));
+                        }
+                    });
+                }),
+            )
         >
             <For each=move || 0..allocations.with(Vec::len) key=|i| *i children=move |i| {
                 let worker = Signal::derive(move || {

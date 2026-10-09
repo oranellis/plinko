@@ -98,6 +98,11 @@ pub fn Icon(
             <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::Placeholder => view! {
+            <circle cx="8" cy="5.6" r="2.4" stroke="currentColor" stroke-width="1.2" stroke-dasharray="1.4 1.4" />
+            <path d="M3.2 13.2C3.6 10.8 5.4 9.6 8 9.6S12.4 10.8 12.8 13.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="1.4 1.6" />
+        }
+        .into_any(),
         IconKind::Calendar => view! {
             <rect x="2.2" y="3.2" width="11.6" height="10.6" rx="1.6" stroke="currentColor" stroke-width="1.2" />
             <line x1="2.2" y1="6.6" x2="13.8" y2="6.6" stroke="currentColor" stroke-width="1.2" />
@@ -167,6 +172,7 @@ pub enum IconKind {
     Person,
     Tick,
     Calendar,
+    Placeholder,
     Pencil,
     Close,
     Plus,
