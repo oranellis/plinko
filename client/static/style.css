@@ -379,3 +379,25 @@ table.alloctable td { z-index: 0; }
 table.alloctable thead tr.daynames th { font-size: 12px; color: #aaa; }
 table.alloctable thead tr.daynames th.off { color: #555; }
 table.alloctable thead tr.daynames th.today { color: #4a90d9; }
+
+/* the allocations table dressed as the chart: its colours, header and lines. Only the width of the days,
+   the line after the names and the one under the hours booked are its own. */
+.alloc { background: #1e1e1e; }
+table.grid.fixed.alloctable thead th { background: #252526; }
+table.grid.fixed.alloctable td, table.grid.fixed.alloctable thead tr.available th { background: transparent; }
+table.grid.fixed.alloctable td.name, table.grid.fixed.alloctable thead tr.available th.name { background: #1e1e1e; }
+table.grid.fixed.alloctable th:not(.name), table.grid.fixed.alloctable td:not(.name) { border-right: 1px solid #2a2a2c; }
+table.grid.fixed.alloctable td, table.grid.fixed.alloctable thead tr.available th { border-bottom: 0; }
+table.grid.fixed.alloctable thead tr.months th { height: 22px; border-right: 0; border-bottom: 0; }
+table.grid.fixed.alloctable thead tr.daynames th { top: 22px; height: 34px; border-bottom: 1px solid #3a3a3c; font-size: 12px; font-weight: 400; color: #aaa; }
+table.grid.fixed.alloctable thead tr.daynames th.off { background: #1e1e1e; color: #555; }
+table.grid.fixed.alloctable thead tr.daynames th.today { background: #252526; color: #4a90d9; }
+table.grid.fixed.alloctable thead tr.available th { top: 56px; }
+table.grid.fixed.alloctable th.off:not(.daynames th), table.grid.fixed.alloctable td.off { background: transparent; }
+table.grid.fixed.alloctable thead tr.daynames th.today { background-image: none; }
+/* a stronger line only where a month starts, in the month row */
+table.alloctable td.m1::before, table.alloctable thead tr.daynames th.m1::before, table.alloctable thead tr.available th.m1::before { display: none; }
+table.alloctable thead tr.months th.m1::before { background: #3a3a3c; bottom: 0; }
+.monthbox { align-items: flex-start; padding: 4px 0 0 4px; box-sizing: border-box; }
+.monthname { left: calc(var(--name-w) + 4px); padding-left: 0; font-size: 13px; line-height: 15px; color: #888; font-weight: 400; }
+table.grid.fixed.alloctable td.today, table.grid.fixed.alloctable thead tr.available th.today { background-image: linear-gradient(rgba(64, 91, 200, 0.18), rgba(64, 91, 200, 0.18)); }
