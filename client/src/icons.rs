@@ -98,8 +98,26 @@ pub fn Icon(
             <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
         }
         .into_any(),
-        IconKind::Home => view! {
-            <path d="M2.5 7.5L8 2.8L13.5 7.5V13H9.8V9.5H6.2V13H2.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+        IconKind::Calendar => view! {
+            <rect x="2.2" y="3.2" width="11.6" height="10.6" rx="1.6" stroke="currentColor" stroke-width="1.2" />
+            <line x1="2.2" y1="6.6" x2="13.8" y2="6.6" stroke="currentColor" stroke-width="1.2" />
+            <line x1="5.4" y1="1.8" x2="5.4" y2="4.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+            <line x1="10.6" y1="1.8" x2="10.6" y2="4.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+        }
+        .into_any(),
+        IconKind::Pencil => view! {
+            <path d="M2.6 13.4L3.2 10.4L10.6 3L13 5.4L5.6 12.8Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+            <line x1="9.2" y1="4.4" x2="11.6" y2="6.8" stroke="currentColor" stroke-width="1.2" />
+        }
+        .into_any(),
+        IconKind::Close => view! {
+            <line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        }
+        .into_any(),
+        IconKind::Plus => view! {
+            <line x1="8" y1="3.5" x2="8" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            <line x1="3.5" y1="8" x2="12.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
         }
         .into_any(),
         IconKind::Tick => view! {
@@ -148,6 +166,9 @@ pub enum IconKind {
     Alert,
     Person,
     Tick,
+    Calendar,
+    Pencil,
+    Close,
+    Plus,
     Play,
-    Home,
 }

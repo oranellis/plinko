@@ -10,13 +10,14 @@ use crate::{
     api,
     format::{DateFormat, WeekStart, use_preferences},
     nav::{Availability, Route},
-    ui::{Field, Select, Text, use_sync},
+    ui::{Back, Field, Select, Text, use_sync},
 };
 
 #[component]
 pub fn Preferences() -> impl IntoView {
     view! {
         <div class="people">
+            <Back to=Route::Home />
             <h1>"Preferences"</h1>
             <Profile />
             <Password />

@@ -14,7 +14,7 @@ use uuid::Uuid;
 use crate::{
     nav::{Availability as Of, PlanTab, Route},
     rulecalendar::RuleCalendar,
-    ui::{Modal, use_sync},
+    ui::{Back, Modal, use_sync},
 };
 
 /// The hours rules of a person or plan, and a way to change them
@@ -62,15 +62,18 @@ fn title_of(of: Of) -> Signal<String> {
 #[component]
 pub fn Availability(of: Of) -> impl IntoView {
     let (rules, send) = hours_of(of);
+    let me = use_sync().me.get_untracked().map(|m| m.id);
+    // your own hours are a main page, other people's and a plan's are reached from somewhere else
     let back = match of {
-        Of::User(_) => Route::Home,
-        Of::Plan(id) => Route::Plan(id, PlanTab::Settings, None),
+        Of::User(id) if Some(id) == me => None,
+        Of::User(_) => Some(Route::People),
+        Of::Plan(id) => Some(Route::Plan(id, PlanTab::Settings, None)),
     };
     view! {
         <div class="calpage">
+            {back.map(|to| view! { <Back to=to /> })}
             <div class="bar">
                 <h1>{title_of(of)}</h1>
-                <a href=back.path()>"Back"</a>
             </div>
             <Show when=move || rules.with(Option::is_some) fallback=|| view! { <p>"Not found."</p> }>
                 <RuleCalendar rules=rules send=send />

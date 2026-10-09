@@ -2,10 +2,50 @@
 
 use leptos::{html, prelude::*};
 
-use crate::sync::{Link, Sync};
+use crate::{
+    icons::{Icon, IconKind},
+    nav::Route,
+    sync::{Link, Sync},
+};
 
 pub fn use_sync() -> Sync {
     expect_context::<Sync>()
+}
+
+/// The way back from a page that is not one of the main ones, at its top left
+#[component]
+pub fn Back(to: Route) -> impl IntoView {
+    view! {
+        <div class="pagetop">
+            <a class="toolbar-btn" href=to.path() title="Back" aria-label="Back">
+                <Icon kind=IconKind::Back />
+            </a>
+        </div>
+    }
+}
+
+/// A small button that is only an icon
+#[component]
+pub fn IconButton(
+    kind: IconKind,
+    #[prop(into)] label: String,
+    on_click: Callback<()>,
+) -> impl IntoView {
+    view! {
+        <button type="button" class="icon" title=label.clone() aria-label=label on:click=move |_| on_click.run(())>
+            <Icon kind=kind size=18 />
+        </button>
+    }
+}
+
+/// An icon that goes to another page
+#[component]
+pub fn IconLink(kind: IconKind, #[prop(into)] label: String, to: Route) -> impl IntoView {
+    view! {
+        <a class="icon" href=to.path() title=label.clone() aria-label=label>
+            <Icon kind=kind size=18 />
+        </a>
+    }
 }
 
 /// A panel over the page, a sheet from the bottom on a phone
@@ -24,7 +64,7 @@ pub fn Modal(
             <div class="modal" class:wide=wide role="dialog" aria-label=label on:click=|ev| ev.stop_propagation()>
                 <header>
                     <h2>{move || title.get()}</h2>
-                    <button type="button" class="plain" aria-label="Close" on:click=move |_| on_close.run(())>"✕"</button>
+                    <IconButton kind=IconKind::Close label="Close" on_click=on_close />
                 </header>
                 <div class="body">{children()}</div>
             </div>

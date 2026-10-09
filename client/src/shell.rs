@@ -75,13 +75,12 @@ pub fn Shell() -> impl IntoView {
     view! {
         <div class="shell">
             <header class="top">
-                <a class="brand" href=Route::Home.path()>
+                <a class="brand" class:here=move || on_home.get() href=Route::Home.path() title="Home">
                     <img src="plinko_logo.svg" alt="" />
                     "Plinko"
                 </a>
-                <span class="tenant">{name}</span>
+                <span class="tenant" class:here=move || on_home.get()>{name}</span>
                 <nav class="tabs" aria-label="Main">
-                    {link("Home", IconKind::Home, Route::Home, on_home)}
                 {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
                     {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
                     {link("Availability", IconKind::Resources, mine, on_availability)}
@@ -108,7 +107,6 @@ pub fn Shell() -> impl IntoView {
                 }}
             </main>
             <nav class="bottom" aria-label="Main">
-                {link("Home", IconKind::Home, Route::Home, on_home)}
                 {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
                 {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
                 {link("Availability", IconKind::Resources, mine, on_availability)}

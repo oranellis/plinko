@@ -319,3 +319,17 @@ table.alloctable td.name strong, table.alloctable td.name .small { white-space: 
 table.alloctable tr.picked td.name { background: var(--raised); }
 .worked { display: grid; place-items: center; font-size: 10px; color: #fff; border-radius: 3px; min-height: 12px; }
 .main > .alloc { flex: 1; }
+
+/* back buttons, icon buttons and rows with their actions on the right */
+.pagetop { margin: -4px 0 8px -8px; }
+.pagetop .toolbar-btn { display: inline-flex; text-decoration: none; color: var(--text); }
+a.icon, button.icon { display: inline-grid; place-items: center; width: 32px; height: 32px; min-height: 0; padding: 0; background: none; border: 1px solid transparent; border-radius: var(--radius); color: var(--text); text-decoration: none; cursor: pointer; }
+a.icon:hover, button.icon:hover { background: var(--raised); border-color: var(--line); }
+.icon.spacer { visibility: hidden; }
+.row.line { align-items: center; flex-wrap: nowrap; padding: 4px 8px; background: var(--panel); border-radius: var(--radius); min-height: 40px; }
+.row.line .small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions-right { margin-left: auto; display: flex; gap: 2px; align-items: center; flex: none; }
+.row.line > span:not(.small):not(.actions-right) { flex: 1; }
+.list.scrolling { max-height: 220px; overflow-y: auto; }
+.brand.here, .tenant.here { background: var(--raised); border-radius: var(--radius); }
+.brand { padding: 4px 8px; }

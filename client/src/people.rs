@@ -16,8 +16,11 @@ use uuid::Uuid;
 
 use crate::{
     api,
+    icons::IconKind,
     nav::{Availability, Route},
-    ui::{Actions, Block, Field, Modal, Select, Text, use_sync},
+    ui::{
+        Actions, Block, Choice, Field, IconButton, IconLink, Modal, Picker, Select, Text, use_sync,
+    },
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -97,16 +100,21 @@ pub fn People() -> impl IntoView {
                     <For each=move || people.get() key=|p| format!("{p:?}") children=move |p| {
                         let id = p.id;
                         view! {
-                            <li class="row">
+                            <li class="row line">
                                 <strong>{p.name.clone()}</strong>
                                 <span class="small">{p.email.clone()}{if p.admin { " · admin" } else { "" }}</span>
-                                <a href=Route::Availability(Availability::User(id)).path()>"Hours"</a>
-                                <button type="button" on:click=move |_| editing.set(Some(Some(id)))>"Edit"</button>
-                                <Show when=move || sync.me.with(|m| m.as_ref().map(|m| m.id)) != Some(id)>
-                                    <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
-                                        sync.send(TenantUpdateType::User(Crud::Remove(id)));
-                                    }>"✕"</button>
-                                </Show>
+                                <span class="actions-right">
+                                    <IconLink kind=IconKind::Calendar label="Availability" to=Route::Availability(Availability::User(id)) />
+                                    <IconButton kind=IconKind::Pencil label="Edit" on_click=Callback::new(move |()| editing.set(Some(Some(id)))) />
+                                    <Show
+                                        when=move || sync.me.with(|m| m.as_ref().map(|m| m.id)) != Some(id)
+                                        fallback=|| view! { <span class="icon spacer"></span> }
+                                    >
+                                        <IconButton kind=IconKind::Close label="Remove" on_click=Callback::new(move |()| {
+                                            sync.send(TenantUpdateType::User(Crud::Remove(id)));
+                                        }) />
+                                    </Show>
+                                </span>
                             </li>
                         }
                     } />
@@ -121,13 +129,15 @@ pub fn People() -> impl IntoView {
                     <For each=move || groups.get() key=|g| format!("{g:?}") children=move |g| {
                         let id = g.id;
                         view! {
-                            <li class="row">
+                            <li class="row line">
                                 <strong>{g.name.clone()}</strong>
                                 <span class="small">{format!("{} people", g.members.len())}</span>
-                                <button type="button" on:click=move |_| editing_group.set(Some(Some(id)))>"Edit"</button>
-                                <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
-                                    sync.send(TenantUpdateType::UserGroup(Crud::Remove(id)));
-                                }>"✕"</button>
+                                <span class="actions-right">
+                                    <IconButton kind=IconKind::Pencil label="Edit" on_click=Callback::new(move |()| editing_group.set(Some(Some(id)))) />
+                                    <IconButton kind=IconKind::Close label="Remove" on_click=Callback::new(move |()| {
+                                        sync.send(TenantUpdateType::UserGroup(Crud::Remove(id)));
+                                    }) />
+                                </span>
                             </li>
                         }
                     } />
@@ -266,6 +276,16 @@ fn GroupForm(
             .map(|g| g.members.iter().copied().collect::<HashSet<_>>())
             .unwrap_or_default(),
     );
+    let adding = RwSignal::new(String::new());
+    // the people not in the group yet
+    let addable = Signal::derive(move || {
+        people
+            .get()
+            .into_iter()
+            .filter(|p| members.with(|m| !m.contains(&p.id)))
+            .map(|p| Choice::new(p.id.to_string(), p.name, ""))
+            .collect::<Vec<_>>()
+    });
     let parents = Signal::derive(move || {
         let mut all = vec![(String::new(), "No parent group".to_string())];
         all.extend(
@@ -311,20 +331,40 @@ fn GroupForm(
                         on_change=Callback::new(move |v: String| parent.set(Uuid::parse_str(&v).ok()))
                     />
                 </Field>
-                <Block label="People"><div class="list">
-                    {move || people.get().into_iter().map(|p| {
-                        let id = p.id;
-                        view! {
-                            <label class="check">
-                                <input type="checkbox" prop:checked=move || members.with(|m| m.contains(&id)) on:change=move |ev| {
-                                    let on = event_target_checked(&ev);
-                                    members.update(|m| { if on { m.insert(id); } else { m.remove(&id); } });
-                                } />
-                                {p.name}
-                            </label>
-                        }
-                    }).collect_view()}
-                </div></Block>
+                <Block label="People">
+                    <div class="row">
+                        <Picker
+                            value=adding
+                            choices=addable
+                            placeholder="Add someone…"
+                            on_change=Callback::new(move |v: String| adding.set(v))
+                        />
+                        <IconButton kind=IconKind::Plus label="Add to the group" on_click=Callback::new(move |()| {
+                            if let Ok(id) = Uuid::parse_str(&adding.get_untracked()) {
+                                members.update(|m| { m.insert(id); });
+                                adding.set(String::new());
+                            }
+                        }) />
+                    </div>
+                    <div class="list scrolling">
+                        <Show when=move || members.with(|m| m.is_empty())>
+                            <p class="none">"Nobody is in this group yet"</p>
+                        </Show>
+                        {move || people.get().into_iter().filter(|p| members.with(|m| m.contains(&p.id))).map(|p| {
+                            let id = p.id;
+                            view! {
+                                <div class="row line">
+                                    <span>{p.name}</span>
+                                    <span class="actions-right">
+                                        <IconButton kind=IconKind::Close label="Remove from the group" on_click=Callback::new(move |()| {
+                                            members.update(|m| { m.remove(&id); });
+                                        }) />
+                                    </span>
+                                </div>
+                            }
+                        }).collect_view()}
+                    </div>
+                </Block>
                 <Actions on_cancel=on_close />
             </form>
         </Modal>
