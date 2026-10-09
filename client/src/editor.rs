@@ -618,12 +618,14 @@ fn TaskForm(
                         status.set(next);
                         match next {
                             Status::NotStarted => { started.set(None); ended.set(None); }
-                            Status::InProgress | Status::OnHold => {
-                                ended.set(None);
+                            _ => {
+                                // anything past not started has started, today if it never said
                                 if started.get_untracked().is_none() { started.set(Some(today)); }
-                            }
-                            Status::Completed | Status::Dropped => {
-                                if ended.get_untracked().is_none() { ended.set(Some(today)); }
+                                match next {
+                                    Status::InProgress => ended.set(None),
+                                    // when it was put on hold, or finished or dropped
+                                    _ => if ended.get_untracked().is_none() { ended.set(Some(today)); },
+                                }
                             }
                         }
                     })
@@ -651,9 +653,10 @@ fn TaskForm(
                 </Field>
                 <Field label=Signal::derive(move || {
                     let missing = matches!(status.get(), Status::Completed | Status::Dropped) && ended.get().is_none();
-                    if missing { "Actual End *" } else { "Actual End" }.to_string()
+                    let label = if status.get() == Status::OnHold { "Paused On" } else { "Actual End" };
+                    if missing { format!("{label} *") } else { label.to_string() }
                 })>
-                    <OptionalDate value=ended disabled=Signal::derive(move || !matches!(status.get(), Status::Completed | Status::Dropped)) />
+                    <OptionalDate value=ended disabled=Signal::derive(move || matches!(status.get(), Status::NotStarted | Status::InProgress)) />
                 </Field>
             </div>
             <ParentPicker plan=plan me=node parent=parent />
