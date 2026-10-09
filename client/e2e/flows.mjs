@@ -47,10 +47,16 @@ await click(a, "Save"); await a.waitForFunction(() => !document.querySelector(".
 await sleep(1000);
 
 // tapping a row in the chart opens it
-// a new task starts tomorrow, the day after today which is where the plan starts, in the second lane
+// a new task starts on the first working day after the plan starts, in the first or second lane
+// depending on how far off that is, so try them until one opens it
 const box = await a.evaluate(() => { const r = document.querySelector("canvas.gantt").getBoundingClientRect(); return { x: r.x, y: r.y }; });
-await a.mouse.click(box.x + 34 + 17, box.y + 56 + 36 + 18);
-await a.waitForSelector(".editor form", { timeout: 3000 }).catch(() => {});
+for (let day = 1; day < 5 && !(await a.$(".editor form")); day++) {
+  for (const lane of [0, 1]) {
+    if (await a.$(".editor form")) break;
+    await a.mouse.click(box.x + 34 * day + 17, box.y + 56 + 36 * lane + 18);
+    await sleep(300);
+  }
+}
 expect(await a.evaluate(() => !!document.querySelector(".editor")), "tapping a row in the chart opens its editor");
 await click(a, "Close");
 // dragging pans, the wheel zooms: the day labels change
