@@ -4,6 +4,7 @@ use leptos::{prelude::*, task::spawn_local};
 use plinko::multitenancy::user::Role;
 
 use crate::{
+    allocations::Allocations,
     api,
     availability::Availability,
     home::Home,
@@ -15,7 +16,6 @@ use crate::{
     preferences::Preferences,
     resources::Resources,
     ui::{Status, use_sync},
-    work::Work,
 };
 
 #[derive(Clone, Copy, PartialEq)]
@@ -23,7 +23,7 @@ enum Page {
     Home,
     Plans,
     Plan(plinko::types::short_id::ShortId),
-    Work,
+    Allocations,
     Resources,
     People,
     Preferences,
@@ -40,7 +40,7 @@ pub fn Shell() -> impl IntoView {
         Route::Home => Page::Home,
         Route::Plans => Page::Plans,
         Route::Plan(plan, _, _) => Page::Plan(plan),
-        Route::Work => Page::Work,
+        Route::Allocations => Page::Allocations,
         Route::Resources => Page::Resources,
         Route::People => Page::People,
         Route::Preferences => Page::Preferences,
@@ -69,7 +69,7 @@ pub fn Shell() -> impl IntoView {
     };
     let on_home = Signal::derive(move || route.get() == Route::Home);
     let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
-    let on_work = Signal::derive(move || route.get() == Route::Work);
+    let on_allocations = Signal::derive(move || route.get() == Route::Allocations);
     let on_resources =
         Signal::derive(move || matches!(route.get(), Route::Resources | Route::Availability(_)));
     let on_people = Signal::derive(move || route.get() == Route::People);
@@ -84,7 +84,7 @@ pub fn Shell() -> impl IntoView {
                 <nav class="tabs" aria-label="Main">
                     {link("Home", IconKind::Home, Route::Home, on_home)}
                 {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
-                    {link("My work", IconKind::Allocation, Route::Work, on_work)}
+                    {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
                     {link("Resources", IconKind::Resources, Route::Resources, on_resources)}
                     <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
                 </nav>
@@ -102,7 +102,7 @@ pub fn Shell() -> impl IntoView {
                     Page::Home => view! { <Home /> }.into_any(),
                     Page::Plans => view! { <Plans /> }.into_any(),
                     Page::Plan(plan) => view! { <PlanPage plan=plan /> }.into_any(),
-                    Page::Work => view! { <Work /> }.into_any(),
+                    Page::Allocations => view! { <Allocations /> }.into_any(),
                     Page::Resources => view! { <Resources /> }.into_any(),
                     Page::People => view! { <People /> }.into_any(),
                     Page::Preferences => view! { <Preferences /> }.into_any(),
@@ -112,7 +112,7 @@ pub fn Shell() -> impl IntoView {
             <nav class="bottom" aria-label="Main">
                 {link("Home", IconKind::Home, Route::Home, on_home)}
                 {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
-                {link("My work", IconKind::Allocation, Route::Work, on_work)}
+                {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
                 {link("Resources", IconKind::Resources, Route::Resources, on_resources)}
                 <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
             </nav>

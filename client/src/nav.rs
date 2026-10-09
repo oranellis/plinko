@@ -35,7 +35,7 @@ pub enum Route {
     Plans,
     /// A plan, and the item open in its editor
     Plan(ShortId, PlanTab, Option<Uuid>),
-    Work,
+    Allocations,
     Resources,
     People,
     Preferences,
@@ -58,7 +58,7 @@ impl Route {
                 let open = open.map(|id| format!("/{id}")).unwrap_or_default();
                 format!("#/plan/{plan}/{}{open}", tab.name())
             }
-            Route::Work => "#/work".to_string(),
+            Route::Allocations => "#/allocations".to_string(),
             Route::Resources => "#/resources".to_string(),
             Route::People => "#/people".to_string(),
             Route::Preferences => "#/preferences".to_string(),
@@ -80,7 +80,7 @@ impl Route {
                 Route::Plan(plan, tab.unwrap_or(PlanTab::Gantt), open)
             }
             ["plans"] => Route::Plans,
-            ["work"] => Route::Work,
+            ["allocations"] => Route::Allocations,
             ["resources"] => Route::Resources,
             ["people"] => Route::People,
             ["preferences"] => Route::Preferences,
@@ -132,7 +132,7 @@ mod tests {
             Route::Plans,
             Route::Plan(plan, PlanTab::List, None),
             Route::Plan(plan, PlanTab::Gantt, Some(item)),
-            Route::Work,
+            Route::Allocations,
             Route::Resources,
             Route::People,
             Route::Preferences,

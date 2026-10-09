@@ -1,3 +1,4 @@
+mod allocations;
 mod api;
 mod availability;
 mod datepicker;
@@ -20,7 +21,6 @@ mod settings;
 mod shell;
 mod sync;
 mod ui;
-mod work;
 
 use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen::prelude::wasm_bindgen;

@@ -413,7 +413,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
 
 /// The pane beside the chart for editing the item that is open
 #[component]
-fn ItemPane(
+pub fn ItemPane(
     plan: ShortId,
     node: PlanNode,
     fresh: RwSignal<Option<Uuid>>,
