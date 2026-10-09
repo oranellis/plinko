@@ -91,6 +91,7 @@ pub fn Gantt(
     let drag = RwSignal::new(None::<Drag>);
     // where a handle was taken, so letting go without moving counts as a click
     let grabbed_at = StoredValue::new_local((0.0, 0.0));
+    let grabbed_day = StoredValue::new_local(0.0);
 
     let bounds = Signal::derive(move || {
         let (width, height) = size.get();
@@ -372,6 +373,7 @@ pub fn Gantt(
                         .find(|(h, _)| *h == Handle::Link { right })
                         .map_or(at, |(_, p)| *p),
                     over: target(node),
+                    right,
                 },
                 Drag::Move(node) => {
                     let (from_x, from_y) = grabbed_at.get_value();
@@ -383,6 +385,17 @@ pub fn Gantt(
                             .map(|p| p.name.clone())
                             .unwrap_or_default()
                     });
+                    let sideways = editing.dated.run(node) && target(node).is_none();
+                    let by = if sideways {
+                        let days = day_shift(viewport, at.0, grabbed_day.get_value());
+                        (
+                            f64::from(days)
+                                * viewport.get_untracked().unwrap_or_default().day_width,
+                            0.0,
+                        )
+                    } else {
+                        (at.0 - from_x, at.1 - from_y)
+                    };
                     DragView::Move {
                         over: target(node),
                         origin: rect_of(Mark::Node(node)).unwrap_or(Rect {
@@ -391,7 +404,7 @@ pub fn Gantt(
                             w: 0.0,
                             h: 0.0,
                         }),
-                        by: (at.0 - from_x, at.1 - from_y),
+                        by,
                         name,
                     }
                 }
@@ -440,6 +453,13 @@ pub fn Gantt(
                     let _ = element.set_pointer_capture(ev.pointer_id());
                 }
                 grabbed_at.set_value((x, y));
+                grabbed_day.set_value(
+                    viewport
+                        .get_untracked()
+                        .unwrap_or_default()
+                        .day_at(x)
+                        .floor(),
+                );
                 drag.set(Some(match handle {
                     Handle::Link { right } => Drag::Link { node, right },
                     Handle::Move => Drag::Move(node),
@@ -604,7 +624,13 @@ pub fn Gantt(
                     }
                 }
                 Drag::Move(node) => {
-                    if over != Some(node) {
+                    // something started goes sideways in its dates, unless dropped on another item
+                    let by = day_shift(viewport, x, grabbed_day.get_value());
+                    if editing.dated.run(node) && over.is_none() {
+                        if by != 0 {
+                            editing.shift_dates.run((node, by));
+                        }
+                    } else if over != Some(node) {
                         editing.moved.run((node, over));
                     }
                 }
@@ -690,6 +716,16 @@ pub fn Gantt(
             on:wheel=wheel
         ></canvas>
     }
+}
+
+/// The whole days the pointer at `x` is from the day that was grabbed
+fn day_shift(viewport: RwSignal<Option<Viewport>>, x: f64, grabbed: f64) -> i32 {
+    (viewport
+        .get_untracked()
+        .unwrap_or_default()
+        .day_at(x)
+        .floor()
+        - grabbed) as i32
 }
 
 /// Whether the item has a dependency line to or from the selected one

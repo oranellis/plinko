@@ -10,8 +10,27 @@ use crate::gantt::{arrange::Kind, layout::Rect, links::Link};
 
 /// How close the pointer has to be to an item for its handles to show
 pub const REACH: f64 = 22.0;
-/// How close it has to be to a handle to take it
-const GRAB: f64 = 9.0;
+/// The colours of a dependency dragged from the left edge (what comes before) and the right
+const BEFORE: &str = "#fc1ef1";
+const AFTER: &str = "#07fcd7";
+/// Handles are light grey with a dark grey middle
+const LIGHT: &str = "#c4c4c9";
+const LIT: &str = "#ececf0";
+const DARK: &str = "#3a3a3e";
+
+/// How far from a handle's middle it can be taken: half its width and half its height, a good
+/// deal more than what is drawn
+fn reach(handle: Handle) -> (f64, f64) {
+    match handle {
+        Handle::Move => (18.0, 12.0),
+        Handle::Resize => (9.0, 14.0),
+        Handle::Link { .. } => (12.0, 12.0),
+    }
+}
+
+fn direction(right: bool) -> &'static str {
+    if right { AFTER } else { BEFORE }
+}
 /// How near the edge of the chart a drag starts scrolling it
 pub const EDGE: f64 = 36.0;
 const COLOUR: &str = "#1e88e5";
@@ -52,6 +71,10 @@ pub struct Editing {
     pub unlink: Callback<(PlanNode, PlanNode)>,
     /// Moves the item into the group of the item it lands on, or out to the top for `None`
     pub moved: Callback<(PlanNode, Option<PlanNode>)>,
+    /// Whether the item has started, so dragging it sideways changes the days it really ran
+    pub dated: Callback<PlanNode, bool>,
+    /// Moves the days the item really ran by `days`
+    pub shift_dates: Callback<(PlanNode, i32)>,
     /// Gives the item `days` more days, or fewer when negative
     pub resize: Callback<(PlanNode, i32)>,
     /// The days an item runs for
@@ -82,7 +105,10 @@ pub fn handles(kind: Kind, rect: Rect) -> Vec<(Handle, (f64, f64))> {
 pub fn grabbed(handles: &[(Handle, (f64, f64))], x: f64, y: f64) -> Option<Handle> {
     handles
         .iter()
-        .find(|(_, (hx, hy))| (hx - x).hypot(hy - y) <= GRAB)
+        .find(|(h, (hx, hy))| {
+            let (w, t) = reach(*h);
+            (hx - x).abs() <= w && (hy - y).abs() <= t
+        })
         .map(|(h, _)| *h)
 }
 
@@ -126,6 +152,7 @@ pub enum DragView {
     Link {
         from: (f64, f64),
         over: Option<Rect>,
+        right: bool,
     },
     /// A ghost of the item following the pointer, its outline left where it was, and the group or
     /// item it would land in
@@ -149,33 +176,36 @@ pub fn paint(ctx: &CanvasRenderingContext2d, overlay: &Overlay) {
     for (handle, (x, y)) in &overlay.handles {
         // only the grabbed one stays while dragging, drawn where the pointer is
         let lit = grabbed(&overlay.handles, overlay.pointer.0, overlay.pointer.1) == Some(*handle);
-        ctx.set_fill_style_str(if lit { COLOUR } else { "#2c2c2e" });
-        ctx.set_stroke_style_str(COLOUR);
-        ctx.set_line_width(2.0);
         if dragging {
             continue;
         }
+        ctx.set_line_width(2.0);
         ctx.begin_path();
         match handle {
-            Handle::Resize => slot(ctx, *x, *y),
-            Handle::Move => grip(ctx, *x, *y),
-            Handle::Link { .. } => {
-                let _ = ctx.arc(*x, *y, 5.0, 0.0, std::f64::consts::TAU);
+            Handle::Resize => slot(ctx, *x, *y, lit),
+            Handle::Move => grip(ctx, *x, *y, lit),
+            Handle::Link { right } => {
+                // a dot is grey until it is taken, then it takes the colour of its direction
+                ctx.set_fill_style_str(DARK);
+                ctx.set_stroke_style_str(if lit { direction(*right) } else { LIGHT });
+                ctx.set_line_width(3.0);
+                let _ = ctx.arc(*x, *y, 5.5, 0.0, std::f64::consts::TAU);
                 ctx.fill();
                 ctx.stroke();
             }
         }
     }
     match &overlay.drag {
-        Some(DragView::Link { from, over }) => {
-            highlight(ctx, *over);
-            ctx.set_stroke_style_str(COLOUR);
+        Some(DragView::Link { from, over, right }) => {
+            let colour = direction(*right);
+            highlight(ctx, *over, colour);
+            ctx.set_stroke_style_str(colour);
             ctx.set_line_width(2.0);
             ctx.begin_path();
             ctx.move_to(from.0, from.1);
             ctx.line_to(overlay.pointer.0, overlay.pointer.1);
             ctx.stroke();
-            dot(ctx, overlay.pointer);
+            dot(ctx, overlay.pointer, colour);
         }
         Some(DragView::Move {
             over,
@@ -183,7 +213,7 @@ pub fn paint(ctx: &CanvasRenderingContext2d, overlay: &Overlay) {
             by,
             name,
         }) => {
-            highlight(ctx, *over);
+            highlight(ctx, *over, COLOUR);
             leave_outline(ctx, *origin);
             ghost(
                 ctx,
@@ -246,42 +276,38 @@ fn ghost(ctx: &CanvasRenderingContext2d, r: Rect, name: &str) {
     }
 }
 
-/// The move handle: three horizontal lines
-fn grip(ctx: &CanvasRenderingContext2d, x: f64, y: f64) {
-    ctx.rect(x - 8.0, y - 7.0, 16.0, 14.0);
-    ctx.fill();
-    ctx.stroke();
+/// The move handle: three dark lines on a light plate
+fn grip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, lit: bool) {
+    ctx.set_fill_style_str(if lit { LIT } else { LIGHT });
+    ctx.fill_rect(x - 9.0, y - 7.0, 18.0, 14.0);
+    ctx.set_stroke_style_str(DARK);
+    ctx.set_line_width(2.0);
     ctx.begin_path();
-    ctx.set_line_width(1.5);
     for dy in [-3.5, 0.0, 3.5] {
-        ctx.move_to(x - 4.0, y + dy);
-        ctx.line_to(x + 4.0, y + dy);
+        ctx.move_to(x - 5.0, y + dy);
+        ctx.line_to(x + 5.0, y + dy);
     }
     ctx.stroke();
 }
 
-/// The resize handle: a tall slot
-fn slot(ctx: &CanvasRenderingContext2d, x: f64, y: f64) {
-    ctx.rect(x - 3.5, y - 9.0, 7.0, 18.0);
-    ctx.fill();
-    ctx.stroke();
-    ctx.begin_path();
-    ctx.set_line_width(1.5);
-    ctx.move_to(x, y - 5.0);
-    ctx.line_to(x, y + 5.0);
-    ctx.stroke();
+/// The resize handle: a dark slot in a light plate
+fn slot(ctx: &CanvasRenderingContext2d, x: f64, y: f64, lit: bool) {
+    ctx.set_fill_style_str(if lit { LIT } else { LIGHT });
+    ctx.fill_rect(x - 4.5, y - 9.0, 9.0, 18.0);
+    ctx.set_fill_style_str(DARK);
+    ctx.fill_rect(x - 1.5, y - 6.0, 3.0, 12.0);
 }
 
-fn dot(ctx: &CanvasRenderingContext2d, (x, y): (f64, f64)) {
-    ctx.set_fill_style_str(COLOUR);
+fn dot(ctx: &CanvasRenderingContext2d, (x, y): (f64, f64), colour: &str) {
+    ctx.set_fill_style_str(colour);
     ctx.begin_path();
     let _ = ctx.arc(x, y, 6.0, 0.0, std::f64::consts::TAU);
     ctx.fill();
 }
 
-fn highlight(ctx: &CanvasRenderingContext2d, over: Option<Rect>) {
+fn highlight(ctx: &CanvasRenderingContext2d, over: Option<Rect>, colour: &str) {
     if let Some(r) = over {
-        ctx.set_stroke_style_str(COLOUR);
+        ctx.set_stroke_style_str(colour);
         ctx.set_line_width(3.0);
         ctx.stroke_rect(r.x - 2.0, r.y - 2.0, r.w + 4.0, r.h + 4.0);
     }

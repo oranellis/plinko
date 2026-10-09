@@ -1,6 +1,7 @@
 //! What dragging handles on the chart does to the plan: adding and cutting dependencies, moving
 //! items between groups and changing how long tasks and buffers run.
 
+use chrono::{Duration, NaiveDate};
 use leptos::prelude::*;
 use plinko::{
     planner::{plan::Plan, plan_update::PlanUpdate},
@@ -10,7 +11,7 @@ use plinko::{
         parent::Parent,
         plan_buffer::PlanBufferPatch,
         short_id::ShortId,
-        task::TaskPatch,
+        task::{PersistentState, Status, TaskPatch},
     },
 };
 
@@ -22,6 +23,16 @@ use crate::{
 
 fn on(node: PlanNode) -> DependencyNode {
     DependencyNode::Node(node)
+}
+
+/// The days a task really started and ended, for one whose end is recorded
+fn ended(state: PersistentState) -> Option<(NaiveDate, NaiveDate)> {
+    match (state.status, state.actual_start_date, state.actual_end_date) {
+        (Status::Completed | Status::OnHold, Some(start), Some(end)) => {
+            Some((start, end.max(start)))
+        }
+        _ => None,
+    }
 }
 
 fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
@@ -43,9 +54,17 @@ fn without_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> 
     deps
 }
 
+/// What a resize changes: the days a task is to run, or for one that is done or on hold the day
+/// it really ended, so its length is the days from its start to its end
 fn duration_of(plan: &Plan, node: PlanNode) -> Option<u32> {
     match node {
-        PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.duration()),
+        PlanNode::Task(id) => {
+            let task = plan.tasks().get(&id)?;
+            match ended(task.persistent_state()) {
+                Some((start, end)) => Some((end - start).num_days() as u32 + 1),
+                None => Some(task.duration()),
+            }
+        }
         PlanNode::PlanBuffer(id) => plan.plan_buffers().get(&id).map(|b| *b.duration()),
         _ => None,
     }
@@ -58,6 +77,22 @@ fn parent_for(plan: &Plan, over: Option<PlanNode>) -> Parent {
         Some(PlanNode::TaskGroup(id)) => Parent::Node(id),
         Some(other) => model::parent_of(plan, other),
     }
+}
+
+fn task_state(id: uuid::Uuid, state: PersistentState) -> PlanUpdate {
+    PlanUpdate::Task(Crud::Update(TaskPatch {
+        id,
+        name: None,
+        parent: None,
+        mode: None,
+        duration: None,
+        time_constraint: None,
+        dependencies: None,
+        allocations: None,
+        affinities: None,
+        actual_workers: None,
+        persistent_state: Some(state),
+    }))
 }
 
 pub fn editing(plan: ShortId) -> Editing {
@@ -105,8 +140,52 @@ pub fn editing(plan: ShortId) -> Editing {
             None => {}
         }
     });
+    let dated = Callback::new(move |node: PlanNode| {
+        sync.tenant
+            .with_untracked(|t| {
+                let task = match node {
+                    PlanNode::Task(id) => t.as_ref()?.plans().get(&plan)?.tasks().get(&id),
+                    _ => None,
+                };
+                task.map(|t| t.persistent_state().status != Status::NotStarted)
+            })
+            .unwrap_or(false)
+    });
+    let shift_dates = Callback::new(move |(node, days): (PlanNode, i32)| {
+        send(read(&|p| {
+            let PlanNode::Task(id) = node else {
+                return None;
+            };
+            let state = p.tasks().get(&id)?.persistent_state();
+            let by = |d: NaiveDate| d.checked_add_signed(Duration::days(i64::from(days)));
+            Some(vec![task_state(
+                id,
+                PersistentState {
+                    actual_start_date: state.actual_start_date.and_then(by),
+                    actual_end_date: state.actual_end_date.and_then(by),
+                    ..state
+                },
+            )])
+        }));
+    });
     let resize = Callback::new(move |(node, days): (PlanNode, i32)| {
         send(read(&|p| {
+            // finished or paused work ends on another day, the rest takes more or fewer days
+            if let PlanNode::Task(id) = node {
+                let state = p.tasks().get(&id)?.persistent_state();
+                if let Some((start, end)) = ended(state) {
+                    let end = end
+                        .checked_add_signed(Duration::days(i64::from(days)))?
+                        .max(start);
+                    return Some(vec![task_state(
+                        id,
+                        PersistentState {
+                            actual_end_date: Some(end),
+                            ..state
+                        },
+                    )]);
+                }
+            }
             let now = i64::from(duration_of(p, node)?);
             let duration = u32::try_from((now + i64::from(days)).max(1)).ok()?;
             Some(vec![match node {
@@ -148,6 +227,8 @@ pub fn editing(plan: ShortId) -> Editing {
         })
     });
     Editing {
+        dated,
+        shift_dates,
         link,
         unlink,
         moved,
