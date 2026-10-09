@@ -50,7 +50,7 @@ fn title_of(of: Of) -> Signal<String> {
                 Some(match of {
                     Of::User(id) => format!("Hours of {}", t.users().get(&id)?.name()),
                     Of::Plan(id) => {
-                        format!("Hours of placeholders in {}", t.plans().get(&id)?.name())
+                        format!("Default Availability of {}", t.plans().get(&id)?.name())
                     }
                 })
             })

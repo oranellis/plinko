@@ -64,7 +64,7 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
                 </Field>
                 <button type="button" class="primary" on:click=save>"Save Plan Settings"</button>
                 <button type="button" on:click=move |_| hours.set(true)>
-                    "Hours of placeholders (the plan's default availability)"
+                    "Default Availability"
                 </button>
                 <Show when=move || hours.get()>
                     <AvailabilityWindow of=Availability::Plan(plan) on_close=Callback::new(move |()| hours.set(false)) />
