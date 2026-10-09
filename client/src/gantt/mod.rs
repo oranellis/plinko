@@ -8,6 +8,7 @@ pub mod info;
 pub mod layout;
 pub mod links;
 pub mod scene;
+pub mod shift;
 
 use std::{collections::HashMap, time::Duration};
 
@@ -20,9 +21,10 @@ use web_sys::{CanvasRenderingContext2d, PointerEvent, WheelEvent};
 use crate::gantt::{
     arrange::Mark,
     draw::{Frame, Hits, paint},
-    layout::{Bounds, DAY_WIDTH, Viewport},
-    links::Link,
+    layout::{Bounds, DAY_WIDTH, Rect, Viewport},
+    links::{Link, Role},
     scene::Scene,
+    shift::{Drag, DragView, Editing, Handle, Overlay},
 };
 
 /// Movement under this many pixels is a tap, not a drag (more for a finger)
@@ -58,6 +60,8 @@ pub fn Gantt(
     /// What went wrong for an item that misses its date
     violation: Callback<Mark, Vec<String>>,
     on_open: Callback<PlanNode>,
+    /// What dragging handles with shift held does to the plan
+    editing: Editing,
     /// The item selected, whose dependency lines stay on show
     selected: Signal<Option<Mark>>,
     on_toggle: Callback<PlanNode>,
@@ -79,6 +83,12 @@ pub fn Gantt(
     let flash = RwSignal::new(None::<(Mark, f64, &'static str)>);
     let hits = StoredValue::new_local(Hits::default());
     let gesture = StoredValue::new_local(Gesture::default());
+    // shift editing: whether shift is held, the item whose handles show, and the handle being dragged
+    let shift = RwSignal::new(false);
+    let nearby = RwSignal::new(None::<PlanNode>);
+    let drag = RwSignal::new(None::<Drag>);
+    // where a handle was taken, so letting go without moving counts as a click
+    let grabbed_at = StoredValue::new_local((0.0, 0.0));
 
     let bounds = Signal::derive(move || {
         let (width, height) = size.get();
@@ -117,6 +127,28 @@ pub fn Gantt(
             window.add_event_listener_with_callback("resize", on_resize.as_ref().unchecked_ref());
     }
     on_resize.forget();
+    if let Some(window) = web_sys::window() {
+        for (event, down) in [("keydown", true), ("keyup", false)] {
+            let key = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(
+                move |ev: web_sys::KeyboardEvent| {
+                    if ev.key() == "Shift" {
+                        shift.try_set(down);
+                        if !down {
+                            drag.try_set(None);
+                        }
+                    }
+                },
+            );
+            let _ = window.add_event_listener_with_callback(event, key.as_ref().unchecked_ref());
+            key.forget();
+        }
+        let blur = Closure::<dyn FnMut()>::new(move || {
+            shift.try_set(false);
+            drag.try_set(None);
+        });
+        let _ = window.add_event_listener_with_callback("blur", blur.as_ref().unchecked_ref());
+        blur.forget();
+    }
     Effect::new(move |_| {
         if let Some(element) = canvas.get() {
             // the chart changes size when the pane beside it opens or closes
@@ -209,6 +241,57 @@ pub fn Gantt(
         );
     });
 
+    // what is under the pointer: warnings first, then items, then the names of groups
+    let hit = move |x: f64, y: f64| -> Option<(Mark, bool)> {
+        hits.with_value(|h| {
+            let over = |list: &[(Mark, layout::Rect)]| {
+                list.iter()
+                    .rev()
+                    .find(|(_, r)| r.contains(x, y))
+                    .map(|(m, _)| *m)
+            };
+            over(&h.violations)
+                .map(|m| (m, false))
+                .or_else(|| over(&h.items).map(|m| (m, false)))
+                .or_else(|| {
+                    h.headers
+                        .iter()
+                        .rev()
+                        .find(|(_, strip, _)| strip.contains(x, y))
+                        .map(|(m, _, arrow)| (*m, arrow.contains(x, y)))
+                })
+        })
+    };
+    // where an item is drawn, a group by its name strip
+    let rect_of = move |mark: Mark| -> Option<Rect> {
+        hits.with_value(|h| {
+            h.items
+                .iter()
+                .find(|(m, _)| *m == mark)
+                .map(|(_, r)| *r)
+                .or_else(|| {
+                    h.headers
+                        .iter()
+                        .find(|(m, ..)| *m == mark)
+                        .map(|(_, r, _)| *r)
+                })
+        })
+    };
+    // the handles of the item the pointer is near
+    let handles_of = move |node: PlanNode| {
+        let kind = scene.with_untracked(|s| {
+            s.arrangement
+                .placed
+                .iter()
+                .find(|p| p.mark == Mark::Node(node))
+                .map(|p| p.kind)
+        });
+        match (kind, rect_of(Mark::Node(node))) {
+            (Some(kind), Some(rect)) => shift::handles(kind, rect),
+            _ => Vec::new(),
+        }
+    };
+
     // draw
     Effect::new(move |_| {
         let (width, height) = size.get();
@@ -220,6 +303,7 @@ pub fn Gantt(
             today.get(),
         );
         let at = pointer.get();
+        let (editing_shift, near, dragged) = (shift.get(), nearby.get(), drag.get());
         let Some(canvas) = canvas.get() else {
             return;
         };
@@ -236,7 +320,16 @@ pub fn Gantt(
         };
         let _ = ctx.set_transform(ratio, 0.0, 0.0, ratio, 0.0, 0.0);
         // what is under the pointer shows its lines, and otherwise the selected item does
-        let linked: Vec<Link> = hovered.or(picked).map(|m| links.run(m)).unwrap_or_default();
+        // with something selected, the chain to what is under the pointer shows instead
+        let chain = match (picked, hovered) {
+            (Some(Mark::Node(a)), Some(Mark::Node(b))) if a != b => editing.chain.run((a, b)),
+            _ => Vec::new(),
+        };
+        let linked: Vec<Link> = if chain.is_empty() {
+            hovered.or(picked).map(|m| links.run(m)).unwrap_or_default()
+        } else {
+            chain
+        };
         let info: Vec<String> = hovered.map(|m| info.run(m)).unwrap_or_default();
         scene.with(|scene| {
             let over_violation = hovered.filter(|m| {
@@ -262,31 +355,84 @@ pub fn Gantt(
             };
             hits.set_value(paint(&ctx, &frame));
         });
+        if editing_shift {
+            let handles = near.map(handles_of).unwrap_or_default();
+            let target = |own: PlanNode| {
+                hit(at.0, at.1)
+                    .map(|(m, _)| m)
+                    .filter(|m| *m != Mark::Node(own))
+                    .and_then(rect_of)
+            };
+            let view = dragged.map(|d| match d {
+                Drag::Link { node, right } => DragView::Link {
+                    from: handles
+                        .iter()
+                        .find(|(h, _)| *h == Handle::Link { right })
+                        .map_or(at, |(_, p)| *p),
+                    over: target(node),
+                },
+                Drag::Move(node) => DragView::Move { over: target(node) },
+                Drag::Resize {
+                    node,
+                    last_day,
+                    duration,
+                } => {
+                    let day = viewport.get_untracked().unwrap_or_default().day_at(at.0);
+                    let (delta, new) = shift::resized(day, last_day, duration);
+                    let above = rect_of(Mark::Node(node)).map_or(at, |r| (at.0, r.y));
+                    DragView::Resize {
+                        label: shift::resize_label(delta, new),
+                        above,
+                    }
+                }
+            });
+            shift::paint(
+                &ctx,
+                &Overlay {
+                    handles,
+                    pointer: at,
+                    drag: view,
+                },
+            );
+        }
     });
 
-    // what is under the pointer: warnings first, then items, then the names of groups
-    let hit = move |x: f64, y: f64| -> Option<(Mark, bool)> {
-        hits.with_value(|h| {
-            let over = |list: &[(Mark, layout::Rect)]| {
-                list.iter()
-                    .rev()
-                    .find(|(_, r)| r.contains(x, y))
-                    .map(|(m, _)| *m)
-            };
-            over(&h.violations)
-                .map(|m| (m, false))
-                .or_else(|| over(&h.items).map(|m| (m, false)))
-                .or_else(|| {
-                    h.headers
-                        .iter()
-                        .rev()
-                        .find(|(_, strip, _)| strip.contains(x, y))
-                        .map(|(m, _, arrow)| (*m, arrow.contains(x, y)))
-                })
-        })
-    };
-
     let down = move |ev: PointerEvent| {
+        // shift on a handle starts editing instead of panning
+        if ev.shift_key() && ev.pointer_type() == "mouse" {
+            let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
+            if let Some((node, handle)) = nearby
+                .get_untracked()
+                .and_then(|node| shift::grabbed(&handles_of(node), x, y).map(|h| (node, h)))
+            {
+                if let Some(canvas) = canvas.get_untracked() {
+                    let element: &web_sys::Element = canvas.as_ref();
+                    let _ = element.set_pointer_capture(ev.pointer_id());
+                }
+                grabbed_at.set_value((x, y));
+                drag.set(Some(match handle {
+                    Handle::Link { right } => Drag::Link { node, right },
+                    Handle::Move => Drag::Move(node),
+                    Handle::Resize => {
+                        let end = scene.with_untracked(|s| {
+                            s.arrangement
+                                .placed
+                                .iter()
+                                .find(|p| p.mark == Mark::Node(node))
+                                .map(|p| (s.plan_start, p.span.1))
+                        });
+                        let last_day = end.map_or(0, |(start, end)| (end - start).num_days() - 1);
+                        Drag::Resize {
+                            node,
+                            last_day,
+                            duration: editing.duration.run(node),
+                        }
+                    }
+                }));
+                edge_scroll(viewport, bounds, pointer, drag);
+                return;
+            }
+        }
         if let Some(canvas) = canvas.get_untracked() {
             let element: &web_sys::Element = canvas.as_ref();
             let _ = element.set_pointer_capture(ev.pointer_id());
@@ -309,6 +455,32 @@ pub fn Gantt(
     let moved = move |ev: PointerEvent| {
         let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
         pointer.set((x, y));
+        shift.set(ev.shift_key());
+        if drag.get_untracked().is_some() {
+            return;
+        }
+        if ev.shift_key() {
+            // handles show for the item the pointer is near, and stay while it is on one
+            let on_handle = nearby
+                .get_untracked()
+                .is_some_and(|n| shift::grabbed(&handles_of(n), x, y).is_some());
+            if !on_handle {
+                let found = hits.with_value(|h| {
+                    h.items
+                        .iter()
+                        .map(|(m, r)| (*m, *r))
+                        .chain(h.headers.iter().map(|(m, r, _)| (*m, *r)))
+                        .find(|(_, r)| shift::near(*r, x, y))
+                        .and_then(|(m, _)| match m {
+                            Mark::Node(n) => Some(n),
+                            Mark::PlanStart => None,
+                        })
+                });
+                nearby.set(found);
+            }
+        } else {
+            nearby.set(None);
+        }
         if ev.pointer_type() == "mouse" {
             let over = hit(x, y).map(|(m, _)| m);
             if hover.get_untracked() != over {
@@ -361,8 +533,65 @@ pub fn Gantt(
         });
     };
 
+    // a tap on an item selects it, with shift on one linked to the selected item cuts the link
+    let tap = move |x: f64, y: f64, shifted: bool| {
+        if let Some((Mark::Node(node), fold)) = hit(x, y) {
+            let on_violation =
+                hits.with_value(|h| h.violations.iter().any(|(_, r)| r.contains(x, y)));
+            let chosen = selected.get_untracked();
+            match (fold, on_violation) {
+                (_, true) => {}
+                (true, false) => on_toggle.run(node),
+                (false, false) if shifted && chosen.is_some_and(|s| linked_to(links, s, node)) => {
+                    if let Some(Mark::Node(own)) = chosen {
+                        editing.unlink.run((own, node));
+                    }
+                }
+                (false, false) => on_open.run(node),
+            }
+        } else if let Some(blank) = on_blank {
+            blank.run(());
+        }
+    };
+
     let up = move |ev: PointerEvent| {
         let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
+        if let Some(done) = drag.get_untracked() {
+            drag.set(None);
+            let (from_x, from_y) = grabbed_at.get_value();
+            if (from_x - x).hypot(from_y - y) < TAP_MOUSE {
+                tap(x, y, ev.shift_key());
+                return;
+            }
+            let over = hit(x, y).and_then(|(m, _)| match m {
+                Mark::Node(n) => Some(n),
+                Mark::PlanStart => None,
+            });
+            match done {
+                Drag::Link { node, right } => {
+                    if let Some(other) = over.filter(|o| *o != node) {
+                        editing.link.run((node, other, right));
+                    }
+                }
+                Drag::Move(node) => {
+                    if over != Some(node) {
+                        editing.moved.run((node, over));
+                    }
+                }
+                Drag::Resize {
+                    last_day,
+                    duration,
+                    node,
+                } => {
+                    let day = viewport.get_untracked().unwrap_or_default().day_at(x);
+                    let (delta, _) = shift::resized(day, last_day, duration);
+                    if delta != 0 {
+                        editing.resize.run((node, delta));
+                    }
+                }
+            }
+            return;
+        }
         let (tapped, velocity, generation) = gesture
             .try_update_value(|g| {
                 let limit = if g.touch { TAP_TOUCH } else { TAP_MOUSE };
@@ -372,17 +601,7 @@ pub fn Gantt(
             })
             .unwrap_or_default();
         if tapped {
-            if let Some((Mark::Node(node), fold)) = hit(x, y) {
-                let on_violation =
-                    hits.with_value(|h| h.violations.iter().any(|(_, r)| r.contains(x, y)));
-                match (fold, on_violation) {
-                    (_, true) => {}
-                    (true, false) => on_toggle.run(node),
-                    (false, false) => on_open.run(node),
-                }
-            } else if let Some(blank) = on_blank {
-                blank.run(());
-            }
+            tap(x, y, ev.shift_key());
             return;
         }
         let empty = gesture.with_value(|g| g.touches.is_empty());
@@ -436,6 +655,54 @@ pub fn Gantt(
             on:wheel=wheel
         ></canvas>
     }
+}
+
+/// Whether the item has a dependency line to or from the selected one
+fn linked_to(links: Callback<Mark, Vec<Link>>, selected: Mark, node: PlanNode) -> bool {
+    links.run(selected).iter().any(|l| {
+        matches!(l.role, Role::Before | Role::After)
+            && [l.from, l.to].iter().any(|a| match a {
+                links::Anchor::Start(n) | links::Anchor::End(n) => {
+                    *n == node && selected != Mark::Node(node)
+                }
+                links::Anchor::PlanStart => false,
+            })
+    })
+}
+
+/// Scrolls the chart while a handle is dragged to its edge
+fn edge_scroll(
+    viewport: RwSignal<Option<Viewport>>,
+    bounds: Signal<Bounds>,
+    pointer: RwSignal<(f64, f64)>,
+    drag: RwSignal<Option<Drag>>,
+) {
+    let (Some(Some(_)), Some(b), Some((x, y))) = (
+        drag.try_get_untracked(),
+        bounds.try_get_untracked(),
+        pointer.try_get_untracked(),
+    ) else {
+        return;
+    };
+    let push = |at: f64, size: f64, lead: f64| {
+        if at < lead + shift::EDGE {
+            12.0
+        } else if at > size - shift::EDGE {
+            -12.0
+        } else {
+            0.0
+        }
+    };
+    let (dx, dy) = (
+        push(x, b.width, 0.0),
+        push(y, b.height, layout::HEADER_HEIGHT),
+    );
+    if dx != 0.0 || dy != 0.0 {
+        let mut vp = viewport.try_get_untracked().flatten().unwrap_or_default();
+        vp.drag(dx, dy, b);
+        viewport.try_set(Some(vp));
+    }
+    request_animation_frame(move || edge_scroll(viewport, bounds, pointer, drag));
 }
 
 /// Keeps the chart moving after a flick, slowing down each frame

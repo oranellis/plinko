@@ -90,3 +90,7 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 ## Gantt selection
 
 Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane.
+
+### Shift editing
+
+With shift held, items the pointer is near show handles: a dot off each edge (drag to another item; right edge: it depends on this item, left edge: this item depends on it), a dot in the middle (drop on a group to move in, on another item to join its group, on blank space for the top level, see `Plan::moving`) and, for tasks and buffers, a grip inside the right edge that changes the duration by whole grid days, shown as `+2 (6d)`. Dragging to the chart's edge scrolls it. Shift-clicking an item linked to the selected one cuts that dependency. With an item selected, hovering another one on a dependency chain with it shows the longest chain in red.

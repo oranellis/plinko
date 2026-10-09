@@ -33,6 +33,8 @@ const HOVERED: &str = "#1e88e5";
 const BEFORE: &str = "#fc1ef1";
 const AFTER: &str = "#07fcd7";
 const BEFORE_LINE: &str = "rgba(252,30,241,0.66)";
+const CHAIN: &str = "#e53935";
+const CHAIN_LINE: &str = "rgba(229,57,53,0.85)";
 const INSIDE: &str = "#1255a5";
 const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
 const PROBLEM: &str = "#e65100";
@@ -134,6 +136,8 @@ struct Marked {
     after: Vec<Mark>,
     /// Everything inside the group under the pointer
     inside: Vec<Mark>,
+    /// The ends of the chain from the selected item to the one under the pointer
+    chain: Vec<Mark>,
 }
 
 impl Marked {
@@ -153,6 +157,9 @@ impl Marked {
             after: linked(Role::After)
                 .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
                 .map(|l| mark_of(l.to))
+                .collect(),
+            chain: linked(Role::Chain)
+                .flat_map(|l| [mark_of(l.from), mark_of(l.to)])
                 .collect(),
             // a group's block takes the lanes under its name
             inside: group
@@ -175,7 +182,9 @@ fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(S
         }
         _ => {}
     }
-    if target {
+    if marked.chain.contains(&mark) {
+        Some((CHAIN.to_string(), 3.5))
+    } else if target {
         Some((TARGET.to_string(), 3.0))
     } else if frame.hover == Some(mark) || frame.selected == Some(mark) {
         Some((HOVERED.to_string(), 3.5))
@@ -459,6 +468,7 @@ fn paint_links(
         let (line, solid) = match link.role {
             Role::Before => (BEFORE_LINE, BEFORE),
             Role::After => (AFTER_LINE, AFTER),
+            Role::Chain => (CHAIN_LINE, CHAIN),
         };
         ctx.set_stroke_style_str(line);
         ctx.begin_path();

@@ -20,6 +20,7 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
+    chart_edit,
     context::ContextBar,
     data::DataWindow,
     editor::{ItemEditor, remove_item},
@@ -443,6 +444,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 info=info
                                 violation=violation
                                 on_open=on_tap
+                                editing=chart_edit::editing(plan)
                                 selected=Signal::derive(move || chosen.get().map(Mark::Node))
                                 on_toggle=on_toggle
                                 on_blank=on_blank

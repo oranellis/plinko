@@ -1,6 +1,7 @@
 mod allocations;
 mod api;
 mod availability;
+mod chart_edit;
 mod context;
 mod data;
 mod datepicker;

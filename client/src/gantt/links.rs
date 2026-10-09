@@ -1,6 +1,8 @@
 //! The dependency lines shown for the item under the pointer: what it waits for, and what waits
 //! for it. Which ends they join is worked out here and where they are is drawn from it.
 
+use std::collections::HashMap;
+
 use plinko::{
     planner::plan::Plan,
     scheduler::state::PlanVolatileState,
@@ -28,6 +30,8 @@ pub enum Role {
     Before,
     /// Comes after it
     After,
+    /// Sits on the longest chain between the selected item and the one under the pointer
+    Chain,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,6 +99,58 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
         });
     }
     out
+}
+
+/// The longest chain of dependencies between two items, in either direction, as links
+pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
+    let nodes = model::nodes(plan);
+    let longest = |from: PlanNode, to: PlanNode| {
+        let mut known = HashMap::new();
+        path(plan, &nodes, from, to, &mut known)
+    };
+    let nodes = [longest(a, b), longest(b, a)]
+        .into_iter()
+        .flatten()
+        .max_by_key(Vec::len)
+        .unwrap_or_default();
+    nodes
+        .windows(2)
+        .map(|w| Link {
+            from: Anchor::End(w[0]),
+            to: Anchor::Start(w[1]),
+            role: Role::Chain,
+        })
+        .collect()
+}
+
+/// The longest run of items from `from` to `to`, each waiting on the one before
+fn path(
+    plan: &Plan,
+    nodes: &[PlanNode],
+    from: PlanNode,
+    to: PlanNode,
+    known: &mut HashMap<PlanNode, Option<Vec<PlanNode>>>,
+) -> Option<Vec<PlanNode>> {
+    if from == to {
+        return Some(vec![from]);
+    }
+    if let Some(done) = known.get(&from) {
+        return done.clone();
+    }
+    let mut best: Option<Vec<PlanNode>> = None;
+    for next in nodes.iter().filter(|n| {
+        model::dependencies(plan, **n)
+            .iter()
+            .any(|d| d.node == DependencyNode::Node(from))
+    }) {
+        if let Some(rest) = path(plan, nodes, *next, to, known)
+            && best.as_ref().is_none_or(|b| rest.len() + 1 > b.len())
+        {
+            best = Some([vec![from], rest].concat());
+        }
+    }
+    known.insert(from, best.clone());
+    best
 }
 
 #[cfg(test)]
@@ -198,6 +254,32 @@ mod tests {
                 role: Role::After
             }]
         );
+    }
+
+    #[test]
+    fn the_chain_between_two_items_is_the_longest_either_way_round() {
+        let mut plan = new_plan();
+        let a = task(&mut plan, 1, Parent::PlanStart, &[]);
+        let b = task(&mut plan, 2, Parent::PlanStart, &[DependencyNode::Node(a)]);
+        let c = task(&mut plan, 3, Parent::PlanStart, &[DependencyNode::Node(b)]);
+        let d = task(
+            &mut plan,
+            4,
+            Parent::PlanStart,
+            &[DependencyNode::Node(a), DependencyNode::Node(c)],
+        );
+        let step = |from, to| Link {
+            from: Anchor::End(from),
+            to: Anchor::Start(to),
+            role: Role::Chain,
+        };
+        // not the short way a to d
+        let long = [step(a, b), step(b, c), step(c, d)];
+        assert_eq!(chain(&plan, a, d), long);
+        assert_eq!(chain(&plan, d, a), long);
+        assert!(chain(&plan, b, b).is_empty());
+        let lone = task(&mut plan, 5, Parent::PlanStart, &[]);
+        assert!(chain(&plan, a, lone).is_empty());
     }
 
     #[test]
