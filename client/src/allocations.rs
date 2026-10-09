@@ -245,7 +245,7 @@ pub fn Allocations() -> impl IntoView {
                                                 let shown = days[i..].iter().take_while(|x| x.month() == d.month() && x.year() == d.year()).count();
                                                 let label = format!("{} {}", format::month(*d), d.year());
                                                 view! {
-                                                    <th class="month" class:starts=starts class:m1=d.day() == 1>
+                                                    <th class="mcell" class:starts=starts class:m1=d.day() == 1>
                                                         {starts.then(|| view! {
                                                             <span class="monthbox" style=format!("width:{}px", shown as f64 * DAY_WIDTH)>
                                                                 <span class="monthname">{label}</span>
