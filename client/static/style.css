@@ -246,3 +246,16 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .menu .who { display: grid; gap: 2px; padding: 8px 14px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
 .menu a, .menu button { text-align: left; background: none; border-radius: 0; padding: 8px 14px; min-height: 0; font-size: 14px; color: var(--text); text-decoration: none; }
 .menu a:hover, .menu button:hover { background: var(--raised); }
+
+/* the home page */
+.home { display: grid; gap: 20px; max-width: 900px; margin: 0 auto; }
+.home section { display: grid; gap: 8px; }
+.home h2 { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+ul.work { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.row-task { display: flex; gap: 10px; align-items: center; }
+.row-task .item { padding: 6px 12px; border-radius: var(--radius); flex: 1; text-decoration: none; color: var(--text); }
+.dates.late { color: var(--danger-text); }
+button.quick { width: 34px; height: 34px; min-height: 0; padding: 0; display: grid; place-items: center; background: none; border: 1.5px solid var(--muted); border-radius: 8px; color: var(--muted); flex: none; }
+button.quick:hover { background: none; }
+button.quick.done:hover { border-color: var(--ok); color: var(--ok); }
+button.quick.start:hover { border-color: var(--warn); color: #ff9800; }

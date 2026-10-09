@@ -1,0 +1,109 @@
+//! The tasks the person signed in is down to do, across every plan they can see.
+
+use chrono::NaiveDate;
+use leptos::prelude::*;
+use plinko::{
+    planner::plan_update::PlanUpdate,
+    types::{
+        crud::Crud,
+        short_id::ShortId,
+        task::{Assignee, PersistentState, Status, TaskPatch},
+    },
+};
+use uuid::Uuid;
+
+use crate::ui::use_sync;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MyTask {
+    pub plan: ShortId,
+    pub plan_name: String,
+    pub task: Uuid,
+    pub name: String,
+    pub status: Status,
+    pub start: NaiveDate,
+    /// The last day it runs
+    pub end: NaiveDate,
+    pub hours: u32,
+}
+
+/// Every task scheduled with the person on it, soonest first
+pub fn use_my_tasks() -> Memo<Vec<MyTask>> {
+    let sync = use_sync();
+    Memo::new(move |_| {
+        let Some(me) = sync.me.with(|m| m.as_ref().map(|m| m.id)) else {
+            return Vec::new();
+        };
+        let schedule = sync.schedule.get();
+        let Some((_, schedule)) = schedule.as_ref() else {
+            return Vec::new();
+        };
+        let mut mine = sync.tenant.with(|t| {
+            let Some(t) = t.as_ref() else {
+                return Vec::new();
+            };
+            let mut mine = Vec::new();
+            for (plan_id, state) in &schedule.plans {
+                let Some(plan) = t.plans().get(plan_id) else {
+                    continue;
+                };
+                for (id, volatile) in &state.tasks {
+                    let Some(days) = volatile.assignments.get(&Assignee::User(me)) else {
+                        continue;
+                    };
+                    let Some(task) = plan.tasks().get(id) else {
+                        continue;
+                    };
+                    let range = volatile.date_range;
+                    mine.push(MyTask {
+                        plan: *plan_id,
+                        plan_name: plan.name().to_string(),
+                        task: *id,
+                        name: task.name().to_string(),
+                        status: task.persistent_state().status,
+                        start: range.start(),
+                        end: range.end().pred_opt().unwrap_or(range.start()),
+                        hours: days.values().map(|h| u32::from(h.get())).sum(),
+                    });
+                }
+            }
+            mine
+        });
+        mine.sort_by(|a, b| {
+            (a.start, a.end, &a.name, a.task).cmp(&(b.start, b.end, &b.name, b.task))
+        });
+        mine
+    })
+}
+
+/// Moves a task to a new status, the server fills in the dates that goes with it
+pub fn set_status(plan: ShortId, task: Uuid, status: Status) {
+    let sync = use_sync();
+    let Some(was) = sync.tenant.with_untracked(|t| {
+        Some(
+            t.as_ref()?
+                .plans()
+                .get(&plan)?
+                .tasks()
+                .get(&task)?
+                .persistent_state(),
+        )
+    }) else {
+        return;
+    };
+    let patch = TaskPatch {
+        id: task,
+        name: None,
+        parent: None,
+        mode: None,
+        duration: None,
+        time_constraint: None,
+        dependencies: None,
+        allocations: None,
+        affinities: None,
+        actual_workers: None,
+        description: None,
+        persistent_state: Some(PersistentState { status, ..was }),
+    };
+    sync.plan(plan, PlanUpdate::Task(Crud::Update(patch)));
+}

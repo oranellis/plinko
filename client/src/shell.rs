@@ -6,6 +6,7 @@ use plinko::multitenancy::user::Role;
 use crate::{
     api,
     availability::Availability,
+    home::Home,
     icons::{Icon, IconKind},
     nav::{Route, navigate, use_route},
     people::People,
@@ -19,6 +20,7 @@ use crate::{
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
+    Home,
     Plans,
     Plan(plinko::types::short_id::ShortId),
     Work,
@@ -35,6 +37,7 @@ pub fn Shell() -> impl IntoView {
     provide_context(route);
     // changing tab or opening an item stays on the same page, so its state is kept
     let page = Memo::new(move |_| match route.get() {
+        Route::Home => Page::Home,
         Route::Plans => Page::Plans,
         Route::Plan(plan, _, _) => Page::Plan(plan),
         Route::Work => Page::Work,
@@ -64,6 +67,7 @@ pub fn Shell() -> impl IntoView {
             </a>
         }
     };
+    let on_home = Signal::derive(move || route.get() == Route::Home);
     let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
     let on_work = Signal::derive(move || route.get() == Route::Work);
     let on_resources =
@@ -72,13 +76,14 @@ pub fn Shell() -> impl IntoView {
     view! {
         <div class="shell">
             <header class="top">
-                <a class="brand" href=Route::Plans.path()>
+                <a class="brand" href=Route::Home.path()>
                     <img src="plinko_logo.svg" alt="" />
                     "Plinko"
                 </a>
                 <span class="tenant">{name}</span>
                 <nav class="tabs" aria-label="Main">
-                    {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
+                    {link("Home", IconKind::Home, Route::Home, on_home)}
+                {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
                     {link("My work", IconKind::Allocation, Route::Work, on_work)}
                     {link("Resources", IconKind::Resources, Route::Resources, on_resources)}
                     <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
@@ -94,6 +99,7 @@ pub fn Shell() -> impl IntoView {
             </Show>
             <main class="page">
                 {move || match page.get() {
+                    Page::Home => view! { <Home /> }.into_any(),
                     Page::Plans => view! { <Plans /> }.into_any(),
                     Page::Plan(plan) => view! { <PlanPage plan=plan /> }.into_any(),
                     Page::Work => view! { <Work /> }.into_any(),
@@ -104,6 +110,7 @@ pub fn Shell() -> impl IntoView {
                 }}
             </main>
             <nav class="bottom" aria-label="Main">
+                {link("Home", IconKind::Home, Route::Home, on_home)}
                 {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
                 {link("My work", IconKind::Allocation, Route::Work, on_work)}
                 {link("Resources", IconKind::Resources, Route::Resources, on_resources)}

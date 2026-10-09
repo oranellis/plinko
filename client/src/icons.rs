@@ -98,6 +98,18 @@ pub fn Icon(
             <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::Home => view! {
+            <path d="M2.5 7.5L8 2.8L13.5 7.5V13H9.8V9.5H6.2V13H2.5Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
+        }
+        .into_any(),
+        IconKind::Tick => view! {
+            <polyline points="3.5,8.5 6.8,11.8 12.5,4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        }
+        .into_any(),
+        IconKind::Play => view! {
+            <path d="M5.5 3.5L12 8L5.5 12.5Z" fill="currentColor" />
+        }
+        .into_any(),
         IconKind::Person => view! {
             <circle cx="8" cy="8" r="6.9" stroke="currentColor" stroke-width="1.2" />
             <circle cx="8" cy="6.3" r="2.2" fill="currentColor" />
@@ -135,4 +147,7 @@ pub enum IconKind {
     AddBuffer,
     Alert,
     Person,
+    Tick,
+    Play,
+    Home,
 }

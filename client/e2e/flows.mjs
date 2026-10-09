@@ -25,7 +25,7 @@ const fill = async (page, selector, text) => {
 };
 const text = (page) => page.evaluate(() => document.body.innerText.replace(/\n+/g, " | "));
 async function login(page, email, password) {
-  await page.goto(`${base}/`, { waitUntil: "networkidle0" });
+  await page.goto(`${base}/#/plans`, { waitUntil: "networkidle0" });
   await page.waitForSelector("input[type=email]");
   await page.type("input[type=email]", email);
   await page.type("input[type=password]", password);

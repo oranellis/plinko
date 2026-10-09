@@ -31,6 +31,7 @@ impl PlanTab {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
+    Home,
     Plans,
     /// A plan, and the item open in its editor
     Plan(ShortId, PlanTab, Option<Uuid>),
@@ -51,7 +52,8 @@ pub enum Availability {
 impl Route {
     pub fn path(&self) -> String {
         match self {
-            Route::Plans => "#/".to_string(),
+            Route::Home => "#/".to_string(),
+            Route::Plans => "#/plans".to_string(),
             Route::Plan(plan, tab, open) => {
                 let open = open.map(|id| format!("/{id}")).unwrap_or_default();
                 format!("#/plan/{plan}/{}{open}", tab.name())
@@ -71,25 +73,26 @@ impl Route {
         match parts.as_slice() {
             ["plan", plan, rest @ ..] => {
                 let Ok(plan) = ShortId::from_str_checked(plan) else {
-                    return Route::Plans;
+                    return Route::Home;
                 };
                 let tab = rest.first().and_then(|t| PlanTab::parse(t));
                 let open = rest.get(1).and_then(|id| Uuid::parse_str(id).ok());
                 Route::Plan(plan, tab.unwrap_or(PlanTab::Gantt), open)
             }
+            ["plans"] => Route::Plans,
             ["work"] => Route::Work,
             ["resources"] => Route::Resources,
             ["people"] => Route::People,
             ["preferences"] => Route::Preferences,
             ["availability", "user", user] => match Uuid::parse_str(user) {
                 Ok(user) => Route::Availability(Availability::User(user)),
-                Err(_) => Route::Plans,
+                Err(_) => Route::Home,
             },
             ["availability", "plan", plan] => match ShortId::from_str_checked(plan) {
                 Ok(plan) => Route::Availability(Availability::Plan(plan)),
-                Err(_) => Route::Plans,
+                Err(_) => Route::Home,
             },
-            _ => Route::Plans,
+            _ => Route::Home,
         }
     }
 }
@@ -125,6 +128,7 @@ mod tests {
         let plan = ShortId::from_str_checked("AbCdEfGh").unwrap();
         let item = Uuid::from_u128(7);
         for route in [
+            Route::Home,
             Route::Plans,
             Route::Plan(plan, PlanTab::List, None),
             Route::Plan(plan, PlanTab::Gantt, Some(item)),
@@ -140,9 +144,9 @@ mod tests {
     }
 
     #[test]
-    fn nonsense_goes_to_the_plans() {
-        assert_eq!(Route::parse(""), Route::Plans);
-        assert_eq!(Route::parse("#/plan/short"), Route::Plans);
-        assert_eq!(Route::parse("#/nowhere/at/all"), Route::Plans);
+    fn nonsense_goes_home() {
+        assert_eq!(Route::parse(""), Route::Home);
+        assert_eq!(Route::parse("#/plan/short"), Route::Home);
+        assert_eq!(Route::parse("#/nowhere/at/all"), Route::Home);
     }
 }
