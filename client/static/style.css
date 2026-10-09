@@ -111,18 +111,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px;
   font-size: 16px; font-weight: 500; max-width: 40%; background: none; padding: 4px 6px; white-space: nowrap; overflow: hidden; z-index: 0;
 }
-.toolbar-title:hover { background: var(--raised); }
 .toolbar-title-text { overflow: hidden; text-overflow: ellipsis; }
-.toolbar-title-chevron { font-size: 10px; opacity: 0.6; }
-.switcher-backdrop { position: fixed; inset: 0; z-index: 30; }
-.switcher {
-  position: absolute; top: 40px; left: 50%; transform: translateX(-50%); width: 240px; max-height: 320px; overflow-y: auto; z-index: 31;
-  list-style: none; margin: 0; padding: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-}
-.switcher a { display: flex; gap: 8px; padding: 8px 12px; font-size: 13px; color: var(--text); text-decoration: none; }
-.switcher a:hover { background: #37373d; }
-.switcher a.current { background: #1c3a5a; color: #7cb9f4; }
-.switcher .tick { width: 14px; color: var(--accent); font-size: 11px; }
 .main { flex: 1; min-width: 0; min-height: 0; overflow: auto; position: relative; }
 canvas.gantt { width: 100%; height: 100%; display: block; touch-action: none; background: var(--bg); }
 

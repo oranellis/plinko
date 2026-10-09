@@ -134,7 +134,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let focus = RwSignal::new(None::<Mark>);
     let searching = RwSignal::new(false);
     let listing = RwSignal::new(false);
-    let switching = RwSignal::new(false);
 
     let links = Callback::new(move |mark: Mark| {
         sync.tenant.with(|t| {
@@ -307,21 +306,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             </button>
         }
     };
-    let plans = Memo::new(move |_| {
-        sync.tenant.with(|t| {
-            let mut all: Vec<(ShortId, String)> = t
-                .as_ref()
-                .map(|t| {
-                    t.plans()
-                        .iter()
-                        .map(|(id, p)| (*id, p.name().to_string()))
-                        .collect()
-                })
-                .unwrap_or_default();
-            all.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.cmp(&b.0)));
-            all
-        })
-    });
     view! {
         <Show when=move || exists.get() fallback=move || view! {
             <p class="empty">"This plan is not here, it may have been deleted. "<a href=Route::Plans.path()>"Back to plans"</a></p>
@@ -334,6 +318,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                             when=move || tab.get() != PlanTab::Settings
                             fallback=move || icon_button("Back", IconKind::Back, Callback::new(move |_| go(PlanTab::Gantt, None)))
                         >
+                            {icon_button("Back to plans", IconKind::Back, Callback::new(move |_| navigate(Route::Plans)))}
                             <Show when=move || tab.get() == PlanTab::Gantt>
                                 {icon_button("Jump to today", IconKind::Today, Callback::new(move |_| jump.update(|n| *n += 1)))}
                             </Show>
@@ -344,17 +329,9 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                             {icon_button("Search", IconKind::Search, Callback::new(move |_| searching.set(true)))}
                         </Show>
                     </div>
-                    <button
-                        type="button"
-                        class="toolbar-title"
-                        title="Switch plan"
-                        aria-haspopup="listbox"
-                        aria-expanded=move || switching.get().to_string()
-                        on:click=move |_| switching.update(|s| *s = !*s)
-                    >
+                    <span class="toolbar-title">
                         <span class="toolbar-title-text">{move || name.get()}</span>
-                        <span class="toolbar-title-chevron">"▾"</span>
-                    </button>
+                    </span>
                     <div class="toolbar-right">
                         <Show when=move || { unplaced.get() > 0 }>
                             <button
@@ -388,26 +365,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         </button>
                     </div>
                     </div>
-                    <Show when=move || switching.get()>
-                        <div class="switcher-backdrop" on:click=move |_| switching.set(false)></div>
-                        <ul class="switcher" role="listbox">
-                            <For each=move || plans.get() key=|p| p.clone() children=move |(id, label)| {
-                                let current = id == plan;
-                                view! {
-                                    <li>
-                                        <a
-                                            class:current=current
-                                            href=Route::Plan(id, tab.get_untracked(), None).path()
-                                            on:click=move |_| switching.set(false)
-                                        >
-                                            <span class="tick">{if current { "✓" } else { "" }}</span>
-                                            {label}
-                                        </a>
-                                    </li>
-                                }
-                            } />
-                        </ul>
-                    </Show>
                 </div>
                 <div class="workspace">
                 <div class="main">
