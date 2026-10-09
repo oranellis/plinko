@@ -59,6 +59,9 @@ pub fn Gantt(
     violation: Callback<Mark, Vec<String>>,
     on_open: Callback<PlanNode>,
     on_toggle: Callback<PlanNode>,
+    /// A tap on nothing
+    #[prop(optional)]
+    on_blank: Option<Callback<()>>,
     /// Counts up each time to jump to today
     jump: RwSignal<u32>,
     /// An item to scroll to and flash
@@ -335,6 +338,8 @@ pub fn Gantt(
                     (true, false) => on_toggle.run(node),
                     (false, false) => on_open.run(node),
                 }
+            } else if let Some(blank) = on_blank {
+                blank.run(());
             }
             return;
         }

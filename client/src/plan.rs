@@ -23,6 +23,7 @@ use crate::{
     editor::{ItemEditor, remove_item},
     format,
     gantt::{self, Gantt, arrange::Mark, layout::Viewport, scene},
+    guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     model::{self, Look, Row},
     nav::{PlanTab, Route, navigate},
@@ -163,8 +164,28 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     // an item just added and not saved yet, which is dropped again if the window is cancelled
     let fresh = RwSignal::new(None::<Uuid>);
     let go = move |tab: PlanTab, open: Option<Uuid>| navigate(Route::Plan(plan, tab, open));
-    let on_open = Callback::new(move |node: PlanNode| go(tab.get_untracked(), Some(node.id())));
+    let guard = Guard::new();
+    // an item is opened or the pane closed only after asking about changes not yet saved
+    let on_open = Callback::new(move |node: PlanNode| {
+        guard.then(Callback::new(move |()| {
+            go(tab.get_untracked(), Some(node.id()))
+        }));
+    });
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
+    // leaving a new item that was never saved takes it away again, as Cancel does
+    let leave = Callback::new(move |()| {
+        let item = node.get_untracked();
+        if let Some(item) = item.filter(|i| fresh.get_untracked() == Some(i.id())) {
+            fresh.set(None);
+            remove_item(plan, item);
+        }
+        on_close.run(());
+    });
+    let on_blank = Callback::new(move |()| {
+        if node.get_untracked().is_some() {
+            guard.then(leave);
+        }
+    });
     let on_toggle = Callback::new(move |node: PlanNode| {
         collapsed.update(|c| {
             if !c.remove(&node.id()) {
@@ -367,7 +388,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     </div>
                 </div>
                 <div class="workspace">
-                <div class="main">
+                <div class="main" on:click=move |ev| if blank_click(&ev) { on_blank.run(()) }>
                     {move || match tab.get() {
                         PlanTab::Gantt => view! {
                             <Gantt
@@ -379,6 +400,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 violation=violation
                                 on_open=on_open
                                 on_toggle=on_toggle
+                                on_blank=on_blank
                                 jump=jump
                                 focus=focus
                             />
@@ -390,9 +412,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 {move || {
                     node.get()
                         .filter(|_| tab.get() != PlanTab::Settings)
-                        .map(|node| view! { <ItemPane plan=plan node=node fresh=fresh on_close=on_close /> })
+                        .map(|node| view! { <ItemPane plan=plan node=node fresh=fresh guard=guard on_close=on_close /> })
                 }}
                 </div>
+                <ConfirmLeave guard=guard />
                 <Show when=move || searching.get()>
                     <SearchWindow plan=plan on_found=on_found on_close=Callback::new(move |_| searching.set(false)) />
                 </Show>
@@ -411,14 +434,30 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     }
 }
 
+/// Whether a click landed on nothing in particular, rather than on something that does its own thing
+pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
+    use wasm_bindgen::JsCast;
+    ev.target()
+        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        .is_some_and(|t| {
+            t.closest("button, a, input, select, canvas, .name, .pane")
+                .ok()
+                .flatten()
+                .is_none()
+        })
+}
+
 /// The pane beside the chart for editing the item that is open
 #[component]
 pub fn ItemPane(
     plan: ShortId,
     node: PlanNode,
     fresh: RwSignal<Option<Uuid>>,
+    guard: Guard,
     on_close: Callback<()>,
 ) -> impl IntoView {
+    guard.opened();
+    on_cleanup(move || guard.closed());
     let title = match node {
         PlanNode::Task(_) => "Edit Task",
         PlanNode::Milestone(_) => "Edit Milestone",
@@ -442,7 +481,12 @@ pub fn ItemPane(
                 <h2>{title}</h2>
                 <button type="button" class="plain" aria-label="Close" on:click=move |_| cancel.run(())>"✕"</button>
             </header>
-            <div class="body">
+            <div
+                class="body"
+                on:input=move |ev| guard.touched(&ev)
+                on:change=move |ev| guard.touched(&ev)
+                on:click=move |ev| guard.touched(&ev)
+            >
                 <ItemEditor plan=plan node=node on_close=saved on_cancel=cancel />
             </div>
         </aside>

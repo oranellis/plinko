@@ -6,6 +6,7 @@ mod editor;
 mod format;
 mod forms;
 mod gantt;
+mod guard;
 mod home;
 mod icons;
 mod login;

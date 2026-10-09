@@ -13,8 +13,9 @@ use uuid::Uuid;
 use crate::{
     format,
     gantt::{arrange::Mark, info::info},
+    guard::{ConfirmLeave, Guard},
     mine::{MyTask, use_my_tasks},
-    plan::ItemPane,
+    plan::{ItemPane, blank_click},
     ui::use_sync,
 };
 
@@ -161,14 +162,22 @@ pub fn Allocations() -> impl IntoView {
     };
     let open = RwSignal::new(None::<(ShortId, PlanNode)>);
     let fresh = RwSignal::new(None::<Uuid>);
+    let guard = Guard::new();
+    let close = Callback::new(move |()| open.set(None));
+    let blank = move || {
+        if open.get_untracked().is_some() {
+            guard.then(close);
+        }
+    };
     view! {
         <div class="plan">
+            <ConfirmLeave guard=guard />
             <div class="bar allocbar">
                 <h1>"Allocations"</h1>
                 <button type="button" on:click=move |_| to_today()>"Today"</button>
             </div>
             <div class="workspace">
-                <div class="main">
+                <div class="main" on:click=move |ev| if blank_click(&ev) { blank() }>
                     <Show
                         when=move || mine.with(|m| !m.is_empty())
                         fallback=|| view! { <p class="empty">"No tasks are scheduled for you."</p> }
@@ -209,7 +218,7 @@ pub fn Allocations() -> impl IntoView {
                                         view! {
                                             <tr class:picked=move || open.with(|o| o.is_some_and(|(_, n)| n.id() == id))>
                                                 <td class="name" title=title>
-                                                    <button type="button" class="plain" on:click=move |_| open.set(Some((plan, PlanNode::Task(id))))>
+                                                    <button type="button" class="plain" on:click=move |_| guard.then(Callback::new(move |()| open.set(Some((plan, PlanNode::Task(id))))))>
                                                         <strong>{task.name.clone()}</strong>
                                                         <span class="small">{task.plan_name.clone()}</span>
                                                     </button>
@@ -245,6 +254,7 @@ pub fn Allocations() -> impl IntoView {
                             plan=plan
                             node=node
                             fresh=fresh
+                            guard=guard
                             on_close=Callback::new(move |_| open.set(None))
                         />
                     })
