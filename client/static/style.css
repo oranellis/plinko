@@ -290,7 +290,9 @@ button.day .mark { position: absolute; right: 4px; top: 4px; width: 6px; height:
 .rule span { flex: 1; min-width: 0; }
 .rule.picked { border-color: var(--accent); }
 .rule.draft { border-style: dashed; color: var(--muted); }
-.weekrow { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.weekrow { display: grid; gap: 6px; }
+.weekrow .field { grid-template-columns: 44px 1fr; align-items: center; }
+.rule-editor { overflow-x: hidden; }
 @media (max-width: 719px) {
   .modal.wide { height: 92dvh; }
   .rulecal { flex-direction: column; overflow-y: auto; }

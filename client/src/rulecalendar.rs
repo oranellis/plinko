@@ -349,14 +349,18 @@ pub fn RuleCalendar<V: Value>(
                 .collect::<std::collections::HashSet<_>>()
         })
     });
+    // the rules with a say in the picked day, or just the default week until a day is picked
     let listed = Memo::new(move |_| {
-        let (Some(set), Some(day)) = (rules.get(), selected.get()) else {
+        let Some(set) = rules.get() else {
             return Vec::new();
         };
-        set.active_rules(day)
-            .into_iter()
-            .map(|r| (*r.id(), describe(r)))
-            .collect::<Vec<_>>()
+        match selected.get() {
+            Some(day) => set.active_rules(day),
+            None => set.rules().get(&DEFAULT_RULE).into_iter().collect(),
+        }
+        .into_iter()
+        .map(|r| (*r.id(), describe(r)))
+        .collect::<Vec<_>>()
     });
     let measure = move || {
         if let Some(element) = scroller.get_untracked() {
@@ -417,18 +421,22 @@ pub fn RuleCalendar<V: Value>(
                 </div>
             </div>
             <aside class="rulepane">
-                <Show
-                    when=move || selected.get().is_some()
-                    fallback=|| view! { <p class="small pad">"Pick a day to see and change the rules that apply."</p> }
-                >
                     <div class="rule-editor">
                         {move || match editing.get() {
                             None => view! {
-                                <p class="small">"Pick a rule below to change it, or add a new one."</p>
-                                <button type="button" class="add" on:click=move |_| {
-                                    let day = selected.get_untracked().unwrap_or(today);
-                                    editing.set(Some(make(day, None)));
-                                }>"+ New rule"</button>
+                                <p class="small">
+                                    {move || if selected.get().is_some() {
+                                        "Pick a rule below to change it, or add a new one."
+                                    } else {
+                                        "Pick a day to add a rule on it, or change the default week below."
+                                    }}
+                                </p>
+                                <Show when=move || selected.get().is_some()>
+                                    <button type="button" class="add" on:click=move |_| {
+                                        let day = selected.get_untracked().unwrap_or(today);
+                                        editing.set(Some(make(day, None)));
+                                    }>"+ New rule"</button>
+                                </Show>
                             }.into_any(),
                             Some(draft) => view! {
                                 <RuleForm
@@ -445,7 +453,7 @@ pub fn RuleCalendar<V: Value>(
                         }}
                     </div>
                     <div class="rule-list">
-                        <h3>{move || selected.get().map(format::day).unwrap_or_default()}</h3>
+                        <h3>{move || selected.get().map_or("Default".to_string(), format::day)}</h3>
                         <Show when=move || editing.with(|e| e.as_ref().is_some_and(|d| d.rule.is_none()))>
                             <div class="rule draft"><span>"New rule (not saved yet)"</span></div>
                         </Show>
@@ -462,7 +470,6 @@ pub fn RuleCalendar<V: Value>(
                             </div>
                         } />
                     </div>
-                </Show>
             </aside>
         </div>
     }
