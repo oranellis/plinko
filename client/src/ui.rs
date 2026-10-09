@@ -74,10 +74,16 @@ pub fn Field(#[prop(into)] label: Signal<String>, children: Children) -> impl In
 
 /// A labelled group of controls, for the ones a label cannot wrap
 #[component]
-pub fn Block(#[prop(into)] label: String, children: Children) -> impl IntoView {
+pub fn Block(
+    #[prop(into)] label: String,
+    /// What the label means, shown when the pointer rests on it
+    #[prop(optional, into)]
+    hint: String,
+    children: Children,
+) -> impl IntoView {
     view! {
         <div class="field">
-            <span>{label}</span>
+            <span title=hint>{label}</span>
             {children()}
         </div>
     }

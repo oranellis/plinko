@@ -6,7 +6,7 @@ use plinko::types::{
     common::TimeConstraint,
     dependency::{DependencyNode, PlanNode},
     parent::Parent,
-    task::{Assignee, Status, Worker},
+    task::{Status, Worker},
 };
 use uuid::Uuid;
 
@@ -56,26 +56,6 @@ pub fn parse_worker(text: &str) -> Option<Worker> {
         "tag" => Some(Worker::Tag(id)),
         "group" => Some(Worker::UserGroup(id)),
         _ => None,
-    }
-}
-
-/// Who actually does the work, `auto` to leave it to the scheduler
-pub fn assignee_value(assignee: Option<Assignee>) -> String {
-    match assignee {
-        None => "auto".to_string(),
-        Some(Assignee::Placeholder) => "placeholder".to_string(),
-        Some(Assignee::User(id)) => format!("user:{id}"),
-    }
-}
-
-pub fn parse_assignee(text: &str) -> Option<Option<Assignee>> {
-    match text {
-        "auto" => Some(None),
-        "placeholder" => Some(Some(Assignee::Placeholder)),
-        _ => text
-            .strip_prefix("user:")
-            .and_then(|id| Uuid::parse_str(id).ok())
-            .map(|id| Some(Assignee::User(id))),
     }
 }
 
@@ -163,13 +143,6 @@ mod tests {
             Worker::Placeholder,
         ] {
             assert_eq!(parse_worker(&worker_value(worker)), Some(worker));
-        }
-        for assignee in [
-            None,
-            Some(Assignee::Placeholder),
-            Some(Assignee::User(id())),
-        ] {
-            assert_eq!(parse_assignee(&assignee_value(assignee)), Some(assignee));
         }
         for parent in [Parent::PlanStart, Parent::Node(id())] {
             assert_eq!(parse_parent(&parent_value(parent)), Some(parent));

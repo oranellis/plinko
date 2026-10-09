@@ -562,6 +562,11 @@ fn TaskForm(
             actual_end_date: ended.get_untracked(),
         };
         let description = description.get_untracked();
+        let kept: std::collections::HashMap<Worker, Assignee> = recorded
+            .get_untracked()
+            .into_iter()
+            .filter(|(worker, _)| allocations.contains_key(worker))
+            .collect();
         let patch = TaskPatch {
             id,
             name: changed(&old.name().to_string(), name.get_untracked()),
@@ -578,7 +583,8 @@ fn TaskForm(
             dependencies: changed(old.dependencies(), deps.get_untracked()),
             allocations: changed(old.allocations(), allocations),
             affinities: changed(old.affinities(), affinities.get_untracked()),
-            actual_workers: changed(old.actual_workers(), recorded.get_untracked()),
+            // who did the work is whoever was asked for, so what is kept is only for those still asked
+            actual_workers: changed(old.actual_workers(), kept),
             description: changed(
                 &old.description().map(str::to_string),
                 (!description.is_empty()).then_some(description),
@@ -654,77 +660,11 @@ fn TaskForm(
             <Workers plan=plan allocations=allocations />
             <Dependencies plan=plan me=node deps=deps />
             <Dependents plan=plan me=node deps=dependents />
-            <Recorded plan=plan task=original recorded=recorded allocations=allocations />
             <Affinities plan=plan chosen=affinities />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
     .into_any()
-}
-
-/// Who really did the work, for the people asked for
-#[component]
-fn Recorded(
-    plan: ShortId,
-    task: StoredValue<Task>,
-    recorded: RwSignal<std::collections::HashMap<Worker, Assignee>>,
-    allocations: RwSignal<Vec<(Worker, u8)>>,
-) -> impl IntoView {
-    let _ = task;
-    let choices = Signal::derive(move || {
-        let mut options = vec![("auto".to_string(), "Whoever is scheduled".to_string())];
-        options.extend(worker_options(plan).get().into_iter().filter_map(|(v, l)| {
-            let user = forms::parse_worker(&v).and_then(|w| match w {
-                Worker::User(id) => Some(Assignee::User(id)),
-                Worker::Placeholder => Some(Assignee::Placeholder),
-                _ => None,
-            })?;
-            Some((forms::assignee_value(Some(user)), l))
-        }));
-        options
-    });
-    view! {
-        <Show when=move || recorded.with(|r| !r.is_empty())>
-            <Block label="Who Actually Did The Work"><div class="list">
-                {move || {
-                    let asked: Vec<Worker> = allocations.with(|a| a.iter().map(|(w, _)| *w).collect());
-                    asked
-                        .into_iter()
-                        .map(|worker| {
-                            let current = Signal::derive(move || {
-                                forms::assignee_value(recorded.with(|r| r.get(&worker).copied()))
-                            });
-                            view! {
-                                <div class="row">
-                                    <span>{worker_label(plan, worker)}</span>
-                                    <Select
-                                        value=current
-                                        options=choices
-                                        on_change=Callback::new(move |v: String| {
-                                            if let Some(choice) = forms::parse_assignee(&v) {
-                                                recorded.update(|r| match choice {
-                                                    Some(who) => { r.insert(worker, who); }
-                                                    None => { r.remove(&worker); }
-                                                });
-                                            }
-                                        })
-                                    />
-                                </div>
-                            }
-                        })
-                        .collect_view()
-                }}
-            </div></Block>
-        </Show>
-    }
-}
-
-fn worker_label(plan: ShortId, worker: Worker) -> String {
-    worker_options(plan)
-        .get_untracked()
-        .into_iter()
-        .find(|(v, _)| *v == forms::worker_value(worker))
-        .map_or("Someone".to_string(), |(_, l)| l)
 }
 
 #[component]
@@ -743,7 +683,7 @@ fn Affinities(plan: ShortId, chosen: RwSignal<HashSet<Uuid>>) -> impl IntoView {
     });
     view! {
         <Show when=move || all.with(|a| !a.is_empty())>
-            <Block label="Only On The Days Of"><div class="list">
+            <Block label="Task Affinity" hint="Limits the task to the days an affinity allows, which are set in the plan settings. With none ticked it can be worked on any day."><div class="list">
                 {move || {
                     all.get()
                         .into_iter()

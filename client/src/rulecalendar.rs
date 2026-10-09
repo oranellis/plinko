@@ -404,7 +404,11 @@ pub fn RuleCalendar<V: Value>(
         <div class="rulecal">
             <div class="calcol">
                 <div class="calbar">
-                    <button type="button" on:click=move |_| to_today()>"Today"</button>
+                    <button type="button" on:click=move |_| {
+                        to_today();
+                        selected.set(Some(today));
+                        editing.set(None);
+                    }>"Today"</button>
                 </div>
                 <div class="months" node_ref=scroller on:scroll=move |_| measure()>
                     <div class="monthspace" style=move || format!("height:{}px", f64::from(last.get() - first.get() + 1) * MONTH_HEIGHT)>

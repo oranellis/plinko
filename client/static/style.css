@@ -222,8 +222,9 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .popover li button:hover { background: var(--raised); }
 .popover li.none { color: var(--faint); padding: 6px 8px; font-size: 13px; }
 .hours { display: flex; gap: 3px; align-items: center; }
-.hours .cell { width: 14px; height: 22px; min-height: 0; padding: 0; background: var(--line); border-radius: 2px; }
-.hours .cell.none { width: 5px; }
+.hours .cell { width: 16px; height: 22px; min-height: 0; padding: 0; background: var(--line); border-radius: 2px; }
+.hours .cell.none { width: 9px; position: relative; }
+.hours .cell.none::before { content: ''; position: absolute; inset: -6px -8px; }
 .hours .cell.lit { background: var(--accent); }
 .hours .small { min-width: 28px; margin-left: 4px; }
 
