@@ -31,6 +31,8 @@ pub enum TenantUpdateType {
     Availability(Uuid, RuleSetUpdate<Workload>),
     /// Moves the tenant's clock, which only admins (the server runner) may do
     SetToday(NaiveDate),
+    /// Stars a plan for the person making the update, or takes the star off
+    Favourite(ShortId, bool),
     Plan(PlanTenantUpdate),
 }
 
@@ -50,7 +52,7 @@ impl TenantUpdateType {
             TenantUpdateType::User(update) => update.assign_id(),
             TenantUpdateType::UserGroup(update) => update.assign_id(),
             TenantUpdateType::Availability(_, update) => update.assign_ids(),
-            TenantUpdateType::SetToday(_) => {}
+            TenantUpdateType::SetToday(_) | TenantUpdateType::Favourite(..) => {}
             TenantUpdateType::Plan(update) => update.assign_ids(),
         }
     }

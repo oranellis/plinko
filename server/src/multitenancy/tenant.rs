@@ -198,6 +198,20 @@ impl Tenant {
                 self.volatile.remove(&user);
                 Ok(())
             }
+            TenantUpdateType::Favourite(plan, starred) => {
+                self.authorize_plan(u.actor, is_admin, &plan)?;
+                let favourites = &mut self
+                    .users
+                    .get_mut(&u.actor)
+                    .ok_or(PlinkoError::Forbidden(u.actor))?
+                    .favourites;
+                if starred {
+                    favourites.insert(plan);
+                } else {
+                    favourites.remove(&plan);
+                }
+                Ok(())
+            }
             TenantUpdateType::SetToday(day) => {
                 allow(is_admin, u.actor)?;
                 self.today = day;
@@ -222,6 +236,9 @@ impl Tenant {
             PlanTenantUpdate::Remove(id) => {
                 self.authorize_plan(actor, is_admin, &id)?;
                 self.plan_calendars.remove(&id);
+                self.users
+                    .values_mut()
+                    .for_each(|u| u.favourites.retain(|p| *p != id));
                 self.plans
                     .remove(&id)
                     .map(drop)

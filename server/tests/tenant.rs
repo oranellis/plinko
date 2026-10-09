@@ -552,3 +552,26 @@ fn the_clock_is_a_tenant_setting_only_admins_move() {
     apply(&mut tenant, root, TenantUpdateType::SetToday(d(5))).unwrap();
     assert_eq!(tenant.today(), d(5));
 }
+
+#[test]
+fn people_star_the_plans_they_are_in_for_themselves() {
+    let (mut tenant, root) = new_tenant();
+    let member = add_user(&mut tenant, root, Role::Member);
+    let plan = add_plan(&mut tenant, root).unwrap();
+    // a member outside the plan cannot star it
+    let star = |plan, starred| TenantUpdateType::Favourite(plan, starred);
+    assert!(apply(&mut tenant, member, star(plan, true)).is_err());
+
+    apply(&mut tenant, root, star(plan, true)).unwrap();
+    assert!(tenant.users()[&root].favourites().contains(&plan));
+    // the star is theirs alone
+    assert!(tenant.users()[&member].favourites().is_empty());
+    apply(&mut tenant, root, star(plan, false)).unwrap();
+    assert!(tenant.users()[&root].favourites().is_empty());
+
+    // removing a plan takes its stars with it
+    apply(&mut tenant, root, star(plan, true)).unwrap();
+    let remove = TenantUpdateType::Plan(PlanTenantUpdate::Remove(plan));
+    apply(&mut tenant, root, remove).unwrap();
+    assert!(tenant.users()[&root].favourites().is_empty());
+}

@@ -1,4 +1,6 @@
 // modules{{{
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -6,7 +8,7 @@ use crate::{
     availability::{calendar::Calendar, rule_set::RuleSet},
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{error::PlinkoResult, workload::Workload},
+    types::{error::PlinkoResult, short_id::ShortId, workload::Workload},
 };
 // }}}
 
@@ -24,6 +26,9 @@ pub struct TenantLoginUser {
     email: String,
     role: Role,
     pub(super) availability: RuleSet<Workload>,
+    /// The plans the person has starred, which only they change
+    #[serde(default)]
+    pub(super) favourites: HashSet<ShortId>,
 }
 
 // impl TenantLoginUser{{{
@@ -35,6 +40,7 @@ impl From<NewTenantLoginUser> for TenantLoginUser {
             email: new.email,
             role: new.role,
             availability: RuleSet::default(),
+            favourites: HashSet::new(),
         }
     }
 }
@@ -47,6 +53,7 @@ impl TenantLoginUser {
             email,
             role,
             availability: RuleSet::default(),
+            favourites: HashSet::new(),
         }
     }
 
@@ -68,6 +75,10 @@ impl TenantLoginUser {
 
     pub fn availability(&self) -> &RuleSet<Workload> {
         &self.availability
+    }
+
+    pub fn favourites(&self) -> &HashSet<ShortId> {
+        &self.favourites
     }
 }
 

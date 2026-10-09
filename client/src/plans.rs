@@ -18,25 +18,32 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-struct Card {
-    id: ShortId,
-    name: String,
+pub struct Card {
+    pub id: ShortId,
+    pub name: String,
     start: NaiveDate,
     tasks: usize,
     /// When it finishes and how late that is compared with the plan on its own
     forecast: Option<(NaiveDate, i64)>,
     problems: usize,
+    /// Starred by the person signed in
+    pub favourite: bool,
 }
 
-#[component]
-pub fn Plans() -> impl IntoView {
+/// The plans the person signed in can see, by name
+pub fn use_cards() -> Memo<Vec<Card>> {
     let sync = use_sync();
-    let cards = Memo::new(move |_| {
+    Memo::new(move |_| {
         let schedule = sync.schedule.get();
+        let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
         sync.tenant.with(|tenant| {
             let Some(tenant) = tenant else {
                 return Vec::new();
             };
+            let starred = me
+                .and_then(|me| tenant.users().get(&me))
+                .map(|u| u.favourites().clone())
+                .unwrap_or_default();
             let mut cards: Vec<Card> = tenant
                 .plans()
                 .values()
@@ -52,11 +59,73 @@ pub fn Plans() -> impl IntoView {
                             .map(|e| (e.forecast, e.delay())),
                         problems: state
                             .map_or(0, |s| s.unscheduled.len() + s.constraint_violations.len()),
+                        favourite: starred.contains(plan.id()),
                     }
                 })
                 .collect();
             cards.sort_by(|a, b| (&a.name, a.id).cmp(&(&b.name, b.id)));
             cards
+        })
+    })
+}
+
+/// Plans as cards, each with a star to favourite it
+#[component]
+pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
+    let sync = use_sync();
+    view! {
+        <ul class="cards">
+            <For each=move || cards.get() key=|c| format!("{c:?}") children=move |card| {
+                let id = card.id;
+                let starred = card.favourite;
+                view! {
+                    <li>
+                        <a class="card" href=Route::Plan(id, crate::nav::PlanTab::Gantt, None).path()>
+                            <strong>{card.name.clone()}</strong>
+                            <span>{format!("{} tasks · starts {}", card.tasks, format::day(card.start))}</span>
+                            {card.forecast.map(|(end, late)| view! {
+                                <span class:late={late > 0}>
+                                    {format!("Finishes {} · {}", format::day(end), format::delay(late))}
+                                </span>
+                            })}
+                            {(card.problems > 0).then(|| view! {
+                                <span class="problem">{format!("⚠ {} need attention", card.problems)}</span>
+                            })}
+                        </a>
+                        <button
+                            type="button"
+                            class="star"
+                            class:on=starred
+                            title=if starred { "Remove from favourites" } else { "Add to favourites" }
+                            aria-pressed=starred.to_string()
+                            on:click=move |_| sync.send(TenantUpdateType::Favourite(id, !starred))
+                        >
+                            "★"
+                        </button>
+                    </li>
+                }
+            } />
+        </ul>
+    }
+}
+
+#[component]
+pub fn Plans() -> impl IntoView {
+    let cards = use_cards();
+    let favourites = Memo::new(move |_| {
+        cards.with(|c| {
+            c.iter()
+                .filter(|c| c.favourite)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+    });
+    let others = Memo::new(move |_| {
+        cards.with(|c| {
+            c.iter()
+                .filter(|c| !c.favourite)
+                .cloned()
+                .collect::<Vec<_>>()
         })
     });
     let creating = RwSignal::new(false);
@@ -72,27 +141,12 @@ pub fn Plans() -> impl IntoView {
                 <p>"You are not in any plans yet. Make one to get started."</p>
             </div>
         </Show>
-        <ul class="cards">
-            <For each=move || cards.get() key=|c| format!("{c:?}") children=move |card| {
-                let id = card.id;
-                view! {
-                    <li>
-                        <a class="card" href=Route::Plan(id, crate::nav::PlanTab::Gantt, None).path()>
-                            <strong>{card.name.clone()}</strong>
-                            <span>{format!("{} tasks · starts {}", card.tasks, format::day(card.start))}</span>
-                            {card.forecast.map(|(end, late)| view! {
-                                <span class:late={late > 0}>
-                                    {format!("Finishes {} · {}", format::day(end), format::delay(late))}
-                                </span>
-                            })}
-                            {(card.problems > 0).then(|| view! {
-                                <span class="problem">{format!("⚠ {} need attention", card.problems)}</span>
-                            })}
-                        </a>
-                    </li>
-                }
-            } />
-        </ul>
+        <Show when=move || favourites.with(|f| !f.is_empty())>
+            <h2 class="section">"Favourites"</h2>
+            <PlanCards cards=favourites />
+            <h2 class="section">"Other Plans"</h2>
+        </Show>
+        <PlanCards cards=others />
         <Show when=move || creating.get()>
             <NewPlanForm on_close=Callback::new(move |_| creating.set(false)) />
         </Show>
