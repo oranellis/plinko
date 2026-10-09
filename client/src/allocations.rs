@@ -9,6 +9,7 @@ use plinko::{
     types::{dependency::PlanNode, short_id::ShortId},
 };
 use uuid::Uuid;
+use wasm_bindgen::JsCast;
 
 use crate::{
     format,
@@ -34,6 +35,44 @@ const BEFORE: u64 = 2;
 /// The fewest weeks shown, and how many more than the scroll has reached
 const LEAST: u64 = 12;
 const AHEAD: u64 = 4;
+/// How much of a name cell goes to the task name before the plan name is given its width, and
+/// the room around the two names in it (padding and the gap between them)
+const TASK_SHARE: f64 = 0.65;
+const NAME_ROOM: f64 = 22.0 + 10.0 + 6.0;
+
+/// How wide `text` is drawn in `font`, measured on a canvas that is not shown
+fn text_width(font: &str, text: &str) -> f64 {
+    thread_local! {
+        static CONTEXT: Option<web_sys::CanvasRenderingContext2d> = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.create_element("canvas").ok())
+            .and_then(|c| c.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+            .and_then(|c| c.get_context("2d").ok().flatten())
+            .and_then(|c| c.dyn_into::<web_sys::CanvasRenderingContext2d>().ok());
+    }
+    CONTEXT.with(|ctx| {
+        ctx.as_ref().map_or(0.0, |ctx| {
+            ctx.set_font(font);
+            ctx.measure_text(text).map_or(0.0, |m| m.width())
+        })
+    })
+}
+
+/// How wide the task names get out of a name cell `room` wide: 65% to start with, then the line
+/// between the names moves to where one side has all the width its longest name needs
+fn task_column(room: f64, longest_task: f64, longest_plan: f64) -> f64 {
+    let mut task = room * TASK_SHARE;
+    // the plan names need less than what is left, so the task names have the rest
+    if longest_plan < room - task {
+        task = room - longest_plan;
+    }
+    // the task names need less than that, so they have only what they need
+    if longest_task < task {
+        task = longest_task;
+    }
+    task.clamp(0.0, room)
+}
+
 /// The hours a day holds, which the pies and bars are drawn against
 const FULL_DAY: u8 = 8;
 /// How tall a full day's bar is
@@ -116,6 +155,23 @@ pub fn Allocations(
     });
     let scroller = NodeRef::<html::Div>::new();
     let name_width = RwSignal::new(NAME_WIDTH);
+    // where the line between the task names and the plan names falls
+    let task_width = Memo::new(move |_| {
+        let longest = |font: &str, name: &dyn Fn(&MyTask) -> String| {
+            mine.with(|m| {
+                m.iter()
+                    .map(|t| text_width(font, &name(t)))
+                    .fold(0.0, f64::max)
+            })
+        };
+        let tasks = longest("700 14px system-ui, sans-serif", &|t| t.name.clone());
+        let plans = longest("400 13px system-ui, sans-serif", &|t| t.plan_name.clone());
+        task_column(
+            (name_width.get() - NAME_ROOM).max(0.0),
+            tasks + 4.0,
+            plans + 4.0,
+        )
+    });
     // dragging the edge of the names
     let dragging = RwSignal::new(false);
     let near_edge = move |ev: &leptos::ev::PointerEvent| {
@@ -233,7 +289,7 @@ pub fn Allocations(
                         <div
                             class="alloc scroll"
                             class:grabbing=move || dragging.get()
-                            style=move || format!("--name-w:{}px", name_width.get())
+                            style=move || format!("--name-w:{}px;--task-w:{}px", name_width.get(), task_width.get())
                             node_ref=scroller
                             on:scroll=move |_| measure()
                             on:pointerdown=move |ev| {
@@ -369,6 +425,18 @@ pub fn Allocations(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_line_between_the_names_moves_to_where_a_side_has_what_it_needs() {
+        // both need more than they get, so it is 65 to 35
+        assert_eq!(task_column(200.0, 300.0, 300.0), 130.0);
+        // short plan names leave the rest to the task names
+        assert_eq!(task_column(200.0, 300.0, 40.0), 160.0);
+        // short task names stop where they end
+        assert_eq!(task_column(200.0, 50.0, 300.0), 50.0);
+        assert_eq!(task_column(200.0, 50.0, 40.0), 50.0);
+        assert_eq!(task_column(0.0, 50.0, 40.0), 0.0);
+    }
 
     #[test]
     fn a_task_always_has_the_same_colour() {
