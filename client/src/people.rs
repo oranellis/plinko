@@ -16,11 +16,10 @@ use uuid::Uuid;
 
 use crate::{
     api,
+    availability::AvailabilityWindow,
     icons::IconKind,
-    nav::{Availability, Route},
-    ui::{
-        Actions, Block, Choice, Field, IconButton, IconLink, Modal, Picker, Select, Text, use_sync,
-    },
+    nav::Availability,
+    ui::{Actions, Block, Choice, Field, IconButton, Modal, Picker, Select, Text, use_sync},
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -88,6 +87,7 @@ pub fn People() -> impl IntoView {
     });
     let editing = RwSignal::new(None::<Option<Uuid>>);
     let editing_group = RwSignal::new(None::<Option<Uuid>>);
+    let hours = RwSignal::new(None::<Uuid>);
     view! {
         <div class="people">
             <div class="bar"><h1>"People"</h1></div>
@@ -104,7 +104,7 @@ pub fn People() -> impl IntoView {
                                 <strong>{p.name.clone()}</strong>
                                 <span class="small">{p.email.clone()}{if p.admin { " · admin" } else { "" }}</span>
                                 <span class="actions-right">
-                                    <IconLink kind=IconKind::Calendar label="Availability" to=Route::Availability(Availability::User(id)) />
+                                    <IconButton kind=IconKind::Calendar label="Availability" on_click=Callback::new(move |()| hours.set(Some(id))) />
                                     <IconButton kind=IconKind::Pencil label="Edit" on_click=Callback::new(move |()| editing.set(Some(Some(id)))) />
                                     <Show
                                         when=move || sync.me.with(|m| m.as_ref().map(|m| m.id)) != Some(id)
@@ -144,6 +144,9 @@ pub fn People() -> impl IntoView {
                 </ul>
             </section>
         </div>
+        {move || hours.get().map(|user| view! {
+            <AvailabilityWindow of=Availability::User(user) on_close=Callback::new(move |()| hours.set(None)) />
+        })}
         {move || editing.get().map(|which| view! {
             <PersonForm which=which people=people on_close=Callback::new(move |_| editing.set(None)) />
         })}

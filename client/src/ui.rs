@@ -38,16 +38,6 @@ pub fn IconButton(
     }
 }
 
-/// An icon that goes to another page
-#[component]
-pub fn IconLink(kind: IconKind, #[prop(into)] label: String, to: Route) -> impl IntoView {
-    view! {
-        <a class="icon" href=to.path() title=label.clone() aria-label=label>
-            <Icon kind=kind size=18 />
-        </a>
-    }
-}
-
 /// A panel over the page, a sheet from the bottom on a phone
 #[component]
 pub fn Modal(
