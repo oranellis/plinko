@@ -20,6 +20,7 @@ pub struct Milestone {
     parent: Parent,
     time_constraint: TimeConstraint,
     dependencies: Vec<Dependency>,
+    description: Option<String>,
     data: DataBlocks,
     persistent_state: PersistentState,
 }
@@ -32,6 +33,14 @@ impl Milestone {
 
     pub fn persistent_state(&self) -> &PersistentState {
         &self.persistent_state
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    pub(crate) fn set_description(&mut self, description: Option<String>) {
+        self.description = description;
     }
 
     pub fn data(&self) -> &DataBlocks {
@@ -67,6 +76,7 @@ impl From<NewMilestone> for Milestone {
             parent: new.parent,
             time_constraint: TimeConstraint::None,
             dependencies: Vec::new(),
+            description: None,
             data: DataBlocks::default(),
             persistent_state: PersistentState::default(),
         }

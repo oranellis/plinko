@@ -65,7 +65,6 @@ fn task_patch(id: Uuid) -> TaskPatch {
         time_constraint: None,
         dependencies: None,
         allocations: None,
-        description: None,
         affinities: None,
         actual_workers: None,
         persistent_state: None,

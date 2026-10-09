@@ -80,7 +80,6 @@ fn set_state(setup: &mut Setup, state: PersistentState) {
         allocations: None,
         affinities: None,
         actual_workers: None,
-        description: None,
         persistent_state: Some(state),
     };
     let update = PlanUpdate::Task(Crud::Update(patch));

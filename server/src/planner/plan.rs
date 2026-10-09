@@ -290,10 +290,42 @@ impl Plan {
                     PlanNode::Milestone(id) => {
                         self.milestones.get_mut(&id).map(Milestone::data_mut)
                     }
-                    _ => return Err("only tasks and milestones hold data blocks".into()),
+                    PlanNode::TaskGroup(id) => {
+                        self.task_groups.get_mut(&id).map(TaskGroup::data_mut)
+                    }
+                    PlanNode::PlanBuffer(_) => {
+                        return Err("buffers hold no data blocks".into());
+                    }
                 };
                 let data = data.ok_or_else(|| PlinkoError::ItemDoesNotExist(node.id()))?;
                 DataBlock::apply_crud(data, update)
+            }
+            PlanUpdate::Describe(node, text) => {
+                let missing = || PlinkoError::ItemDoesNotExist(node.id());
+                // an empty description is no description
+                let text = text.filter(|t| !t.is_empty());
+                match node {
+                    PlanNode::Task(id) => {
+                        self.tasks
+                            .get_mut(&id)
+                            .ok_or_else(missing)?
+                            .set_description(text);
+                    }
+                    PlanNode::Milestone(id) => {
+                        self.milestones
+                            .get_mut(&id)
+                            .ok_or_else(missing)?
+                            .set_description(text);
+                    }
+                    PlanNode::TaskGroup(id) => {
+                        self.task_groups
+                            .get_mut(&id)
+                            .ok_or_else(missing)?
+                            .set_description(text);
+                    }
+                    PlanNode::PlanBuffer(_) => return Err("buffers have no description".into()),
+                }
+                Ok(())
             }
             PlanUpdate::Availability(update) => self.default_availability.apply_update(update),
             PlanUpdate::SchedulerData(patch) => self.scheduler_data.apply_patch(patch),

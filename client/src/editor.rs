@@ -541,7 +541,6 @@ fn TaskForm(
         .unwrap_or_default();
     let node = PlanNode::Task(id);
     let name = RwSignal::new(task.name().to_string());
-    let description = RwSignal::new(task.description().unwrap_or_default().to_string());
     let duration = RwSignal::new(i64::from(task.duration()));
     let mode = RwSignal::new(
         if task.mode() == ScheduleMode::Strict {
@@ -590,7 +589,6 @@ fn TaskForm(
             actual_start_date: started.get_untracked(),
             actual_end_date: ended.get_untracked(),
         };
-        let description = description.get_untracked();
         let kept: std::collections::HashMap<Worker, Assignee> = recorded
             .get_untracked()
             .into_iter()
@@ -614,10 +612,6 @@ fn TaskForm(
             affinities: changed(old.affinities(), affinities.get_untracked()),
             // who did the work is whoever was asked for, so what is kept is only for those still asked
             actual_workers: changed(old.actual_workers(), kept),
-            description: changed(
-                &old.description().map(str::to_string),
-                (!description.is_empty()).then_some(description),
-            ),
             persistent_state: changed(&old.persistent_state(), new_state),
         };
         sync.plan(plan, PlanUpdate::Task(Crud::Update(patch)));
@@ -628,9 +622,6 @@ fn TaskForm(
         <form class="form" on:submit=move |ev| { ev.prevent_default(); save(()); }>
             <Field label="Name">
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
-            </Field>
-            <Field label="Description">
-                <textarea prop:value=move || description.get() on:input=move |ev| description.set(event_target_value(&ev))></textarea>
             </Field>
             <Block label="Status">
                 <Segmented

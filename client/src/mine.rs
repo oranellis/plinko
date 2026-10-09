@@ -110,7 +110,6 @@ pub fn set_status(plan: ShortId, task: Uuid, status: Status) {
         allocations: None,
         affinities: None,
         actual_workers: None,
-        description: None,
         persistent_state: Some(PersistentState { status, ..was }),
     };
     sync.plan(plan, PlanUpdate::Task(Crud::Update(patch)));

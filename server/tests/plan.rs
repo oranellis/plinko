@@ -209,7 +209,6 @@ fn tasks_move_between_groups_and_block_group_removal() {
         time_constraint: None,
         dependencies: None,
         allocations: None,
-        description: None,
         affinities: None,
         actual_workers: None,
         persistent_state: None,

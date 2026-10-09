@@ -35,8 +35,10 @@ pub enum PlanUpdate {
     Target(Crud<NewTarget, TargetPatch>),
     Affinity(Crud<NewAffinity, AffinityPatch>),
     AffinityRules(Uuid, RuleSetUpdate<bool>),
-    /// Data blocks on a task or milestone
+    /// Data blocks on a task, milestone or task group
     Data(PlanNode, Crud<NewDataBlock, DataBlockPatch>),
+    /// The description of a task, milestone or task group, `None` to clear it
+    Describe(PlanNode, Option<String>),
     Availability(RuleSetUpdate<Workload>),
     SchedulerData(PlanSchedulerDataPatch),
 }
@@ -65,7 +67,6 @@ impl PlanUpdate {
                 allocations: None,
                 affinities: None,
                 actual_workers: None,
-                description: None,
                 persistent_state: None,
             })),
             PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Update(MilestonePatch {
@@ -140,6 +141,7 @@ impl PlanUpdate {
             PlanUpdate::Affinity(update) => update.assign_id(),
             PlanUpdate::AffinityRules(_, update) => update.assign_ids(),
             PlanUpdate::Data(_, update) => update.assign_id(),
+            PlanUpdate::Describe(..) => {}
             PlanUpdate::Availability(update) => update.assign_ids(),
             PlanUpdate::User(_) | PlanUpdate::UserGroup(_) | PlanUpdate::SchedulerData(_) => {}
         }

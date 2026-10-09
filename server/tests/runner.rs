@@ -40,7 +40,6 @@ fn patch(id: Uuid) -> TaskPatch {
         allocations: None,
         affinities: None,
         actual_workers: None,
-        description: None,
         persistent_state: None,
     }
 }

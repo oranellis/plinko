@@ -6,7 +6,10 @@ use uuid::Uuid;
 use crate::{
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{common::DateRange, dependency::Dependency, error::PlinkoResult, parent::Parent},
+    types::{
+        common::DateRange, data_block::DataBlocks, dependency::Dependency, error::PlinkoResult,
+        parent::Parent,
+    },
 };
 // }}}
 
@@ -24,6 +27,8 @@ pub struct TaskGroup {
     name: String,
     dependencies: Vec<Dependency>,
     parent: Parent,
+    description: Option<String>,
+    data: DataBlocks,
 }
 
 // impl TaskGroup {{{
@@ -42,6 +47,22 @@ impl TaskGroup {
 
     pub fn parent(&self) -> Parent {
         self.parent
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    pub(crate) fn set_description(&mut self, description: Option<String>) {
+        self.description = description;
+    }
+
+    pub fn data(&self) -> &DataBlocks {
+        &self.data
+    }
+
+    pub(crate) fn data_mut(&mut self) -> &mut DataBlocks {
+        &mut self.data
     }
 
     /// The range the group covers. `start` is the day its dependencies let members start, and
@@ -65,6 +86,8 @@ impl From<NewTaskGroup> for TaskGroup {
             name: new.name,
             dependencies: Vec::new(),
             parent: new.parent,
+            description: None,
+            data: DataBlocks::default(),
         }
     }
 }
@@ -125,6 +148,8 @@ mod tests {
             name: "Group".to_string(),
             dependencies: Vec::new(),
             parent: Parent::PlanStart,
+            description: None,
+            data: DataBlocks::default(),
         }
     }
 

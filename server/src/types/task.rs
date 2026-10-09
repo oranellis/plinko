@@ -1,5 +1,4 @@
 // modules {{{
-use crate::helpers::double_option;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -50,6 +49,10 @@ impl Task {
 
     pub fn description(&self) -> Option<&str> {
         self.description.as_deref()
+    }
+
+    pub(crate) fn set_description(&mut self, description: Option<String>) {
+        self.description = description;
     }
 
     /// Days, at least 1
@@ -156,9 +159,6 @@ impl Patchable<TaskPatch> for Task {
         if let Some(w) = patch.actual_workers {
             self.actual_workers = w
         }
-        if let Some(d) = patch.description {
-            self.description = d
-        }
         if let Some(p) = patch.persistent_state {
             self.persistent_state = p
         }
@@ -258,12 +258,6 @@ pub struct TaskPatch {
     pub allocations: Option<HashMap<Worker, Workload>>,
     pub affinities: Option<HashSet<Uuid>>,
     pub actual_workers: Option<HashMap<Worker, Assignee>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "double_option"
-    )]
-    pub description: Option<Option<String>>,
     pub persistent_state: Option<PersistentState>,
 }
 

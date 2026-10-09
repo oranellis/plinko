@@ -44,7 +44,6 @@ mod tests {
             ])),
             affinities: None,
             actual_workers: None,
-            description: Some(None),
             persistent_state: None,
         }
     }
@@ -56,10 +55,25 @@ mod tests {
         let (Crud::Update(sent), Crud::Update(got)) = (sent, got) else {
             panic!("an update");
         };
-        assert_eq!(got.description, Some(None));
         assert_eq!(got.allocations, sent.allocations);
         assert_eq!(got.duration, Some(3));
         assert_eq!(got.name, None);
+    }
+
+    #[test]
+    fn clearing_a_field_is_not_the_same_as_leaving_it() {
+        use crate::availability::rule::RulePatch;
+        let patch = |stop_day| RulePatch::<Workload> {
+            id: Uuid::now_v7(),
+            start_day: None,
+            stop_day,
+            kind: None,
+            name: None,
+        };
+        for stop_day in [None, Some(None), Some(Some(chrono::NaiveDate::MIN))] {
+            let got: RulePatch<Workload> = decode(&encode(&patch(stop_day)).unwrap()).unwrap();
+            assert_eq!(got.stop_day, stop_day);
+        }
     }
 
     #[test]

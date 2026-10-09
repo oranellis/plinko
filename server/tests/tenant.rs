@@ -437,7 +437,6 @@ fn task_patch(id: Uuid, change: impl FnOnce(&mut TaskPatch)) -> TaskPatch {
         allocations: None,
         affinities: None,
         actual_workers: None,
-        description: None,
         persistent_state: None,
     };
     change(&mut patch);

@@ -183,7 +183,6 @@ fn main() {
                 allocations: Some(HashMap::from([(worker, hours)])),
                 affinities: None,
                 actual_workers: None,
-                description: None,
                 persistent_state: None,
             };
             send(&mut tenant, PlanUpdate::Task(Crud::Update(patch)));

@@ -61,7 +61,6 @@ fn task_patch(id: Uuid) -> TaskPatch {
         allocations: None,
         affinities: None,
         actual_workers: None,
-        description: None,
         persistent_state: None,
     }
 }
@@ -512,4 +511,68 @@ fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
         .unwrap();
+}
+
+#[test]
+fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither() {
+    let mut plan = new_plan();
+    let task = add_task(&mut plan, Parent::PlanStart);
+    let milestone = Uuid::now_v7();
+    let new = NewMilestone {
+        id: milestone,
+        name: "M".to_string(),
+        parent: Parent::PlanStart,
+    };
+    plan.apply_update(PlanUpdate::Milestone(Crud::Add(new)))
+        .unwrap();
+    let group = Uuid::now_v7();
+    let new = NewTaskGroup {
+        id: group,
+        name: "G".to_string(),
+        parent: Parent::PlanStart,
+    };
+    plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
+        .unwrap();
+    let buffer = Uuid::now_v7();
+    let new = NewPlanBuffer {
+        id: buffer,
+        parent: Parent::PlanStart,
+        duration: 2,
+    };
+    plan.apply_update(PlanUpdate::PlanBuffer(Crud::Add(new)))
+        .unwrap();
+
+    let describe = |plan: &mut Plan, node, text: Option<&str>| {
+        plan.apply_update(PlanUpdate::Describe(node, text.map(str::to_string)))
+    };
+    describe(&mut plan, PlanNode::Task(task), Some("a task")).unwrap();
+    describe(
+        &mut plan,
+        PlanNode::Milestone(milestone),
+        Some("a milestone"),
+    )
+    .unwrap();
+    describe(&mut plan, PlanNode::TaskGroup(group), Some("a group")).unwrap();
+    assert_eq!(plan.tasks()[&task].description(), Some("a task"));
+    assert_eq!(
+        plan.milestones()[&milestone].description(),
+        Some("a milestone")
+    );
+    assert_eq!(plan.task_groups()[&group].description(), Some("a group"));
+    // an empty description is no description
+    describe(&mut plan, PlanNode::Task(task), Some("")).unwrap();
+    assert_eq!(plan.tasks()[&task].description(), None);
+    assert!(describe(&mut plan, PlanNode::PlanBuffer(buffer), Some("no")).is_err());
+    assert!(describe(&mut plan, PlanNode::Task(Uuid::now_v7()), Some("no")).is_err());
+
+    // data blocks go on groups as well, and not on buffers
+    let block = || NewDataBlock {
+        id: Uuid::now_v7(),
+        title: "Todo".to_string(),
+        content: BlockContent::TodoList(Vec::new()),
+    };
+    let on = |node| PlanUpdate::Data(node, Crud::Add(block()));
+    plan.apply_update(on(PlanNode::TaskGroup(group))).unwrap();
+    assert_eq!(plan.task_groups()[&group].data().blocks().len(), 1);
+    assert!(plan.apply_update(on(PlanNode::PlanBuffer(buffer))).is_err());
 }
