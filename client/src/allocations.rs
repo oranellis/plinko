@@ -260,8 +260,6 @@ pub fn Allocations() -> impl IntoView {
                                         <th class="name">"Task"</th>
                                         {move || days.get().into_iter().map(|d| view! {
                                             <th class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun) class:today=d == today.get() class:m1=d.day() == 1>
-                                                <span class="small">{format::weekday(d)}</span>
-                                                <br />
                                                 {d.day()}
                                             </th>
                                         }).collect_view()}

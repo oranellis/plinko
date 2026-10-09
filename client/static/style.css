@@ -309,11 +309,11 @@ table.grid.fixed th:first-child, table.grid.fixed td:first-child { width: 200px;
 .alloc { height: 100%; max-height: none; border-radius: 0; border-left: none; border-right: none; }
 table.alloctable thead th { position: sticky; top: 0; z-index: 2; background: var(--panel); }
 table.alloctable thead tr.months th { height: 24px; font-size: 12px; text-align: left; }
-table.alloctable thead tr.daynames th { top: 24px; height: 44px; }
-table.alloctable thead tr.available th { top: 68px; }
+table.alloctable thead tr.daynames th { top: 24px; height: 34px; }
+table.alloctable thead tr.available th { top: 58px; }
 table.grid.fixed.alloctable th.name, table.grid.fixed.alloctable td.name { position: sticky; left: 0; z-index: 3; background: var(--panel); text-align: left; width: var(--name-w); min-width: var(--name-w); max-width: var(--name-w); }
 table.grid.fixed.alloctable thead th.name { z-index: 4; }
-table.alloctable th.today { color: var(--accent); }
+table.alloctable th.today { color: #4a90d9; }
 table.alloctable td { height: 36px; padding: 3px 2px; vertical-align: bottom; position: relative; }
 table.alloctable td.name { padding: 0; vertical-align: middle; }
 table.alloctable td.name button { display: flex; align-items: baseline; gap: 8px; text-align: left; width: 100%; padding: 4px 10px; min-height: 0; overflow: hidden; }
@@ -358,7 +358,7 @@ table.alloctable thead tr.months th.mcell.starts { z-index: 3; }
 /* centred over the month, held at the edge of the days while the middle is out of view */
 .monthname { position: sticky; left: calc(var(--name-w) + 6px); padding-left: 6px; white-space: nowrap; }
 /* a stronger line where a month starts, today tinted, and a heavy line after the names */
-table.alloctable th.today, table.alloctable td.today { background-image: linear-gradient(rgba(74, 144, 217, 0.12), rgba(74, 144, 217, 0.12)); }
+table.alloctable th.today, table.alloctable td.today { background-image: linear-gradient(rgba(64, 91, 200, 0.18), rgba(64, 91, 200, 0.18)); }
 /* the faint grid is behind, the stronger vertical lines over it and the line under the hours booked at the very front */
 table.alloctable thead tr.months th { border-color: transparent; }
 table.alloctable th.m1::before, table.alloctable td.m1::before { content: ''; position: absolute; left: 0; top: 0; bottom: -1px; width: 1px; background: #606066; z-index: 3; pointer-events: none; }
@@ -374,3 +374,8 @@ table.grid.fixed.alloctable { border-collapse: separate; border-spacing: 0; }
 table.grid.fixed.alloctable th, table.grid.fixed.alloctable td { border: 0; border-right: 1px solid #2c2c2e; border-bottom: 1px solid #2c2c2e; }
 table.grid.fixed.alloctable thead tr.months th { border-color: transparent; }
 table.grid.fixed.alloctable th.name, table.grid.fixed.alloctable td.name { border-right: 0; }
+/* each day cell keeps its own lines inside it, below the names that scroll over it */
+table.alloctable td { z-index: 0; }
+table.alloctable thead tr.daynames th { font-size: 12px; color: #aaa; }
+table.alloctable thead tr.daynames th.off { color: #555; }
+table.alloctable thead tr.daynames th.today { color: #4a90d9; }

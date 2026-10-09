@@ -300,26 +300,25 @@ fn paint_header(ctx: &CanvasRenderingContext2d, frame: &Frame, start: NaiveDate)
     ctx.fill_rect(0.0, 0.0, frame.width, HEADER_HEIGHT);
     let (first, last) = vp.visible_days(frame.width);
     let today = (frame.today - start).num_days();
-    let mut month: Option<(String, f64)> = None;
+    let mut month_from: Option<NaiveDate> = None;
     let day_row = HEADER_HEIGHT - MONTH_HEIGHT;
     for offset in first..=last {
         let Some(date) = start.checked_add_signed(chrono::Duration::days(offset)) else {
             continue;
         };
         let x = vp.x(offset as f64);
-        let label = format!("{} {}", format::month(date), date.year());
-        if month.as_ref().is_some_and(|(current, _)| *current != label) {
-            if let Some((current, from)) = month.take() {
-                text(ctx, "#888", "13px sans-serif", &current, from + 4.0, 15.0);
-            }
+        if date.day() == 1 {
             ctx.set_stroke_style_str(BORDER);
             ctx.begin_path();
             ctx.move_to(x, 0.0);
             ctx.line_to(x, MONTH_HEIGHT);
             ctx.stroke();
         }
-        if month.is_none() {
-            month = Some((label, x));
+        // each month is named once, when its first day or the first day on screen comes round
+        let this_month = date.with_day(1).unwrap_or(date);
+        if month_from != Some(this_month) {
+            month_from = Some(this_month);
+            paint_month(ctx, frame, start, this_month);
         }
         let weekend = matches!(date.weekday(), Weekday::Sat | Weekday::Sun);
         ctx.set_fill_style_str(if weekend { WEEKEND } else { HEADER });
@@ -349,14 +348,29 @@ fn paint_header(ctx: &CanvasRenderingContext2d, frame: &Frame, start: NaiveDate)
         ctx.line_to(x, frame.height);
         ctx.stroke();
     }
-    if let Some((current, from)) = month {
-        text(ctx, "#888", "13px sans-serif", &current, from + 4.0, 15.0);
-    }
     ctx.set_stroke_style_str(BORDER);
     ctx.begin_path();
     ctx.move_to(0.0, HEADER_HEIGHT);
     ctx.line_to(frame.width, HEADER_HEIGHT);
     ctx.stroke();
+}
+
+/// The name of a month, at the left of the month and held at the left of the chart while the month
+/// is partly off it, until the end of the month pushes it out
+fn paint_month(ctx: &CanvasRenderingContext2d, frame: &Frame, start: NaiveDate, month: NaiveDate) {
+    let vp = frame.viewport;
+    let next = month
+        .checked_add_months(chrono::Months::new(1))
+        .unwrap_or(month);
+    let from = vp.x((month - start).num_days() as f64);
+    let to = vp.x((next - start).num_days() as f64);
+    let label = format!("{} {}", format::month(month), month.year());
+    ctx.set_font("13px sans-serif");
+    let width = ctx.measure_text(&label).map_or(0.0, |m| m.width());
+    let x = (from + 4.0).max(4.0).min(to - width - 4.0);
+    if x + width > 0.0 && x < frame.width && x >= from {
+        text(ctx, "#888", "13px sans-serif", &label, x, 15.0);
+    }
 }
 
 fn paint_group(
