@@ -14,7 +14,9 @@ use crate::{
     format,
     gantt::{arrange::Mark, info::info},
     guard::{ConfirmLeave, Guard},
-    mine::{MyTask, use_my_tasks},
+    icons::{Icon, IconKind},
+    mine::{MyTask, use_tasks_of},
+    nav::Route,
     plan::{ItemPane, blank_click},
     ui::use_sync,
 };
@@ -90,9 +92,24 @@ fn slice(i: u8) -> String {
 }
 
 #[component]
-pub fn Allocations() -> impl IntoView {
+pub fn Allocations(
+    /// Whose, yours when left out
+    #[prop(default = None)]
+    of: Option<Uuid>,
+) -> impl IntoView {
     let sync = use_sync();
-    let mine = use_my_tasks();
+    let mine = use_tasks_of(of);
+    let who = move || of.or_else(|| sync.me.with(|m| m.as_ref().map(|m| m.id)));
+    let title = move || match of {
+        None => "Allocations".to_string(),
+        Some(user) => sync.tenant.with(|t| {
+            let name = t
+                .as_ref()
+                .and_then(|t| t.users().get(&user))
+                .map_or("Someone", |u| u.name());
+            format!("{name}'s Allocations")
+        }),
+    };
     let today = Memo::new(move |_| {
         sync.tenant
             .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
@@ -144,7 +161,7 @@ pub fn Allocations() -> impl IntoView {
     });
     // the hours the person has and has booked each day shown
     let hours = Memo::new(move |_| {
-        let me = sync.me.with(|m| m.as_ref().map(|m| m.id))?;
+        let me = who()?;
         let days = days.get();
         let (first, last) = (*days.first()?, *days.last()?);
         let schedule = sync.schedule.get();
@@ -199,14 +216,19 @@ pub fn Allocations() -> impl IntoView {
         <div class="plan">
             <ConfirmLeave guard=guard />
             <div class="bar allocbar">
-                <h1>"Allocations"</h1>
+                {of.is_some().then(|| view! {
+                    <a class="toolbar-btn" href=Route::People.path() title="Back to people" aria-label="Back">
+                        <Icon kind=IconKind::Back />
+                    </a>
+                })}
+                <h1>{title}</h1>
                 <button type="button" on:click=move |_| to_today()>"Today"</button>
             </div>
             <div class="workspace">
                 <div class="main" on:click=move |ev| if blank_click(&ev) { blank() }>
                     <Show
                         when=move || mine.with(|m| !m.is_empty())
-                        fallback=|| view! { <p class="empty">"No tasks are scheduled for you."</p> }
+                        fallback=move || view! { <p class="empty">{if of.is_some() { "No tasks are scheduled for them." } else { "No tasks are scheduled for you." }}</p> }
                     >
                         <div
                             class="alloc scroll"

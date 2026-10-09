@@ -604,7 +604,10 @@ fn paint_buffer(
 ) {
     let middle = rect.y + rect.h / 2.0;
     let reach = rect.h / 2.0;
-    let _ = ctx.set_line_dash(&js_sys::Array::of2(&3.0.into(), &3.0.into()));
+    // dotted until it has a day it is set to start on, then solid
+    if !p.pinned {
+        let _ = ctx.set_line_dash(&js_sys::Array::of2(&3.0.into(), &3.0.into()));
+    }
     ctx.set_stroke_style_str("#8a8a8a");
     ctx.set_line_width(1.5);
     ctx.begin_path();

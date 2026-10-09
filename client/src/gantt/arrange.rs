@@ -38,6 +38,8 @@ pub struct Entry {
     pub violated: bool,
     /// Nothing depends on it
     pub leaf: bool,
+    /// For a buffer: it has a day it is set to start on
+    pub pinned: bool,
     pub target: bool,
     /// For a group, what is in it
     pub members: Vec<Entry>,
@@ -53,6 +55,8 @@ pub struct Placed {
     pub look: Look,
     pub violated: bool,
     pub leaf: bool,
+    /// For a buffer: it has a day it is set to start on
+    pub pinned: bool,
     pub target: bool,
     pub lane: usize,
     /// How many groups it is inside
@@ -105,6 +109,7 @@ fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
         look: entry.look,
         violated: entry.violated,
         leaf: entry.leaf,
+        pinned: entry.pinned,
         target: entry.target,
         lane,
         depth,
@@ -169,6 +174,7 @@ pub fn arrange(plan_start: NaiveDate, entries: &[Entry]) -> Arrangement {
         look: Look::Completed,
         violated: false,
         leaf: false,
+        pinned: false,
         target: false,
         lane,
         depth: 0,
@@ -201,6 +207,7 @@ mod tests {
             look: Look::NotStarted,
             violated: false,
             leaf: false,
+            pinned: false,
             target: false,
             members: Vec::new(),
             collapsed: false,

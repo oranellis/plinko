@@ -30,11 +30,16 @@ pub struct MyTask {
     pub days: BTreeMap<NaiveDate, u8>,
 }
 
-/// Every task scheduled with the person on it, soonest first
+/// Every task scheduled with the person signed in on it, soonest first
 pub fn use_my_tasks() -> Memo<Vec<MyTask>> {
+    use_tasks_of(None)
+}
+
+/// Every task scheduled with `who` on it, or the person signed in, soonest first
+pub fn use_tasks_of(who: Option<Uuid>) -> Memo<Vec<MyTask>> {
     let sync = use_sync();
     Memo::new(move |_| {
-        let Some(me) = sync.me.with(|m| m.as_ref().map(|m| m.id)) else {
+        let Some(me) = who.or_else(|| sync.me.with(|m| m.as_ref().map(|m| m.id))) else {
             return Vec::new();
         };
         let schedule = sync.schedule.get();

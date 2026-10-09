@@ -24,7 +24,7 @@ use uuid::Uuid;
 use crate::{
     datepicker::{DatePicker, OptionalDate},
     format, forms,
-    icons::IconKind,
+    icons::{Icon, IconKind},
     model::{self, node_name},
     sync::Sync,
     ui::{
@@ -835,6 +835,14 @@ fn BufferForm(
         apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
         on_close.run(());
     };
+    // whether the set start is the day the buffer is scheduled to start on
+    let here = move || {
+        let state = sync
+            .schedule
+            .with(|s| s.as_ref().and_then(|(_, s)| s.plans.get(&plan)).cloned());
+        let scheduled = model::span_of(state.as_ref(), node).map(|(start, _)| start);
+        set.get().is_some() && set.get() == scheduled
+    };
     view! {
         <form class="form" on:submit=move |ev| { ev.prevent_default(); save(()); }>
             <Field label="Duration (days)">
@@ -846,6 +854,7 @@ fn BufferForm(
                     <button
                         type="button"
                         title="Set the start to the day the buffer is scheduled to start on"
+                        class:done=here
                         on:click=move |_| {
                             let state = sync.schedule.with_untracked(|s| {
                                 s.as_ref().and_then(|(_, s)| s.plans.get(&plan)).cloned()
@@ -855,7 +864,11 @@ fn BufferForm(
                             }
                         }
                     >
-                        "Scheduled"
+                        {move || if here() {
+                            view! { "Set " <Icon kind=IconKind::Tick size=14 /> }.into_any()
+                        } else {
+                            "Set Here?".into_any()
+                        }}
                     </button>
                 </div>
             </Field>

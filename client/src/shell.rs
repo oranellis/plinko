@@ -23,7 +23,7 @@ enum Page {
     Home,
     Plans,
     Plan(plinko::types::short_id::ShortId),
-    Allocations,
+    Allocations(Option<uuid::Uuid>),
     People,
     Preferences,
     Availability(crate::nav::Availability),
@@ -39,7 +39,8 @@ pub fn Shell() -> impl IntoView {
         Route::Home => Page::Home,
         Route::Plans => Page::Plans,
         Route::Plan(plan, _, _) => Page::Plan(plan),
-        Route::Allocations => Page::Allocations,
+        Route::Allocations => Page::Allocations(None),
+        Route::UserAllocations(user) => Page::Allocations(Some(user)),
         Route::People => Page::People,
         Route::Preferences => Page::Preferences,
         Route::Availability(of) => Page::Availability(of),
@@ -71,7 +72,9 @@ pub fn Shell() -> impl IntoView {
     let me = sync.me.get_untracked().map(|m| m.id).unwrap_or_default();
     let mine = Route::Availability(Availability::User(me));
     let on_availability = Signal::derive(move || matches!(route.get(), Route::Availability(_)));
-    let on_people = Signal::derive(move || route.get() == Route::People);
+    // a person's allocations are looked at from the people page, so that stays lit
+    let on_people =
+        Signal::derive(move || matches!(route.get(), Route::People | Route::UserAllocations(_)));
     view! {
         <div class="shell">
             <header class="top">
@@ -100,7 +103,7 @@ pub fn Shell() -> impl IntoView {
                     Page::Home => view! { <Home /> }.into_any(),
                     Page::Plans => view! { <Plans /> }.into_any(),
                     Page::Plan(plan) => view! { <PlanPage plan=plan /> }.into_any(),
-                    Page::Allocations => view! { <Allocations /> }.into_any(),
+                    Page::Allocations(of) => view! { <Allocations of=of /> }.into_any(),
                     Page::People => view! { <People /> }.into_any(),
                     Page::Preferences => view! { <Preferences /> }.into_any(),
                     Page::Availability(of) => view! { <AvailabilityPage of=of /> }.into_any(),

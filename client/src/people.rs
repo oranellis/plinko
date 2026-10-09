@@ -18,7 +18,7 @@ use crate::{
     api,
     availability::AvailabilityWindow,
     icons::IconKind,
-    nav::Availability,
+    nav::{Availability, Route, navigate},
     ui::{Actions, Block, Choice, Field, IconButton, Modal, Picker, Select, Text, use_sync},
 };
 
@@ -105,6 +105,7 @@ pub fn People() -> impl IntoView {
                                 <span class="small">{p.email.clone()}{if p.admin { " · admin" } else { "" }}</span>
                                 <span class="actions-right">
                                     <IconButton kind=IconKind::Calendar label="Availability" on_click=Callback::new(move |()| hours.set(Some(id))) />
+                                    <IconButton kind=IconKind::Allocation label="Allocations" on_click=Callback::new(move |()| navigate(Route::UserAllocations(id))) />
                                     <IconButton kind=IconKind::Pencil label="Edit" on_click=Callback::new(move |()| editing.set(Some(Some(id)))) />
                                     <Show
                                         when=move || sync.me.with(|m| m.as_ref().map(|m| m.id)) != Some(id)
