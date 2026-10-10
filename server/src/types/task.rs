@@ -196,7 +196,7 @@ pub enum Assignee {
     Placeholder,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Status {
     #[default]
     NotStarted,

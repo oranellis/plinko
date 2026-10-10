@@ -16,7 +16,7 @@ use plinko::{
 };
 use uuid::Uuid;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Look {
     NotStarted,
     InProgress,
@@ -45,7 +45,7 @@ impl From<DerivedStatus> for Look {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Row {
     pub node: PlanNode,
     pub depth: u32,

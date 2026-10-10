@@ -67,7 +67,7 @@ pub fn Home() -> impl IntoView {
                     fallback=|| view! { <p class="small">"Nothing is in progress."</p> }
                 >
                     <ul class="work">
-                        <For each=move || doing.get() key=|t| format!("{t:?}") children=move |t| view! { <Row task=t today=today() /> } />
+                        <For each=move || doing.get() key=|t| crate::ui::hashed(t) children=move |t| view! { <Row task=t today=today() /> } />
                     </ul>
                 </Show>
             </section>
@@ -78,7 +78,7 @@ pub fn Home() -> impl IntoView {
                     fallback=|| view! { <p class="small">"Nothing is waiting to start."</p> }
                 >
                     <ul class="work">
-                        <For each=move || next.get() key=|t| format!("{t:?}") children=move |t| view! { <Row task=t today=today() /> } />
+                        <For each=move || next.get() key=|t| crate::ui::hashed(t) children=move |t| view! { <Row task=t today=today() /> } />
                     </ul>
                 </Show>
             </section>

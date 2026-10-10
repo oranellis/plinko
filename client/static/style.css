@@ -280,7 +280,7 @@ button.day { position: relative; min-height: 38px; padding: 0; border-radius: 4p
 button.day:hover { border-color: var(--muted); }
 button.day.today { border-color: var(--accent); }
 button.day.picked { outline: 2px solid #fff; outline-offset: -2px; }
-button.day .mark { position: absolute; right: 4px; top: 4px; width: 6px; height: 6px; border-radius: 50%; background: #ffd600; }
+button.day.marked::after { content: ""; position: absolute; right: 4px; top: 4px; width: 6px; height: 6px; border-radius: 50%; background: #ffd600; }
 .rulepane { width: 340px; flex: none; border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .rulepane .pad { padding: 18px; }
 .rule-editor { padding: 14px 18px; overflow-y: auto; max-height: 60%; border-bottom: 1px solid var(--line); flex: none; }

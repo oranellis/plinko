@@ -96,3 +96,12 @@ Tapping an item selects it: its dependency lines stay on show and a bar opens be
 With shift held, items the pointer is near show handles: a dot off each edge (drag to another item; right edge: it depends on this item, left edge: this item depends on it), a dot in the middle (drop on a group to move in, on another item to join its group, on blank space for the top level, see `Plan::moving`) and, for tasks and buffers, a grip inside the right edge that changes the duration by whole grid days, shown as `+2 (6d)`. Dragging to the chart's edge scrolls it. Shift-clicking an item linked to the selected one cuts that dependency. With an item selected, hovering another one on a dependency chain with it shows the longest chain in red.
 
 Handles are grey; a dependency dot takes magenta (left, what comes before) or cyan (right, what comes after) when taken. For started tasks (in progress, on hold, completed) dragging the middle handle sideways moves the days they really ran, unless it is dropped on another item, and the right grip changes the end date of on hold and completed ones (in progress ones change duration as normal).
+
+### Drawing the chart
+
+The canvas is drawn once per animation frame however many signals changed. Two layers are kept as
+images (`gantt/layers.rs`): what is behind the items (days, today, groups) and the items, each drawn
+bigger than the screen so scrolling only moves them, and drawn again when the chart changes, the
+zoom changes or the screen nears their edge. What the pointer changes is drawn over them every frame:
+dependency lines between the layers, then outlines and the names of groups and milestones, the header
+and the notes. `Pen` remembers canvas settings so unchanged ones are not sent to the browser again.

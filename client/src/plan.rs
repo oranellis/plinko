@@ -6,6 +6,7 @@ use leptos::prelude::*;
 use plinko::{
     planner::plan_update::PlanUpdate,
     protocol::Created,
+    scheduler::state::PlanVolatileState,
     types::{
         crud::Crud,
         dependency::{Dependency, PlanNode},
@@ -79,38 +80,41 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             .with(|t| t.as_ref().is_some_and(|t| t.plans().contains_key(&plan)))
     });
     let collapsed = RwSignal::new(HashSet::<Uuid>::new());
-    let state_of = move || {
+    // what the scheduler made of this plan, looked at where it is rather than copied out
+    let with_state = move |f: &mut dyn FnMut(Option<&PlanVolatileState>)| {
         sync.schedule
-            .with(|s| s.as_ref().and_then(|(_, s)| s.plans.get(&plan).cloned()))
+            .with(|s| f(s.as_ref().and_then(|(_, s)| s.plans.get(&plan))))
     };
     let rows = Memo::new(move |_| {
-        let state = state_of();
-        collapsed.with(|collapsed| {
-            sync.tenant.with(|t| {
-                t.as_ref()
-                    .and_then(|t| t.plans().get(&plan))
-                    .map(|p| model::rows(p, state.as_ref(), collapsed))
-                    .unwrap_or_default()
-            })
-        })
+        let mut rows = Vec::new();
+        with_state(&mut |state| {
+            rows = collapsed.with(|collapsed| {
+                sync.tenant.with(|t| {
+                    t.as_ref()
+                        .and_then(|t| t.plans().get(&plan))
+                        .map(|p| model::rows(p, state, collapsed))
+                        .unwrap_or_default()
+                })
+            });
+        });
+        rows
     });
     let scene = Memo::new(move |_| {
-        let state = state_of();
-        collapsed
-            .with(|collapsed| {
+        let mut built = None;
+        with_state(&mut |state| {
+            built = collapsed.with(|collapsed| {
                 sync.tenant.with(|t| {
                     let plan = t.as_ref().and_then(|t| t.plans().get(&plan))?;
-                    Some(scene::build(plan, state.as_ref(), collapsed))
+                    Some(scene::build(plan, state, collapsed))
                 })
-            })
-            .unwrap_or_else(|| scene::Scene {
-                plan_start: sync
-                    .tenant
+            });
+        });
+        built.unwrap_or_else(|| {
+            scene::Scene::empty(
+                sync.tenant
                     .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default()),
-                arrangement: Default::default(),
-                unplaced: Vec::new(),
-                last_day: 0.0,
-            })
+            )
+        })
     });
     let name = Memo::new(move |_| {
         sync.tenant.with(|t| {
@@ -147,29 +151,35 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let listing = RwSignal::new(false);
 
     let links = Callback::new(move |mark: Mark| {
-        sync.tenant.with(|t| {
-            t.as_ref()
-                .and_then(|t| t.plans().get(&plan))
-                .map(|p| gantt::links::links(p, state_of().as_ref(), mark))
-                .unwrap_or_default()
-        })
+        let mut found = Vec::new();
+        with_state(&mut |state| {
+            found = sync.tenant.with(|t| {
+                t.as_ref()
+                    .and_then(|t| t.plans().get(&plan))
+                    .map(|p| gantt::links::links(p, state, mark))
+                    .unwrap_or_default()
+            });
+        });
+        found
     });
     let info = Callback::new(move |mark: Mark| {
-        let state = state_of();
-        sync.tenant
-            .with(|t| {
-                let t = t.as_ref()?;
-                Some(gantt::info::info(
-                    t,
-                    t.plans().get(&plan)?,
-                    state.as_ref(),
-                    mark,
-                ))
-            })
-            .unwrap_or_default()
+        let mut said = Vec::new();
+        with_state(&mut |state| {
+            said = sync
+                .tenant
+                .with(|t| {
+                    let t = t.as_ref()?;
+                    Some(gantt::info::info(t, t.plans().get(&plan)?, state, mark))
+                })
+                .unwrap_or_default();
+        });
+        said
     });
-    let violation =
-        Callback::new(move |mark: Mark| gantt::info::violation(state_of().as_ref(), mark));
+    let violation = Callback::new(move |mark: Mark| {
+        let mut said = Vec::new();
+        with_state(&mut |state| said = gantt::info::violation(state, mark));
+        said
+    });
 
     let selected = RwSignal::new(None::<PlanNode>);
     let any_selected = Memo::new(move |_| selected.get().is_some());
@@ -748,7 +758,7 @@ fn List(
 ) -> impl IntoView {
     view! {
         <ul class="items">
-            <For each=move || rows.get() key=|r| format!("{r:?}") children=move |row| {
+            <For each=move || rows.get() key=|r| crate::ui::hashed(r) children=move |row| {
                 let node = row.node;
                 let look = match row.look {
                     Look::NotStarted => "not-started",

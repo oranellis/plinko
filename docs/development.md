@@ -30,3 +30,8 @@ The server reads the environment, and `run_debug.sh` passes these on if they are
 - `PLINKO_BENCH_SAVE=1 cargo run --release -p plinko --example bench` times scheduling 1000 tasks
   and saves that tenant as `data/Bench`. Run it with `PLINKO_TENANT=Bench` and log in as
   `root@localhost` with `password123` to try the client on a lot of work.
+- `client/e2e/perf.sh [--release]` times hovering, panning, zooming and scrolling the chart, the list,
+  allocations and the availability calendar on the `data/Bench` tenant (made as above), as the main
+  thread's busy time per step and frame times. `PROFILE="gantt hover"` also lists where the script
+  time went. Dev builds optimise dependencies and the client (see the root `Cargo.toml`), since
+  unoptimised wasm made the chart lag.

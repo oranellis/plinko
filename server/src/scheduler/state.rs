@@ -163,7 +163,7 @@ impl TargetForecast {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UnscheduledReason {
     /// The task was dropped, so it is out of the plan
     Dropped,

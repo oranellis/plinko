@@ -89,6 +89,9 @@ impl Viewport {
             .clamp(-b.width / 2.0, right.max(-b.width / 2.0));
         let down = (b.lanes as f64 * ROW_HEIGHT - (b.height - HEADER_HEIGHT)).max(0.0);
         self.scroll_y = self.scroll_y.clamp(0.0, down);
+        // whole pixels, so layers drawn earlier can be moved to where the chart is now exactly
+        self.scroll_x = self.scroll_x.round();
+        self.scroll_y = self.scroll_y.round();
     }
 
     /// Drags the chart by `dx`, `dy` pixels of pointer movement

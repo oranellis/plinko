@@ -439,3 +439,11 @@ pub fn Status() -> impl IntoView {
         </span>
     }
 }
+
+/// A cheap key for a list entry that is drawn again whenever anything in it changes
+pub fn hashed<T: std::hash::Hash>(item: &T) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    item.hash(&mut hasher);
+    hasher.finish()
+}

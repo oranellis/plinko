@@ -17,7 +17,7 @@ use crate::{
     ui::{Actions, Field, Modal, Text, use_sync},
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Card {
     pub id: ShortId,
     pub name: String,
@@ -34,37 +34,38 @@ pub struct Card {
 pub fn use_cards() -> Memo<Vec<Card>> {
     let sync = use_sync();
     Memo::new(move |_| {
-        let schedule = sync.schedule.get();
         let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
-        sync.tenant.with(|tenant| {
-            let Some(tenant) = tenant else {
-                return Vec::new();
-            };
-            let starred = me
-                .and_then(|me| tenant.users().get(&me))
-                .map(|u| u.favourites().clone())
-                .unwrap_or_default();
-            let mut cards: Vec<Card> = tenant
-                .plans()
-                .values()
-                .map(|plan| {
-                    let state = schedule.as_ref().and_then(|(_, s)| s.plans.get(plan.id()));
-                    Card {
-                        id: *plan.id(),
-                        name: plan.name().to_string(),
-                        start: *plan.scheduler_data().start_date(),
-                        tasks: plan.tasks().len(),
-                        forecast: state
-                            .and_then(|s| s.plan_end)
-                            .map(|e| (e.forecast, e.delay())),
-                        problems: state
-                            .map_or(0, |s| s.unscheduled.len() + s.constraint_violations.len()),
-                        favourite: starred.contains(plan.id()),
-                    }
-                })
-                .collect();
-            cards.sort_by(|a, b| (&a.name, a.id).cmp(&(&b.name, b.id)));
-            cards
+        sync.schedule.with(|schedule| {
+            sync.tenant.with(|tenant| {
+                let Some(tenant) = tenant else {
+                    return Vec::new();
+                };
+                let starred = me
+                    .and_then(|me| tenant.users().get(&me))
+                    .map(|u| u.favourites().clone())
+                    .unwrap_or_default();
+                let mut cards: Vec<Card> = tenant
+                    .plans()
+                    .values()
+                    .map(|plan| {
+                        let state = schedule.as_ref().and_then(|(_, s)| s.plans.get(plan.id()));
+                        Card {
+                            id: *plan.id(),
+                            name: plan.name().to_string(),
+                            start: *plan.scheduler_data().start_date(),
+                            tasks: plan.tasks().len(),
+                            forecast: state
+                                .and_then(|s| s.plan_end)
+                                .map(|e| (e.forecast, e.delay())),
+                            problems: state
+                                .map_or(0, |s| s.unscheduled.len() + s.constraint_violations.len()),
+                            favourite: starred.contains(plan.id()),
+                        }
+                    })
+                    .collect();
+                cards.sort_by(|a, b| (&a.name, a.id).cmp(&(&b.name, b.id)));
+                cards
+            })
         })
     })
 }
@@ -75,7 +76,7 @@ pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
     let sync = use_sync();
     view! {
         <ul class="cards">
-            <For each=move || cards.get() key=|c| format!("{c:?}") children=move |card| {
+            <For each=move || cards.get() key=|c| crate::ui::hashed(c) children=move |card| {
                 let id = card.id;
                 let starred = card.favourite;
                 view! {

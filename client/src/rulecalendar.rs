@@ -504,21 +504,22 @@ fn day_cell<V: Value>(
     selected: RwSignal<Option<NaiveDate>>,
     editing: RwSignal<Option<Draft>>,
 ) -> impl IntoView {
-    let level = move || levels.with(|l| l.get(&day).copied()).unwrap_or(0);
+    // each day only changes when its own value does, not whenever any day's does
+    let level = Memo::new(move |_| levels.with(|l| l.get(&day).copied()).unwrap_or(0));
+    let picked = Memo::new(move |_| selected.get() == Some(day));
+    let mark = Memo::new(move |_| marked.with(|m| m.contains(&day)));
     view! {
         <button
             type="button"
             class="day"
-            style=move || format!("--shade:{}", f32::from(level()) / f32::from(V::MAX))
+            style=move || format!("--shade:{}", f32::from(level.get()) / f32::from(V::MAX))
             class:today=day == today
-            class:picked=move || selected.get() == Some(day)
-            title=move || format!("{}: {}", format::day(day), V::level_text(level()))
+            class:picked=move || picked.get()
+            class:marked=move || mark.get()
+            title=move || format!("{}: {}", format::day(day), V::level_text(level.get()))
             on:click=move |_| { selected.set(Some(day)); editing.set(None); }
         >
             {day.day()}
-            <Show when=move || marked.with(|m| m.contains(&day))>
-                <i class="mark"></i>
-            </Show>
         </button>
     }
 }

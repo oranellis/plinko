@@ -7,3 +7,12 @@ resolver = "3"
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
+
+# the client runs unoptimised wasm in debug builds, which makes the chart lag, so optimise it and
+# what it uses (the server's own debug builds stay quick to compile)
+[profile.dev.package."*"]
+opt-level = 2
+[profile.dev.package.plinko-client]
+opt-level = 2
+[profile.dev.package.plinko]
+opt-level = 1

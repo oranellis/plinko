@@ -5,8 +5,10 @@
 pub mod arrange;
 pub mod draw;
 pub mod info;
+pub mod layers;
 pub mod layout;
 pub mod links;
+pub mod pen;
 pub mod scene;
 pub mod shift;
 
@@ -20,7 +22,7 @@ use web_sys::{CanvasRenderingContext2d, PointerEvent, WheelEvent};
 
 use crate::gantt::{
     arrange::Mark,
-    draw::{Frame, Hits, paint},
+    draw::{Frame, Hits, paint_header, paint_links, paint_marks, paint_notes},
     layout::{Bounds, DAY_WIDTH, Rect, Viewport},
     links::{Link, Role},
     scene::Scene,
@@ -244,60 +246,55 @@ pub fn Gantt(
         );
     });
 
-    // what is under the pointer: warnings first, then items, then the names of groups
-    let hit = move |x: f64, y: f64| -> Option<(Mark, bool)> {
-        hits.with_value(|h| {
-            let over = |list: &[(Mark, layout::Rect)]| {
-                list.iter()
-                    .rev()
-                    .find(|(_, r)| r.contains(x, y))
-                    .map(|(m, _)| *m)
-            };
-            over(&h.violations)
-                .map(|m| (m, false))
-                .or_else(|| over(&h.items).map(|m| (m, false)))
-                .or_else(|| {
-                    h.headers
-                        .iter()
-                        .rev()
-                        .find(|(_, strip, _)| strip.contains(x, y))
-                        .map(|(m, _, arrow)| (*m, arrow.contains(x, y)))
-                })
-        })
-    };
+    // what is under the pointer
+    let hit = move |x: f64, y: f64| hits.with_value(|h| h.hit(x, y));
     // where an item is drawn, a group by its name strip
     let rect_of = move |mark: Mark| -> Option<Rect> {
         hits.with_value(|h| {
-            h.items
-                .iter()
+            h.items()
                 .find(|(m, _)| *m == mark)
-                .map(|(_, r)| *r)
-                .or_else(|| {
-                    h.headers
-                        .iter()
-                        .find(|(m, ..)| *m == mark)
-                        .map(|(_, r, _)| *r)
-                })
+                .map(|(_, r)| r)
+                .or_else(|| h.headers().find(|(m, ..)| *m == mark).map(|(_, r, _)| r))
         })
     };
     // the handles of the item the pointer is near
     let handles_of = move |node: PlanNode| {
-        let kind = scene.with_untracked(|s| {
-            s.arrangement
-                .placed
-                .iter()
-                .find(|p| p.mark == Mark::Node(node))
-                .map(|p| p.kind)
-        });
+        let kind = scene.with_untracked(|s| s.placed(Mark::Node(node)).map(|p| p.kind));
         match (kind, rect_of(Mark::Node(node))) {
             (Some(kind), Some(rect)) => Grips::of(kind, rect),
             _ => Grips::default(),
         }
     };
 
-    // draw
+    // what the lines and the panel say about what is under the pointer, which only changes with
+    // that, so drawing again for a pan or a nudge of the pointer does not work it out again
+    let linked = Memo::new(move |_| {
+        let (hovered, picked) = (hover.get(), selected.get());
+        // with something selected, the chain to what is under the pointer shows instead
+        let chain = match (picked, hovered) {
+            (Some(Mark::Node(a)), Some(Mark::Node(b))) if a != b => editing.chain.run((a, b)),
+            _ => Vec::new(),
+        };
+        if chain.is_empty() {
+            hovered.or(picked).map(|m| links.run(m)).unwrap_or_default()
+        } else {
+            chain
+        }
+    });
+    let said = Memo::new(move |_| hover.get().map(|m| info.run(m)).unwrap_or_default());
+
+    let layers = StoredValue::new_local(None::<layers::Layers>);
+    let scene_gen = StoredValue::new_local(0u64);
     Effect::new(move |_| {
-        let (width, height) = size.get();
+        scene.track();
+        scene_gen.update_value(|g| *g += 1);
+    });
+    let surface = StoredValue::new_local(None::<((u32, u32), std::rc::Rc<pen::Pen>)>);
+    // draws what is on the chart, once a frame however many things changed since the last
+    let draw = move || {
+        let Some((width, height)) = size.try_get_untracked() else {
+            return;
+        };
         let picked = selected.get();
         let (vp, hovered, flashed, today) = (
             viewport.get().unwrap_or_default(),
@@ -306,57 +303,94 @@ pub fn Gantt(
             today.get(),
         );
         let at = pointer.get();
+        let pointer_at = at;
         let (editing_shift, near, dragged) = (shift.get(), nearby.get(), drag.get());
         let Some(canvas) = canvas.get() else {
             return;
         };
         let ratio = web_sys::window().map_or(1.0, |w| w.device_pixel_ratio());
-        canvas.set_width((width * ratio) as u32);
-        canvas.set_height((height * ratio) as u32);
-        let Some(Ok(ctx)) = canvas
-            .get_context("2d")
-            .ok()
-            .flatten()
-            .map(|c| c.dyn_into::<CanvasRenderingContext2d>())
-        else {
-            return;
+        let pixels = ((width * ratio) as u32, (height * ratio) as u32);
+        // resizing a canvas throws its surface away and resets what was set on it, so that only
+        // happens when the size changes and the drawing carries on with what it remembers
+        let kept = surface.with_value(|s| {
+            s.as_ref()
+                .filter(|(size, _)| *size == pixels)
+                .map(|(_, pen)| pen.clone())
+        });
+        let ctx = match kept {
+            Some(pen) => pen,
+            None => {
+                canvas.set_width(pixels.0);
+                canvas.set_height(pixels.1);
+                let Some(Ok(ctx)) = canvas
+                    .get_context("2d")
+                    .ok()
+                    .flatten()
+                    .map(|c| c.dyn_into::<CanvasRenderingContext2d>())
+                else {
+                    return;
+                };
+                let _ = ctx.set_transform(ratio, 0.0, 0.0, ratio, 0.0, 0.0);
+                let pen = std::rc::Rc::new(pen::Pen::new(ctx));
+                surface.set_value(Some((pixels, pen.clone())));
+                pen
+            }
         };
-        let _ = ctx.set_transform(ratio, 0.0, 0.0, ratio, 0.0, 0.0);
-        // what is under the pointer shows its lines, and otherwise the selected item does
-        // with something selected, the chain to what is under the pointer shows instead
-        let chain = match (picked, hovered) {
-            (Some(Mark::Node(a)), Some(Mark::Node(b))) if a != b => editing.chain.run((a, b)),
-            _ => Vec::new(),
-        };
-        let linked: Vec<Link> = if chain.is_empty() {
-            hovered.or(picked).map(|m| links.run(m)).unwrap_or_default()
-        } else {
-            chain
-        };
-        let info: Vec<String> = hovered.map(|m| info.run(m)).unwrap_or_default();
-        scene.with(|scene| {
-            let over_violation = hovered.filter(|m| {
-                hits.with_value(|h| {
-                    h.violations
-                        .iter()
-                        .any(|(v, r)| v == m && r.contains(at.0, at.1))
-                })
+        let ctx: &pen::Pen = &ctx;
+        let (linked, info) = (linked.get(), said.get());
+        let generation = scene_gen.get_value();
+        // the layers are drawn again only when the chart itself changes or it is scrolled far
+        let fresh = layers.with_value(|l| {
+            l.as_ref()
+                .is_some_and(|l| l.serve(vp, (width, height), ratio, generation, today))
+        });
+        if !fresh {
+            let old = layers.try_update_value(Option::take).flatten();
+            let made = scene.with(|scene| {
+                layers::render(old, (width, height), ratio, vp, scene, generation, today)
             });
-            let tip = over_violation.map(|m| violation.run(m));
-            let frame = Frame {
-                width,
-                height,
-                viewport: vp,
-                scene,
-                today,
-                hover: hovered,
-                selected: picked,
-                links: &linked,
-                flash: flashed,
-                info: if over_violation.is_some() { &[] } else { &info },
-                tip: tip.as_deref().map(|lines| (lines, at)),
+            if let Some((made, found)) = made {
+                hits.set_value(found.hits);
+                layers.set_value(Some(made));
+            }
+        }
+        layers.with_value(|layers| {
+            let Some(layers) = layers else {
+                return;
             };
-            hits.set_value(paint(&ctx, &frame));
+            let at = layers.at(vp);
+            hits.update_value(|h| h.offset = at);
+            scene.with(|scene| {
+                let over_violation = hovered.filter(|m| {
+                    hits.with_value(|h| {
+                        h.violations()
+                            .any(|(v, r)| v == *m && r.contains(pointer_at.0, pointer_at.1))
+                    })
+                });
+                let tip = over_violation.map(|m| violation.run(m));
+                let frame = Frame {
+                    width,
+                    height,
+                    top: layout::HEADER_HEIGHT,
+                    viewport: vp,
+                    scene,
+                    today,
+                    hover: hovered,
+                    selected: picked,
+                    links: &linked,
+                    flash: flashed,
+                    info: if over_violation.is_some() { &[] } else { &info },
+                    tip: tip.as_deref().map(|lines| (lines, pointer_at)),
+                };
+                // behind the items, what the pointer is on shows its lines, then the items over
+                // them, then the outlines and names the pointer changes, then the header
+                layers.blit(ctx, at, true);
+                paint_links(ctx, &frame);
+                layers.blit(ctx, at, false);
+                paint_marks(ctx, &frame, &layers.labels, at);
+                paint_header(ctx, &frame);
+                paint_notes(ctx, &frame);
+            });
         });
         if editing_shift {
             let handles = near.map(handles_of).unwrap_or_default();
@@ -431,13 +465,45 @@ pub fn Gantt(
                 }
             });
             shift::paint(
-                &ctx,
+                ctx,
                 &Overlay {
                     handles,
                     pointer: at,
                     drag: view,
                 },
             );
+        }
+    };
+    let due = StoredValue::new_local(false);
+    Effect::new(move |_| {
+        // the things a drawing depends on, and a drawing is asked for when any of them changes
+        let hovered = hover.get();
+        let (dragging, shifted) = (drag.get().is_some(), shift.get());
+        let _ = (
+            size.track(),
+            selected.track(),
+            viewport.track(),
+            flash.track(),
+            today.track(),
+            nearby.track(),
+            scene.track(),
+            canvas.track(),
+            linked.track(),
+            said.track(),
+        );
+        // the pointer matters while something follows it: a drag, the handles, a note on a warning
+        let warns = hovered
+            .is_some_and(|m| scene.with_untracked(|s| s.placed(m).is_some_and(|p| p.violated)));
+        if dragging || shifted || warns {
+            pointer.track();
+        }
+        if !due.get_value() {
+            due.set_value(true);
+            request_animation_frame(move || {
+                if due.try_set_value(false).is_none() {
+                    untrack(draw);
+                }
+            });
         }
     });
 
@@ -517,10 +583,8 @@ pub fn Gantt(
                 .is_some_and(|n| handles_of(n).at(x, y).is_some());
             if !on_handle {
                 let found = hits.with_value(|h| {
-                    h.items
-                        .iter()
-                        .map(|(m, r)| (*m, *r))
-                        .chain(h.headers.iter().map(|(m, r, _)| (*m, *r)))
+                    h.items()
+                        .chain(h.headers().map(|(m, r, _)| (m, r)))
                         .find(|(_, r)| shift::near(*r, x, y))
                         .and_then(|(m, _)| match m {
                             Mark::Node(n) => Some(n),
@@ -587,8 +651,7 @@ pub fn Gantt(
     // a tap on an item selects it, with shift on one linked to the selected item cuts the link
     let tap = move |x: f64, y: f64, shifted: bool| {
         if let Some((Mark::Node(node), fold)) = hit(x, y) {
-            let on_violation =
-                hits.with_value(|h| h.violations.iter().any(|(_, r)| r.contains(x, y)));
+            let on_violation = hits.with_value(|h| h.violations().any(|(_, r)| r.contains(x, y)));
             let chosen = selected.get_untracked();
             match (fold, on_violation) {
                 (_, true) => {}

@@ -2,9 +2,9 @@
 //! a dot on each edge to drag a dependency to another item, one in the middle to move it in or
 //! out of a group, and a grip inside the right edge of tasks and buffers to change how long they run.
 
+use crate::gantt::pen::Pen;
 use leptos::prelude::Callback;
 use plinko::types::dependency::PlanNode;
-use web_sys::CanvasRenderingContext2d;
 
 use crate::gantt::{arrange::Kind, layout::Rect, links::Link};
 
@@ -179,7 +179,7 @@ pub enum DragView {
     },
 }
 
-pub fn paint(ctx: &CanvasRenderingContext2d, overlay: &Overlay) {
+pub fn paint(ctx: &Pen, overlay: &Overlay) {
     ctx.save();
     let dragging = overlay.drag.is_some();
     for (handle, (x, y)) in &overlay.handles.list {
@@ -256,7 +256,7 @@ pub fn paint(ctx: &CanvasRenderingContext2d, overlay: &Overlay) {
 }
 
 /// The dashed outline left where an item was while a ghost of it is dragged
-fn leave_outline(ctx: &CanvasRenderingContext2d, r: Rect) {
+fn leave_outline(ctx: &Pen, r: Rect) {
     ctx.set_stroke_style_str(COLOUR);
     ctx.set_line_width(1.5);
     let _ = ctx.set_line_dash(&js_sys::Array::of2(&4.0.into(), &3.0.into()));
@@ -265,7 +265,7 @@ fn leave_outline(ctx: &CanvasRenderingContext2d, r: Rect) {
 }
 
 /// A see-through copy of an item
-fn ghost(ctx: &CanvasRenderingContext2d, r: Rect, name: &str) {
+fn ghost(ctx: &Pen, r: Rect, name: &str) {
     ctx.set_fill_style_str("rgba(30,136,229,0.45)");
     ctx.fill_rect(r.x, r.y, r.w, r.h);
     ctx.set_stroke_style_str(COLOUR);
@@ -286,7 +286,7 @@ fn ghost(ctx: &CanvasRenderingContext2d, r: Rect, name: &str) {
 }
 
 /// The move handle: three dark lines
-fn grip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, lit: bool) {
+fn grip(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.set_stroke_style_str(if lit { LIT } else { DARK });
     ctx.set_line_width(2.5);
     ctx.set_line_cap("round");
@@ -299,7 +299,7 @@ fn grip(ctx: &CanvasRenderingContext2d, x: f64, y: f64, lit: bool) {
 }
 
 /// The duration handle: one dark vertical line
-fn slot(ctx: &CanvasRenderingContext2d, x: f64, y: f64, lit: bool) {
+fn slot(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.set_stroke_style_str(if lit { LIT } else { DARK });
     ctx.set_line_width(3.0);
     ctx.set_line_cap("round");
@@ -309,14 +309,14 @@ fn slot(ctx: &CanvasRenderingContext2d, x: f64, y: f64, lit: bool) {
     ctx.stroke();
 }
 
-fn dot(ctx: &CanvasRenderingContext2d, (x, y): (f64, f64), colour: &str) {
+fn dot(ctx: &Pen, (x, y): (f64, f64), colour: &str) {
     ctx.set_fill_style_str(colour);
     ctx.begin_path();
     let _ = ctx.arc(x, y, 6.0, 0.0, std::f64::consts::TAU);
     ctx.fill();
 }
 
-fn highlight(ctx: &CanvasRenderingContext2d, over: Option<Rect>, colour: &str) {
+fn highlight(ctx: &Pen, over: Option<Rect>, colour: &str) {
     if let Some(r) = over {
         ctx.set_stroke_style_str(colour);
         ctx.set_line_width(3.0);

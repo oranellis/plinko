@@ -220,41 +220,41 @@ pub fn Allocations(
         let me = who()?;
         let days = days.get();
         let (first, last) = (*days.first()?, *days.last()?);
-        let schedule = sync.schedule.get();
-        sync.tenant.with(|t| {
-            let user = t.as_ref()?.users().get(&me)?;
-            let calendar = user.availability().calendar(first, last);
-            let booked = schedule.as_ref().and_then(|(_, s)| s.users.get(&me));
-            Some(
-                days.iter()
-                    .map(|d| {
-                        (
-                            booked.map_or(0, |b| b.booked_on(*d)),
-                            calendar.on(*d).map_or(0, |h| h.get()),
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-            )
+        sync.schedule.with(|schedule| {
+            sync.tenant.with(|t| {
+                let user = t.as_ref()?.users().get(&me)?;
+                let calendar = user.availability().calendar(first, last);
+                let booked = schedule.as_ref().and_then(|(_, s)| s.users.get(&me));
+                Some(
+                    days.iter()
+                        .map(|d| {
+                            (
+                                booked.map_or(0, |b| b.booked_on(*d)),
+                                calendar.on(*d).map_or(0, |h| h.get()),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
         })
     });
     // what is said of a task when the pointer rests on it, as in the chart
     let said = move |task: &MyTask| {
-        let state: Option<PlanVolatileState> = sync.schedule.with(|s| {
-            s.as_ref()
-                .and_then(|(_, s)| s.plans.get(&task.plan).cloned())
+        let lines = sync.schedule.with(|s| {
+            let state: Option<&PlanVolatileState> =
+                s.as_ref().and_then(|(_, s)| s.plans.get(&task.plan));
+            sync.tenant
+                .with(|t| {
+                    let t = t.as_ref()?;
+                    Some(info(
+                        t,
+                        t.plans().get(&task.plan)?,
+                        state,
+                        Mark::Node(PlanNode::Task(task.task)),
+                    ))
+                })
+                .unwrap_or_default()
         });
-        let lines = sync
-            .tenant
-            .with(|t| {
-                let t = t.as_ref()?;
-                Some(info(
-                    t,
-                    t.plans().get(&task.plan)?,
-                    state.as_ref(),
-                    Mark::Node(PlanNode::Task(task.task)),
-                ))
-            })
-            .unwrap_or_default();
         let mut lines = lines;
         lines.insert(1.min(lines.len()), format!("Plan: {}", task.plan_name));
         lines.join("\n")
@@ -367,7 +367,7 @@ pub fn Allocations(
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <For each=move || mine.get() key=|t| format!("{t:?}") children=move |task| {
+                                    <For each=move || mine.get() key=|t| crate::ui::hashed(t) children=move |task| {
                                         let (plan, id) = (task.plan, task.task);
                                         let title = said(&task);
                                         let by_day = task.days.clone();

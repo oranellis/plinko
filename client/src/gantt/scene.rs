@@ -16,7 +16,7 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
-    gantt::arrange::{Arrangement, Entry, Kind, arrange},
+    gantt::arrange::{Arrangement, Entry, Kind, Mark, Placed, arrange},
     model::{self, node_name},
 };
 
@@ -35,6 +35,25 @@ pub struct Scene {
     pub unplaced: Vec<Unplaced>,
     /// The day offset after the last day anything is on
     pub last_day: f64,
+    /// Where each item is in the arrangement
+    index: HashMap<Mark, usize>,
+}
+
+impl Scene {
+    /// A scene with nothing in it
+    pub fn empty(plan_start: NaiveDate) -> Self {
+        Self {
+            plan_start,
+            arrangement: Arrangement::default(),
+            unplaced: Vec::new(),
+            last_day: 0.0,
+            index: HashMap::new(),
+        }
+    }
+
+    pub fn placed(&self, mark: Mark) -> Option<&Placed> {
+        self.arrangement.placed.get(*self.index.get(&mark)?)
+    }
 }
 
 fn kind_of(node: PlanNode) -> Kind {
@@ -95,11 +114,18 @@ pub fn build(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet
         .map(|p| p.span.1)
         .max()
         .unwrap_or(plan_start);
+    let index = arrangement
+        .placed
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.mark, i))
+        .collect();
     Scene {
         plan_start,
         last_day: (last - plan_start).num_days() as f64,
         arrangement,
         unplaced,
+        index,
     }
 }
 
@@ -189,7 +215,6 @@ mod tests {
     };
 
     use super::*;
-    use crate::gantt::arrange::Mark;
 
     fn d(day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(2024, 1, day).unwrap()

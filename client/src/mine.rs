@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::ui::use_sync;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Hash)]
 pub struct MyTask {
     pub plan: ShortId,
     pub plan_name: String,
@@ -42,40 +42,41 @@ pub fn use_tasks_of(who: Option<Uuid>) -> Memo<Vec<MyTask>> {
         let Some(me) = who.or_else(|| sync.me.with(|m| m.as_ref().map(|m| m.id))) else {
             return Vec::new();
         };
-        let schedule = sync.schedule.get();
-        let Some((_, schedule)) = schedule.as_ref() else {
-            return Vec::new();
-        };
-        let mut mine = sync.tenant.with(|t| {
-            let Some(t) = t.as_ref() else {
+        let mut mine = sync.schedule.with(|schedule| {
+            let Some((_, schedule)) = schedule.as_ref() else {
                 return Vec::new();
             };
-            let mut mine = Vec::new();
-            for (plan_id, state) in &schedule.plans {
-                let Some(plan) = t.plans().get(plan_id) else {
-                    continue;
+            sync.tenant.with(|t| {
+                let Some(t) = t.as_ref() else {
+                    return Vec::new();
                 };
-                for (id, volatile) in &state.tasks {
-                    let Some(days) = volatile.assignments.get(&Assignee::User(me)) else {
+                let mut mine = Vec::new();
+                for (plan_id, state) in &schedule.plans {
+                    let Some(plan) = t.plans().get(plan_id) else {
                         continue;
                     };
-                    let Some(task) = plan.tasks().get(id) else {
-                        continue;
-                    };
-                    let range = volatile.date_range;
-                    mine.push(MyTask {
-                        plan: *plan_id,
-                        plan_name: plan.name().to_string(),
-                        task: *id,
-                        name: task.name().to_string(),
-                        status: task.persistent_state().status,
-                        start: range.start(),
-                        end: range.end().pred_opt().unwrap_or(range.start()),
-                        days: days.iter().map(|(d, h)| (*d, h.get())).collect(),
-                    });
+                    for (id, volatile) in &state.tasks {
+                        let Some(days) = volatile.assignments.get(&Assignee::User(me)) else {
+                            continue;
+                        };
+                        let Some(task) = plan.tasks().get(id) else {
+                            continue;
+                        };
+                        let range = volatile.date_range;
+                        mine.push(MyTask {
+                            plan: *plan_id,
+                            plan_name: plan.name().to_string(),
+                            task: *id,
+                            name: task.name().to_string(),
+                            status: task.persistent_state().status,
+                            start: range.start(),
+                            end: range.end().pred_opt().unwrap_or(range.start()),
+                            days: days.iter().map(|(d, h)| (*d, h.get())).collect(),
+                        });
+                    }
                 }
-            }
-            mine
+                mine
+            })
         });
         mine.sort_by(|a, b| {
             (a.start, a.end, &a.name, a.task).cmp(&(b.start, b.end, &b.name, b.task))
