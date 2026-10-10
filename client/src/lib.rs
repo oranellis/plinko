@@ -10,6 +10,7 @@ mod escape;
 mod format;
 mod forms;
 mod gantt;
+mod glide;
 mod guard;
 mod home;
 mod icons;

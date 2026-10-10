@@ -196,6 +196,13 @@ pub fn Allocations(
             weeks.set((days / 7 + 1 + AHEAD).max(LEAST));
         }
     };
+    let slide = StoredValue::new_local(crate::glide::Glide::new(move |dx| {
+        let Some(Some(element)) = scroller.try_get_untracked() else {
+            return false;
+        };
+        element.set_scroll_left((f64::from(element.scroll_left()) + dx).round() as i32);
+        true
+    }));
     let to_today = move || {
         if let Some(element) = scroller.get_untracked() {
             let at = (today.get_untracked() - first.get_untracked()).num_days() as f64 * DAY_WIDTH;
@@ -292,6 +299,14 @@ pub fn Allocations(
                             style=move || format!("--name-w:{}px;--task-w:{}px", name_width.get(), task_width.get())
                             node_ref=scroller
                             on:scroll=move |_| measure()
+                            on:wheel=move |ev| {
+                                // sideways, by the wheel's own sideways or with shift, eases in and out
+                                let by = if ev.delta_x() != 0.0 { ev.delta_x() } else if ev.shift_key() { ev.delta_y() } else { 0.0 };
+                                if by != 0.0 {
+                                    ev.prevent_default();
+                                    slide.with_value(|s| s.push(by));
+                                }
+                            }
                             on:pointerdown=move |ev| {
                                 if near_edge(&ev) {
                                     dragging.set(true);

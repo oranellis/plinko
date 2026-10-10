@@ -743,6 +743,16 @@ pub fn Gantt(
         hover.set(None);
     };
 
+    let slide = StoredValue::new_local(crate::glide::Glide::new(move |dx| {
+        let (Some(current), Some(b)) = (viewport.try_get_untracked(), bounds.try_get_untracked())
+        else {
+            return false;
+        };
+        let mut vp = current.unwrap_or_default();
+        vp.scroll(dx, 0.0, b);
+        viewport.try_set(Some(vp));
+        true
+    }));
     let wheel = move |ev: WheelEvent| {
         ev.prevent_default();
         let b = bounds.get_untracked();
@@ -753,7 +763,9 @@ pub fn Gantt(
         } else if ev.ctrl_key() || ev.meta_key() {
             vp.zoom(x, (-ev.delta_y() / 300.0).exp(), b);
         } else {
-            vp.scroll(ev.delta_x(), ev.delta_y(), b);
+            // sideways eases in and out, up and down is as far as the wheel says
+            vp.scroll(0.0, ev.delta_y(), b);
+            slide.with_value(|s| s.push(ev.delta_x()));
         }
         viewport.set(Some(vp));
     };
