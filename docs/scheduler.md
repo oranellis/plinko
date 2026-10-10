@@ -562,4 +562,8 @@ scheduler as valid (every task placed on the solver's day with its person, nothi
   only to 13 missed dates and 67 days late (the scheduler 17 and 101) in 46 minutes of
   neighbourhood search, a plan end of 683 days against 687, and ran out of the memory of the
   8 GB machine; it is not near optimal at that size. The scheduler took 29 to 54 s there.
+- Four plans of 250 tasks sharing 20 people (three seeds, 15 minutes of CP-SAT on 8 cores each, all
+  accepted by the scheduler as valid): CP-SAT kept every date in two and missed the same two days as
+  the scheduler in the third, with the plan to its target 1 to 6 % shorter, the last task 1 to 10 %
+  sooner and the average task finishing 6 to 11 % sooner. The scheduler took about a second.
 
