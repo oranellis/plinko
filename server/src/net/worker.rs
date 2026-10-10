@@ -40,6 +40,7 @@ enum Message {
         seq: u64,
         schedule: TenantVolatileState,
         baselines: HashMap<ShortId, Baseline>,
+        fixes: scheduler::Fixes,
     },
 }
 
@@ -57,7 +58,8 @@ pub fn start(mut tenant: Tenant, mut seq: u64, results: UnboundedSender<Command>
     let to_self = sender.clone();
     std::thread::spawn(move || {
         let mut tracker = Tracker::default();
-        scheduler::schedule(&mut tenant);
+        let fixes = scheduler::schedule(&mut tenant);
+        tracker.refined(&tenant, fixes);
         let send = |tenant: &Tenant, seq: u64| {
             let schedule = tenant.schedule().cloned().unwrap_or_default();
             results.send(Command::Scheduled { seq, schedule }).is_ok()
@@ -79,13 +81,14 @@ pub fn start(mut tenant: Tenant, mut seq: u64, results: UnboundedSender<Command>
                         let at = seq;
                         std::thread::spawn(move || {
                             copy.clear_baselines();
-                            scheduler::schedule(&mut copy);
+                            let fixes = scheduler::schedule(&mut copy);
                             let schedule = copy.schedule().cloned().unwrap_or_default();
                             let baselines = copy.baselines().clone();
                             let _ = back.send(Message::Refined {
                                 seq: at,
                                 schedule,
                                 baselines,
+                                fixes,
                             });
                         });
                         continue;
@@ -117,9 +120,10 @@ pub fn start(mut tenant: Tenant, mut seq: u64, results: UnboundedSender<Command>
                         seq: at,
                         schedule,
                         baselines,
+                        fixes,
                     } => {
                         refining = false;
-                        refined = Some((at, schedule, baselines));
+                        refined = Some((at, schedule, baselines, fixes));
                     }
                 }
             }
@@ -134,9 +138,10 @@ pub fn start(mut tenant: Tenant, mut seq: u64, results: UnboundedSender<Command>
                 }
             }
             // a full run is only any use if nothing has changed since it started
-            if let Some((at, schedule, baselines)) = refined.filter(|(at, ..)| *at == seq) {
+            if let Some((at, schedule, baselines, fixes)) = refined.filter(|(at, ..)| *at == seq) {
                 let _ = at;
                 tenant.store_schedule(schedule);
+                tracker.refined(&tenant, fixes);
                 for (id, baseline) in baselines {
                     tenant.store_baseline(id, baseline);
                 }

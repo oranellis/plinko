@@ -12,6 +12,7 @@ use crate::{
         graph::{self, Vertex},
         plan::Plan,
     },
+    scheduler::PlanRepairs,
     scheduler::{
         fill::{Filled, Hours, Slot, Spec, fill},
         ledger::{Claim, Ledger, MAX_FILL_DAYS, Run},
@@ -236,17 +237,11 @@ impl<'a> PlanSolver<'a> {
     }
 
     /// Applies what a repair round changes: days of urgency for targets and people for slots
-    pub fn repair(
-        &mut self,
-        bumps: HashMap<Option<Uuid>, i64>,
-        forced: HashMap<(Uuid, Worker), Uuid>,
-        tighten: HashMap<PlanNode, i64>,
-        urgent: HashSet<PlanNode>,
-    ) {
-        self.bumps = bumps;
-        self.forced = forced;
-        self.tighten = tighten;
-        self.urgent = urgent;
+    pub fn repair(&mut self, repairs: PlanRepairs) {
+        self.bumps = repairs.bumps;
+        self.forced = repairs.forced;
+        self.tighten = repairs.tighten;
+        self.urgent = repairs.urgent;
     }
 
     /// Keeps these not started tasks where they were in the last schedule

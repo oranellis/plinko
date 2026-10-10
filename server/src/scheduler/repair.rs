@@ -32,9 +32,19 @@ const DEMOTE_ROOM: i64 = 7;
 /// A person booked this much of their time is a bottleneck for work that waits on them
 const BOTTLENECK_LOAD: f32 = 0.9;
 
+/// What rounds have changed in one plan
+#[derive(Clone, Default)]
+pub struct PlanRepairs {
+    pub bumps: HashMap<Option<Uuid>, i64>,
+    pub forced: HashMap<(Uuid, Worker), Uuid>,
+    /// Days taken off the hard dates that were missed, see `PlanSolver::tightening`
+    pub tighten: HashMap<PlanNode, i64>,
+    pub urgent: HashSet<PlanNode>,
+}
+
 /// What rounds have changed, for each plan in the order they are scheduled in
 #[derive(Clone)]
-struct Repairs {
+pub struct Repairs {
     bumps: Vec<HashMap<Option<Uuid>, i64>>,
     forced: Vec<HashMap<(Uuid, Worker), Uuid>>,
     /// Days taken off the hard dates that were missed, see `PlanSolver::tightening`
@@ -56,12 +66,23 @@ struct Reached {
 pub struct Outcome {
     pub states: Vec<PlanVolatileState>,
     pub ledger: Ledger,
+    pub repairs: Repairs,
     reached: Vec<Reached>,
     /// How many hard dates are missed, and by how many days in all
     missed: (i64, i64),
 }
 
 impl Repairs {
+    /// What was changed in the plan at this position
+    pub fn of(&self, plan: usize) -> PlanRepairs {
+        PlanRepairs {
+            bumps: self.bumps[plan].clone(),
+            forced: self.forced[plan].clone(),
+            tighten: self.tighten[plan].clone(),
+            urgent: self.urgent[plan].clone(),
+        }
+    }
+
     fn new(plans: usize) -> Self {
         Self {
             bumps: vec![HashMap::new(); plans],
@@ -104,12 +125,7 @@ fn run(
         .enumerate()
         .map(|(i, id)| {
             let mut solver = PlanSolver::new(tenant, &tenant.plans()[id], Some(&*baselines[id]));
-            solver.repair(
-                repairs.bumps[i].clone(),
-                repairs.forced[i].clone(),
-                repairs.tighten[i].clone(),
-                repairs.urgent[i].clone(),
-            );
+            solver.repair(repairs.of(i));
             solver
         })
         .collect();
@@ -151,6 +167,7 @@ fn run(
     Outcome {
         states,
         ledger,
+        repairs: repairs.clone(),
         reached,
         missed,
     }

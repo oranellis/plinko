@@ -666,8 +666,9 @@ fn main() {
 /// does and times it, then schedules the tenant afresh to see what the edits cost in quality
 fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
     let mut tenant = world.tenant.clone();
-    scheduler::schedule(&mut tenant);
+    let fixes = scheduler::schedule(&mut tenant);
     let mut tracker = scheduler::Tracker::default();
+    tracker.refined(&tenant, fixes);
     let mut random = Random(opts.seed * 977 + 3);
     let root = *tenant.users().keys().next().unwrap();
     let mut made = Vec::new();

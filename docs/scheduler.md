@@ -407,9 +407,10 @@ descriptions, data, favourites) leaves the schedule as is; task, milestone, grou
 name their nodes; tags, affinities, users, targets, availability and scheduler data mark the plan
 whole; people, calendars and the day schedule everything. `incremental.rs` then places again only
 the named nodes and what depends on them, with the other tasks kept where the last schedule had
-them (`PlanSolver::claim_frozen`, skipped if their hours are taken) and baselines kept from before.
-If that leaves the schedule much worse than the last full run (`DRIFT`), the plan is placed whole,
-then everything. The server worker (`net/worker.rs`) schedules everything again on a copy once
+them (`PlanSolver::claim_frozen`, skipped if their hours are taken), and the baselines and repair
+changes (`Fixes`) kept from the last full run. If that is worse than before, everything starting
+after the first changed task is placed again too and the better is kept. If it is still much worse
+than the last full run (`DRIFT`), everything is scheduled again. The server worker (`net/worker.rs`) schedules everything again on a copy once
 updates pause, and swaps it in if nothing changed meanwhile. `INCREMENTAL=n rich ...` measures it.
 
 ## 8. Priorities

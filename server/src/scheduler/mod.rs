@@ -22,6 +22,7 @@ pub mod ledger;
 mod network;
 mod plan_solver;
 mod repair;
+pub use repair::PlanRepairs;
 mod slack;
 pub mod state;
 pub mod status;
@@ -68,11 +69,16 @@ pub fn prepare(tenant: &mut Tenant) {
 
 /// Schedules the tenant and keeps the result on it, for `Tenant::schedule`. The server runs this
 /// after every update, `Tenant::apply_and_schedule` does.
-pub fn schedule(tenant: &mut Tenant) {
+pub fn schedule(tenant: &mut Tenant) -> Fixes {
     prepare(tenant);
-    let state = solve_tenant(tenant);
+    let (state, fixes) = solve_with_fixes(tenant);
     tenant.store_schedule(state);
+    fixes
 }
+
+/// What repair rounds changed in each plan, which a later run that places only some of the work
+/// keeps so that it does not undo what they did
+pub type Fixes = HashMap<ShortId, PlanRepairs>;
 
 /// How a schedule was brought up to date
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,6 +103,7 @@ pub struct Tracker {
     /// How much trouble the schedule had when it was last worked out in full, which what is
     /// placed again may not get much past
     trouble: Option<i64>,
+    fixes: Fixes,
 }
 
 /// How much worse than the last full run an incremental one may leave the schedule, half and
@@ -152,7 +159,7 @@ impl Tracker {
         let base = *self
             .trouble
             .get_or_insert_with(|| incremental::trouble(&previous));
-        if let Some(state) = incremental::reschedule(tenant, &previous, &change)
+        if let Some(state) = incremental::reschedule(tenant, &previous, &change, &self.fixes)
             && incremental::trouble(&state) <= base + DRIFT + base / 2
         {
             tenant.store_schedule(state);
@@ -161,11 +168,17 @@ impl Tracker {
         self.full(tenant)
     }
 
+    /// Takes a schedule of everything on the tenant as the one later runs keep close to
+    pub fn refined(&mut self, tenant: &Tenant, fixes: Fixes) {
+        self.trouble = tenant.schedule().map(incremental::trouble);
+        self.fixes = fixes;
+    }
+
     /// Schedules everything, which the next runs may not drift far from
     fn full(&mut self, tenant: &mut Tenant) -> Refreshed {
         tenant.clear_baselines();
-        schedule(tenant);
-        self.trouble = tenant.schedule().map(incremental::trouble);
+        let fixes = schedule(tenant);
+        self.refined(tenant, fixes);
         Refreshed::Fully
     }
 }
@@ -183,6 +196,10 @@ fn baseline(tenant: &Tenant, plan: &ShortId) -> Baseline {
 /// one with the earlier start date, then the lower id. Each forecast is compared with the plan on
 /// its own.
 pub fn solve_tenant(tenant: &Tenant) -> TenantVolatileState {
+    solve_with_fixes(tenant).0
+}
+
+fn solve_with_fixes(tenant: &Tenant) -> (TenantVolatileState, Fixes) {
     let baselines: HashMap<ShortId, Cow<Baseline>> = tenant
         .plans()
         .keys()
@@ -209,10 +226,15 @@ pub fn solve_tenant(tenant: &Tenant) -> TenantVolatileState {
     order.sort();
     let ids: Vec<ShortId> = order.iter().map(|(_, _, id)| *id).collect();
     let outcome = repair::solve(tenant, &ids, &baselines);
+    let fixes = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (*id, outcome.repairs.of(i)))
+        .collect();
     let plans = ids.into_iter().zip(outcome.states).collect();
     let mut state = TenantVolatileState::from_plans(plans);
     for (user, schedule) in &mut state.users {
         schedule.bottleneck = outcome.ledger.load(user);
     }
-    state
+    (state, fixes)
 }

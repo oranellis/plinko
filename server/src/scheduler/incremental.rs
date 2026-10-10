@@ -1,18 +1,23 @@
 //! Bringing a schedule up to date after updates without working all of it out again: what the
 //! updates cannot have changed stays where it was, and only the rest is placed, around it.
 
-use std::{cmp::Reverse, collections::HashMap};
+use std::{
+    cmp::Reverse,
+    collections::{HashMap, HashSet},
+};
+
+use chrono::NaiveDate;
 
 use crate::{
     multitenancy::tenant::Tenant,
     planner::graph::Vertex,
     scheduler::{
-        combined,
+        Fixes, combined,
         impact::{Change, PlanChange},
         ledger::Ledger,
         network::Network,
         plan_solver::PlanSolver,
-        state::{Baseline, TenantVolatileState},
+        state::TenantVolatileState,
     },
     types::{common::TimeConstraint, dependency::PlanNode, short_id::ShortId},
 };
@@ -41,6 +46,7 @@ pub fn reschedule(
     tenant: &Tenant,
     previous: &TenantVolatileState,
     change: &Change,
+    fixes: &Fixes,
 ) -> Option<TenantVolatileState> {
     if change.everything {
         return None;
@@ -64,66 +70,72 @@ pub fn reschedule(
         .collect();
     order.sort();
     let ids: Vec<ShortId> = order.into_iter().map(|(_, _, id)| id).collect();
-    let partly = place(tenant, previous, change, &ids, &baselines);
-    if trouble(&partly) <= trouble(previous) {
-        return Some(partly);
-    }
-    let mut whole = change.clone();
-    for plan in whole.plans.values_mut() {
-        *plan = PlanChange::Whole;
-    }
-    let again = place(tenant, previous, &whole, &ids, &baselines);
-    Some(if trouble(&again) < trouble(&partly) {
-        again
-    } else {
-        partly
-    })
-}
-
-fn place(
-    tenant: &Tenant,
-    previous: &TenantVolatileState,
-    change: &Change,
-    ids: &[ShortId],
-    baselines: &HashMap<ShortId, &Baseline>,
-) -> TenantVolatileState {
-    let mut ledger = Ledger::from_tenant(tenant, tenant.today());
-    let solvers: Vec<PlanSolver> = ids
+    let moved: HashMap<ShortId, HashSet<Vertex>> = change
+        .plans
         .iter()
-        .map(|id| {
-            let plan = &tenant.plans()[id];
-            let mut solver = PlanSolver::new(tenant, plan, Some(baselines[id]));
-            let before = previous.plans.get(id);
-            if let (Some(before), Some(PlanChange::Nodes(_)) | None) =
-                (before, change.plans.get(id))
-            {
-                // what changed and everything after it is placed again, the rest stays
-                let moved = match change.plans.get(id) {
-                    Some(PlanChange::Nodes(nodes)) => {
-                        let roots = nodes.iter().map(|n| Vertex::Node(*n));
-                        Network::new(plan).downstream(roots)
-                    }
-                    _ => Default::default(),
-                };
-                let stays = before
-                    .tasks
-                    .iter()
-                    .filter(|(task, _)| plan.tasks().contains_key(task))
-                    .filter(|(task, _)| !moved.contains(&Vertex::Node(PlanNode::Task(**task))))
-                    .map(|(task, state)| (*task, state.clone()))
-                    .collect();
-                solver.freeze(stays);
+        .filter_map(|(id, plan_change)| match plan_change {
+            PlanChange::Nodes(nodes) => {
+                let roots = nodes.iter().map(|n| Vertex::Node(*n));
+                Some((*id, Network::new(tenant.plans().get(id)?).downstream(roots)))
             }
-            solver
+            PlanChange::Whole => None,
         })
         .collect();
-    let mut states = combined::solve(solvers, &mut ledger);
-    for (i, state) in states.iter_mut().enumerate() {
-        state.compare_to(&baselines[&ids[i]].state);
+    // the first day anything that moves was on, from which later work may have to give way
+    let first = moved
+        .iter()
+        .flat_map(|(id, set)| set.iter().map(move |v| (id, v)))
+        .filter_map(|(id, v)| match v {
+            Vertex::Node(PlanNode::Task(task)) => previous.plans.get(id)?.tasks.get(task),
+            _ => None,
+        })
+        .map(|t| t.date_range.start())
+        .min();
+    let place = |from: Option<NaiveDate>| {
+        let mut ledger = Ledger::from_tenant(tenant, tenant.today());
+        let solvers: Vec<PlanSolver> = ids
+            .iter()
+            .map(|id| {
+                let mut solver = PlanSolver::new(tenant, &tenant.plans()[id], Some(baselines[id]));
+                solver.repair(fixes.get(id).cloned().unwrap_or_default());
+                let stays = match (previous.plans.get(id), change.plans.get(id)) {
+                    (Some(before), Some(PlanChange::Nodes(_)) | None) => before
+                        .tasks
+                        .iter()
+                        .filter(|(task, _)| tenant.plans()[id].tasks().contains_key(task))
+                        .filter(|(task, _)| {
+                            let task = Vertex::Node(PlanNode::Task(**task));
+                            !moved.get(id).is_some_and(|set| set.contains(&task))
+                        })
+                        .filter(|(_, t)| from.is_none_or(|day| t.date_range.start() < day))
+                        .map(|(task, state)| (*task, state.clone()))
+                        .collect(),
+                    _ => HashMap::new(),
+                };
+                solver.freeze(stays);
+                solver
+            })
+            .collect();
+        let mut states = combined::solve(solvers, &mut ledger);
+        for (i, state) in states.iter_mut().enumerate() {
+            state.compare_to(&baselines[&ids[i]].state);
+        }
+        let mut state = TenantVolatileState::from_plans(ids.iter().copied().zip(states).collect());
+        for (user, schedule) in &mut state.users {
+            schedule.bottleneck = ledger.load(user);
+        }
+        state
+    };
+    // what depends on the changes is placed again, and if that is not enough everything after the
+    // first of them is, as work that stayed may have been in the way of what had to move
+    let dependents = place(None);
+    if trouble(&dependents) <= trouble(previous) || first.is_none() {
+        return Some(dependents);
     }
-    let mut state = TenantVolatileState::from_plans(ids.iter().copied().zip(states).collect());
-    for (user, schedule) in &mut state.users {
-        schedule.bottleneck = ledger.load(user);
-    }
-    state
+    let later = place(first);
+    Some(if trouble(&later) < trouble(&dependents) {
+        later
+    } else {
+        dependents
+    })
 }
