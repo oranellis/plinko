@@ -129,6 +129,11 @@ pub struct PlanSolver<'a> {
     bumps: HashMap<Option<Uuid>, i64>,
     /// People forced on a task's tag or group slot by repair rounds
     forced: HashMap<(Uuid, Worker), Uuid>,
+    /// Days repair rounds take off a hard date, for nodes that missed it, so the chain to it
+    /// goes earlier
+    tighten: HashMap<PlanNode, i64>,
+    /// With selective ordering, the hard dated nodes whose chains go first
+    urgent: HashSet<PlanNode>,
 }
 
 // impl PlanSolver {{{
@@ -157,6 +162,8 @@ impl<'a> PlanSolver<'a> {
             unscheduled: HashMap::new(),
             bumps: HashMap::new(),
             forced: HashMap::new(),
+            tighten: HashMap::new(),
+            urgent: HashSet::new(),
         };
         for v in solver.order.clone() {
             if !anchored.contains(&v) {
@@ -178,9 +185,25 @@ impl<'a> PlanSolver<'a> {
         &mut self,
         bumps: HashMap<Option<Uuid>, i64>,
         forced: HashMap<(Uuid, Worker), Uuid>,
+        tighten: HashMap<PlanNode, i64>,
+        urgent: HashSet<PlanNode>,
     ) {
         self.bumps = bumps;
         self.forced = forced;
+        self.tighten = tighten;
+        self.urgent = urgent;
+    }
+
+    pub fn is_urgent(&self, v: &Vertex) -> bool {
+        matches!(v, Vertex::Node(n) if self.urgent.contains(n))
+    }
+
+    /// The days a hard dated node must start before its date to make up for missing it
+    pub fn tightening(&self, v: &Vertex) -> i64 {
+        match v {
+            Vertex::Node(node) => self.tighten.get(node).copied().unwrap_or(0),
+            _ => 0,
+        }
     }
 
     /// The days of work that follow a vertex and including it
@@ -795,12 +818,31 @@ impl<'a> PlanSolver<'a> {
         ready: &[Vertex],
         next: &Vertex,
         ledger: &Ledger,
+        chains: &[(Vertex, NaiveDate, HashSet<Vertex>)],
     ) -> Option<(Vertex, NaiveDate, i64)> {
         let dates = self.hard_dates();
+        let through = std::env::var("PRESS_CHAIN").is_ok();
         let mut dated: Vec<(NaiveDate, Vertex)> = ready
             .iter()
             .filter(|v| *v != next)
-            .filter_map(|v| Some((*dates.get(v)?, *v)))
+            .filter_map(|v| {
+                if through {
+                    // the latest start for the nearest date it leads to, by the work in between
+                    return chains
+                        .iter()
+                        .filter(|(hard, _, chain)| {
+                            chain.contains(v) && !self.settled.contains(hard)
+                        })
+                        .map(|(hard, date, _)| {
+                            let work = (self.remaining(v) - self.remaining(hard)).max(0);
+                            *date - chrono::Duration::days(self.tightening(hard) + work)
+                        })
+                        .min()
+                        .map(|date| (date, *v));
+                }
+                let date = *dates.get(v)? - chrono::Duration::days(self.tightening(v));
+                Some((date, *v))
+            })
             .collect();
         if dated.is_empty() {
             return None;

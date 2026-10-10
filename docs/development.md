@@ -37,6 +37,5 @@ The server reads the environment, and `run_debug.sh` passes these on if they are
   unoptimised wasm made the chart lag.
 - `cargo run --release -p plinko --example score [seeds] [plans]` scores how well the scheduler keeps
   hard dates on made up plans of 500 tasks with a tenth dated (misses, days late, plan end). Use it
-  when changing how work is ordered. On 24 seeds of one plan, going from ordering by slack with a
-  3 day margin to hard chains first by latest start took misses from 7.6 to 3.0 and days late from
-  74 to 19.
+  when changing how work is ordered. On 20 seeds of one plan the repair rounds took misses from
+  3.0 to 0.8 and days late from 19 to 4.7, at about 0.65 s to schedule instead of 0.3 s.

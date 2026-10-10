@@ -301,7 +301,8 @@ Solo runs per plan as above.
 
 Insert all remaining nodes into one ledger, in strict layers:
 
-1. **Hard tier:** every ancestor of a Fixed or Latest node, at any distance, as Plinko 1 did. A
+1. **Hard tier:** every ancestor of a Fixed or Latest node that is urgent (see repair rounds, all of
+   them to begin with), at any distance, as Plinko 1 did. A
    node's key is the latest day it could start to keep the nearest date it leads to: the date less
    the days of work from the node to the dated one (`Network::remaining`, a difference of the
    longest chains of work that follow each). The earliest key goes first, then the longest chain of
@@ -366,9 +367,13 @@ rounds re-insert nodes.
 
 Plans will often be in contention for people, so spread the impact:
 
-- **Objective:** lexicographic. First minimise the worst effective delay across all targets
-  (delay plus priority offsets), then among equal worst cases the total effective delay.
-- **Round:** two changes are tried, each by scheduling everything again, and the better one that
+- **Objective:** lexicographic. First minimise the days hard dates are missed by in all, then how
+  many are missed, then the worst effective delay across all targets (delay plus priority offsets),
+  then among equal worst cases the total effective delay.
+- **Start:** repair runs twice and keeps the better, once from every hard dated chain going first
+  (the hard tier of phase 3) and once from none going first, as each finds results the other
+  does not. Only chains in a plan's `urgent` set go first.
+- **Round:** these changes are tried, each by scheduling everything again, and the best that
   beats the objective is kept (`scheduler/repair.rs`):
   1. Every worst target that is late (at the worst effective delay) gets a bump added to its
      urgency of as many days as it is late, adding up over rounds. The bump only applies within
@@ -376,8 +381,13 @@ Plans will often be in contention for people, so spread the impact:
   2. Tag and group work that is not started, in any plan, moves off the people who are bottlenecks
      (booked 0.9 or more of their time, `Ledger::load`) on the worst targets' chains, to the
      eligible person with the lowest load, if lower than theirs (`PlanSolver::repair`).
+  3. Every hard date that was missed becomes urgent.
+  4. Urgent hard dates that were kept with 7 or more days to spare stop being urgent.
+  5. Hard dates are judged to need starting earlier by as many days as they were missed by, and
+     later by half the room the kept ones had (`PlanSolver::tightening`), so the work that kept
+     them gives way to the work that missed.
   Only the effective delay of targets counts, with the plan and target priority, not the bumps.
-- **Bounds:** a fixed round cap (**Assumed**: 8), and stop when nothing improves. Deterministic,
+- **Bounds:** a fixed round cap (**Assumed**: 24), and stop when nothing improves. Deterministic,
   because bumps and candidate order depend only on state and ids.
 - **Speed:** each round schedules from scratch. Checkpointing the ledger and state at each
   insertion step so a round restarts from the first step that changes is not done.

@@ -15,6 +15,7 @@ use crate::{
         state::{Baseline, PlanVolatileState},
     },
     types::{
+        common::TimeConstraint,
         dependency::PlanNode,
         short_id::ShortId,
         task::{Assignee, Status, Worker},
@@ -23,7 +24,10 @@ use crate::{
 // }}}
 
 /// The most rounds of repair, each takes the best change that improves the result
-const MAX_ROUNDS: usize = 8;
+const MAX_ROUNDS: usize = 24;
+
+/// Days of room a hard date is kept with before it stops going first
+const DEMOTE_ROOM: i64 = 7;
 
 /// A person booked this much of their time is a bottleneck for work that waits on them
 const BOTTLENECK_LOAD: f32 = 0.9;
@@ -33,6 +37,9 @@ const BOTTLENECK_LOAD: f32 = 0.9;
 struct Repairs {
     bumps: Vec<HashMap<Option<Uuid>, i64>>,
     forced: Vec<HashMap<(Uuid, Worker), Uuid>>,
+    /// Days taken off the hard dates that were missed, see `PlanSolver::tightening`
+    tighten: Vec<HashMap<PlanNode, i64>>,
+    urgent: Vec<HashSet<PlanNode>>,
 }
 
 /// A target and how far behind it is
@@ -50,13 +57,28 @@ pub struct Outcome {
     pub states: Vec<PlanVolatileState>,
     pub ledger: Ledger,
     reached: Vec<Reached>,
+    /// How many hard dates are missed, and by how many days in all
+    missed: (i64, i64),
+}
+
+impl Repairs {
+    fn new(plans: usize) -> Self {
+        Self {
+            bumps: vec![HashMap::new(); plans],
+            forced: vec![HashMap::new(); plans],
+            tighten: vec![HashMap::new(); plans],
+            urgent: vec![HashSet::new(); plans],
+        }
+    }
 }
 
 impl Outcome {
     /// The worst effective delay, then the total, lower is better
-    fn objective(&self) -> (i64, i64) {
+    fn objective(&self) -> (i64, i64, i64, i64) {
         let worst = self.reached.iter().map(|r| r.effective).max();
         (
+            self.missed.1,
+            self.missed.0,
             worst.unwrap_or(0),
             self.reached.iter().map(|r| r.effective).sum(),
         )
@@ -82,7 +104,12 @@ fn run(
         .enumerate()
         .map(|(i, id)| {
             let mut solver = PlanSolver::new(tenant, &tenant.plans()[id], Some(&*baselines[id]));
-            solver.repair(repairs.bumps[i].clone(), repairs.forced[i].clone());
+            solver.repair(
+                repairs.bumps[i].clone(),
+                repairs.forced[i].clone(),
+                repairs.tighten[i].clone(),
+                repairs.urgent[i].clone(),
+            );
             solver
         })
         .collect();
@@ -112,10 +139,20 @@ fn run(
             });
         }
     }
+    let missed = states
+        .iter()
+        .flat_map(|s| s.constraint_violations.values())
+        .fold((0, 0), |(count, days), v| {
+            let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = v.constraint else {
+                return (count, days);
+            };
+            (count + 1, days + (v.scheduled - date).num_days())
+        });
     Outcome {
         states,
         ledger,
         reached,
+        missed,
     }
 }
 
@@ -126,6 +163,107 @@ fn bump(worst: &[&Reached], repairs: &Repairs) -> Repairs {
         *next.bumps[r.plan].entry(r.target).or_insert(0) += r.delay.max(1);
     }
     next
+}
+
+/// Hard dates made earlier by as many days as they were missed and the ones that were kept with
+/// room to spare later by half that room, so the work that keeps them gives way to the work that
+/// missed, `None` if nothing was missed
+fn rebalance(
+    tenant: &Tenant,
+    ids: &[ShortId],
+    outcome: &Outcome,
+    repairs: &Repairs,
+) -> Option<Repairs> {
+    outcome.missed.0.ne(&0).then_some(())?;
+    let mut next = repairs.clone();
+    for (i, state) in outcome.states.iter().enumerate() {
+        let plan = &tenant.plans()[&ids[i]];
+        let dated = plan
+            .tasks()
+            .iter()
+            .map(|(id, t)| (PlanNode::Task(*id), t.time_constraint()));
+        for (node, constraint) in dated {
+            let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = constraint else {
+                continue;
+            };
+            let PlanNode::Task(id) = node else { continue };
+            let Some(placed) = state.tasks.get(&id) else {
+                continue;
+            };
+            let margin = (date - placed.date_range.start()).num_days();
+            let entry = next.tighten[i].entry(node).or_insert(0);
+            // not moving what has no room to spare, and what is on the day does not move either
+            *entry += if margin < 0 { -margin } else { -(margin / 2) };
+        }
+    }
+    Some(next)
+}
+
+/// The tasks of a plan with a Fixed or Latest date
+fn dated_nodes(plan: &crate::planner::plan::Plan) -> Vec<PlanNode> {
+    plan.tasks()
+        .iter()
+        .filter(|(_, t)| {
+            matches!(
+                t.time_constraint(),
+                TimeConstraint::Fixed(_) | TimeConstraint::Latest(_)
+            )
+        })
+        .map(|(id, _)| PlanNode::Task(*id))
+        .chain(
+            plan.milestones()
+                .iter()
+                .filter(|(_, m)| {
+                    matches!(
+                        m.time_constraint(),
+                        TimeConstraint::Fixed(_) | TimeConstraint::Latest(_)
+                    )
+                })
+                .map(|(id, _)| PlanNode::Milestone(*id)),
+        )
+        .collect()
+}
+
+/// Makes the hard dates that were missed urgent, `None` if they all are
+fn escalate(outcome: &Outcome, repairs: &Repairs) -> Option<Repairs> {
+    let mut next = repairs.clone();
+    let mut changed = false;
+    for (i, state) in outcome.states.iter().enumerate() {
+        for node in state.constraint_violations.keys() {
+            changed |= next.urgent[i].insert(*node);
+        }
+    }
+    changed.then_some(next)
+}
+
+/// Takes hard dates that were kept with room to spare out of the ones that go first, `None` if
+/// there are none
+fn demote(
+    tenant: &Tenant,
+    ids: &[ShortId],
+    outcome: &Outcome,
+    repairs: &Repairs,
+) -> Option<Repairs> {
+    let mut next = repairs.clone();
+    let mut changed = false;
+    for (i, state) in outcome.states.iter().enumerate() {
+        let plan = &tenant.plans()[&ids[i]];
+        for node in &repairs.urgent[i] {
+            let PlanNode::Task(id) = node else { continue };
+            let (Some(task), Some(placed)) = (plan.tasks().get(id), state.tasks.get(id)) else {
+                continue;
+            };
+            let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) =
+                task.time_constraint()
+            else {
+                continue;
+            };
+            if (date - placed.date_range.start()).num_days() >= DEMOTE_ROOM {
+                changed |= next.urgent[i].remove(node);
+            }
+        }
+    }
+    changed.then_some(next)
 }
 
 /// Moves tag and group work off the bottleneck people the worst targets wait on, to whoever
@@ -205,16 +343,56 @@ pub fn solve(
     ids: &[ShortId],
     baselines: &HashMap<ShortId, Cow<Baseline>>,
 ) -> Outcome {
-    let mut repairs = Repairs {
-        bumps: vec![HashMap::new(); ids.len()],
-        forced: vec![HashMap::new(); ids.len()],
+    let none = Repairs::new(ids.len());
+    let all = Repairs {
+        urgent: ids
+            .iter()
+            .map(|id| dated_nodes(&tenant.plans()[id]).into_iter().collect())
+            .collect(),
+        ..none.clone()
     };
-    let mut best = run(tenant, ids, baselines, &repairs);
+    if all.urgent.iter().all(HashSet::is_empty) {
+        let start = run(tenant, ids, baselines, &none);
+        return improve(tenant, ids, baselines, none, start);
+    }
+    // improving from both ends, with every hard date going first and with none of them doing so,
+    // as each finds results the other does not, then the better is kept
+    let (first, second) = std::thread::scope(|scope| {
+        let from_all = scope.spawn(|| {
+            let start = run(tenant, ids, baselines, &all);
+            improve(tenant, ids, baselines, all.clone(), start)
+        });
+        let start = run(tenant, ids, baselines, &none);
+        let from_none = improve(tenant, ids, baselines, none.clone(), start);
+        (
+            from_all.join().expect("a schedule does not panic"),
+            from_none,
+        )
+    });
+    if second.objective() < first.objective() {
+        second
+    } else {
+        first
+    }
+}
+
+/// Repairs a schedule in rounds, each tries the changes below, scheduling everything again for
+/// each, and keeps the best that beats the objective
+fn improve(
+    tenant: &Tenant,
+    ids: &[ShortId],
+    baselines: &HashMap<ShortId, Cow<Baseline>>,
+    mut repairs: Repairs,
+    mut best: Outcome,
+) -> Outcome {
     for _ in 0..MAX_ROUNDS {
         let worst = best.worst();
         let moves = [
             Some(bump(&worst, &repairs)),
             reassign(tenant, ids, baselines, &best, &worst, &repairs),
+            rebalance(tenant, ids, &best, &repairs),
+            escalate(&best, &repairs),
+            demote(tenant, ids, &best, &repairs),
         ];
         // the changes are independent, so each is scheduled on its own thread
         let tried: Vec<(Outcome, Repairs)> = std::thread::scope(|scope| {

@@ -43,7 +43,7 @@ impl View {
         // a task with a date it must start by goes ahead of one that would run past that date,
         // whatever its own measures say, since only the order can save it
         if let Some((_, next)) = self.best
-            && let Some((v, date, over)) = solver.pressed(&ready, &next, ledger)
+            && let Some((v, date, over)) = solver.pressed(&ready, &next, ledger, &self.chains)
         {
             let rank = (0, -over, i64::from(date.num_days_from_ce()), index, v.key());
             self.best = Some((rank, v));
@@ -61,10 +61,12 @@ impl View {
         let latest = self
             .chains
             .iter()
-            .filter(|(hard, _, chain)| chain.contains(&v) && !solver.is_settled(hard))
+            .filter(|(hard, _, chain)| {
+                chain.contains(&v) && !solver.is_settled(hard) && solver.is_urgent(hard)
+            })
             .map(|(hard, date, _)| {
                 let work = (solver.remaining(&v) - solver.remaining(hard)).max(0);
-                i64::from(date.num_days_from_ce()) - work
+                i64::from(date.num_days_from_ce()) - work - solver.tightening(hard)
             })
             .min();
         if let Some(latest) = latest {
