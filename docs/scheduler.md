@@ -400,6 +400,14 @@ Plans will often be in contention for people, so spread the impact:
 Build each `PlanVolatileState`, derive milestone and group values, then
 `TenantVolatileState::from_plans`.
 
+### Ordering work with no hard dates
+
+A plan with no hard dates orders what feeds no target by the soonest it has to start: where it
+started when the plan was alone plus its slack. Slack alone made the last task in the solo order
+look critical and put it ahead of work others waited on. On `NODATES=1 rich` the plan ends came
+out 0 to 4 % sooner and target delay down in most sets. Plans with hard dates keep ordering by
+slack, where the same change made missed dates slightly worse.
+
 ### Dates that cannot be met
 
 Each baseline records the earliest every hard dated node could start however free people are

@@ -2,7 +2,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 
-use chrono::{Days, NaiveDate};
+use chrono::{Datelike, Days, NaiveDate};
 use uuid::Uuid;
 
 use crate::{
@@ -44,6 +44,9 @@ const MAX_COMPACT_PASSES: usize = 50;
 
 /// How far ahead of a day a person's working days are looked for
 const MAX_WAIT_DAYS: usize = 1500;
+
+/// Bigger than any number of days between two dates, to put two of them in one number
+const DAY_SPAN: i64 = 100_000;
 
 /// Days later a person may finish a task for being much less booked than the first to finish
 const SPREAD_DAYS: u64 = 1;
@@ -965,13 +968,24 @@ impl<'a> PlanSolver<'a> {
         Some((*leads.iter().max()?, leads.len()))
     }
 
-    /// Where a node feeding no target goes: higher priority plans first, then the least slack
+    /// Where a node feeding no target goes: higher priority plans first, then the least slack.
+    /// A plan with no hard dates goes by the soonest a node has to start, which is where it
+    /// started when the plan was alone plus its slack, so alone it keeps that order and work
+    /// that others wait on is not held up by work that is only last in line.
     pub fn rest_rank(&self, v: &Vertex) -> (i64, i64) {
-        let slack = match (self.baseline, v) {
-            (Some(b), Vertex::Node(node)) => b.plan_slack.get(node).copied().unwrap_or(i64::MAX),
-            _ => i64::MAX,
+        let priority = -i64::from(self.plan.scheduler_data().priority());
+        let (Some(b), Vertex::Node(node)) = (self.baseline, v) else {
+            return (priority, i64::MAX);
         };
-        (-i64::from(self.plan.scheduler_data().priority()), slack)
+        let slack = b.plan_slack.get(node).copied().unwrap_or(i64::MAX);
+        if !self.hard_dates().is_empty() {
+            return (priority, slack);
+        }
+        let start = b
+            .ranges
+            .get(v)
+            .map_or(0, |r| i64::from(r.start().num_days_from_ce()));
+        (priority, (start + slack.min(DAY_SPAN)) * DAY_SPAN + start)
     }
 
     // }}}

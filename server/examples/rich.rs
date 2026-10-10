@@ -1,6 +1,7 @@
 //! Scores the scheduler on larger made up tenants with part time people, half days, task
 //! affinities, tags and user groups, and exports them for an exact solver:
-//! `cargo run --release --example rich [seeds] [plans] [tasks per plan] [people]`.
+//! `cargo run --release --example rich [seeds] [plans] [tasks per plan] [people]`. `NODATES=1` leaves
+//! out the hard dates.
 //! `EXPORT=dir` writes each tenant and the scheduler's schedule as JSON, `VALIDATE=dir` reads
 //! `solution_<plans>_<seed>.json` (every task's start and person) and checks the scheduler
 //! accepts it exactly: every task is fixed on that day with that person and must land there.
@@ -613,6 +614,9 @@ fn main() {
             };
             dates.insert(t.id, constraint);
         }
+        if std::env::var("NODATES").is_ok() {
+            dates.clear();
+        }
         let mut world = make(&opts, &dates, &HashMap::new());
         let prep = Instant::now();
         scheduler::prepare(&mut world.tenant);
@@ -653,11 +657,12 @@ fn main() {
     }
     let n = seeds as f64;
     println!(
-        "average: {:.0} dated, {:.1} missed, {:.1} days late, plan end {:.1} days, {:.1}s",
+        "average: {:.0} dated, {:.1} missed, {:.1} days late, plan end {:.1} days, target delay {:.1} days, {:.1}s",
         total.dated / n,
         total.violated / n,
         total.late / n,
         total.end / n,
+        total.delay / n,
         total.seconds / n
     );
 }
