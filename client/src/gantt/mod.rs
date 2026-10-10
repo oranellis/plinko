@@ -756,17 +756,25 @@ pub fn Gantt(
     let wheel = move |ev: WheelEvent| {
         ev.prevent_default();
         let b = bounds.get_untracked();
-        let mut vp = viewport.get_untracked().unwrap_or_default();
         let x = f64::from(ev.offset_x());
-        if ev.shift_key() {
-            vp.zoom(x, if ev.delta_y() > 0.0 { 0.9 } else { 1.1 }, b);
+        let zoom = if ev.shift_key() {
+            Some(if ev.delta_y() > 0.0 { 0.9 } else { 1.1 })
         } else if ev.ctrl_key() || ev.meta_key() {
-            vp.zoom(x, (-ev.delta_y() / 300.0).exp(), b);
+            Some((-ev.delta_y() / 300.0).exp())
         } else {
-            // sideways eases in and out, up and down is as far as the wheel says
-            vp.scroll(0.0, ev.delta_y(), b);
-            slide.with_value(|s| s.push(ev.delta_x()));
+            None
+        };
+        if let Some(factor) = zoom {
+            let mut vp = viewport.get_untracked().unwrap_or_default();
+            vp.zoom(x, factor, b);
+            viewport.set(Some(vp));
+            return;
         }
+        // sideways follows the gesture and carries on when it lets go, which moves the chart
+        // itself, so up and down is applied to the chart as it is after that
+        slide.with_value(|s| s.push(ev.delta_x()));
+        let mut vp = viewport.get_untracked().unwrap_or_default();
+        vp.scroll(0.0, ev.delta_y(), b);
         viewport.set(Some(vp));
     };
 
