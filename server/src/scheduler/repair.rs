@@ -409,6 +409,9 @@ fn improve(
 ) -> Outcome {
     for _ in 0..MAX_ROUNDS {
         let worst = best.worst();
+        if worst.is_empty() && best.missed.0 == 0 {
+            break;
+        }
         let moves = [
             Some(bump(&worst, &repairs)),
             reassign(tenant, ids, baselines, &best, &worst, &repairs),
