@@ -39,3 +39,11 @@ The server reads the environment, and `run_debug.sh` passes these on if they are
   hard dates on made up plans of 500 tasks with a tenth dated (misses, days late, plan end). Use it
   when changing how work is ordered. On 20 seeds of one plan the repair rounds took misses from
   3.0 to 0.8 and days late from 19 to 4.7, at about 0.65 s to schedule instead of 0.3 s.
+- `cargo run --release -p plinko --example rich [seeds] [plans] [tasks per plan] [people]` makes larger
+  tenants (part time people and Friday half days, task affinities, tags and user groups, dates on a
+  tenth of the tasks) and scores the scheduler on them. `EXPORT=dir` writes them as JSON,
+  `examples/cpsat.py` solves that with CP-SAT (`pip install ortools`) and writes the solver's
+  schedule, and `VALIDATE=dir` checks the real scheduler accepts it, every task on the solver's day
+  with the solver's person. On the seeds tried CP-SAT keeps all dates where the scheduler misses a
+  few and finishes a few percent sooner, see `docs/scheduler.md`.
+

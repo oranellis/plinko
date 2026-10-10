@@ -546,3 +546,20 @@ dates, which could be made incremental.
   wrong, and dropping those leaves most of the chain unheld; what is still held takes hours the
   rest could use. Using the backward start times only to order work (no hours held) was within
   noise of the present ordering, a little better on one and two plans, worse on three.
+
+## How close to optimal
+
+`examples/rich.rs` plans solved exactly with CP-SAT (`examples/cpsat.py`, 8 cores) and accepted by the
+scheduler as valid (every task placed on the solver's day with its person, nothing unscheduled):
+
+- Eight plans of 500 tasks and 12 people: CP-SAT proved the optimum in 9 to 16 s each. It kept every
+  date (the scheduler missed 14 in all, 77 days late) and the plan was the same length or up to
+  11 % shorter (2.7 % on average).
+- One plan of 1000 tasks and 40 people with half days, affinities, tags and groups: all dates kept
+  (the scheduler missed 7, 46 days late), the plan to its target 3.5 % shorter and the average task
+  finishing 2 % sooner, though the last task not feeding the target finished later.
+- Four such plans of 1000 tasks sharing 40 people (4000 tasks): CP-SAT improved on the scheduler
+  only to 13 missed dates and 67 days late (the scheduler 17 and 101) in 46 minutes of
+  neighbourhood search, a plan end of 683 days against 687, and ran out of the memory of the
+  8 GB machine; it is not near optimal at that size. The scheduler took 29 to 54 s there.
+

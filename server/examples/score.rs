@@ -57,6 +57,9 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
 struct Made {
     tenant: Tenant,
     plans: Vec<(ShortId, Vec<Uuid>)>,
+    people: Vec<Uuid>,
+    /// The four tags of each plan, a person is in the tag that is their position modulo four
+    tags: Vec<Vec<Uuid>>,
 }
 
 /// A tenant of busy people with `plans` plans of about `total` tasks between them in layers,
@@ -86,6 +89,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
         })
         .collect();
     let mut made = Vec::new();
+    let mut all_tags: Vec<Vec<Uuid>> = Vec::new();
     for p in 0..plans {
         let plan = ShortId::from_str_checked(&format!("s{seed:02}p{p:04}")).unwrap();
         let new = NewPlan {
@@ -237,11 +241,82 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
         };
         send(&mut tenant, PlanUpdate::Target(Crud::Add(new)));
         made.push((plan, tasks));
+        all_tags.push(tags);
     }
     Made {
         tenant,
         plans: made,
+        people,
+        tags: all_tags,
     }
+}
+
+/// Writes the plans and how they were scheduled as JSON for comparing with an exact solver
+fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, path: &str) {
+    let person = |u: &Uuid| world.people.iter().position(|p| p == u).unwrap();
+    let node = |n: &PlanNode| match n {
+        PlanNode::Task(id) | PlanNode::Milestone(id) => format!("\"{id}\""),
+        _ => unreachable!(),
+    };
+    let mut tasks = Vec::new();
+    let mut milestones = Vec::new();
+    let mut ends = Vec::new();
+    let mut starts = Vec::new();
+    for (p, (plan_id, _)) in world.plans.iter().enumerate() {
+        let plan = &world.tenant.plans()[plan_id];
+        let deps = |list: &[Dependency]| {
+            let nodes: Vec<String> = list
+                .iter()
+                .filter_map(|d| match &d.node {
+                    DependencyNode::Node(n) => Some(node(n)),
+                    _ => None,
+                })
+                .collect();
+            nodes.join(",")
+        };
+        for (id, t) in plan.tasks() {
+            let (worker, hours) = t.allocations().iter().next().unwrap();
+            let who = match worker {
+                Worker::User(u) => format!("\"user\":{}", person(u)),
+                Worker::Tag(tag) => {
+                    let index = world.tags[p].iter().position(|g| g == tag).unwrap();
+                    format!("\"tag\":{index},\"plan\":{p}")
+                }
+                _ => unreachable!(),
+            };
+            let constraint = match t.time_constraint() {
+                TimeConstraint::Fixed(d) => format!("[\"fixed\",\"{d}\"]"),
+                TimeConstraint::Latest(d) => format!("[\"latest\",\"{d}\"]"),
+                _ => "null".to_string(),
+            };
+            tasks.push(format!(
+                "{{\"id\":\"{id}\",\"days\":{},\"hours\":{},{who},\"deps\":[{}],\"constraint\":{constraint}}}",
+                t.duration(),
+                hours.get(),
+                deps(t.dependencies())
+            ));
+            if let Some(v) = state.plans[plan_id].tasks.get(id) {
+                starts.push(format!("\"{id}\":\"{}\"", v.date_range.start()));
+            }
+        }
+        for (id, m) in plan.milestones() {
+            milestones.push(format!(
+                "{{\"id\":\"{id}\",\"deps\":[{}]}}",
+                deps(m.dependencies())
+            ));
+        }
+        for t in plan.targets().values() {
+            ends.push(node(&t.node()));
+        }
+    }
+    let json = format!(
+        "{{\"start\":\"2024-01-01\",\"tasks\":[{}],\"milestones\":[{}],\"ends\":[{}],\"heuristic\":{{{}}}}}",
+        tasks.join(",\n"),
+        milestones.join(",\n"),
+        ends.join(","),
+        starts.join(",")
+    );
+    std::fs::write(path, json).unwrap();
 }
 
 fn main() {
@@ -289,6 +364,13 @@ fn main() {
         let started = Instant::now();
         let state = scheduler::solve_tenant(&world.tenant);
         seconds += started.elapsed().as_secs_f64();
+        if let Ok(dir) = std::env::var("EXPORT") {
+            export(
+                &world,
+                &state,
+                &format!("{dir}/instance_{plans}_{seed}.json"),
+            );
+        }
         let mut last = 0.0f64;
         for plan in state.plans.values() {
             for v in plan.constraint_violations.values() {
