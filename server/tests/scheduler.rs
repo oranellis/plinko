@@ -17,7 +17,7 @@ use plinko::{
         plan_update::PlanUpdate,
     },
     scheduler::{
-        prepare, solve_tenant,
+        Refreshed, Tracker, prepare, solve_tenant,
         state::{Baseline, PlanVolatileState, UnscheduledReason},
     },
     types::{
@@ -278,6 +278,24 @@ impl World {
         };
         self.plan_update(PlanUpdate::Target(Crud::Add(new)));
         id
+    }
+
+    /// Applies a plan update through a tracker, which notes what it may change
+    fn tracked(&mut self, tracker: &mut Tracker, update: PlanUpdate) {
+        let update = TenantUpdate {
+            time: DateTime::from_timestamp(978307200, 0).unwrap(),
+            actor: self.root,
+            update_type: TenantUpdateType::Plan(PlanTenantUpdate::Update(
+                self.plan,
+                Box::new(update),
+            )),
+        };
+        tracker.apply(&mut self.tenant, update).unwrap();
+    }
+
+    fn stored(&self) -> PlanVolatileState {
+        let schedule = self.tenant.schedule().expect("scheduled");
+        schedule.plans[&self.plan].clone()
     }
 
     fn baseline(&mut self) -> Baseline {
@@ -993,4 +1011,146 @@ fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_i
     let mut starts: Vec<NaiveDate> = tests.iter().map(|t| span(&state, *t).0).collect();
     starts.sort();
     assert_eq!(starts, [d(1), d(8), d(15), d(22)]);
+}
+
+/// What the tracker gives back for the tenant, which has a full schedule to start from
+fn scheduled_world() -> (World, Uuid, [Uuid; 3], Uuid) {
+    let mut world = World::new();
+    let alice = world.user();
+    let bob = world.user();
+    let a = world.task(2, &[(user(alice), 8)], &[start()]);
+    let b = world.task(2, &[(user(alice), 8)], &[after(node(a))]);
+    let c = world.task(1, &[(user(alice), 8)], &[after(node(b))]);
+    let apart = world.task(3, &[(user(bob), 8)], &[start()]);
+    plinko::scheduler::schedule(&mut world.tenant);
+    (world, alice, [a, b, c], apart)
+}
+
+#[test]
+fn a_change_places_what_depends_on_it_again_and_leaves_the_rest() {
+    let (mut world, _, [a, b, c], apart) = scheduled_world();
+    let before = world.stored();
+    let mut tracker = Tracker::default();
+    world.tracked(
+        &mut tracker,
+        PlanUpdate::Task(Crud::Update(TaskPatch {
+            id: a,
+            name: None,
+            parent: None,
+            mode: None,
+            duration: Some(4),
+            time_constraint: None,
+            dependencies: None,
+            allocations: None,
+            affinities: None,
+            actual_workers: None,
+            persistent_state: None,
+        })),
+    );
+    assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Partly);
+    let after = world.stored();
+    // the task that does not depend on it did not move and the chain follows
+    assert_eq!(after.tasks[&apart], before.tasks[&apart]);
+    assert_eq!(span(&after, a), (d(1), d(5)));
+    assert_eq!(span(&after, b), (d(5), d(9)));
+    assert_eq!(span(&after, c), (d(9), d(10)));
+    // as a full run would
+    let mut full = World::new();
+    std::mem::swap(&mut full.tenant, &mut world.tenant);
+    plinko::scheduler::schedule(&mut full.tenant);
+    full.plan = world.plan;
+    for task in [a, b, c, apart] {
+        assert_eq!(
+            full.stored().tasks[&task].date_range,
+            after.tasks[&task].date_range
+        );
+    }
+}
+
+#[test]
+fn updates_that_change_nothing_scheduled_leave_the_schedule_alone() {
+    let (mut world, _, [a, ..], _) = scheduled_world();
+    let before = world.stored();
+    let mut tracker = Tracker::default();
+    world.tracked(
+        &mut tracker,
+        PlanUpdate::Task(Crud::Update(TaskPatch {
+            id: a,
+            name: Some("Renamed".to_string()),
+            parent: None,
+            mode: None,
+            duration: None,
+            time_constraint: None,
+            dependencies: None,
+            allocations: None,
+            affinities: None,
+            actual_workers: None,
+            persistent_state: None,
+        })),
+    );
+    world.tracked(
+        &mut tracker,
+        PlanUpdate::Describe(node(a), Some("Words".to_string())),
+    );
+    assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Unchanged);
+    assert_eq!(world.stored(), before);
+}
+
+#[test]
+fn a_new_task_is_placed_around_what_is_there() {
+    let (mut world, alice, [a, b, c], apart) = scheduled_world();
+    let before = world.stored();
+    let mut tracker = Tracker::default();
+    let id = world.id();
+    let new = NewTask {
+        id,
+        name: "New".to_string(),
+        parent: Parent::PlanStart,
+    };
+    world.tracked(&mut tracker, PlanUpdate::Task(Crud::Add(new)));
+    world.tracked(
+        &mut tracker,
+        PlanUpdate::Task(Crud::Update(TaskPatch {
+            id,
+            name: None,
+            parent: None,
+            mode: None,
+            duration: Some(2),
+            time_constraint: None,
+            dependencies: Some(deps(&[start()])),
+            allocations: Some(HashMap::from([(user(alice), h(8))])),
+            affinities: None,
+            actual_workers: None,
+            persistent_state: None,
+        })),
+    );
+    assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Partly);
+    let after = world.stored();
+    for task in [a, b, c, apart] {
+        assert_eq!(after.tasks[&task], before.tasks[&task]);
+    }
+    // alice is busy through Friday the 5th with the chain, so it goes after the weekend
+    assert_eq!(span(&after, id), (d(8), d(10)));
+}
+
+#[test]
+fn changes_to_people_or_the_clock_schedule_everything_again() {
+    let (mut world, alice, ..) = scheduled_world();
+    let mut tracker = Tracker::default();
+    let update = TenantUpdate {
+        time: DateTime::from_timestamp(978307200, 0).unwrap(),
+        actor: world.root,
+        update_type: TenantUpdateType::Availability(
+            alice,
+            RuleSetUpdate::Rule(Crud::Add(NewRule {
+                name: String::new(),
+                stop_day: None,
+                id: Uuid::now_v7(),
+                start_day: NaiveDate::from_ymd_opt(2000, 1, 3).unwrap(),
+                kind: RuleKind::Weekly(WeeklySchedule::new([h(4); 7])),
+            })),
+        ),
+    };
+    tracker.apply(&mut world.tenant, update).unwrap();
+    assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Fully);
 }

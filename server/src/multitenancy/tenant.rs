@@ -31,7 +31,7 @@ use crate::{
 
 /// Everything a tenant is, and so what a snapshot holds. The caches and the schedule are
 /// derived and left out, so a loaded tenant needs `scheduler::schedule` before it has them.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Tenant {
     id: ShortId,
     name: String,
@@ -139,6 +139,15 @@ impl Tenant {
     /// drops them all.
     pub fn baseline(&self, plan: &ShortId) -> Option<&Baseline> {
         self.baselines.get(plan)
+    }
+
+    /// Drops the baselines, which are worked out again by the next schedule
+    pub fn clear_baselines(&mut self) {
+        self.baselines.clear();
+    }
+
+    pub fn baselines(&self) -> &HashMap<ShortId, Baseline> {
+        &self.baselines
     }
 
     pub fn store_baseline(&mut self, plan: ShortId, baseline: Baseline) {

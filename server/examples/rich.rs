@@ -633,6 +633,12 @@ fn main() {
         total.end += end;
         total.delay += delay;
         total.seconds += seconds;
+        if let Some(count) = std::env::var("INCREMENTAL")
+            .ok()
+            .and_then(|c| c.parse().ok())
+        {
+            incremental(&world, &opts, count, since);
+        }
         if let Ok(dir) = std::env::var("EXPORT") {
             export(
                 &world,
@@ -653,6 +659,132 @@ fn main() {
         total.late / n,
         total.end / n,
         total.seconds / n
+    );
+}
+
+/// Makes `count` small edits one at a time, brings the schedule up to date after each as the server
+/// does and times it, then schedules the tenant afresh to see what the edits cost in quality
+fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
+    let mut tenant = world.tenant.clone();
+    scheduler::schedule(&mut tenant);
+    let mut tracker = scheduler::Tracker::default();
+    let mut random = Random(opts.seed * 977 + 3);
+    let root = *tenant.users().keys().next().unwrap();
+    let mut made = Vec::new();
+    let (mut partly, mut fully, mut unchanged) = (0, 0, 0);
+    let mut times = Vec::new();
+    let mut by_kind: HashMap<&str, Vec<f64>> = HashMap::new();
+    for _ in 0..count {
+        let t = &world.tasks[random.below(world.tasks.len() as u64) as usize];
+        let plan = world.plans[t.plan];
+        let mut patch = TaskPatch {
+            id: t.id,
+            name: None,
+            parent: None,
+            mode: None,
+            duration: None,
+            time_constraint: None,
+            dependencies: None,
+            allocations: None,
+            affinities: None,
+            actual_workers: None,
+            persistent_state: None,
+        };
+        match random.below(3) {
+            0 => patch.duration = Some(1 + random.below(6) as u32),
+            1 => {
+                patch.allocations = Some(HashMap::from([(
+                    t.worker,
+                    Workload::new([4, 8][random.below(2) as usize]).unwrap(),
+                )]))
+            }
+            _ => {
+                // waits for one more earlier task of the plan
+                let mut on: Vec<Dependency> = t
+                    .deps
+                    .iter()
+                    .map(|d| Dependency {
+                        node: DependencyNode::Node(PlanNode::Task(*d)),
+                        lag: 0,
+                    })
+                    .collect();
+                let earlier = world.tasks.iter().position(|o| o.id == t.id).unwrap();
+                if earlier == 0 {
+                    continue;
+                }
+                let other = &world.tasks[random.below(earlier as u64) as usize];
+                if other.plan != t.plan
+                    || on
+                        .iter()
+                        .any(|d| d.node == DependencyNode::Node(PlanNode::Task(other.id)))
+                {
+                    continue;
+                }
+                on.push(Dependency {
+                    node: DependencyNode::Node(PlanNode::Task(other.id)),
+                    lag: 0,
+                });
+                patch.dependencies = Some(on);
+            }
+        }
+        let update = TenantUpdate {
+            time: DateTime::from_timestamp(978307200, 0).unwrap(),
+            actor: root,
+            update_type: TenantUpdateType::Plan(PlanTenantUpdate::Update(
+                plan,
+                Box::new(PlanUpdate::Task(Crud::Update(patch))),
+            )),
+        };
+        let applied = tracker.apply(&mut tenant, update);
+        if applied.is_err() {
+            continue;
+        }
+        made.push(());
+        let started = Instant::now();
+        let kind = match tracker.schedule(&mut tenant) {
+            scheduler::Refreshed::Partly => {
+                partly += 1;
+                "partly"
+            }
+            scheduler::Refreshed::Fully => {
+                fully += 1;
+                "fully"
+            }
+            scheduler::Refreshed::Unchanged => {
+                unchanged += 1;
+                "unchanged"
+            }
+        };
+        times.push(started.elapsed().as_secs_f64());
+        by_kind
+            .entry(kind)
+            .or_default()
+            .push(started.elapsed().as_secs_f64());
+    }
+    for (kind, list) in &by_kind {
+        println!(
+            "  {kind}: {} runs, mean {:.3}s",
+            list.len(),
+            list.iter().sum::<f64>() / list.len() as f64
+        );
+    }
+    let mean = times.iter().sum::<f64>() / times.len().max(1) as f64;
+    let worst = times.iter().cloned().fold(0.0, f64::max);
+    let kept = tenant.schedule().cloned().unwrap();
+    let (m1, l1, _, e1, _) = score(&kept, since);
+    let mut again = tenant.clone();
+    again.clear_baselines();
+    let started = Instant::now();
+    scheduler::schedule(&mut again);
+    let full_time = started.elapsed().as_secs_f64();
+    let fresh = again.schedule().cloned().unwrap();
+    let (m2, l2, _, e2, _) = score(&fresh, since);
+    println!(
+        "  {} edits: {partly} partly, {fully} fully, {unchanged} unchanged; mean {mean:.3}s worst {worst:.3}s each, a full run {full_time:.2}s",
+        made.len()
+    );
+    println!(
+        "  after them: {m1} missed {l1} days late plan end {e1}; scheduled afresh: {m2} missed {l2} days late plan end {e2}"
     );
 }
 

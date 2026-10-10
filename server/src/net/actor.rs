@@ -100,7 +100,7 @@ struct Actor {
     next_connection: Subscriber,
     /// The last schedule and the update it is for, which trails the tenant
     schedule: Option<(u64, TenantVolatileState)>,
-    scheduler: std::sync::mpsc::Sender<Applied>,
+    scheduler: worker::Scheduler,
 }
 
 /// Starts the actor for a tenant that has been saved in the store

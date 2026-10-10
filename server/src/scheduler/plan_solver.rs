@@ -136,6 +136,9 @@ pub struct PlanSolver<'a> {
     urgent: HashSet<PlanNode>,
     /// What is waiting for what, so what has become ready is known without looking at everything
     ready: Readiness,
+    /// Where not started tasks were in the last schedule, which stay there unless something in
+    /// the way is not free, see `claim_frozen`
+    frozen: HashMap<Uuid, task::VolatileState>,
     /// The open tasks and milestones with a hard date, and the date
     dated: HashMap<Vertex, NaiveDate>,
 }
@@ -157,7 +160,8 @@ struct Readiness {
 
 impl Readiness {
     fn new(order: &[Vertex], net: &Network) -> Self {
-        let index: HashMap<Vertex, usize> = order.iter().enumerate().map(|(i, v)| (*v, i)).collect();
+        let index: HashMap<Vertex, usize> =
+            order.iter().enumerate().map(|(i, v)| (*v, i)).collect();
         let mut after = vec![Vec::new(); order.len()];
         let mut waiting = vec![0; order.len()];
         for (i, v) in order.iter().enumerate() {
@@ -206,6 +210,7 @@ impl<'a> PlanSolver<'a> {
             tighten: HashMap::new(),
             urgent: HashSet::new(),
             ready: Readiness::default(),
+            frozen: HashMap::new(),
             dated: HashMap::new(),
         };
         solver.dated = solver.find_hard_dates();
@@ -242,6 +247,34 @@ impl<'a> PlanSolver<'a> {
         self.forced = forced;
         self.tighten = tighten;
         self.urgent = urgent;
+    }
+
+    /// Keeps these not started tasks where they were in the last schedule
+    pub fn freeze(&mut self, frozen: HashMap<Uuid, task::VolatileState>) {
+        self.frozen = frozen;
+    }
+
+    /// Puts the frozen tasks back where they were, once the work that has happened has its hours.
+    /// Any that no longer fit (the hours are taken or gone) are placed again with the rest.
+    pub fn claim_frozen(&mut self, ledger: &mut Ledger) {
+        let mut kept: Vec<(Vertex, Placement)> = Vec::new();
+        let mut frozen: Vec<_> = std::mem::take(&mut self.frozen).into_iter().collect();
+        frozen.sort_by_key(|(id, _)| *id);
+        for (id, state) in frozen {
+            let v = Vertex::Node(PlanNode::Task(id));
+            if !self.is_open(&v) || self.settled.contains(&v) {
+                continue;
+            }
+            let placement = placement_of(&state);
+            let claimed = placement.work.as_ref().is_none_or(|w| ledger.claim(&w.run));
+            if claimed {
+                kept.push((v, placement));
+            }
+        }
+        for (v, placement) in kept {
+            self.placed.insert(v, placement);
+            self.settle_vertex(v);
+        }
     }
 
     pub fn is_urgent(&self, v: &Vertex) -> bool {
@@ -1172,6 +1205,29 @@ impl PlanVolatileState {
 }
 
 /// A fixed order of workers, so choices do not depend on map order
+/// A task placed as it was in a schedule
+fn placement_of(state: &task::VolatileState) -> Placement {
+    let mut run = Run::default();
+    for (who, days) in &state.assignments {
+        let Assignee::User(user) = who else {
+            continue;
+        };
+        run.0.extend(days.iter().map(|(day, hours)| Claim {
+            user: *user,
+            day: *day,
+            hours: hours.get(),
+        }));
+    }
+    Placement {
+        range: state.date_range,
+        work: Some(Work {
+            run,
+            assignments: state.assignments.clone(),
+            workers: state.workers.clone(),
+        }),
+    }
+}
+
 fn worker_key(worker: &Worker) -> (u8, Uuid) {
     match worker {
         Worker::User(id) => (0, *id),

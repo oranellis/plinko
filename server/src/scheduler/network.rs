@@ -17,6 +17,8 @@ pub struct Network<'a> {
     deps: HashMap<Vertex, Vec<Edge>>,
     order: Vec<Vertex>,
     remaining: HashMap<Vertex, i64>,
+    /// What waits for each vertex
+    after: HashMap<Vertex, Vec<Vertex>>,
 }
 
 // impl Network {{{
@@ -42,11 +44,16 @@ impl<'a> Network<'a> {
             let own = duration(plan, v);
             remaining.insert(*v, own + longest.max().unwrap_or(0));
         }
+        let after = dependents
+            .into_iter()
+            .map(|(v, list)| (v, list.into_iter().map(|(w, _)| w).collect()))
+            .collect();
         Self {
             graph,
             deps,
             order,
             remaining,
+            after,
         }
     }
 
@@ -66,6 +73,18 @@ impl<'a> Network<'a> {
     /// The days of work that follow the vertex and including it, the longer the more urgent
     pub fn remaining(&self, v: &Vertex) -> i64 {
         self.remaining.get(v).copied().unwrap_or(0)
+    }
+
+    /// The vertices and everything that waits for them, directly or not
+    pub fn downstream(&self, roots: impl IntoIterator<Item = Vertex>) -> HashSet<Vertex> {
+        let mut seen = HashSet::new();
+        let mut stack: Vec<Vertex> = roots.into_iter().collect();
+        while let Some(v) = stack.pop() {
+            if seen.insert(v) {
+                stack.extend(self.after.get(&v).into_iter().flatten().copied());
+            }
+        }
+        seen
     }
 
     /// The vertices and everything they depend on

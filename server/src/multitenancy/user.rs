@@ -101,7 +101,7 @@ impl Patchable<TenantLoginUserPatch> for TenantLoginUser {
 
 /// Derived from a user's rules and rebuilt when they change, so it is never part of the user's
 /// own state
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct TenantUserVolatileState {
     pub calendar: Option<Calendar<Workload>>,
 }

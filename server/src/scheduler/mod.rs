@@ -4,7 +4,7 @@ use std::{borrow::Cow, cmp::Reverse, collections::HashMap};
 use chrono::Days;
 
 use crate::{
-    multitenancy::tenant::Tenant,
+    multitenancy::{tenant::Tenant, tenant_update::TenantUpdate},
     scheduler::{
         ledger::{Ledger, MAX_FILL_DAYS},
         plan_solver::PlanSolver,
@@ -16,6 +16,8 @@ use crate::{
 
 mod combined;
 pub mod fill;
+pub mod impact;
+mod incremental;
 pub mod ledger;
 mod network;
 mod plan_solver;
@@ -70,6 +72,102 @@ pub fn schedule(tenant: &mut Tenant) {
     prepare(tenant);
     let state = solve_tenant(tenant);
     tenant.store_schedule(state);
+}
+
+/// How a schedule was brought up to date
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refreshed {
+    /// Nothing the updates changed is scheduled, so it is as it was
+    Unchanged,
+    /// Only what the updates changed and what depends on it was placed again
+    Partly,
+    /// Everything was scheduled again
+    Fully,
+}
+
+/// Keeps a tenant's schedule up to date as updates arrive: apply updates through it, then ask for
+/// the schedule. The schedule of the last run is kept, so a few changes cost placing those
+/// changes, not placing everything again. It drifts from what a full run gives, so run `schedule`
+/// now and then to bring it back.
+#[derive(Default)]
+pub struct Tracker {
+    /// The schedule and baselines before the updates applied since the last run
+    last: Option<(Option<TenantVolatileState>, HashMap<ShortId, Baseline>)>,
+    change: impact::Change,
+    /// How much trouble the schedule had when it was last worked out in full, which what is
+    /// placed again may not get much past
+    trouble: Option<i64>,
+}
+
+/// How much worse than the last full run an incremental one may leave the schedule, half and
+/// this much besides, before everything is scheduled again
+const DRIFT: i64 = 30;
+
+impl Tracker {
+    /// Applies an update to the tenant, noting what it may change in the schedule
+    pub fn apply(
+        &mut self,
+        tenant: &mut Tenant,
+        update: TenantUpdate,
+    ) -> crate::types::error::PlinkoResult<()> {
+        let last = self
+            .last
+            .get_or_insert_with(|| (tenant.schedule().cloned(), tenant.baselines().clone()));
+        let _ = last;
+        let mut change = self.change.clone();
+        change.note(tenant, &update.update_type);
+        let applied = tenant.apply_update(update);
+        if applied.is_ok() {
+            self.change = change;
+        }
+        applied
+    }
+
+    /// Brings the tenant's schedule up to date and keeps it on the tenant
+    pub fn schedule(&mut self, tenant: &mut Tenant) -> Refreshed {
+        let change = std::mem::take(&mut self.change);
+        let Some((previous, stale)) = self.last.take() else {
+            // nothing applied since, so the schedule is the one on the tenant unless it has none
+            if tenant.schedule().is_some() {
+                return Refreshed::Unchanged;
+            }
+            return self.full(tenant);
+        };
+        // what is still right, which an update drops, comes back
+        for (id, baseline) in stale {
+            if tenant.plans().contains_key(&id) && tenant.baseline(&id).is_none() {
+                tenant.store_baseline(id, baseline);
+            }
+        }
+        let Some(previous) = previous else {
+            return self.full(tenant);
+        };
+        if change.is_none() {
+            tenant.store_schedule(previous);
+            return Refreshed::Unchanged;
+        }
+        // a plan that changed is scheduled against its baseline from before, which is close
+        // enough until a full run, but a plan with none is worked out
+        prepare(tenant);
+        let base = *self
+            .trouble
+            .get_or_insert_with(|| incremental::trouble(&previous));
+        if let Some(state) = incremental::reschedule(tenant, &previous, &change)
+            && incremental::trouble(&state) <= base + DRIFT + base / 2
+        {
+            tenant.store_schedule(state);
+            return Refreshed::Partly;
+        }
+        self.full(tenant)
+    }
+
+    /// Schedules everything, which the next runs may not drift far from
+    fn full(&mut self, tenant: &mut Tenant) -> Refreshed {
+        tenant.clear_baselines();
+        schedule(tenant);
+        self.trouble = tenant.schedule().map(incremental::trouble);
+        Refreshed::Fully
+    }
 }
 
 /// The plan scheduled with every person's hours to itself

@@ -400,6 +400,18 @@ Plans will often be in contention for people, so spread the impact:
 Build each `PlanVolatileState`, derive milestone and group values, then
 `TenantVolatileState::from_plans`.
 
+### Incremental updates
+
+`scheduler::Tracker` applies updates and notes what each can change (`impact.rs`): nothing (names,
+descriptions, data, favourites) leaves the schedule as is; task, milestone, group and buffer edits
+name their nodes; tags, affinities, users, targets, availability and scheduler data mark the plan
+whole; people, calendars and the day schedule everything. `incremental.rs` then places again only
+the named nodes and what depends on them, with the other tasks kept where the last schedule had
+them (`PlanSolver::claim_frozen`, skipped if their hours are taken) and baselines kept from before.
+If that leaves the schedule much worse than the last full run (`DRIFT`), the plan is placed whole,
+then everything. The server worker (`net/worker.rs`) schedules everything again on a copy once
+updates pause, and swaps it in if nothing changed meanwhile. `INCREMENTAL=n rich ...` measures it.
+
 ## 8. Priorities
 
 - `Plan.priority: i32`, positive or negative, user set, default 0.

@@ -94,7 +94,11 @@ impl View {
     fn latest(&self, solver: &PlanSolver, v: &Vertex) -> Option<i64> {
         let leads = self.leads.get(v)?;
         let mut at = leads.at.get();
-        while leads.by.get(at).is_some_and(|(_, hard)| solver.is_settled(hard)) {
+        while leads
+            .by
+            .get(at)
+            .is_some_and(|(_, hard)| solver.is_settled(hard))
+        {
             at += 1;
         }
         leads.at.set(at);
@@ -127,6 +131,9 @@ pub fn solve(mut solvers: Vec<PlanSolver>, ledger: &mut Ledger) -> Vec<PlanVolat
         for solver in &mut solvers {
             solver.claim_history(ledger, in_progress);
         }
+    }
+    for solver in &mut solvers {
+        solver.claim_frozen(ledger);
     }
     let mut views: Vec<View> = solvers
         .iter_mut()
