@@ -1,6 +1,6 @@
 // modules {{{
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet};
 
 use chrono::{Days, NaiveDate};
 use uuid::Uuid;
@@ -134,6 +134,45 @@ pub struct PlanSolver<'a> {
     tighten: HashMap<PlanNode, i64>,
     /// With selective ordering, the hard dated nodes whose chains go first
     urgent: HashSet<PlanNode>,
+    /// What is waiting for what, so what has become ready is known without looking at everything
+    ready: Readiness,
+}
+
+/// Which nodes have everything they depend on settled, kept up to date as nodes settle, by their
+/// place in the order of the plan
+#[derive(Default)]
+struct Readiness {
+    index: HashMap<Vertex, usize>,
+    /// What waits for each node, once for each dependency
+    after: Vec<Vec<usize>>,
+    /// How many dependencies of each node are not settled yet
+    waiting: Vec<usize>,
+    /// Nodes that follow from their dependencies alone, ready to be placed, the first in order first
+    derived: BinaryHeap<Reverse<usize>>,
+    /// Not started tasks that are ready
+    open: BTreeSet<usize>,
+}
+
+impl Readiness {
+    fn new(order: &[Vertex], net: &Network) -> Self {
+        let index: HashMap<Vertex, usize> = order.iter().enumerate().map(|(i, v)| (*v, i)).collect();
+        let mut after = vec![Vec::new(); order.len()];
+        let mut waiting = vec![0; order.len()];
+        for (i, v) in order.iter().enumerate() {
+            for edge in net.deps(v) {
+                if let Some(from) = edge.from {
+                    after[index[&from]].push(i);
+                    waiting[i] += 1;
+                }
+            }
+        }
+        Self {
+            index,
+            after,
+            waiting,
+            ..Self::default()
+        }
+    }
 }
 
 // impl PlanSolver {{{
@@ -164,7 +203,14 @@ impl<'a> PlanSolver<'a> {
             forced: HashMap::new(),
             tighten: HashMap::new(),
             urgent: HashSet::new(),
+            ready: Readiness::default(),
         };
+        solver.ready = Readiness::new(&solver.order, &solver.net);
+        for i in 0..solver.order.len() {
+            if solver.ready.waiting[i] == 0 {
+                solver.queue(i);
+            }
+        }
         for v in solver.order.clone() {
             if !anchored.contains(&v) {
                 solver.leave_out(v, Reason::NoPathToPlanStart);
@@ -267,16 +313,40 @@ impl<'a> PlanSolver<'a> {
         self.status(&Vertex::Node(*node)) != Some(Status::Dropped)
     }
 
-    fn leave_out(&mut self, v: Vertex, reason: Reason) {
-        self.settled.insert(v);
-        if let Vertex::Node(node) = v {
-            self.unscheduled.entry(node).or_insert(reason);
+    /// Marks a node settled and queues what that makes ready
+    fn settle_vertex(&mut self, v: Vertex) {
+        if !self.settled.insert(v) {
+            return;
+        }
+        let i = self.ready.index[&v];
+        self.ready.open.remove(&i);
+        for k in 0..self.ready.after[i].len() {
+            let next = self.ready.after[i][k];
+            self.ready.waiting[next] -= 1;
+            if self.ready.waiting[next] == 0 {
+                self.queue(next);
+            }
         }
     }
 
-    fn ready(&self, v: &Vertex) -> bool {
-        let settled = |e: &graph::Edge| e.from.is_none_or(|u| self.settled.contains(&u));
-        self.net.deps(v).iter().all(settled)
+    /// Puts a node with everything it depends on settled where it waits to be placed
+    fn queue(&mut self, i: usize) {
+        let v = self.order[i];
+        if self.settled.contains(&v) {
+            return;
+        }
+        if self.is_derived(&v) {
+            self.ready.derived.push(Reverse(i));
+        } else if self.is_open(&v) {
+            self.ready.open.insert(i);
+        }
+    }
+
+    fn leave_out(&mut self, v: Vertex, reason: Reason) {
+        self.settle_vertex(v);
+        if let Vertex::Node(node) = v {
+            self.unscheduled.entry(node).or_insert(reason);
+        }
     }
 
     // dates {{{
@@ -364,15 +434,15 @@ impl<'a> PlanSolver<'a> {
 
     /// Places every node that follows from its dependencies and has them all settled
     fn settle(&mut self) {
-        for i in 0..self.order.len() {
+        while let Some(Reverse(i)) = self.ready.derived.pop() {
             let v = self.order[i];
-            if self.settled.contains(&v) || !self.is_derived(&v) || !self.ready(&v) {
+            if self.settled.contains(&v) {
                 continue;
             }
             match self.derive(&v) {
                 Ok(placement) => {
                     self.placed.insert(v, placement);
-                    self.settled.insert(v);
+                    self.settle_vertex(v);
                 }
                 Err(reason) => self.leave_out(v, reason),
             }
@@ -597,7 +667,7 @@ impl<'a> PlanSolver<'a> {
         match placement {
             Ok(placement) => {
                 self.placed.insert(v, placement);
-                self.settled.insert(v);
+                self.settle_vertex(v);
             }
             Err(reason) => self.leave_out(v, reason),
         }
@@ -734,10 +804,7 @@ impl<'a> PlanSolver<'a> {
     /// The not started tasks everything they depend on has settled for, after placing what
     /// follows from dependencies alone
     pub fn ready_open(&self) -> Vec<Vertex> {
-        let open = self.order.iter().filter(|v| self.is_open(v));
-        open.filter(|v| !self.settled.contains(v) && self.ready(v))
-            .copied()
-            .collect()
+        self.ready.open.iter().map(|i| self.order[*i]).collect()
     }
 
     /// Settles what follows from the placed and returns the tasks ready to place

@@ -1,5 +1,5 @@
 // modules {{{
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{Datelike, NaiveDate};
 use uuid::Uuid;
@@ -20,14 +20,24 @@ type Rank = (u8, i64, i64, usize, (u8, Uuid));
 /// What is known about a plan between placements, only the plan that just placed changes
 struct View {
     chains: Vec<(Vertex, NaiveDate, HashSet<Vertex>)>,
+    /// Which of the chains each node is on
+    on: HashMap<Vertex, Vec<usize>>,
     /// The next task of the plan to place and how it ranks
     best: Option<(Rank, Vertex)>,
 }
 
 impl View {
     fn new(index: usize, solver: &mut PlanSolver, ledger: &Ledger) -> Self {
+        let chains = solver.hard_chains();
+        let mut on: HashMap<Vertex, Vec<usize>> = HashMap::new();
+        for (i, (_, _, chain)) in chains.iter().enumerate() {
+            for v in chain {
+                on.entry(*v).or_default().push(i);
+            }
+        }
         let mut view = Self {
-            chains: solver.hard_chains(),
+            chains,
+            on,
             best: None,
         };
         view.refresh(index, solver, ledger);
@@ -59,11 +69,12 @@ impl View {
         // the latest day the task could start for the nearest date it leads to, if the days of
         // work between it and the dated task were all that is in the way
         let latest = self
-            .chains
-            .iter()
-            .filter(|(hard, _, chain)| {
-                chain.contains(&v) && !solver.is_settled(hard) && solver.is_urgent(hard)
-            })
+            .on
+            .get(&v)
+            .into_iter()
+            .flatten()
+            .map(|c| &self.chains[*c])
+            .filter(|(hard, _, _)| !solver.is_settled(hard) && solver.is_urgent(hard))
             .map(|(hard, date, _)| {
                 let work = (solver.remaining(&v) - solver.remaining(hard)).max(0);
                 i64::from(date.num_days_from_ce()) - work - solver.tightening(hard)
@@ -144,5 +155,5 @@ fn compact(solvers: &mut [PlanSolver], views: &[View], ledger: &mut Ledger) {
 
 /// Whether a node leads to a hard date or a target
 fn on_chain(solver: &PlanSolver, view: &View, v: &Vertex) -> bool {
-    view.chains.iter().any(|(_, _, chain)| chain.contains(v)) || solver.urgency(v, 0).is_some()
+    view.on.contains_key(v) || solver.urgency(v, 0).is_some()
 }
