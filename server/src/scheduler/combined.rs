@@ -1,5 +1,8 @@
 // modules {{{
-use std::collections::{HashMap, HashSet};
+use std::{
+    cell::Cell,
+    collections::{HashMap, HashSet},
+};
 
 use chrono::{Datelike, NaiveDate};
 use uuid::Uuid;
@@ -19,25 +22,52 @@ type Rank = (u8, i64, i64, usize, (u8, Uuid));
 
 /// What is known about a plan between placements, only the plan that just placed changes
 struct View {
-    chains: Vec<(Vertex, NaiveDate, HashSet<Vertex>)>,
-    /// Which of the chains each node is on
-    on: HashMap<Vertex, Vec<usize>>,
+    /// Every node on the way to a hard date, for the compaction that follows
+    on_chain: HashSet<Vertex>,
+    /// For each node on the way to a hard date that goes first, the dates it leads to as the day
+    /// the node would have to start by if the days of work to the date were all that is in the way
+    /// (the date less the work after the node, which is taken off when asked), the earliest first
+    /// with the dated node, and how far down the list is not settled yet
+    leads: HashMap<Vertex, Leads>,
     /// The next task of the plan to place and how it ranks
     best: Option<(Rank, Vertex)>,
 }
 
+struct Leads {
+    by: Vec<(i64, Vertex)>,
+    /// Everything before this has a dated node that is settled for good
+    at: Cell<usize>,
+}
+
 impl View {
     fn new(index: usize, solver: &mut PlanSolver, ledger: &Ledger) -> Self {
-        let chains = solver.hard_chains();
-        let mut on: HashMap<Vertex, Vec<usize>> = HashMap::new();
-        for (i, (_, _, chain)) in chains.iter().enumerate() {
+        let mut on_chain = HashSet::new();
+        let mut leads: HashMap<Vertex, Leads> = HashMap::new();
+        for (hard, date, chain) in solver.hard_chains() {
+            on_chain.extend(chain.iter().copied());
+            if !solver.is_urgent(&hard) {
+                continue;
+            }
+            // a node is `remaining(node) - remaining(hard)` days of work before the dated node
+            let by = i64::from(date.num_days_from_ce()) - solver.tightening(&hard)
+                + solver.remaining(&hard);
             for v in chain {
-                on.entry(*v).or_default().push(i);
+                leads
+                    .entry(v)
+                    .or_insert_with(|| Leads {
+                        by: Vec::new(),
+                        at: Cell::new(0),
+                    })
+                    .by
+                    .push((by, hard));
             }
         }
+        for lead in leads.values_mut() {
+            lead.by.sort_by_key(|(by, hard)| (*by, hard.key()));
+        }
         let mut view = Self {
-            chains,
-            on,
+            on_chain,
+            leads,
             best: None,
         };
         view.refresh(index, solver, ledger);
@@ -53,11 +83,22 @@ impl View {
         // a task with a date it must start by goes ahead of one that would run past that date,
         // whatever its own measures say, since only the order can save it
         if let Some((_, next)) = self.best
-            && let Some((v, date, over)) = solver.pressed(&ready, &next, ledger, &self.chains)
+            && let Some((v, date, over)) = solver.pressed(&ready, &next, ledger)
         {
             let rank = (0, -over, i64::from(date.num_days_from_ce()), index, v.key());
             self.best = Some((rank, v));
         }
+    }
+
+    /// The latest day, as a day number, the task could start for the nearest date it leads to
+    fn latest(&self, solver: &PlanSolver, v: &Vertex) -> Option<i64> {
+        let leads = self.leads.get(v)?;
+        let mut at = leads.at.get();
+        while leads.by.get(at).is_some_and(|(_, hard)| solver.is_settled(hard)) {
+            at += 1;
+        }
+        leads.at.set(at);
+        leads.by.get(at).map(|(by, _)| by - solver.remaining(v))
     }
 
     /// Where a ready task goes in the order of placing across plans, in strict layers:
@@ -66,21 +107,7 @@ impl View {
     /// 2. the rest, by plan priority and then how critical it is in its plan
     fn rank(&self, index: usize, solver: &PlanSolver, slip: i64, v: Vertex) -> Rank {
         let key = v.key();
-        // the latest day the task could start for the nearest date it leads to, if the days of
-        // work between it and the dated task were all that is in the way
-        let latest = self
-            .on
-            .get(&v)
-            .into_iter()
-            .flatten()
-            .map(|c| &self.chains[*c])
-            .filter(|(hard, _, _)| !solver.is_settled(hard) && solver.is_urgent(hard))
-            .map(|(hard, date, _)| {
-                let work = (solver.remaining(&v) - solver.remaining(hard)).max(0);
-                i64::from(date.num_days_from_ce()) - work - solver.tightening(hard)
-            })
-            .min();
-        if let Some(latest) = latest {
+        if let Some(latest) = self.latest(solver, &v) {
             return (0, latest, -solver.remaining(&v), index, key);
         }
         if let Some((urgency, leads)) = solver.urgency(&v, slip) {
@@ -155,5 +182,5 @@ fn compact(solvers: &mut [PlanSolver], views: &[View], ledger: &mut Ledger) {
 
 /// Whether a node leads to a hard date or a target
 fn on_chain(solver: &PlanSolver, view: &View, v: &Vertex) -> bool {
-    view.on.contains_key(v) || solver.urgency(v, 0).is_some()
+    view.on_chain.contains(v) || solver.urgency(v, 0).is_some()
 }

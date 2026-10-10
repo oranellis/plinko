@@ -889,28 +889,12 @@ impl<'a> PlanSolver<'a> {
         ready: &[Vertex],
         next: &Vertex,
         ledger: &Ledger,
-        chains: &[(Vertex, NaiveDate, HashSet<Vertex>)],
     ) -> Option<(Vertex, NaiveDate, i64)> {
         let dates = self.hard_dates();
-        let through = std::env::var("PRESS_CHAIN").is_ok();
         let mut dated: Vec<(NaiveDate, Vertex)> = ready
             .iter()
             .filter(|v| *v != next)
             .filter_map(|v| {
-                if through {
-                    // the latest start for the nearest date it leads to, by the work in between
-                    return chains
-                        .iter()
-                        .filter(|(hard, _, chain)| {
-                            chain.contains(v) && !self.settled.contains(hard)
-                        })
-                        .map(|(hard, date, _)| {
-                            let work = (self.remaining(v) - self.remaining(hard)).max(0);
-                            *date - chrono::Duration::days(self.tightening(hard) + work)
-                        })
-                        .min()
-                        .map(|date| (date, *v));
-                }
                 let date = *dates.get(v)? - chrono::Duration::days(self.tightening(v));
                 Some((date, *v))
             })
