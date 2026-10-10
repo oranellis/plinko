@@ -533,3 +533,16 @@ dates, which could be made incremental.
 ## Moving between groups
 
 `Plan::moving(node, parent)` gives the updates. Entering a group: what the item waited on moves onto the group (except what is inside it), what waited on the item from outside waits on the group's end, and the item waits on the group's start. Leaving: the item's group-start dependency is replaced by the group's own dependencies. A group cannot move into itself.
+
+## Tried and not kept
+
+- **Holding hours backward from hard dates.** Before placing anything, schedule the chains to hard
+  dates backward (latest dates first, each node as late as its date and the hours held for others
+  allow), hold those hours, and give each node's back when it is placed. A node can then always
+  use its held slot, so a chain not ready yet is not crowded out. With the made up plans of
+  `examples/score.rs` this was much worse than not holding (about 3 to 10 times the misses). The
+  greedy backward schedule often cannot fit a node near the start (its dependents were held
+  too early by hours other nodes held), which makes the held slots of everything after it
+  wrong, and dropping those leaves most of the chain unheld; what is still held takes hours the
+  rest could use. Using the backward start times only to order work (no hours held) was within
+  noise of the present ordering, a little better on one and two plans, worse on three.
