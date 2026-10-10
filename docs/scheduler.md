@@ -580,3 +580,10 @@ scheduler as valid (every task placed on the solver's day with its person, nothi
   the scheduler in the third, with the plan to its target 1 to 6 % shorter, the last task 1 to 10 %
   sooner and the average task finishing 6 to 11 % sooner. The scheduler took about a second.
 
+Against the scheduler from before hard dates went first (`rich`, averages): four plans of 250 tasks
+and 20 people missed 22 dates by 684 days, now 1 by 4; the same with another seed 18.5 by 626, now
+1.5 by 3; one plan of 1000 tasks and 40 people 8.3 by 101, now 2.7 by 16, with plan ends within 5 %
+(shorter now). Incremental updates (`INCREMENTAL=n rich`) end at the same misses as a fresh run
+(four plans of 1000 tasks: 1.9 s mean per edit against 10 s, 250 tasks: 0.06 to 0.3 s against 0.6 to
+2.5 s), with the occasional edit needing a full run.
+
