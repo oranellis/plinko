@@ -1,54 +1,92 @@
-//! A little momentum for scrolling by wheel: what the wheel asks for is not applied at once but a
-//! share of what is left each frame, so a notch eases in and out instead of jumping.
+//! Momentum for scrolling sideways by wheel or touchpad: the scroll follows the gesture at once,
+//! and when it lets go the speed it had carries on and fades.
 
 use std::{cell::Cell, rc::Rc};
 
 use leptos::prelude::request_animation_frame;
 
-/// What is left of the distance after a frame of 1/60th of a second
-const KEPT: f64 = 0.8;
-/// Under this many pixels the rest is taken in one go
-const SETTLED: f64 = 0.5;
+/// How long without a wheel event counts as having let go, in milliseconds
+const RELEASE_MS: f64 = 70.0;
+/// What is left of the speed after a frame of 1/60th of a second
+const KEPT: f64 = 0.93;
+/// Pixels per millisecond under which it stops, and under which a release does not carry on
+const STOP: f64 = 0.03;
 
-/// How much of what is left to move in a frame that took `dt` milliseconds
-fn share(left: f64, dt: f64) -> f64 {
-    let part = left * (1.0 - KEPT.powf(dt.clamp(1.0, 50.0) / (1000.0 / 60.0)));
-    if part.abs() < SETTLED { left } else { part }
+/// The speed after another wheel event of `delta` pixels, `dt` milliseconds after the last
+fn speed(before: f64, delta: f64, dt: f64) -> f64 {
+    // a long pause is a new gesture
+    if dt > 100.0 {
+        return 0.0;
+    }
+    let now = delta / dt.max(4.0);
+    0.5 * now + 0.5 * before
+}
+
+/// The speed a frame of `dt` milliseconds later
+fn fade(speed: f64, dt: f64) -> f64 {
+    speed * KEPT.powf(dt.clamp(1.0, 50.0) / (1000.0 / 60.0))
 }
 
 #[derive(Clone)]
 pub struct Glide {
-    left: Rc<Cell<f64>>,
+    /// Pixels per millisecond, and when the last event came
+    speed: Rc<Cell<f64>>,
+    last: Rc<Cell<f64>>,
+    /// Less than a pixel that has not been passed on yet
+    carry: Rc<Cell<f64>>,
     running: Rc<Cell<bool>>,
-    /// Moves the thing scrolled by a distance, and says whether it is still there to move
+    /// Moves the thing scrolled by whole pixels, and says whether it is still there to move
     apply: Rc<dyn Fn(f64) -> bool>,
 }
 
 impl Glide {
     pub fn new(apply: impl Fn(f64) -> bool + 'static) -> Self {
         Self {
-            left: Rc::default(),
+            speed: Rc::default(),
+            last: Rc::default(),
+            carry: Rc::default(),
             running: Rc::default(),
             apply: Rc::new(apply),
         }
     }
 
-    /// Asks for `delta` more pixels of scrolling
+    /// Moves by `amount`, in whole pixels with the rest kept for next time
+    fn move_by(&self, amount: f64) -> bool {
+        let total = self.carry.get() + amount;
+        let whole = total.round();
+        self.carry.set(total - whole);
+        whole == 0.0 || (self.apply)(whole)
+    }
+
+    /// A wheel event of `delta` pixels, which is followed at once
     pub fn push(&self, delta: f64) {
-        self.left.set(self.left.get() + delta);
+        let now = js_sys::Date::now();
+        let before = self.last.get();
+        self.speed.set(speed(self.speed.get(), delta, now - before));
+        self.last.set(now);
+        self.move_by(delta);
         if !self.running.replace(true) {
-            self.frame(js_sys::Date::now());
+            self.frame(now);
         }
     }
 
     fn frame(&self, before: f64) {
         let now = js_sys::Date::now();
-        let left = self.left.get();
-        let part = share(left, now - before);
-        self.left.set(left - part);
-        let alive = part == 0.0 || (self.apply)(part);
-        if !alive || self.left.get() == 0.0 {
-            self.left.set(0.0);
+        let mut alive = true;
+        // once the gesture has let go, what speed it had carries on
+        if now - self.last.get() >= RELEASE_MS {
+            let moving = self.speed.get();
+            if moving.abs() < STOP {
+                alive = false;
+            } else {
+                let dt = (now - before).clamp(1.0, 50.0);
+                alive = self.move_by(moving * dt);
+                self.speed.set(fade(moving, dt));
+            }
+        }
+        if !alive {
+            self.speed.set(0.0);
+            self.carry.set(0.0);
             self.running.set(false);
             return;
         }
@@ -62,22 +100,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_eases_out_and_arrives_exactly() {
-        let mut left = 100.0;
-        let mut moved = 0.0;
-        let mut steps = 0;
-        while left != 0.0 {
-            let part = share(left, 16.7);
-            assert!(part > 0.0 && part <= left);
-            moved += part;
-            left -= part;
-            steps += 1;
-            assert!(steps < 200, "it should settle");
+    fn the_speed_follows_the_gesture_and_a_pause_starts_afresh() {
+        let mut v: f64 = 0.0;
+        for _ in 0..10 {
+            v = speed(v, 16.0, 16.0);
         }
-        assert!((moved - 100.0).abs() < 1e-9);
-        // the first frame moves the most
-        assert!(share(100.0, 16.7) > share(50.0, 16.7));
-        // and a negative distance goes the other way
-        assert!(share(-100.0, 16.7) < 0.0);
+        // 16 pixels every 16 milliseconds
+        assert!((v - 1.0).abs() < 0.01);
+        assert_eq!(speed(v, 16.0, 500.0), 0.0);
+    }
+
+    #[test]
+    fn it_fades_away_without_changing_direction() {
+        let mut v: f64 = -1.5;
+        let mut frames = 0;
+        let mut travelled = 0.0;
+        while v.abs() >= STOP {
+            travelled += v * 16.7;
+            v = fade(v, 16.7);
+            frames += 1;
+            assert!(v < 0.0 && frames < 300);
+        }
+        // a flick at 1.5 px/ms carries on a few hundred pixels
+        assert!(travelled < -150.0 && travelled > -600.0, "{travelled}");
     }
 }
