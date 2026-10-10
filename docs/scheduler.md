@@ -400,6 +400,14 @@ Plans will often be in contention for people, so spread the impact:
 Build each `PlanVolatileState`, derive milestone and group values, then
 `TenantVolatileState::from_plans`.
 
+### Dates that cannot be met
+
+Each baseline records the earliest every hard dated node could start however free people are
+(`Baseline::earliest`, `slack::early_starts`): the days of the work before it on the days the
+people it names work, with tags and groups taken as the plain length. A miss no later than that is
+unavoidable (`ConstraintViolation::avoidable`), so repair rounds do not count it, make it urgent or
+pull work earlier for it, and the client says it cannot be met.
+
 ### Incremental updates
 
 `scheduler::Tracker` applies updates and notes what each can change (`impact.rs`): nothing (names,

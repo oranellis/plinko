@@ -1,5 +1,5 @@
 // modules {{{
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{Days, NaiveDate};
 
@@ -86,4 +86,64 @@ pub fn late_ends(
         }
     }
     late
+}
+
+/// Where a vertex would start and end if it could start on a day
+pub type Span<'a> = dyn Fn(&Vertex, NaiveDate) -> Option<(NaiveDate, NaiveDate)> + 'a;
+
+/// The earliest each vertex can start however free people are, taking the lengths in `placed`,
+/// the ends of what has happened and the dates in `floor` as they are. A start in `exact` is
+/// kept (work that has started or is done), the rest start no sooner than their `floor`, the
+/// ends of what they depend on and the lag after them. `span` gives where a vertex would start
+/// and end if it could start on a day, or `None` if it takes no time.
+pub fn early_starts(
+    span: &Span,
+    net: &Network,
+    placed: &HashMap<Vertex, DateRange>,
+    exact: &HashSet<Vertex>,
+    floor: &HashMap<Vertex, NaiveDate>,
+) -> HashMap<Vertex, NaiveDate> {
+    let mut starts: HashMap<Vertex, NaiveDate> = HashMap::new();
+    let mut ends: HashMap<Vertex, NaiveDate> = HashMap::new();
+    for v in net.order() {
+        let Some(range) = placed.get(v) else {
+            continue;
+        };
+        if exact.contains(v) {
+            starts.insert(*v, range.start());
+            ends.insert(*v, range.end());
+            continue;
+        }
+        let is_group = matches!(v, Vertex::Node(PlanNode::TaskGroup(_)));
+        let milestone = matches!(v, Vertex::Node(PlanNode::Milestone(_)));
+        let mut start = floor.get(v).copied();
+        let (mut first, mut last): (Option<NaiveDate>, Option<NaiveDate>) = (None, None);
+        for edge in net.deps(v) {
+            let Some(from) = edge.from.filter(|f| ends.contains_key(f)) else {
+                continue;
+            };
+            if is_group {
+                if !matches!(from, Vertex::GroupStart(_)) {
+                    let at = starts[&from];
+                    first = Some(first.map_or(at, |f| f.min(at)));
+                    last = last.max(Some(ends[&from]));
+                }
+                continue;
+            }
+            let after = ends[&from] + chrono::Duration::days(i64::from(edge.lag));
+            let after = after - chrono::Duration::days(i64::from(milestone));
+            start = start.max(Some(after));
+        }
+        if is_group {
+            let start = first.or(start).unwrap_or(range.start());
+            starts.insert(*v, start);
+            ends.insert(*v, last.unwrap_or(start));
+        } else {
+            let start = start.unwrap_or(range.start());
+            let (start, end) = span(v, start).unwrap_or((start, start));
+            starts.insert(*v, start);
+            ends.insert(*v, end);
+        }
+    }
+    starts
 }

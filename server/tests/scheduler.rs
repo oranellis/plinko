@@ -1154,3 +1154,20 @@ fn changes_to_people_or_the_clock_schedule_everything_again() {
     tracker.apply(&mut world.tenant, update).unwrap();
     assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Fully);
 }
+
+#[test]
+fn a_date_the_work_before_it_cannot_meet_is_not_counted_as_avoidable() {
+    let mut world = World::new();
+    let alice = world.user();
+    let a = world.task(5, &[(user(alice), 8)], &[start()]);
+    let b = world.task(5, &[(user(alice), 8)], &[after(node(a))]);
+    let c = world.task(1, &[(user(alice), 8)], &[after(node(b))]);
+    world.patch(c, |p| {
+        p.time_constraint = Some(TimeConstraint::Latest(d(5)))
+    });
+    let state = world.solve();
+    let violation = state.constraint_violations[&node(c)];
+    // two weeks of work come first, so the day it starts is the first it could
+    assert_eq!(violation.earliest, Some(violation.scheduled));
+    assert_eq!(violation.avoidable(), 0);
+}

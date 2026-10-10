@@ -147,9 +147,14 @@ pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
         _ => "Earliest date not met",
     };
     let required = date.map(format::iso).unwrap_or_default();
-    vec![
+    let mut lines = vec![
         title.to_string(),
         format!("Required: {required}"),
         format!("Scheduled: {}", format::iso(v.scheduled)),
-    ]
+    ];
+    if let Some(earliest) = v.earliest.filter(|_| v.avoidable() == 0) {
+        let earliest = format::iso(earliest);
+        lines.push(format!("Cannot be met: the work before it ends {earliest}"));
+    }
+    lines
 }

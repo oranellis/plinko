@@ -99,6 +99,9 @@ pub struct Baseline {
     pub plan_slack: HashMap<PlanNode, i64>,
     /// Where every vertex of the plan sits when it is on its own
     pub(crate) ranges: HashMap<Vertex, DateRange>,
+    /// The earliest each node with a hard date could start however free people are, from the
+    /// work before it and the days it takes
+    pub earliest: HashMap<PlanNode, NaiveDate>,
 }
 
 /// Slack of the nodes that lead to one target, `id` is `None` for the end of the plan
@@ -185,6 +188,20 @@ pub enum UnscheduledReason {
 pub struct ConstraintViolation {
     pub constraint: TimeConstraint,
     pub scheduled: NaiveDate,
+    /// The earliest it could start however free people are, if worked out. Starting later than
+    /// the date but no later than this is not something scheduling could have avoided.
+    pub earliest: Option<NaiveDate>,
+}
+
+impl ConstraintViolation {
+    /// Days the node starts later than the date and than it had to
+    pub fn avoidable(&self) -> i64 {
+        let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = self.constraint else {
+            return 0;
+        };
+        let reachable = self.earliest.map_or(date, |e| e.max(date));
+        (self.scheduled - reachable).num_days().max(0)
+    }
 }
 
 /// A person's work across every plan, to see what they are assigned on past, present and

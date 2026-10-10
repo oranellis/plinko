@@ -159,12 +159,8 @@ fn run(
     let missed = states
         .iter()
         .flat_map(|s| s.constraint_violations.values())
-        .fold((0, 0), |(count, days), v| {
-            let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = v.constraint else {
-                return (count, days);
-            };
-            (count + 1, days + (v.scheduled - date).num_days())
-        });
+        .filter(|v| v.avoidable() > 0)
+        .fold((0, 0), |(count, days), v| (count + 1, days + v.avoidable()));
     Outcome {
         states,
         ledger,
@@ -208,6 +204,14 @@ fn rebalance(
             let Some(placed) = state.tasks.get(&id) else {
                 continue;
             };
+            // a date that could not have been kept does not make the work before it go earlier
+            if state
+                .constraint_violations
+                .get(&node)
+                .is_some_and(|v| v.avoidable() == 0)
+            {
+                continue;
+            }
             let margin = (date - placed.date_range.start()).num_days();
             let entry = next.tighten[i].entry(node).or_insert(0);
             // not moving what has no room to spare, and what is on the day does not move either
@@ -247,8 +251,10 @@ fn escalate(outcome: &Outcome, repairs: &Repairs) -> Option<Repairs> {
     let mut next = repairs.clone();
     let mut changed = false;
     for (i, state) in outcome.states.iter().enumerate() {
-        for node in state.constraint_violations.keys() {
-            changed |= next.urgent[i].insert(*node);
+        for (node, violation) in &state.constraint_violations {
+            if violation.avoidable() > 0 {
+                changed |= next.urgent[i].insert(*node);
+            }
         }
     }
     changed.then_some(next)

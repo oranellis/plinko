@@ -17,7 +17,7 @@ use crate::{
         fill::{Filled, Hours, Slot, Spec, fill},
         ledger::{Claim, Ledger, MAX_FILL_DAYS, Run},
         network::Network,
-        slack::late_ends,
+        slack::{early_starts, late_ends},
         state::{
             Baseline, ConstraintViolation, PlanVolatileState, TargetForecast, TargetSlack,
             UnscheduledReason,
@@ -41,6 +41,9 @@ type Reason = UnscheduledReason;
 
 /// The most compaction passes, each can only move things earlier
 const MAX_COMPACT_PASSES: usize = 50;
+
+/// How far ahead of a day a person's working days are looked for
+const MAX_WAIT_DAYS: usize = 1500;
 
 /// Days later a person may finish a task for being much less booked than the first to finish
 const SPREAD_DAYS: u64 = 1;
@@ -297,7 +300,7 @@ impl<'a> PlanSolver<'a> {
     /// Schedules the plan with the ledger to itself, and works out how much slack each node has
     pub fn solve_alone(mut self, ledger: &mut Ledger) -> Baseline {
         self.run(ledger);
-        let measured = self.measure();
+        let measured = self.measure(ledger);
         Baseline {
             state: self.finish(),
             ..measured
@@ -1037,7 +1040,7 @@ impl<'a> PlanSolver<'a> {
     }
 
     /// Slack against the end of the plan, of each target and of hard dates, for the solo schedule
-    fn measure(&self) -> Baseline {
+    fn measure(&self, ledger: &Ledger) -> Baseline {
         let ranges: HashMap<Vertex, DateRange> =
             self.placed.iter().map(|(v, p)| (*v, p.range)).collect();
         let resource = self.resource_order();
@@ -1087,8 +1090,82 @@ impl<'a> PlanSolver<'a> {
             slack: self.slack_to(&ranges, &resource, late),
             by_target,
             plan_slack,
+            earliest: self.earliest_starts(&ranges, ledger),
             ranges,
         }
+    }
+
+    fn earliest_of(&self, node: &PlanNode) -> Option<NaiveDate> {
+        self.baseline?.earliest.get(node).copied()
+    }
+
+    /// The earliest the nodes with hard dates could start with every person free
+    fn earliest_starts(
+        &self,
+        ranges: &HashMap<Vertex, DateRange>,
+        ledger: &Ledger,
+    ) -> HashMap<PlanNode, NaiveDate> {
+        let started = |v: &Vertex| {
+            self.status(v)
+                .is_some_and(|s| !matches!(s, Status::NotStarted | Status::Dropped))
+        };
+        let exact = ranges.keys().filter(|v| started(v)).copied().collect();
+        let first = self.today.max(*self.plan.scheduler_data().start_date());
+        let floor = ranges
+            .keys()
+            .map(|v| {
+                let day = match self.constraint_of(v) {
+                    Some(TimeConstraint::Earliest(d) | TimeConstraint::Fixed(d)) => d.max(first),
+                    _ => first,
+                };
+                (*v, day)
+            })
+            .collect();
+        // a task of people named works its days on the days they work, at the soonest the one
+        // with the most such days can, whoever is free of tags and groups is not looked into
+        let span = |v: &Vertex, from: NaiveDate| {
+            let task = match v {
+                Vertex::Node(PlanNode::Task(_)) if self.status(v) == Some(Status::Dropped) => {
+                    return None;
+                }
+                Vertex::Node(PlanNode::Task(id)) => self.plan.tasks().get(id)?,
+                Vertex::Node(PlanNode::PlanBuffer(id)) => {
+                    let days = u64::from(*self.plan.plan_buffers()[id].duration());
+                    return Some((from, from + Days::new(days)));
+                }
+                _ => return None,
+            };
+            let days = task.duration() as usize;
+            let by_calendar = (from, from + Days::new(days as u64));
+            let mut spans = task.allocations().keys().map(|who| {
+                let Worker::User(user) = who else {
+                    return None;
+                };
+                let mut working = from
+                    .iter_days()
+                    .take(MAX_WAIT_DAYS)
+                    .filter(|d| ledger.capacity(user, *d) > 0);
+                let first = working.next()?;
+                let last = match days {
+                    0 | 1 => first,
+                    _ => working.nth(days - 2).unwrap_or(first),
+                };
+                Some((first, last.succ_opt()?))
+            });
+            let fold = spans.try_fold(None, |acc: Option<(NaiveDate, NaiveDate)>, span| {
+                let (c, d) = span?;
+                Some(Some(acc.map_or((c, d), |(a, b)| (a.min(c), b.max(d)))))
+            });
+            Some(fold.flatten().unwrap_or(by_calendar))
+        };
+        let starts = early_starts(&span, &self.net, ranges, &exact, &floor);
+        self.hard_dates()
+            .keys()
+            .filter_map(|v| match v {
+                Vertex::Node(node) => Some((*node, *starts.get(v)?)),
+                _ => None,
+            })
+            .collect()
     }
 
     fn constraint_of(&self, v: &Vertex) -> Option<TimeConstraint> {
@@ -1123,7 +1200,12 @@ impl<'a> PlanSolver<'a> {
                     out.tasks.insert(*id, state);
                     let constraint = self.plan.tasks()[id].time_constraint();
                     if self.is_open(v) {
-                        out.violation(*node, constraint, date_range.start());
+                        out.violation(
+                            *node,
+                            constraint,
+                            date_range.start(),
+                            self.earliest_of(node),
+                        );
                     }
                 }
                 PlanNode::Milestone(id) => {
@@ -1136,7 +1218,12 @@ impl<'a> PlanSolver<'a> {
                             date,
                         },
                     );
-                    out.violation(*node, self.plan.milestones()[id].time_constraint(), date);
+                    out.violation(
+                        *node,
+                        self.plan.milestones()[id].time_constraint(),
+                        date,
+                        self.earliest_of(node),
+                    );
                 }
                 PlanNode::PlanBuffer(id) => {
                     out.plan_buffers
@@ -1184,7 +1271,13 @@ impl<'a> PlanSolver<'a> {
 
 impl PlanVolatileState {
     /// Records a violation if a hard date is passed by the start of the node
-    fn violation(&mut self, node: PlanNode, constraint: TimeConstraint, start: NaiveDate) {
+    fn violation(
+        &mut self,
+        node: PlanNode,
+        constraint: TimeConstraint,
+        start: NaiveDate,
+        earliest: Option<NaiveDate>,
+    ) {
         let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = constraint else {
             return;
         };
@@ -1193,6 +1286,7 @@ impl PlanVolatileState {
             let violation = ConstraintViolation {
                 constraint,
                 scheduled,
+                earliest,
             };
             self.constraint_violations.insert(node, violation);
         }
