@@ -183,6 +183,16 @@ impl<'a> PlanSolver<'a> {
         self.forced = forced;
     }
 
+    /// The days of work that follow a vertex and including it
+    pub fn remaining(&self, v: &Vertex) -> i64 {
+        self.net.remaining(v)
+    }
+
+    /// Whether a node is placed or out of the schedule for good
+    pub fn is_settled(&self, v: &Vertex) -> bool {
+        self.settled.contains(v)
+    }
+
     /// Schedules the plan with the ledger to itself, and works out how much slack each node has
     pub fn solve_alone(mut self, ledger: &mut Ledger) -> Baseline {
         self.run(ledger);
@@ -727,30 +737,6 @@ impl<'a> PlanSolver<'a> {
         self.settle();
     }
 
-    /// How many days later than on its own each node not yet placed would start, from where
-    /// what it depends on is now. A node that starts on time has none, delays carry on to what
-    /// follows. Empty without a baseline.
-    pub fn slips(&self) -> HashMap<Vertex, i64> {
-        let Some(solo) = self.baseline.map(|b| &b.ranges) else {
-            return HashMap::new();
-        };
-        let mut end: HashMap<Vertex, NaiveDate> = HashMap::new();
-        let mut slips = HashMap::new();
-        for v in &self.order {
-            if let Some(placement) = self.placed.get(v) {
-                end.insert(*v, placement.range.end());
-                continue;
-            }
-            let (false, Some(alone)) = (self.settled.contains(v), solo.get(v)) else {
-                continue;
-            };
-            let slip = self.slip_with(v, alone, |u| end.get(u).copied());
-            end.insert(*v, alone.end() + Days::new(slip as u64));
-            slips.insert(*v, slip);
-        }
-        slips
-    }
-
     /// The slip of a task whose dependencies are all placed, without working out the rest
     pub fn ready_slip(&self, v: &Vertex) -> i64 {
         let alone = self.baseline.and_then(|b| b.ranges.get(v));
@@ -833,19 +819,6 @@ impl<'a> PlanSolver<'a> {
             .into_iter()
             .map(|(v, date)| (v, date, self.net.ancestors([v])))
             .collect()
-    }
-
-    /// Days before the hard date the node would start going by `slips`, `None` once placed or if
-    /// it was not scheduled on its own
-    pub fn hard_slack(
-        &self,
-        node: &Vertex,
-        date: NaiveDate,
-        slips: &HashMap<Vertex, i64>,
-    ) -> Option<i64> {
-        let alone = self.baseline?.ranges.get(node)?;
-        let late = alone.start() + Days::new(slips.get(node).copied().unwrap_or(0) as u64);
-        (!self.settled.contains(node)).then(|| (date - late).num_days())
     }
 
     /// How late the plan's targets get through this node, the worst of them, and how many it

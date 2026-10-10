@@ -301,22 +301,22 @@ Solo runs per plan as above.
 
 Insert all remaining nodes into one ledger, in strict layers:
 
-1. **Hard tier:** ancestors of Fixed or Latest nodes that are close to their date, `date - start`
-   at or below a margin of 3 calendar days (a tunable constant, `HARD_MARGIN_DAYS`), violated ones
-   too. That start is the later of the node's plan-alone start and where its dependencies now
-   allow it (its slip, below), so a chain enters the tier as contention pushes it towards its date.
-   Order by that slack ascending (most violated first), ties by earlier date. Chains further
-   away compete in the target layer until they get close.
+1. **Hard tier:** every ancestor of a Fixed or Latest node, at any distance, as Plinko 1 did. A
+   node's key is the latest day it could start to keep the nearest date it leads to: the date less
+   the days of work from the node to the dated one (`Network::remaining`, a difference of the
+   longest chains of work that follow each). The earliest key goes first, then the longest chain of
+   work to follow, then plan order. Dates met by a wide margin are not special: only the order
+   among dated chains and ahead of other work matters, and a task still goes as early as its
+   dependencies and people allow.
 2. **Target chain:** every node that is an ancestor of some plan's explicit targets, or of the plan
    end for a plan with none.
 3. **Rest:** nodes feeding no explicit target. They are placed after every chain node, so they can
    only use hours the targets cannot, which keeps them from restricting a target, while still
    filling earlier gaps where it costs nothing. The layers apply across plans.
 
-A ready task with a hard date is also taken ahead of whatever else is next when that task would run
-past the date (the day the dated task must start by), since a person busy until then could not start it
-in time, whatever the other measures say. This does not depend on the margin above, which only
-judges chains whose dates are close. With several, the earliest date goes first (`PlanSolver::pressed`).
+On top of that, a ready task with a hard date is taken ahead of whatever else is next when that task
+would run past the date (the day the dated task must start by), since a person busy until then
+could not start it in time (`PlanSolver::pressed`). With several, the earliest date goes first.
 
 Within a layer, repeatedly take the most urgent node among those whose dependencies are all
 placed. Plain slack ordering is not topological (a predecessor can have more slack than its

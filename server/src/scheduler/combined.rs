@@ -1,5 +1,5 @@
 // modules {{{
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use chrono::{Datelike, NaiveDate};
 use uuid::Uuid;
@@ -12,9 +12,6 @@ use crate::{
 
 /// The most passes of compaction, each can only move things earlier
 const MAX_COMPACT_PASSES: usize = 50;
-
-/// Days of slack at or below which a chain to a hard date goes before everything else
-const HARD_MARGIN_DAYS: i64 = 3;
 
 /// What decides who goes next, lowest first: the layer, two measures inside it, the position of
 /// the plan, then the node
@@ -39,21 +36,9 @@ impl View {
 
     fn refresh(&mut self, index: usize, solver: &mut PlanSolver, ledger: &Ledger) {
         let ready = solver.advance();
-        // working out the slip of everything is only needed to see how close hard dates are
-        let slips = if self.chains.is_empty() {
-            HashMap::new()
-        } else {
-            solver.slips()
-        };
-        let slip = |v: &Vertex| {
-            slips
-                .get(v)
-                .copied()
-                .unwrap_or_else(|| solver.ready_slip(v))
-        };
         self.best = ready
             .iter()
-            .map(|v| (self.rank(index, solver, &slips, slip(v), *v), *v))
+            .map(|v| (self.rank(index, solver, solver.ready_slip(v), *v), *v))
             .min_by_key(|(rank, _)| *rank);
         // a task with a date it must start by goes ahead of one that would run past that date,
         // whatever its own measures say, since only the order can save it
@@ -66,27 +51,24 @@ impl View {
     }
 
     /// Where a ready task goes in the order of placing across plans, in strict layers:
-    /// 0. chains to a hard date that is close, the closest first
+    /// 0. chains to hard dates, the one that must start soonest first
     /// 1. chains to targets, the most behind its plan on its own first, counting priorities
     /// 2. the rest, by plan priority and then how critical it is in its plan
-    fn rank(
-        &self,
-        index: usize,
-        solver: &PlanSolver,
-        slips: &HashMap<Vertex, i64>,
-        slip: i64,
-        v: Vertex,
-    ) -> Rank {
+    fn rank(&self, index: usize, solver: &PlanSolver, slip: i64, v: Vertex) -> Rank {
         let key = v.key();
-        let close = self
+        // the latest day the task could start for the nearest date it leads to, if the days of
+        // work between it and the dated task were all that is in the way
+        let latest = self
             .chains
             .iter()
-            .filter(|(_, _, chain)| chain.contains(&v))
-            .filter_map(|(hard, date, _)| Some((solver.hard_slack(hard, *date, slips)?, *date)))
-            .filter(|(slack, _)| *slack <= HARD_MARGIN_DAYS)
+            .filter(|(hard, _, chain)| chain.contains(&v) && !solver.is_settled(hard))
+            .map(|(hard, date, _)| {
+                let work = (solver.remaining(&v) - solver.remaining(hard)).max(0);
+                i64::from(date.num_days_from_ce()) - work
+            })
             .min();
-        if let Some((slack, date)) = close {
-            return (0, slack, i64::from(date.num_days_from_ce()), index, key);
+        if let Some(latest) = latest {
+            return (0, latest, -solver.remaining(&v), index, key);
         }
         if let Some((urgency, leads)) = solver.urgency(&v, slip) {
             return (1, -urgency, -(leads as i64), index, key);
