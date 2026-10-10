@@ -28,16 +28,16 @@ struct View {
 }
 
 impl View {
-    fn new(index: usize, solver: &mut PlanSolver) -> Self {
+    fn new(index: usize, solver: &mut PlanSolver, ledger: &Ledger) -> Self {
         let mut view = Self {
             chains: solver.hard_chains(),
             best: None,
         };
-        view.refresh(index, solver);
+        view.refresh(index, solver, ledger);
         view
     }
 
-    fn refresh(&mut self, index: usize, solver: &mut PlanSolver) {
+    fn refresh(&mut self, index: usize, solver: &mut PlanSolver, ledger: &Ledger) {
         let ready = solver.advance();
         // working out the slip of everything is only needed to see how close hard dates are
         let slips = if self.chains.is_empty() {
@@ -55,6 +55,14 @@ impl View {
             .iter()
             .map(|v| (self.rank(index, solver, &slips, slip(v), *v), *v))
             .min_by_key(|(rank, _)| *rank);
+        // a task with a date it must start by goes ahead of one that would run past that date,
+        // whatever its own measures say, since only the order can save it
+        if let Some((_, next)) = self.best
+            && let Some((v, date, over)) = solver.pressed(&ready, &next, ledger)
+        {
+            let rank = (0, -over, i64::from(date.num_days_from_ce()), index, v.key());
+            self.best = Some((rank, v));
+        }
     }
 
     /// Where a ready task goes in the order of placing across plans, in strict layers:
@@ -101,7 +109,7 @@ pub fn solve(mut solvers: Vec<PlanSolver>, ledger: &mut Ledger) -> Vec<PlanVolat
     let mut views: Vec<View> = solvers
         .iter_mut()
         .enumerate()
-        .map(|(i, solver)| View::new(i, solver))
+        .map(|(i, solver)| View::new(i, solver, ledger))
         .collect();
     while let Some((i, v)) = views
         .iter()
@@ -111,7 +119,7 @@ pub fn solve(mut solvers: Vec<PlanSolver>, ledger: &mut Ledger) -> Vec<PlanVolat
         .map(|((_, v), i)| (i, v))
     {
         solvers[i].place_open(v, ledger);
-        views[i].refresh(i, &mut solvers[i]);
+        views[i].refresh(i, &mut solvers[i], ledger);
     }
     for solver in &mut solvers {
         solver.sweep_stuck();

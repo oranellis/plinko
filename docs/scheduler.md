@@ -313,6 +313,11 @@ Insert all remaining nodes into one ledger, in strict layers:
    only use hours the targets cannot, which keeps them from restricting a target, while still
    filling earlier gaps where it costs nothing. The layers apply across plans.
 
+A ready task with a hard date is also taken ahead of whatever else is next when that task would run
+past the date (the day the dated task must start by), since a person busy until then could not start it
+in time, whatever the other measures say. This does not depend on the margin above, which only
+judges chains whose dates are close. With several, the earliest date goes first (`PlanSolver::pressed`).
+
 Within a layer, repeatedly take the most urgent node among those whose dependencies are all
 placed. Plain slack ordering is not topological (a predecessor can have more slack than its
 successor), so never sort the whole list by slack.

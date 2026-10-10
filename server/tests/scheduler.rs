@@ -970,3 +970,27 @@ fn what_hangs_from_a_plan_start_in_the_future_begins_on_that_day_and_milestones_
     assert_eq!(span(&state, first), (d(10), d(11)));
     assert_eq!(state.milestones[&marker].date, d(10));
 }
+
+#[test]
+fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_is_days_off() {
+    let mut world = World::new();
+    let alice = world.user();
+    let tests: Vec<Uuid> = (0..4)
+        .map(|_| world.task(5, &[(user(alice), 8)], &[start()]))
+        .collect();
+    // it starts on the 15th as the third of four, but may start no later than the 8th
+    world.patch(tests[2], |p| {
+        p.time_constraint = Some(TimeConstraint::Latest(d(8)))
+    });
+    let state = world.solve();
+    assert!(
+        state.constraint_violations.is_empty(),
+        "{:?}",
+        state.constraint_violations
+    );
+    assert!(span(&state, tests[2]).0 <= d(8));
+    // the others still follow each other without gaps
+    let mut starts: Vec<NaiveDate> = tests.iter().map(|t| span(&state, *t).0).collect();
+    starts.sort();
+    assert_eq!(starts, [d(1), d(8), d(15), d(22)]);
+}

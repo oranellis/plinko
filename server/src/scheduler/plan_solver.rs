@@ -789,6 +789,42 @@ impl<'a> PlanSolver<'a> {
         slip.max(0)
     }
 
+    /// The day after a ready task would end if it were placed now, without taking anything
+    fn end_if_placed(&self, v: &Vertex, ledger: &Ledger) -> Option<NaiveDate> {
+        let Vertex::Node(PlanNode::Task(id)) = v else {
+            return None;
+        };
+        let task = &self.plan.tasks()[id];
+        let start = self.open_start(v, task)?;
+        let placement = self.plan_task(task, Kind::Open(start), ledger).ok()?;
+        Some(placement.range.end())
+    }
+
+    /// A ready task with a hard date that placing `next` first would put in danger: `next` would
+    /// run past the day the dated task must start by, and if they share a person that task could
+    /// then start no sooner than `next` ends. Gives the dated task, its date and how many days
+    /// `next` would run past it, for the earliest date.
+    pub fn pressed(
+        &self,
+        ready: &[Vertex],
+        next: &Vertex,
+        ledger: &Ledger,
+    ) -> Option<(Vertex, NaiveDate, i64)> {
+        let dates = self.hard_dates();
+        let mut dated: Vec<(NaiveDate, Vertex)> = ready
+            .iter()
+            .filter(|v| *v != next)
+            .filter_map(|v| Some((*dates.get(v)?, *v)))
+            .collect();
+        if dated.is_empty() {
+            return None;
+        }
+        dated.sort_by_key(|(date, v)| (*date, v.key()));
+        let end = self.end_if_placed(next, ledger)?;
+        let (date, v) = *dated.iter().find(|(date, _)| end > *date)?;
+        Some((v, date, (end - date).num_days()))
+    }
+
     /// The nodes with a hard date, with the date, and everything they wait on
     pub fn hard_chains(&self) -> Vec<(Vertex, NaiveDate, HashSet<Vertex>)> {
         let mut dated: Vec<_> = self.hard_dates().into_iter().collect();
