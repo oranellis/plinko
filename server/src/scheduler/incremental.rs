@@ -116,7 +116,7 @@ pub fn reschedule(
                 solver
             })
             .collect();
-        let mut states = combined::solve(solvers, &mut ledger);
+        let mut states = combined::solve(solvers, &mut ledger, true);
         for (i, state) in states.iter_mut().enumerate() {
             state.compare_to(&baselines[&ids[i]].state);
         }

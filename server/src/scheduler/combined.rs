@@ -126,7 +126,11 @@ impl View {
 /// ties. Finished and held work goes in first, then work in progress, then everything else one
 /// task at a time, whichever is next by `rank` among those ready, so each plan's delay counts
 /// against what it lost to others. Returns the plans in the order given.
-pub fn solve(mut solvers: Vec<PlanSolver>, ledger: &mut Ledger) -> Vec<PlanVolatileState> {
+pub fn solve(
+    mut solvers: Vec<PlanSolver>,
+    ledger: &mut Ledger,
+    compacted: bool,
+) -> Vec<PlanVolatileState> {
     for in_progress in [false, true] {
         for solver in &mut solvers {
             solver.claim_history(ledger, in_progress);
@@ -153,7 +157,9 @@ pub fn solve(mut solvers: Vec<PlanSolver>, ledger: &mut Ledger) -> Vec<PlanVolat
     for solver in &mut solvers {
         solver.sweep_stuck();
     }
-    compact(&mut solvers, &views, ledger);
+    if compacted {
+        compact(&mut solvers, &views, ledger);
+    }
     solvers.into_iter().map(PlanSolver::finish).collect()
 }
 

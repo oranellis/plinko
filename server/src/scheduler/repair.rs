@@ -118,6 +118,7 @@ fn run(
     ids: &[ShortId],
     baselines: &HashMap<ShortId, Cow<Baseline>>,
     repairs: &Repairs,
+    compacted: bool,
 ) -> Outcome {
     let mut ledger = Ledger::from_tenant(tenant, tenant.today());
     let solvers = ids
@@ -129,7 +130,7 @@ fn run(
             solver
         })
         .collect();
-    let mut states = combined::solve(solvers, &mut ledger);
+    let mut states = combined::solve(solvers, &mut ledger, compacted);
     let mut reached = Vec::new();
     for (i, state) in states.iter_mut().enumerate() {
         state.compare_to(&baselines[&ids[i]].state);
@@ -354,7 +355,8 @@ fn reassign(
 /// Schedules the plans, in the order given, then repairs the result in rounds. A round tries
 /// making the worst targets more urgent and moving work off the bottleneck people they wait on,
 /// each by rescheduling everything, and keeps the better one if it beats the worst effective delay
-/// and then the total. Stops when nothing does or after `MAX_ROUNDS`.
+/// and then the total. Stops when nothing does or after `MAX_ROUNDS`. Compaction is left for the
+/// last schedule.
 pub fn solve(
     tenant: &Tenant,
     ids: &[ShortId],
@@ -369,28 +371,31 @@ pub fn solve(
         ..none.clone()
     };
     if all.urgent.iter().all(HashSet::is_empty) {
-        let start = run(tenant, ids, baselines, &none);
-        return improve(tenant, ids, baselines, none, start);
+        let start = run(tenant, ids, baselines, &none, false);
+        let best = improve(tenant, ids, baselines, none, start);
+        return run(tenant, ids, baselines, &best.repairs, true);
     }
     // improving from both ends, with every hard date going first and with none of them doing so,
     // as each finds results the other does not, then the better is kept
     let (first, second) = std::thread::scope(|scope| {
         let from_all = scope.spawn(|| {
-            let start = run(tenant, ids, baselines, &all);
+            let start = run(tenant, ids, baselines, &all, false);
             improve(tenant, ids, baselines, all.clone(), start)
         });
-        let start = run(tenant, ids, baselines, &none);
+        let start = run(tenant, ids, baselines, &none, false);
         let from_none = improve(tenant, ids, baselines, none.clone(), start);
         (
             from_all.join().expect("a schedule does not panic"),
             from_none,
         )
     });
-    if second.objective() < first.objective() {
+    let best = if second.objective() < first.objective() {
         second
     } else {
         first
-    }
+    };
+    // the rounds compare schedules without compaction, which only fills room in the end
+    run(tenant, ids, baselines, &best.repairs, true)
 }
 
 /// Repairs a schedule in rounds, each tries the changes below, scheduling everything again for
@@ -418,7 +423,7 @@ fn improve(
                 .flatten()
                 .map(|next| {
                     scope.spawn(|| {
-                        let outcome = run(tenant, ids, baselines, &next);
+                        let outcome = run(tenant, ids, baselines, &next, false);
                         (outcome, next)
                     })
                 })
