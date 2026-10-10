@@ -136,6 +136,8 @@ pub struct PlanSolver<'a> {
     urgent: HashSet<PlanNode>,
     /// What is waiting for what, so what has become ready is known without looking at everything
     ready: Readiness,
+    /// The open tasks and milestones with a hard date, and the date
+    dated: HashMap<Vertex, NaiveDate>,
 }
 
 /// Which nodes have everything they depend on settled, kept up to date as nodes settle, by their
@@ -204,7 +206,9 @@ impl<'a> PlanSolver<'a> {
             tighten: HashMap::new(),
             urgent: HashSet::new(),
             ready: Readiness::default(),
+            dated: HashMap::new(),
         };
+        solver.dated = solver.find_hard_dates();
         solver.ready = Readiness::new(&solver.order, &solver.net);
         for i in 0..solver.order.len() {
             if solver.ready.waiting[i] == 0 {
@@ -922,7 +926,7 @@ impl<'a> PlanSolver<'a> {
 
     /// The nodes with a hard date, with the date, and everything they wait on
     pub fn hard_chains(&self) -> Vec<(Vertex, NaiveDate, HashSet<Vertex>)> {
-        let mut dated: Vec<_> = self.hard_dates().into_iter().collect();
+        let mut dated: Vec<_> = self.hard_dates().iter().map(|(v, d)| (*v, *d)).collect();
         dated.sort_by_key(|(v, _)| v.key());
         dated
             .into_iter()
@@ -986,7 +990,11 @@ impl<'a> PlanSolver<'a> {
     }
 
     /// Open tasks and milestones with a date they must not start after, and that date
-    fn hard_dates(&self) -> HashMap<Vertex, NaiveDate> {
+    fn hard_dates(&self) -> &HashMap<Vertex, NaiveDate> {
+        &self.dated
+    }
+
+    fn find_hard_dates(&self) -> HashMap<Vertex, NaiveDate> {
         let nodes = self.order.iter();
         let hard =
             nodes.filter(|v| self.is_open(v) || matches!(v, Vertex::Node(PlanNode::Milestone(_))));
@@ -1053,7 +1061,7 @@ impl<'a> PlanSolver<'a> {
             goals = everything;
         }
         let mut late = goals;
-        for (v, date) in self.hard_dates() {
+        for (v, date) in self.hard_dates().iter().map(|(v, d)| (*v, *d)) {
             let Some(range) = ranges.get(&v) else {
                 continue;
             };

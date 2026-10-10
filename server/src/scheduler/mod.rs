@@ -45,10 +45,20 @@ pub fn prepare(tenant: &mut Tenant) {
         .filter(|id| tenant.baseline(id).is_none())
         .copied()
         .collect();
-    let solved: Vec<_> = missing
-        .iter()
-        .map(|id| (*id, baseline(tenant, id)))
-        .collect();
+    // each plan on its own, so each on its own thread
+    let solved: Vec<_> = std::thread::scope(|scope| {
+        let running: Vec<_> = missing
+            .iter()
+            .map(|id| {
+                let tenant = &*tenant;
+                (*id, scope.spawn(move || baseline(tenant, id)))
+            })
+            .collect();
+        running
+            .into_iter()
+            .map(|(id, r)| (id, r.join().expect("a schedule does not panic")))
+            .collect()
+    });
     for (id, solved) in solved {
         tenant.store_baseline(id, solved);
     }

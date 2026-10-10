@@ -614,7 +614,9 @@ fn main() {
             dates.insert(t.id, constraint);
         }
         let mut world = make(&opts, &dates, &HashMap::new());
+        let prep = Instant::now();
         scheduler::prepare(&mut world.tenant);
+        println!("  prepare {:.2}s", prep.elapsed().as_secs_f64());
         let started = Instant::now();
         let state = scheduler::solve_tenant(&world.tenant);
         let seconds = started.elapsed().as_secs_f64();
