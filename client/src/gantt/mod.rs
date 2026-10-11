@@ -21,7 +21,7 @@ use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{CanvasRenderingContext2d, PointerEvent, WheelEvent};
 
 use crate::gantt::{
-    arrange::Mark,
+    arrange::{Arrangement, Mark},
     draw::{Frame, Hits, paint_header, paint_links, paint_marks, paint_notes},
     layout::{Bounds, DAY_WIDTH, Rect, Viewport},
     links::{Link, Role},
@@ -276,9 +276,20 @@ pub fn Gantt(
 
     let layers = StoredValue::new_local(None::<layers::Layers>);
     let scene_gen = StoredValue::new_local(0u64);
+    // the layers are only drawn again for a scene that has something different on it
+    let drawn = StoredValue::new_local(None::<(NaiveDate, Arrangement)>);
     Effect::new(move |_| {
-        scene.track();
-        scene_gen.update_value(|g| *g += 1);
+        scene.with(|s| {
+            let same = drawn.with_value(|d| {
+                d.as_ref().is_some_and(|(origin, arrangement)| {
+                    *origin == s.origin && *arrangement == s.arrangement
+                })
+            });
+            if !same {
+                drawn.set_value(Some((s.origin, s.arrangement.clone())));
+                scene_gen.update_value(|g| *g += 1);
+            }
+        });
     });
     let surface = StoredValue::new_local(None::<((u32, u32), std::rc::Rc<pen::Pen>)>);
     // draws what is on the chart, once a frame however many things changed since the last
