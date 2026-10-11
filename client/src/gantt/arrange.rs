@@ -38,6 +38,8 @@ pub struct Entry {
     pub violated: bool,
     /// Nothing depends on it
     pub leaf: bool,
+    /// It depends on nothing, so it begins where the plan does
+    pub rooted: bool,
     /// For a buffer: it has a day it is set to start on
     pub pinned: bool,
     pub target: bool,
@@ -55,6 +57,7 @@ pub struct Placed {
     pub look: Look,
     pub violated: bool,
     pub leaf: bool,
+    pub rooted: bool,
     /// For a buffer: it has a day it is set to start on
     pub pinned: bool,
     pub target: bool,
@@ -109,6 +112,7 @@ fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
         look: entry.look,
         violated: entry.violated,
         leaf: entry.leaf,
+        rooted: entry.rooted,
         pinned: entry.pinned,
         target: entry.target,
         lane,
@@ -174,6 +178,7 @@ pub fn arrange(plan_start: NaiveDate, entries: &[Entry]) -> Arrangement {
         look: Look::Completed,
         violated: false,
         leaf: false,
+        rooted: false,
         pinned: false,
         target: false,
         lane,
@@ -207,6 +212,7 @@ mod tests {
             look: Look::NotStarted,
             violated: false,
             leaf: false,
+            rooted: false,
             pinned: false,
             target: false,
             members: Vec::new(),

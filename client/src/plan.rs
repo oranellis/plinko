@@ -9,7 +9,7 @@ use plinko::{
     scheduler::state::PlanVolatileState,
     types::{
         crud::Crud,
-        dependency::{Dependency, PlanNode},
+        dependency::{Dependency, DependencyNode, PlanNode},
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
@@ -53,7 +53,7 @@ fn task_patch(id: Uuid) -> TaskPatch {
 }
 
 /// Anchors a new item to the start of its group, so it gets a place on the schedule
-type Anchor = fn(Uuid, ShortId, &crate::sync::Sync, Box<dyn FnOnce(Option<Created>)>);
+type Anchor = fn(Uuid, ShortId, &crate::sync::Sync, Dependency, Box<dyn FnOnce(Option<Created>)>);
 
 #[derive(Clone, Copy)]
 enum Kind {
@@ -311,11 +311,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     name: "New task".to_string(),
                     parent,
                 })),
-                |id, plan, sync, then| {
+                |id, plan, sync, start, then| {
                     // the person creating it does it for half a day by default
                     let me = sync.me.get_untracked().map(|m| Worker::User(m.id));
                     let patch = TaskPatch {
-                        dependencies: Some(vec![Dependency::default()]),
+                        dependencies: Some(vec![start]),
                         allocations: me.zip(Workload::new(4).ok()).map(|w| HashMap::from([w])),
                         ..task_patch(id)
                     };
@@ -328,13 +328,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     name: "New milestone".to_string(),
                     parent,
                 })),
-                |id, plan, sync, then| {
+                |id, plan, sync, start, then| {
                     let patch = plinko::types::milestone::MilestonePatch {
                         id,
                         name: None,
                         parent: None,
                         time_constraint: None,
-                        dependencies: Some(vec![Dependency::default()]),
+                        dependencies: Some(vec![start]),
                         persistent_state: None,
                     };
                     sync.plan_then(plan, PlanUpdate::Milestone(Crud::Update(patch)), then);
@@ -346,11 +346,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     name: "New group".to_string(),
                     parent,
                 })),
-                |id, plan, sync, then| {
+                |id, plan, sync, start, then| {
                     let patch = plinko::types::task_group::TaskGroupPatch {
                         id,
                         name: None,
-                        dependencies: Some(vec![Dependency::default()]),
+                        dependencies: Some(vec![start]),
                         parent: None,
                     };
                     sync.plan_then(plan, PlanUpdate::TaskGroup(Crud::Update(patch)), then);
@@ -362,11 +362,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     parent,
                     duration: 3,
                 })),
-                |id, plan, sync, then| {
+                |id, plan, sync, start, then| {
                     let patch = plinko::types::plan_buffer::PlanBufferPatch {
                         id,
                         parent: None,
-                        dependencies: Some(vec![Dependency::default()]),
+                        dependencies: Some(vec![start]),
                         set_start_day: None,
                         duration: None,
                     };
@@ -374,6 +374,21 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 },
             ),
         };
+        // top level items begin from the plan's default start node when it has one
+        let start = sync
+            .tenant
+            .with_untracked(|t| {
+                let p = t.as_ref()?.plans().get(&plan)?;
+                let node = p
+                    .scheduler_data()
+                    .default_start()
+                    .filter(|_| parent == Parent::PlanStart)?;
+                Some(Dependency {
+                    node: DependencyNode::Node(node),
+                    lag: 0,
+                })
+            })
+            .unwrap_or_default();
         let current = tab.get_untracked();
         sync.plan_then(plan, update, move |created| {
             if let Some(Created::Item(id)) = created {
@@ -382,7 +397,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     fresh.try_set(Some(id));
                     navigate(Route::Plan(plan, current, Some(id)));
                 });
-                depends(id, plan, &sync, open);
+                depends(id, plan, &sync, start, open);
             }
         });
     };

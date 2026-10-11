@@ -322,6 +322,20 @@ fn remove_through(plan: &mut Plan, node: PlanNode) {
 }
 
 #[test]
+fn removing_the_default_start_clears_it() {
+    let mut plan = new_plan();
+    let a = PlanNode::Task(add_task(&mut plan, Parent::PlanStart));
+    let patch = plinko::planner::plan::PlanSchedulerDataPatch {
+        start_date: None,
+        priority: None,
+        default_start: Some(Some(a)),
+    };
+    plan.apply_update(PlanUpdate::SchedulerData(patch)).unwrap();
+    remove_through(&mut plan, a);
+    assert_eq!(plan.scheduler_data().default_start(), None);
+}
+
+#[test]
 fn removing_an_item_joins_what_was_before_to_what_was_after() {
     let mut plan = new_plan();
     let ids: Vec<Uuid> = (0..4)

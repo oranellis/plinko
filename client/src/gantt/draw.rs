@@ -390,6 +390,18 @@ impl Shape {
         }
     }
 
+    fn bounds(&self) -> Rect {
+        match *self {
+            Shape::Round(rect, _) => rect,
+            Shape::Diamond(x, y, r) => Rect {
+                x: x - r,
+                y: y - r,
+                w: 2.0 * r,
+                h: 2.0 * r,
+            },
+        }
+    }
+
     /// Whether any of it can be seen on a chart `width` by `height`
     fn shows(&self, width: f64, height: f64) -> bool {
         let (x, y, w, h) = match *self {
@@ -428,6 +440,12 @@ pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
             shape.trace(ctx);
             ctx.set_fill_style_str("#c4b5fd");
             ctx.fill();
+        }
+        // what depends on nothing begins where the plan does, shown like the end of a leaf
+        if frame.hover == Some(mark) && p.rooted && p.kind != Kind::Group {
+            edge_wash(ctx, shape.bounds(), ("167,139,250", 0.85), true, |c| {
+                shape.trace(c)
+            });
         }
         shape.trace(ctx);
         stroke_border(ctx, border(frame, mark, p.target, &marked));
@@ -716,11 +734,22 @@ fn stroke_border(ctx: &Pen, outline: Option<(String, f64)>) {
 
 /// The blue wash on the right of something nothing depends on, kept inside the path `shape` draws
 fn leaf_wash(ctx: &Pen, rect: Rect, shape: impl Fn(&Pen)) {
+    edge_wash(ctx, rect, ("30,136,229", 0.65), false, shape);
+}
+
+/// A colour (as `r,g,b` and opacity) fading in over the last 28 pixels of the right edge of
+/// `rect`, or the first of the left, kept inside the path `shape` draws
+fn edge_wash(ctx: &Pen, rect: Rect, (rgb, alpha): (&str, f64), left: bool, shape: impl Fn(&Pen)) {
     let width = rect.w.min(28.0);
-    let gradient = ctx.create_linear_gradient(rect.x + rect.w - width, 0.0, rect.x + rect.w, 0.0);
-    let _ = gradient.add_color_stop(0.0, "rgba(30,136,229,0)");
-    let _ = gradient.add_color_stop(1.0, "rgba(30,136,229,0.65)");
-    // the gradient is clear before it starts, so filling the whole shape washes only the end
+    let (clear, solid) = if left {
+        (rect.x + width, rect.x)
+    } else {
+        (rect.x + rect.w - width, rect.x + rect.w)
+    };
+    let gradient = ctx.create_linear_gradient(clear, 0.0, solid, 0.0);
+    let _ = gradient.add_color_stop(0.0, &format!("rgba({rgb},0)"));
+    let _ = gradient.add_color_stop(1.0, &format!("rgba({rgb},{alpha})"));
+    // the gradient is clear before it starts, so filling the whole shape washes only the edge
     shape(ctx);
     ctx.set_fill_style_canvas_gradient(&gradient);
     ctx.fill();

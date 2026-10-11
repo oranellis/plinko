@@ -1,4 +1,4 @@
-//! A plan's settings: when it starts, its targets, who is in it and how they are tagged, the days
+//! A plan's settings: what new items start from, its targets, who is in it and how they are tagged, the days
 //! work may be done on, and removing it.
 
 use std::collections::HashSet;
@@ -20,10 +20,9 @@ use uuid::Uuid;
 
 use crate::{
     availability::{AffinityWindow, AvailabilityWindow},
-    datepicker::DateInput,
     model::{self, node_name},
     nav::{Availability, Route, navigate},
-    ui::{Field, Number, Select, Text, use_sync},
+    ui::{Choice, Field, Number, Picker, Select, Text, use_sync},
 };
 
 #[component]
@@ -32,21 +31,48 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
     let current = sync.tenant.with_untracked(|t| {
         t.as_ref().and_then(|t| t.plans().get(&plan)).map(|p| {
             (
-                *p.scheduler_data().start_date(),
+                p.scheduler_data().default_start(),
                 p.scheduler_data().priority(),
             )
         })
     });
-    let Some((start, priority)) = current else {
+    let Some((default_start, priority)) = current else {
         return view! { <p>"This plan is gone."</p> }.into_any();
     };
     let hours = RwSignal::new(false);
-    let start = RwSignal::new(start);
+    let default_start = RwSignal::new(
+        default_start
+            .map(|n| n.id().to_string())
+            .unwrap_or_default(),
+    );
+    let starts = Signal::derive(move || {
+        let none = Choice::new("", "None", "");
+        let nodes = sync.tenant.with(|t| {
+            let p = t.as_ref()?.plans().get(&plan)?;
+            let mut named: Vec<Choice> = model::nodes(p)
+                .into_iter()
+                .map(|n| Choice::new(n.id().to_string(), node_name(p, n), ""))
+                .collect();
+            named.sort_by(|a, b| a.label.cmp(&b.label).then(a.value.cmp(&b.value)));
+            Some(named)
+        });
+        std::iter::once(none)
+            .chain(nodes.unwrap_or_default())
+            .collect::<Vec<_>>()
+    });
     let priority = RwSignal::new(i64::from(priority));
     let save = move |_| {
+        let chosen = default_start.get_untracked();
+        let node = sync.tenant.with_untracked(|t| {
+            let p = t.as_ref()?.plans().get(&plan)?;
+            model::nodes(p)
+                .into_iter()
+                .find(|n| n.id().to_string() == chosen)
+        });
         let patch = PlanSchedulerDataPatch {
-            start_date: Some(start.get_untracked()),
+            start_date: None,
             priority: Some(priority.get_untracked().clamp(-1000, 1000) as i32),
+            default_start: Some(node),
         };
         sync.plan(plan, PlanUpdate::SchedulerData(patch));
     };
@@ -58,7 +84,14 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
         <div class="people">
             <section>
                 <h2>"Plan Settings"</h2>
-                <Field label="Start Date"><DateInput day=start /></Field>
+                <Field label="Default Start Node (new items depend on it to begin with)">
+                    <Picker
+                        value=default_start
+                        choices=starts
+                        on_change=Callback::new(move |v| default_start.set(v))
+                        placeholder="None"
+                    />
+                </Field>
                 <Field label="Priority (higher goes first when several plans want the same people)">
                     <Number value=priority on_input=Callback::new(move |n| priority.set(n)) />
                 </Field>

@@ -106,5 +106,15 @@ await a.evaluate(() => {
 });
 await click(a, "Add"); await sleep(1500);
 expect((await text(m)).includes("Collab plan"), "adding the member to the plan shows it to them live");
+
+// a default start node: no start date in the settings, and new items depend on the node
+expect(!(await text(a)).includes("Start Date"), "plan settings have no start date");
+await a.evaluate(() => document.querySelector("section button.picker").click());
+await a.waitForSelector(".popover");
+await a.evaluate(() => [...document.querySelectorAll(".popover li button")].find((b) => b.textContent === "Design v2").click());
+await click(a, "Save Plan Settings"); await sleep(800);
+await click(a, "Back"); await sleep(400);
+await add(a, "Add task"); await a.waitForSelector(".editor form");
+expect(await a.evaluate(() => [...document.querySelectorAll(".editor .picker")].some((p) => p.textContent.includes("Design v2"))), "a new item depends on the default start node");
 console.log("errors:", errors);
 await browser.close();

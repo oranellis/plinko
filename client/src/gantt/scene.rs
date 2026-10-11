@@ -164,6 +164,10 @@ impl Context<'_> {
                         && !model::ends_groups(self.plan, self.state, node)
                             .iter()
                             .any(|group| self.depended.contains(group)),
+                    rooted: model::parent_of(self.plan, node) == Parent::PlanStart
+                        && model::dependencies(self.plan, node)
+                            .iter()
+                            .all(|d| d.node == DependencyNode::ParentStart),
                     pinned: matches!(node, PlanNode::PlanBuffer(id)
                         if self.plan.plan_buffers().get(&id).is_some_and(|b| b.set_start_day().is_some())),
                     target: self.targets.contains(&node),
