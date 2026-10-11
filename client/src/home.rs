@@ -1,6 +1,6 @@
 //! Where you land: what you are doing today and next, and the plans you go to most.
 
-use chrono::NaiveDate;
+use chrono::{Days, NaiveDate};
 use leptos::prelude::*;
 use plinko::types::task::Status;
 
@@ -15,6 +15,9 @@ use crate::{
 
 /// How many tasks still to start are shown
 const UPCOMING: usize = 4;
+
+/// How many days ahead the upcoming work is laid out over, a column for each starting tomorrow on
+const DAYS: u64 = 7;
 
 #[component]
 pub fn Home() -> impl IntoView {
@@ -73,12 +76,31 @@ pub fn Home() -> impl IntoView {
             </section>
             <section>
                 <h2>"Upcoming Work"</h2>
+                <div class="day-labels" aria-hidden="true">
+                    {move || {
+                        let today = today();
+                        (1..=DAYS)
+                            .map(|ahead| {
+                                let label = if ahead == 1 {
+                                    "Tomorrow".to_string()
+                                } else {
+                                    (today + Days::new(ahead)).format("%a").to_string()
+                                };
+                                view! { <span>{label}</span> }
+                            })
+                            .collect_view()
+                    }}
+                </div>
                 <Show
                     when=move || next.with(|d| !d.is_empty())
                     fallback=|| view! { <p class="small">"Nothing is waiting to start."</p> }
                 >
                     <ul class="work">
-                        <For each=move || next.get() key=|t| crate::ui::hashed(t) children=move |t| view! { <Row task=t today=today() /> } />
+                        <For each=move || next.get() key=|t| crate::ui::hashed(t) children=move |t| {
+                            // under the day it starts on, today and what is late with tomorrow's
+                            let ahead = (t.start - today()).num_days().clamp(1, DAYS as i64);
+                            view! { <Row task=t today=today() column=(ahead - 1) as usize /> }
+                        } />
                     </ul>
                 </Show>
             </section>
@@ -92,7 +114,13 @@ pub fn Home() -> impl IntoView {
 
 /// A task with the button that moves it on: finish what is in progress, start what is waiting
 #[component]
-fn Row(task: MyTask, today: NaiveDate) -> impl IntoView {
+fn Row(
+    task: MyTask,
+    today: NaiveDate,
+    /// The day of the upcoming grid the start button sits in, none for a plain row
+    #[prop(optional)]
+    column: Option<usize>,
+) -> impl IntoView {
     let running = matches!(task.status, Status::InProgress);
     let late = if running {
         task.end < today
@@ -113,7 +141,7 @@ fn Row(task: MyTask, today: NaiveDate) -> impl IntoView {
         ("Start", Status::InProgress, IconKind::Play, "quick start")
     };
     view! {
-        <li class="row-task">
+        <li class="row-task" class:upcoming=column.is_some() style=column.map(|c| format!("--col:{c}"))>
             <button
                 type="button"
                 class=class
@@ -129,15 +157,17 @@ fn Row(task: MyTask, today: NaiveDate) -> impl IntoView {
                 href=href
                 on:click=move |_| reveal.set(Some((plan, id)))
             >
-                <strong>{task.name.clone()}</strong>
-                <span class="dates" class:late=late>
-                    {format!(
-                        "{} · {} to {}{}",
-                        task.plan_name,
-                        format::day(task.start),
-                        format::day(task.end),
-                        if late { " · overdue" } else { "" },
-                    )}
+                <span class="fade">
+                    <strong>{task.name.clone()}</strong>
+                    <span class="dates" class:late=late>
+                        {format!(
+                            "{} · {} to {}{}",
+                            task.plan_name,
+                            format::day(task.start),
+                            format::day(task.end),
+                            if late { " · overdue" } else { "" },
+                        )}
+                    </span>
                 </span>
             </a>
         </li>
