@@ -13,10 +13,11 @@ use crate::{
     ui::use_sync,
 };
 
-/// How many tasks still to start are shown
+/// The fewest tasks still to start that are shown, if there are that many
 const UPCOMING: usize = 4;
 
-/// How many days ahead the upcoming work is laid out over, a column for each starting tomorrow on
+/// How many days ahead the upcoming work is laid out over, a column for each starting tomorrow on,
+/// with one more for what starts later. Everything starting within them is shown.
 const DAYS: u64 = 7;
 
 #[component]
@@ -47,7 +48,9 @@ pub fn Home() -> impl IntoView {
                 .collect()
         });
         list.sort_by_key(|t| (t.start, t.end));
-        list.truncate(UPCOMING);
+        // all that start in the coming week, and the next ones after if that is under the fewest
+        let week = list.partition_point(|t| t.start <= today() + Days::new(DAYS));
+        list.truncate(week.max(UPCOMING));
         list
     });
     let cards = use_cards();
@@ -76,6 +79,7 @@ pub fn Home() -> impl IntoView {
             </section>
             <section>
                 <h2>"Upcoming Work"</h2>
+                <div class="upcoming-grid">
                 <div class="day-labels" aria-hidden="true">
                     {move || {
                         let today = today();
@@ -90,6 +94,7 @@ pub fn Home() -> impl IntoView {
                             })
                             .collect_view()
                     }}
+                    <span>"Later…"</span>
                 </div>
                 <Show
                     when=move || next.with(|d| !d.is_empty())
@@ -97,12 +102,14 @@ pub fn Home() -> impl IntoView {
                 >
                     <ul class="work">
                         <For each=move || next.get() key=|t| crate::ui::hashed(t) children=move |t| {
-                            // under the day it starts on, today and what is late with tomorrow's
-                            let ahead = (t.start - today()).num_days().clamp(1, DAYS as i64);
+                            // under the day it starts on, today and what is late with tomorrow's,
+                            // and what is further off in the last column
+                            let ahead = (t.start - today()).num_days().clamp(1, DAYS as i64 + 1);
                             view! { <Row task=t today=today() column=(ahead - 1) as usize /> }
                         } />
                     </ul>
                 </Show>
+                </div>
             </section>
             <section>
                 <h2>"Quick Access Plans"</h2>
