@@ -258,14 +258,13 @@ ul.work { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .row-task .item { padding: 6px 12px; border-radius: var(--radius); flex: 1; text-decoration: none; color: var(--text); }
 .dates.late { color: var(--danger-text); }
 /* the upcoming work lays out a column of --cell for each of the next days, the start button sits in
-   its day's column and the text follows it, fading out at the right edge of the card */
+   its day's column and the bar follows it, its text fading out at the right edge */
 :root { --cell: 46px; }
-.day-labels { display: grid; grid-template-columns: repeat(7, var(--cell)); margin: -4px 0 8px 4px; font-size: 10px; color: var(--muted); opacity: 0.6; text-align: center; }
+.day-labels { display: grid; grid-template-columns: repeat(7, var(--cell)); margin: -4px 0 8px 0; font-size: 10px; color: var(--muted); opacity: 0.6; text-align: center; }
 .row-task .fade { display: grid; gap: 2px; overflow: hidden; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent); }
-.row-task.upcoming { position: relative; display: block; }
+.row-task.upcoming { padding-left: calc(var(--col) * var(--cell) + (var(--cell) - 34px) / 2); }
 .row-task.upcoming .fade { white-space: nowrap; }
-.row-task.upcoming .item { padding-left: calc(4px + (var(--col) + 1) * var(--cell) + 6px); min-height: 46px; align-content: center; }
-.row-task.upcoming button.quick { position: absolute; top: 50%; transform: translateY(-50%); left: calc(4px + var(--col) * var(--cell) + (var(--cell) - 34px) / 2); z-index: 1; }
+.row-task.upcoming .item { min-width: 0; }
 button.quick { width: 34px; height: 34px; min-height: 0; padding: 0; display: grid; place-items: center; background: none; border: 1.5px solid var(--muted); border-radius: 8px; color: var(--muted); flex: none; }
 button.quick:hover { background: none; }
 button.quick.done:hover { border-color: var(--ok); color: var(--ok); }
