@@ -1,4 +1,5 @@
 // modules{{{
+use crate::helpers::double_option;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -238,6 +239,7 @@ impl Plan {
         };
         is_group_with_members
             || self.targets.values().any(|t| t.node() == node)
+            || self.scheduler_data.default_start == Some(node)
             || self.node_depended_on::<Task>(node)
             || self.node_depended_on::<Milestone>(node)
             || self.node_depended_on::<PlanBuffer>(node)
@@ -328,7 +330,12 @@ impl Plan {
                 Ok(())
             }
             PlanUpdate::Availability(update) => self.default_availability.apply_update(update),
-            PlanUpdate::SchedulerData(patch) => self.scheduler_data.apply_patch(patch),
+            PlanUpdate::SchedulerData(patch) => {
+                if let Some(Some(node)) = &patch.default_start {
+                    self.ensure_node_exists(node)?;
+                }
+                self.scheduler_data.apply_patch(patch)
+            }
         }
     }
 }
@@ -338,6 +345,9 @@ impl Plan {
 pub struct PlanSchedulerData {
     start_date: NaiveDate,
     priority: i32,
+    /// What new top level items depend on to begin with, set by clients for convenience
+    #[serde(default)]
+    default_start: Option<PlanNode>,
 }
 
 // impl PlanSchedulerData{{{
@@ -346,11 +356,16 @@ impl PlanSchedulerData {
         Self {
             start_date,
             priority: 0,
+            default_start: None,
         }
     }
 
     pub fn start_date(&self) -> &NaiveDate {
         &self.start_date
+    }
+
+    pub fn default_start(&self) -> Option<PlanNode> {
+        self.default_start
     }
 
     /// Added to each target's priority, positive treats the plan as further behind
@@ -367,6 +382,9 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
         if let Some(p) = patch.priority {
             self.priority = p;
         }
+        if let Some(node) = patch.default_start {
+            self.default_start = node;
+        }
         Ok(())
     }
 }
@@ -376,4 +394,11 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 pub struct PlanSchedulerDataPatch {
     pub start_date: Option<NaiveDate>,
     pub priority: Option<i32>,
+    /// The node new top level items depend on, `Some(None)` to have none
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
+    pub default_start: Option<Option<PlanNode>>,
 }

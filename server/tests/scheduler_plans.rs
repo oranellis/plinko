@@ -198,6 +198,7 @@ impl Plans {
         let patch = PlanSchedulerDataPatch {
             start_date: None,
             priority: Some(priority),
+            default_start: None,
         };
         self.update(plan, PlanUpdate::SchedulerData(patch));
     }

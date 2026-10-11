@@ -330,10 +330,42 @@ fn plan_priority_defaults_to_zero_and_is_patched() {
     let patch = PlanSchedulerDataPatch {
         start_date: None,
         priority: Some(-3),
+        default_start: None,
     };
     plan.apply_update(PlanUpdate::SchedulerData(patch)).unwrap();
     assert_eq!(plan.scheduler_data().priority(), -3);
     assert_eq!(*plan.scheduler_data().start_date(), d(2024, 1, 1));
+}
+
+#[test]
+fn the_default_start_is_an_existing_node_that_stays_while_it_is_set() {
+    let mut plan = new_plan();
+    let task = add_task(&mut plan, Parent::PlanStart);
+    let set = |node| {
+        PlanUpdate::SchedulerData(PlanSchedulerDataPatch {
+            start_date: None,
+            priority: None,
+            default_start: Some(node),
+        })
+    };
+    assert!(plan.scheduler_data().default_start().is_none());
+    assert!(
+        plan.apply_update(set(Some(PlanNode::Task(Uuid::now_v7()))))
+            .is_err()
+    );
+    plan.apply_update(set(Some(PlanNode::Task(task)))).unwrap();
+    assert_eq!(
+        plan.scheduler_data().default_start(),
+        Some(PlanNode::Task(task))
+    );
+    assert!(
+        plan.apply_update(PlanUpdate::Task(Crud::Remove(task)))
+            .is_err()
+    );
+    plan.apply_update(set(None)).unwrap();
+    assert!(plan.scheduler_data().default_start().is_none());
+    plan.apply_update(PlanUpdate::Task(Crud::Remove(task)))
+        .unwrap();
 }
 
 fn todo(items: &[(&str, bool)]) -> BlockContent {

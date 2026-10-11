@@ -980,6 +980,7 @@ fn what_hangs_from_a_plan_start_in_the_future_begins_on_that_day_and_milestones_
     let patch = PlanSchedulerDataPatch {
         start_date: Some(d(10)),
         priority: None,
+        default_start: None,
     };
     world.plan_update(PlanUpdate::SchedulerData(patch));
     let first = world.task(1, &[(user(alice), 8)], &[start()]);

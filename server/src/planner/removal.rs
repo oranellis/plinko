@@ -4,7 +4,12 @@
 use uuid::Uuid;
 
 use crate::{
-    planner::{graph, plan::Plan, plan_entity::PlanItem, plan_update::PlanUpdate},
+    planner::{
+        graph,
+        plan::{Plan, PlanSchedulerDataPatch},
+        plan_entity::PlanItem,
+        plan_update::PlanUpdate,
+    },
     types::{
         crud::Crud,
         dependency::{Dependency, DependencyNode, PlanNode},
@@ -142,6 +147,13 @@ impl Plan {
                 .into_iter()
                 .map(|id| PlanUpdate::Target(Crud::Remove(id))),
         );
+        if self.scheduler_data().default_start() == Some(node) {
+            updates.push(PlanUpdate::SchedulerData(PlanSchedulerDataPatch {
+                start_date: None,
+                priority: None,
+                default_start: Some(None),
+            }));
+        }
         updates.push(PlanUpdate::remove(node));
         updates
     }
