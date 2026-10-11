@@ -9,7 +9,7 @@
   background: var(--bg);
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; height: 100%; touch-action: pan-x pan-y; background: var(--bg); overflow: hidden; -webkit-font-smoothing: antialiased; }
 body { overscroll-behavior: none; }
 h1 { font-size: 20px; font-weight: 600; margin: 0; color: var(--title); }
 h2 { font-size: 16px; font-weight: 600; margin: 0; color: var(--title); }
@@ -87,10 +87,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .bar h1 { margin-right: auto; }
 
 /* plans */
-.cards { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.cards { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
 .card { display: grid; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; text-decoration: none; color: var(--text); }
 .card:hover { background: var(--raised); border-color: var(--accent); }
-.cards li { position: relative; }
+.cards li { position: relative; min-width: 0; }
+.card { min-width: 0; overflow-wrap: anywhere; }
 .card { height: 100%; }
 button.star { position: absolute; top: 10px; right: 10px; background: none; padding: 2px 6px; min-height: 0; font-size: 18px; line-height: 1; color: #555; }
 button.star:hover { background: var(--raised); color: #8a7a2a; }
@@ -250,7 +251,8 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .menu a:hover, .menu button:hover { background: var(--raised); }
 
 /* the home page */
-.home { display: grid; gap: 20px; max-width: 900px; margin: 0 auto; }
+.home { display: grid; gap: 20px; max-width: 900px; margin: 0 auto; min-width: 0; }
+.home > section { min-width: 0; }
 .home section { display: grid; gap: 8px; }
 .home h2 { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
 ul.work { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -260,7 +262,8 @@ ul.work { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 /* the upcoming work lays out a column of --cell for each of the next days, the start button sits in
    its day's column and the bar follows it, its text fading out at the right edge */
 :root { --cell: 58px; }
-.upcoming-grid { position: relative; padding-bottom: 28px; margin-bottom: -12px; }
+.upcoming-scroll { overflow-x: auto; max-width: 100%; margin-bottom: -12px; scrollbar-width: thin; }
+.upcoming-grid { position: relative; padding-bottom: 28px; min-width: calc(8 * var(--cell) + 220px); }
 /* faint lines between the days that fade out below the last row */
 .upcoming-grid::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: calc(8 * var(--cell) - 1px); pointer-events: none;
   background: linear-gradient(rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.14)) no-repeat calc(7 * var(--cell) - 3px) 0 / 3px 100%,
@@ -360,9 +363,10 @@ svg.pie { display: block; margin: 0 auto; }
 .list .row.line { min-height: 26px; padding: 0 2px 0 8px; font-size: 14px; }
 table.grid.fixed.alloctable th:not(.name), table.grid.fixed.alloctable td:not(.name) { width: 36px; min-width: 36px; max-width: 36px; }
 table.alloctable th.off, table.alloctable td.off { background: #1b1b1c; }
-.alloc.edge, .alloc.grabbing { cursor: col-resize; }
-.alloc.grabbing { user-select: none; }
-.alloc.edge td.name button, .alloc.grabbing td.name button { cursor: col-resize; }
+.alloc.grabbing { user-select: none; cursor: col-resize; }
+.alloc.grabbing td.name button { cursor: col-resize; }
+/* what the edge of the names is taken hold of by, wide enough for a finger and not scrolled with the days */
+.alloc-grip { position: absolute; top: 0; bottom: 0; width: 28px; z-index: 20; cursor: col-resize; touch-action: none; }
 table.alloctable thead tr.months th.mcell { overflow: visible; padding: 0; }
 table.alloctable thead tr.months th.mcell.starts { z-index: 3; }
 .monthbox { position: absolute; left: 0; top: 0; height: 100%; display: flex; justify-content: flex-start; align-items: center; pointer-events: none; }

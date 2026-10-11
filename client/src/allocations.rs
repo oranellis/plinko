@@ -26,10 +26,12 @@ use crate::{
 const DAY_WIDTH: f64 = 36.0;
 /// How wide the column of names starts, and the least and most it can be dragged to
 const NAME_WIDTH: f64 = 240.0;
-const NAME_LEAST: f64 = 120.0;
+const NAME_LEAST: f64 = 96.0;
+/// On a screen narrower than this the names start as a share of it, so the days have room
+const NAME_SHARE: f64 = 0.38;
+/// The room kept for days when the names are dragged wider
+const DAYS_ROOM: f64 = 80.0;
 const NAME_MOST: f64 = 600.0;
-/// How close to the edge of the names a press has to be to take hold of it
-const GRIP: f64 = 5.0;
 /// The weeks shown from before the current one
 const BEFORE: u64 = 2;
 /// The fewest weeks shown, and how many more than the scroll has reached
@@ -154,6 +156,7 @@ pub fn Allocations(
             .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
     });
     let scroller = NodeRef::<html::Div>::new();
+    let grip = NodeRef::<html::Div>::new();
     let name_width = RwSignal::new(NAME_WIDTH);
     // where the line between the task names and the plan names falls
     let task_width = Memo::new(move |_| {
@@ -172,13 +175,18 @@ pub fn Allocations(
             plans + 4.0,
         )
     });
-    // dragging the edge of the names
+    // dragging the edge of the names by the grip over it, which a finger can take hold of
     let dragging = RwSignal::new(false);
-    let near_edge = move |ev: &leptos::ev::PointerEvent| {
-        let left = scroller
-            .get_untracked()
-            .map_or(0.0, |s| s.get_bounding_client_rect().left());
-        (f64::from(ev.client_x()) - left - name_width.get_untracked()).abs() <= GRIP
+    let drag_to = move |ev: &leptos::ev::PointerEvent| {
+        let Some(s) = scroller.get_untracked() else {
+            return;
+        };
+        let (left, width) = (
+            s.get_bounding_client_rect().left(),
+            f64::from(s.client_width()),
+        );
+        let most = NAME_MOST.min((width - DAYS_ROOM).max(NAME_LEAST));
+        name_width.set((f64::from(ev.client_x()) - left).clamp(NAME_LEAST, most));
     };
     // weeks shown, which grow as the table is scrolled forward and shrink as it comes back
     let weeks = RwSignal::new(LEAST);
@@ -212,7 +220,12 @@ pub fn Allocations(
         }
     };
     Effect::new(move |_| {
-        if scroller.get().is_some() {
+        if let Some(element) = scroller.get() {
+            // on a small screen the names start narrower, and the days get the rest
+            let width = f64::from(element.client_width());
+            if width > 0.0 {
+                name_width.set((width * NAME_SHARE).clamp(NAME_LEAST, NAME_WIDTH));
+            }
             to_today();
         }
     });
@@ -307,32 +320,6 @@ pub fn Allocations(
                                     slide.with_value(|s| s.push(by));
                                 }
                             }
-                            on:pointerdown=move |ev| {
-                                if near_edge(&ev) {
-                                    dragging.set(true);
-                                    if let Some(s) = scroller.get_untracked() {
-                                        let _ = s.set_pointer_capture(ev.pointer_id());
-                                    }
-                                    ev.prevent_default();
-                                }
-                            }
-                            on:pointermove=move |ev| {
-                                if dragging.get_untracked() {
-                                    let left = scroller.get_untracked().map_or(0.0, |s| s.get_bounding_client_rect().left());
-                                    name_width.set((f64::from(ev.client_x()) - left).clamp(NAME_LEAST, NAME_MOST));
-                                } else if let Some(s) = scroller.get_untracked() {
-                                    let _ = s.class_list().toggle_with_force("edge", near_edge(&ev));
-                                }
-                            }
-                            on:pointerup=move |ev| {
-                                if dragging.get_untracked() {
-                                    dragging.set(false);
-                                    if let Some(s) = scroller.get_untracked() {
-                                        let _ = s.release_pointer_capture(ev.pointer_id());
-                                    }
-                                    measure();
-                                }
-                            }
                         >
                             <table class="grid fixed alloctable">
                                 <colgroup>
@@ -419,6 +406,28 @@ pub fn Allocations(
                                 </tbody>
                             </table>
                         </div>
+                        <div
+                            class="alloc-grip"
+                            class:grabbing=move || dragging.get()
+                            style=move || format!("left:{}px", name_width.get() - 14.0)
+                            node_ref=grip
+                            on:pointerdown=move |ev| {
+                                dragging.set(true);
+                                if let Some(g) = grip.get_untracked() {
+                                    let _ = g.set_pointer_capture(ev.pointer_id());
+                                }
+                                ev.prevent_default();
+                            }
+                            on:pointermove=move |ev| if dragging.get_untracked() { drag_to(&ev) }
+                            on:pointerup=move |ev| {
+                                dragging.set(false);
+                                if let Some(g) = grip.get_untracked() {
+                                    let _ = g.release_pointer_capture(ev.pointer_id());
+                                }
+                                measure();
+                            }
+                            on:pointercancel=move |_| dragging.set(false)
+                        ></div>
                     </Show>
                 </div>
                 {move || {

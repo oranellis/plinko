@@ -79,7 +79,7 @@ pub fn Home() -> impl IntoView {
             </section>
             <section>
                 <h2>"Upcoming Work"</h2>
-                <div class="upcoming-grid">
+                <div class="upcoming-scroll"><div class="upcoming-grid">
                 <div class="day-labels" aria-hidden="true">
                     {move || {
                         let today = today();
@@ -109,7 +109,7 @@ pub fn Home() -> impl IntoView {
                         } />
                     </ul>
                 </Show>
-                </div>
+                </div></div>
             </section>
             <section>
                 <h2>"Quick Access Plans"</h2>

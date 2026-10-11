@@ -550,7 +550,12 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
         }
     };
     view! {
-        <div class="addmenu" on:mouseenter=move |_| over.set(true) on:mouseleave=move |_| over.set(false)>
+        // hovering opens it for a mouse only, a touch also sends a hover that nothing ends
+        <div
+            class="addmenu"
+            on:pointerenter=move |ev| over.set(ev.pointer_type() == "mouse")
+            on:pointerleave=move |_| over.set(false)
+        >
             <button
                 type="button"
                 class="toolbar-btn"
@@ -571,7 +576,10 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
                 </div>
             </Show>
             <Show when=move || pinned.get()>
-                <div class="menu-backdrop" on:click=move |_| pinned.set(false)></div>
+                <div class="menu-backdrop" on:click=move |_| {
+                    pinned.set(false);
+                    over.set(false);
+                }></div>
             </Show>
         </div>
     }

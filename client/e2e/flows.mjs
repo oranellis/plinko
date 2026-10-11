@@ -5,10 +5,10 @@ const base = process.env.PLINKO_URL ?? "http://127.0.0.1:3411";
 const browser = await puppeteer.launch({ executablePath: process.env.CHROMIUM ?? "chromium", args: ["--no-sandbox"], headless: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const errors = [];
-async function session(width = 1280, height = 800) {
+async function session(width = 1280, height = 800, touch = false) {
   const context = await browser.createBrowserContext();
   const page = await context.newPage();
-  await page.setViewport({ width, height });
+  await page.setViewport({ width, height, isMobile: touch, hasTouch: touch });
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("401")) errors.push(m.text()); });
   return page;
@@ -116,5 +116,27 @@ await click(a, "Save Plan Settings"); await sleep(800);
 await click(a, "Back"); await sleep(400);
 await add(a, "Add task"); await a.waitForSelector(".editor form");
 expect(await a.evaluate(() => [...document.querySelectorAll(".editor .picker")].some((p) => p.textContent.includes("Design v2"))), "a new item depends on the default start node");
+
+// on a phone nothing is wider than the screen, the names are balanced against the days, the grip
+// moves by touch and the add menu goes away when it is tapped off
+const phone = await session(390, 780, true);
+await login(phone, "admin@example.com", "password123");
+const overflow = await phone.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth, [...document.querySelectorAll(".home *")].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1 && !e.closest(".upcoming-scroll")).length]);
+expect(overflow[0] <= overflow[1] && overflow[2] === 0, "the home page fits the screen on a phone");
+await phone.goto(`${base}/#/allocations`); await sleep(800);
+const widthOf = () => phone.evaluate(() => parseFloat(getComputedStyle(document.querySelector(".alloc")).getPropertyValue("--name-w")));
+const narrow = await widthOf();
+expect(narrow > 0 && narrow <= 390 * 0.4, "the names start narrower on a phone");
+const grip = await phone.evaluate(() => { const r = document.querySelector(".alloc-grip").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + 100 }; });
+await phone.touchscreen.touchStart(grip.x, grip.y);
+for (let i = 1; i <= 6; i++) { await phone.touchscreen.touchMove(grip.x + 12 * i, grip.y); await sleep(30); }
+await phone.touchscreen.touchEnd(); await sleep(200);
+expect((await widthOf()) > narrow + 40, "the names edge drags freely by touch");
+await phone.goto(`${base}/#/plans`); await sleep(500);
+await phone.evaluate(() => document.querySelector("a.card").click()); await phone.waitForSelector(".plan");
+await phone.tap("button[aria-label=Add]"); await sleep(300);
+expect(!!(await phone.$(".addpop")), "the add menu opens on a tap");
+await phone.touchscreen.tap(200, 500); await sleep(300);
+expect(!(await phone.$(".addpop")), "the add menu closes when tapped off");
 console.log("errors:", errors);
 await browser.close();
