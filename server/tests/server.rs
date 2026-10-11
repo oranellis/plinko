@@ -333,7 +333,6 @@ async fn updates_are_applied_in_order_and_shared_with_those_who_may_see_them() {
     let plan = NewPlan {
         id: ShortId::new(),
         name: "Secret".to_string(),
-        start_date: today(),
     };
     send(
         &mut admin,
@@ -384,7 +383,6 @@ async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
         let new = NewPlan {
             id: ShortId::new(),
             name: "Plan".to_string(),
-            start_date: today(),
         };
         let add = TenantUpdateType::Plan(PlanTenantUpdate::Add(new));
         send(&mut socket, request, add).await;

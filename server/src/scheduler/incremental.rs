@@ -1,10 +1,7 @@
 //! Bringing a schedule up to date after updates without working all of it out again: what the
 //! updates cannot have changed stays where it was, and only the rest is placed, around it.
 
-use std::{
-    cmp::Reverse,
-    collections::{HashMap, HashSet},
-};
+use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 
@@ -16,6 +13,7 @@ use crate::{
         impact::{Change, PlanChange},
         ledger::Ledger,
         network::Network,
+        plan_order,
         plan_solver::PlanSolver,
         state::TenantVolatileState,
     },
@@ -56,20 +54,7 @@ pub fn reschedule(
         .keys()
         .map(|id| Some((*id, tenant.baseline(id)?)))
         .collect::<Option<_>>()?;
-    let mut order: Vec<_> = tenant
-        .plans()
-        .values()
-        .map(|plan| {
-            let end = baselines[plan.id()].state.end();
-            (
-                Reverse(end),
-                *plan.scheduler_data().start_date(),
-                *plan.id(),
-            )
-        })
-        .collect();
-    order.sort();
-    let ids: Vec<ShortId> = order.into_iter().map(|(_, _, id)| id).collect();
+    let ids = plan_order(tenant, |id| baselines[id].state.end());
     let moved: HashMap<ShortId, HashSet<Vertex>> = change
         .plans
         .iter()

@@ -170,8 +170,6 @@ impl TargetForecast {
 pub enum UnscheduledReason {
     /// The task was dropped, so it is out of the plan
     Dropped,
-    /// No chain of dependencies leads back to the plan start
-    NoPathToPlanStart,
     /// The workers the task asks for resolve to nobody, like a tag no one has or an empty group
     NoEligibleWorkers,
     /// Every dependency of the item could not be scheduled, so there is nothing to start it from

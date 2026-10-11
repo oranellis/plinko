@@ -52,8 +52,9 @@ fn task_patch(id: Uuid) -> TaskPatch {
     }
 }
 
-/// Anchors a new item to the start of its group, so it gets a place on the schedule
-type Anchor = fn(Uuid, ShortId, &crate::sync::Sync, Dependency, Box<dyn FnOnce(Option<Created>)>);
+/// Sets up a new item once it exists: what it depends on to begin with, and for a task who does it
+type Anchor =
+    fn(Uuid, ShortId, &crate::sync::Sync, Option<Dependency>, Box<dyn FnOnce(Option<Created>)>);
 
 #[derive(Clone, Copy)]
 enum Kind {
@@ -105,7 +106,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             built = collapsed.with(|collapsed| {
                 sync.tenant.with(|t| {
                     let plan = t.as_ref().and_then(|t| t.plans().get(&plan))?;
-                    Some(scene::build(plan, state, collapsed))
+                    Some(scene::build(plan, state, collapsed, t.as_ref()?.today()))
                 })
             });
         });
@@ -144,7 +145,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let reveal = RwSignal::new(None::<Mark>);
     let asked = expect_context::<crate::nav::Reveal>().0;
     if let Some((_, task)) = asked.get_untracked().filter(|(of, _)| *of == plan) {
-        reveal.set(Some(Mark::Node(PlanNode::Task(task))));
+        reveal.set(Some(PlanNode::Task(task)));
         asked.set(None);
     }
     let searching = RwSignal::new(false);
@@ -193,12 +194,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let chosen = Memo::new(move |_| {
         let node = selected.get()?;
         scene
-            .with(|s| {
-                s.arrangement
-                    .placed
-                    .iter()
-                    .any(|p| p.mark == Mark::Node(node))
-            })
+            .with(|s| s.arrangement.placed.iter().any(|p| p.mark == node))
             .then_some(node)
     });
     // where the bar under it goes on the chart
@@ -206,12 +202,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         let node = chosen.get()?;
         let vp = viewport.get().unwrap_or_default();
         scene.with(|s| {
-            let placed = s
-                .arrangement
-                .placed
-                .iter()
-                .find(|p| p.mark == Mark::Node(node))?;
-            let day = (placed.span.0 - s.plan_start).num_days() as f64;
+            let placed = s.arrangement.placed.iter().find(|p| p.mark == node)?;
+            let day = (placed.span.0 - s.origin).num_days() as f64;
             let left = vp.x(day).max(4.0);
             let top = vp.lane_top(placed.lane) + gantt::layout::ROW_HEIGHT;
             Some((left, top))
@@ -260,14 +252,9 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     // what a search picked: on the chart scroll to it and flash it, else open it
     let on_found = Callback::new(move |node: PlanNode| {
         searching.set(false);
-        let placed = scene.with_untracked(|s| {
-            s.arrangement
-                .placed
-                .iter()
-                .any(|p| p.mark == Mark::Node(node))
-        });
+        let placed = scene.with_untracked(|s| s.arrangement.placed.iter().any(|p| p.mark == node));
         if tab.get_untracked() == PlanTab::Gantt && placed {
-            focus.set(Some(Mark::Node(node)));
+            focus.set(Some(node));
         } else if tab.get_untracked() == PlanTab::Gantt {
             // inside a folded group: unfold what holds it
             let mut inside = model::parent_of_in(sync, plan, node);
@@ -278,7 +265,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 inside = model::parent_of_in(sync, plan, PlanNode::TaskGroup(group));
             }
             set_timeout(
-                move || focus.set(Some(Mark::Node(node))),
+                move || focus.set(Some(node)),
                 std::time::Duration::from_millis(50),
             );
         } else {
@@ -302,7 +289,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     })
                 }),
             })
-            .unwrap_or(Parent::PlanStart);
+            .unwrap_or(Parent::Plan);
         let nil = Uuid::nil();
         let (update, depends): (PlanUpdate, Anchor) = match kind {
             Kind::Task => (
@@ -315,7 +302,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     // the person creating it does it for half a day by default
                     let me = sync.me.get_untracked().map(|m| Worker::User(m.id));
                     let patch = TaskPatch {
-                        dependencies: Some(vec![start]),
+                        dependencies: start.map(|d| vec![d]),
                         allocations: me.zip(Workload::new(4).ok()).map(|w| HashMap::from([w])),
                         ..task_patch(id)
                     };
@@ -334,7 +321,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         name: None,
                         parent: None,
                         time_constraint: None,
-                        dependencies: Some(vec![start]),
+                        dependencies: start.map(|d| vec![d]),
                         persistent_state: None,
                     };
                     sync.plan_then(plan, PlanUpdate::Milestone(Crud::Update(patch)), then);
@@ -350,7 +337,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     let patch = plinko::types::task_group::TaskGroupPatch {
                         id,
                         name: None,
-                        dependencies: Some(vec![start]),
+                        dependencies: start.map(|d| vec![d]),
                         parent: None,
                     };
                     sync.plan_then(plan, PlanUpdate::TaskGroup(Crud::Update(patch)), then);
@@ -366,7 +353,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     let patch = plinko::types::plan_buffer::PlanBufferPatch {
                         id,
                         parent: None,
-                        dependencies: Some(vec![start]),
+                        dependencies: start.map(|d| vec![d]),
                         set_start_day: None,
                         duration: None,
                     };
@@ -375,20 +362,17 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             ),
         };
         // top level items begin from the plan's default start node when it has one
-        let start = sync
-            .tenant
-            .with_untracked(|t| {
-                let p = t.as_ref()?.plans().get(&plan)?;
-                let node = p
-                    .scheduler_data()
-                    .default_start()
-                    .filter(|_| parent == Parent::PlanStart)?;
-                Some(Dependency {
-                    node: DependencyNode::Node(node),
-                    lag: 0,
-                })
+        let start = sync.tenant.with_untracked(|t| {
+            let p = t.as_ref()?.plans().get(&plan)?;
+            let node = p
+                .scheduler_data()
+                .default_start()
+                .filter(|_| parent == Parent::Plan)?;
+            Some(Dependency {
+                node: DependencyNode::Node(node),
+                lag: 0,
             })
-            .unwrap_or_default();
+        });
         let current = tab.get_untracked();
         sync.plan_then(plan, update, move |created| {
             if let Some(Created::Item(id)) = created {
@@ -480,7 +464,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 on_open=on_tap
                                 on_edit=on_open
                                 editing=chart_edit::editing(plan)
-                                selected=Signal::derive(move || chosen.get().map(Mark::Node))
+                                selected=Signal::derive(move || chosen.get())
                                 on_toggle=on_toggle
                                 on_blank=on_blank
                                 reveal=reveal

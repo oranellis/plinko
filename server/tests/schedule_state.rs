@@ -106,7 +106,6 @@ fn a_successful_update_clears_the_stored_schedule() {
     let new = NewPlan {
         id: ShortId::new(),
         name: "Plan".to_string(),
-        start_date: d(2024, 1, 1),
     };
     let add = TenantUpdateType::Plan(PlanTenantUpdate::Add(new));
     tenant.apply_update(update(root, add)).unwrap();
@@ -118,13 +117,12 @@ fn milestones_have_a_time_constraint() {
     let mut plan = Plan::from(NewPlan {
         id: ShortId::new(),
         name: "Plan".to_string(),
-        start_date: d(2024, 1, 1),
     });
     let id = Uuid::now_v7();
     let new = NewMilestone {
         id,
         name: "Launch".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     plan.apply_update(PlanUpdate::Milestone(Crud::Add(new)))
         .unwrap();

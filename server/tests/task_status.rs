@@ -46,7 +46,6 @@ fn setup() -> Setup {
     let new = NewPlan {
         id: setup.plan,
         name: "Plan".to_string(),
-        start_date: d(1),
     };
     apply(
         &mut setup,
@@ -56,7 +55,7 @@ fn setup() -> Setup {
     let new = NewTask {
         id: setup.task,
         name: "Task".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     let update = PlanUpdate::Task(Crud::Add(new));
     let update = PlanTenantUpdate::Update(setup.plan, Box::new(update));

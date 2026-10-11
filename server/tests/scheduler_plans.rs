@@ -68,13 +68,12 @@ impl Plans {
         self.apply(TenantUpdateType::Plan(update));
     }
 
-    /// A plan starting on `start` with no tasks
-    fn empty(&mut self, start: NaiveDate) -> ShortId {
+    /// A plan with no tasks
+    fn empty(&mut self) -> ShortId {
         let plan = ShortId::new();
         let new = NewPlan {
             id: plan,
             name: "Plan".to_string(),
-            start_date: start,
         };
         self.apply(TenantUpdateType::Plan(PlanTenantUpdate::Add(new)));
         let new = NewPlanUser { id: self.shared };
@@ -125,7 +124,7 @@ impl Plans {
         let new = NewTask {
             id: task,
             name: "Task".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         self.update(plan, PlanUpdate::Task(Crud::Add(new)));
         let after: Vec<Dependency> = match after {
@@ -167,7 +166,7 @@ impl Plans {
         let new = NewMilestone {
             id,
             name: "Milestone".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         self.update(plan, PlanUpdate::Milestone(Crud::Add(new)));
         let patch = plinko::types::milestone::MilestonePatch {
@@ -196,16 +195,15 @@ impl Plans {
 
     fn priority(&mut self, plan: ShortId, priority: i32) {
         let patch = PlanSchedulerDataPatch {
-            start_date: None,
             priority: Some(priority),
             default_start: None,
         };
         self.update(plan, PlanUpdate::SchedulerData(patch));
     }
 
-    /// A plan starting on `start` with one task of `days` days for the shared person
-    fn plan(&mut self, start: NaiveDate, days: u32) -> (ShortId, Uuid) {
-        let plan = self.empty(start);
+    /// A plan with one task of `days` days for the shared person
+    fn plan(&mut self, days: u32) -> (ShortId, Uuid) {
+        let plan = self.empty();
         (plan, self.task(plan, days, &[]))
     }
 
@@ -223,9 +221,8 @@ fn first_day(state: &TenantVolatileState, plan: ShortId, task: Uuid) -> NaiveDat
 #[test]
 fn repair_puts_the_short_plan_first_to_cut_the_worst_delay() {
     let mut plans = Plans::new();
-    let start = day(2023, 12, 1);
-    let (short, short_task) = plans.plan(start, 1);
-    let (long, long_task) = plans.plan(start, 3);
+    let (short, short_task) = plans.plan(1);
+    let (long, long_task) = plans.plan(3);
     let state = plans.solve();
     // the long plan goes first by the usual order, leaving the short one three days late, so
     // repair swaps them to make the long one one day late instead
@@ -235,17 +232,9 @@ fn repair_puts_the_short_plan_first_to_cut_the_worst_delay() {
 }
 
 #[test]
-fn equal_ends_go_by_the_earlier_start_date_then_id() {
+fn equal_ends_go_by_id() {
     let mut plans = Plans::new();
-    let (later, later_task) = plans.plan(day(2023, 12, 15), 1);
-    let (earlier, earlier_task) = plans.plan(day(2023, 12, 1), 1);
-    let state = plans.solve();
-    assert_eq!(first_day(&state, earlier, earlier_task), day(2024, 1, 1));
-    assert_eq!(first_day(&state, later, later_task), day(2024, 1, 2));
-
-    let mut plans = Plans::new();
-    let start = day(2023, 12, 1);
-    let ids = [plans.plan(start, 1), plans.plan(start, 1)];
+    let ids = [plans.plan(1), plans.plan(1)];
     let state = plans.solve();
     let (low, high) = if ids[0].0 < ids[1].0 {
         (ids[0], ids[1])
@@ -259,9 +248,8 @@ fn equal_ends_go_by_the_earlier_start_date_then_id() {
 #[test]
 fn forecasts_are_compared_with_the_plan_on_its_own() {
     let mut plans = Plans::new();
-    let start = day(2023, 12, 1);
-    let (short, _) = plans.plan(start, 1);
-    let (long, _) = plans.plan(start, 3);
+    let (short, _) = plans.plan(1);
+    let (long, _) = plans.plan(3);
     let state = plans.solve();
     let delay = |plan| state.plans[&plan].plan_end.unwrap().delay();
     assert_eq!(delay(short), 0);
@@ -276,8 +264,7 @@ fn forecasts_are_compared_with_the_plan_on_its_own() {
 #[test]
 fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
     let mut plans = Plans::new();
-    let start = day(2023, 12, 1);
-    let ((one, _), (two, _)) = (plans.plan(start, 1), plans.plan(start, 1));
+    let ((one, _), (two, _)) = (plans.plan(1), plans.plan(1));
     assert!(plans.tenant.baseline(&one).is_none());
     plans.solve();
     assert!(plans.tenant.baseline(&one).is_some());
@@ -287,7 +274,7 @@ fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
     let new = NewTask {
         id: Uuid::now_v7(),
         name: "More".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     plans.update(one, PlanUpdate::Task(Crud::Add(new)));
     assert!(plans.tenant.baseline(&one).is_none());
@@ -302,13 +289,9 @@ fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
     assert!(plans.tenant.baseline(&two).is_some());
 }
 
-fn start() -> NaiveDate {
-    day(2023, 12, 1)
-}
-
 /// A plan of one task for each of the given days, one after the other, with a target at the end
 fn chain(plans: &mut Plans, days: &[u32]) -> (ShortId, Vec<Uuid>) {
-    let plan = plans.empty(start());
+    let plan = plans.empty();
     let mut tasks: Vec<Uuid> = Vec::new();
     for d in days {
         let after: Vec<PlanNode> = tasks
@@ -373,7 +356,7 @@ fn work_off_the_target_chain_waits_for_every_chain() {
 #[test]
 fn chains_to_close_hard_dates_go_before_target_chains() {
     let mut plans = Plans::new();
-    let (hard_plan, hard) = plans.plan(start(), 1);
+    let (hard_plan, hard) = plans.plan(1);
     plans.patch(hard_plan, hard, |p| {
         p.time_constraint = Some(TimeConstraint::Fixed(day(2024, 1, 3)));
     });
@@ -389,7 +372,7 @@ fn chains_to_close_hard_dates_go_before_target_chains() {
 fn work_in_progress_in_any_plan_claims_hours_first() {
     let mut plans = Plans::new();
     let (first, first_chain) = chain(&mut plans, &[4]);
-    let (active, active_task) = plans.plan(start(), 3);
+    let (active, active_task) = plans.plan(3);
     let state = PersistentState {
         status: Status::InProgress,
         actual_start_date: Some(day(2024, 1, 1)),
@@ -421,7 +404,7 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
         let mut plans = Plans::new();
         let mut made: Vec<(ShortId, Uuid, Vec<Uuid>, Option<NaiveDate>)> = Vec::new();
         for _ in 0..=random.below(3) {
-            let plan = plans.empty(start());
+            let plan = plans.empty();
             let mut tasks: Vec<Uuid> = Vec::new();
             for _ in 0..(2 + random.below(6)) {
                 let after: Vec<Uuid> = tasks
@@ -475,14 +458,14 @@ fn fixed(plans: &mut Plans, plan: ShortId, task: Uuid, date: NaiveDate) {
 #[test]
 fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help() {
     let mut plans = Plans::new();
-    let tagged = plans.empty(start());
+    let tagged = plans.empty();
     let (alice, bob) = (plans.person(tagged), plans.person(tagged));
     let tag = plans.tag(tagged, &[alice, bob]);
     let (low, high) = (alice.min(bob), alice.max(bob));
     // a dated task comes before any target chain, and the tie goes to the lower id
     let held = plans.task_for(tagged, 2, Worker::Tag(tag), &[]);
     fixed(&mut plans, tagged, held, day(2024, 1, 1));
-    let waiting = plans.empty(start());
+    let waiting = plans.empty();
     plans.update(
         waiting,
         PlanUpdate::User(Crud::Add(NewPlanUser { id: low })),
@@ -499,7 +482,7 @@ fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help() {
 #[test]
 fn someone_much_less_booked_is_worth_finishing_a_day_later() {
     let mut plans = Plans::new();
-    let plan = plans.empty(start());
+    let plan = plans.empty();
     let (alice, bob) = (plans.person(plan), plans.person(plan));
     let tag = plans.tag(plan, &[alice, bob]);
     // bob does not work Mondays, so finishes a day after alice, who has a day booked

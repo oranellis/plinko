@@ -37,7 +37,7 @@ impl Vertex {
     }
 }
 
-/// A dependency of a vertex, on the plan start when `from` is `None`
+/// A dependency of a vertex, on today when `from` is `None`
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Edge {
     pub from: Option<Vertex>,
@@ -119,7 +119,13 @@ impl<'a> Graph<'a> {
             return Vec::new();
         };
         let parent = item.parent();
-        item.dependencies()
+        // an item that depends on nothing begins when its parent does
+        let none = [Dependency::default()];
+        let dependencies = match item.dependencies() {
+            [] => &none,
+            some => some,
+        };
+        dependencies
             .iter()
             .map(|d| Edge {
                 from: resolve(d, parent),
@@ -137,12 +143,12 @@ fn collect_members<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<Pla
     }
 }
 
-/// `ParentStart` is the enclosing group's start, or the plan start (`None`) at top level
+/// `ParentStart` is the enclosing group's start, or today (`None`) at top level
 fn resolve(dep: &Dependency, parent: Parent) -> Option<Vertex> {
     match (dep.node, parent) {
         (DependencyNode::Node(n), _) => Some(n.into()),
         (DependencyNode::ParentStart, Parent::Node(group)) => Some(Vertex::GroupStart(group)),
-        (DependencyNode::ParentStart, Parent::PlanStart) => None,
+        (DependencyNode::ParentStart, Parent::Plan) => None,
     }
 }
 // }}}
@@ -178,33 +184,7 @@ pub(crate) fn nodes<T: PlanItem>(plan: &Plan) -> Vec<PlanNode> {
     T::entities(plan).keys().map(|id| T::node(*id)).collect()
 }
 
-/// Vertices with a chain of dependencies back to the plan start, a vertex is anchored if any of
-/// its dependencies is the plan start or an anchored vertex.
-pub(crate) fn anchored(plan: &Plan) -> HashSet<Vertex> {
-    let graph = Graph::new(plan);
-    let mut dependents: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
-    let mut anchored = HashSet::new();
-    let mut pending = Vec::new();
-    for v in graph.vertices() {
-        let edges = graph.edges(v);
-        if edges.iter().any(|e| e.from.is_none()) && anchored.insert(v) {
-            pending.push(v);
-        }
-        for dependency in edges.into_iter().filter_map(|e| e.from) {
-            dependents.entry(dependency).or_default().push(v);
-        }
-    }
-    while let Some(v) = pending.pop() {
-        for dependent in dependents.get(&v).into_iter().flatten() {
-            if anchored.insert(*dependent) {
-                pending.push(*dependent);
-            }
-        }
-    }
-    anchored
-}
-
-/// How much lag the longest chain of dependencies from `from` back to `to` (the plan start when
+/// How much lag the longest chain of dependencies from `from` back to `to` (today when
 /// `None`) adds up to, with the results kept for the next question about the same `to`
 struct Chains<'a, 'p> {
     graph: &'a Graph<'p>,
@@ -305,17 +285,4 @@ fn dependencies<'a, T: PlanItem + 'a>(plan: &'a Plan, id: Uuid) -> &'a [Dependen
     T::entities(plan)
         .get(&id)
         .map_or(&[], |item| item.dependencies())
-}
-
-/// Nodes with no chain of dependencies back to the plan start
-pub fn unscheduled(plan: &Plan) -> HashSet<PlanNode> {
-    let anchored = anchored(plan);
-    Graph::new(plan)
-        .vertices()
-        .into_iter()
-        .filter_map(|v| match v {
-            Vertex::Node(n) if !anchored.contains(&v) => Some(n),
-            _ => None,
-        })
-        .collect()
 }

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use chrono::NaiveDate;
 use plinko::{
     planner::{plan::*, plan_update::PlanUpdate},
     types::{
@@ -21,7 +20,6 @@ fn new_plan() -> Plan {
     Plan::from(NewPlan {
         id: ShortId::new(),
         name: "My Plan".to_owned(),
-        start_date: NaiveDate::from_ymd_opt(2000, 12, 31).unwrap(),
     })
 }
 
@@ -102,7 +100,7 @@ fn remove_task(plan: &mut Plan, id: Uuid) -> PlinkoResult<()> {
 #[test]
 fn dependency_on_missing_node_is_rejected() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let missing = task_node(Uuid::now_v7());
     assert!(set_task_deps(&mut plan, task, &[missing]).is_err());
     assert!(plan.tasks()[&task].dependencies().is_empty());
@@ -112,9 +110,9 @@ fn dependency_on_missing_node_is_rejected() {
 fn dependency_cycles_are_rejected_and_rolled_back() {
     let mut plan = new_plan();
     let (a, b, c) = (
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::Plan),
+        add_task(&mut plan, Parent::Plan),
+        add_task(&mut plan, Parent::Plan),
     );
     set_task_deps(&mut plan, b, &[task_node(a)]).unwrap();
     set_task_deps(&mut plan, c, &[task_node(b)]).unwrap();
@@ -127,9 +125,9 @@ fn dependency_cycles_are_rejected_and_rolled_back() {
 #[test]
 fn group_end_waits_on_members() {
     let mut plan = new_plan();
-    let group = add_group(&mut plan, Parent::PlanStart);
+    let group = add_group(&mut plan, Parent::Plan);
     let member = add_task(&mut plan, Parent::Node(group));
-    let outside = add_task(&mut plan, Parent::PlanStart);
+    let outside = add_task(&mut plan, Parent::Plan);
 
     // a member cannot wait on the end of its own group
     assert!(set_task_deps(&mut plan, member, &[group_node(group)]).is_err());
@@ -142,23 +140,20 @@ fn group_end_waits_on_members() {
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
         .unwrap();
-    // an unanchored member is independent of the group start, an anchored one is not
-    set_task_deps(&mut plan, outside, &[task_node(member)]).unwrap();
-    set_task_deps(&mut plan, outside, &[]).unwrap();
-    set_task_deps(&mut plan, member, &[DependencyNode::ParentStart]).unwrap();
+    // a member with no dependencies begins when the group does, so it is behind the group too
     assert!(set_task_deps(&mut plan, outside, &[task_node(member)]).is_err());
     assert!(set_task_deps(&mut plan, outside, &[group_node(group)]).is_err());
     // moving a dependent of the group end into the group is also a cycle
-    let dependent = add_task(&mut plan, Parent::PlanStart);
+    let dependent = add_task(&mut plan, Parent::Plan);
     set_task_deps(&mut plan, dependent, &[group_node(group)]).unwrap();
     assert!(set_task_parent(&mut plan, dependent, Parent::Node(group)).is_err());
-    assert_eq!(plan.tasks()[&dependent].parent(), Parent::PlanStart);
+    assert_eq!(plan.tasks()[&dependent].parent(), Parent::Plan);
 }
 
 #[test]
 fn members_anchor_to_group_start() {
     let mut plan = new_plan();
-    let group = add_group(&mut plan, Parent::PlanStart);
+    let group = add_group(&mut plan, Parent::Plan);
     let member = add_task(&mut plan, Parent::Node(group));
     set_task_deps(&mut plan, member, &[DependencyNode::ParentStart]).unwrap();
 
@@ -177,8 +172,8 @@ fn members_anchor_to_group_start() {
 fn referenced_items_cannot_be_removed() {
     let mut plan = new_plan();
     let (a, b) = (
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::Plan),
+        add_task(&mut plan, Parent::Plan),
     );
     set_task_deps(&mut plan, b, &[task_node(a)]).unwrap();
     assert!(remove_task(&mut plan, a).is_err());
@@ -189,7 +184,7 @@ fn referenced_items_cannot_be_removed() {
 #[test]
 fn allocated_tags_must_exist_and_cannot_be_removed() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let tag = Uuid::now_v7();
     let allocate = |plan: &mut Plan, workers: HashMap<Worker, Workload>| {
         let patch = TaskPatch {
@@ -245,9 +240,9 @@ fn task_deps(plan: &Plan, id: Uuid) -> Vec<Dependency> {
 fn a_dependency_a_chain_implies_is_dropped() {
     let mut plan = new_plan();
     let (a, b, c) = (
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::Plan),
+        add_task(&mut plan, Parent::Plan),
+        add_task(&mut plan, Parent::Plan),
     );
     let on = |id| DependencyNode::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
@@ -261,9 +256,7 @@ fn a_dependency_a_chain_implies_is_dropped() {
 #[test]
 fn a_new_link_makes_dependents_redundant_too() {
     let mut plan = new_plan();
-    let ids: Vec<Uuid> = (0..3)
-        .map(|_| add_task(&mut plan, Parent::PlanStart))
-        .collect();
+    let ids: Vec<Uuid> = (0..3).map(|_| add_task(&mut plan, Parent::Plan)).collect();
     let (a, b, c) = (ids[0], ids[1], ids[2]);
     let on = |id| DependencyNode::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
@@ -277,9 +270,7 @@ fn a_new_link_makes_dependents_redundant_too() {
 #[test]
 fn a_longer_lag_than_the_chain_gives_is_kept() {
     let mut plan = new_plan();
-    let ids: Vec<Uuid> = (0..3)
-        .map(|_| add_task(&mut plan, Parent::PlanStart))
-        .collect();
+    let ids: Vec<Uuid> = (0..3).map(|_| add_task(&mut plan, Parent::Plan)).collect();
     let (a, b, c) = (ids[0], ids[1], ids[2]);
     let on = |id| DependencyNode::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
@@ -296,21 +287,21 @@ fn a_longer_lag_than_the_chain_gives_is_kept() {
 fn the_start_of_the_parent_is_dropped_when_another_dependency_leads_there() {
     let mut plan = new_plan();
     let (a, b) = (
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
+        add_task(&mut plan, Parent::Plan),
+        add_task(&mut plan, Parent::Plan),
     );
     let on = |id| DependencyNode::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
     set_and_simplify(&mut plan, b, vec![Dependency::default(), lagged(on(a), 0)]);
     assert_eq!(task_deps(&plan, b), [lagged(on(a), 0)]);
-    // an item that is not anchored leads nowhere, so the start stays
-    let loose = add_task(&mut plan, Parent::PlanStart);
+    // an item with no dependencies begins at the start, so it leads there too
+    let loose = add_task(&mut plan, Parent::Plan);
     set_and_simplify(
         &mut plan,
         b,
         vec![Dependency::default(), lagged(on(loose), 0)],
     );
-    assert_eq!(task_deps(&plan, b).len(), 2);
+    assert_eq!(task_deps(&plan, b), [lagged(on(loose), 0)]);
 }
 // }}}
 
@@ -324,9 +315,8 @@ fn remove_through(plan: &mut Plan, node: PlanNode) {
 #[test]
 fn removing_the_default_start_clears_it() {
     let mut plan = new_plan();
-    let a = PlanNode::Task(add_task(&mut plan, Parent::PlanStart));
+    let a = PlanNode::Task(add_task(&mut plan, Parent::Plan));
     let patch = plinko::planner::plan::PlanSchedulerDataPatch {
-        start_date: None,
         priority: None,
         default_start: Some(Some(a)),
     };
@@ -338,9 +328,7 @@ fn removing_the_default_start_clears_it() {
 #[test]
 fn removing_an_item_joins_what_was_before_to_what_was_after() {
     let mut plan = new_plan();
-    let ids: Vec<Uuid> = (0..4)
-        .map(|_| add_task(&mut plan, Parent::PlanStart))
-        .collect();
+    let ids: Vec<Uuid> = (0..4).map(|_| add_task(&mut plan, Parent::Plan)).collect();
     let (a, b, c, d) = (ids[0], ids[1], ids[2], ids[3]);
     let lagged = |id, lag| Dependency {
         node: task_node(id),
@@ -371,9 +359,9 @@ fn removing_an_item_joins_what_was_before_to_what_was_after() {
 #[test]
 fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
     let mut plan = new_plan();
-    let before = add_task(&mut plan, Parent::PlanStart);
+    let before = add_task(&mut plan, Parent::Plan);
     set_task_deps(&mut plan, before, &[DependencyNode::ParentStart]).unwrap();
-    let group = add_group(&mut plan, Parent::PlanStart);
+    let group = add_group(&mut plan, Parent::Plan);
     plan.apply_update(PlanUpdate::set_dependencies(
         PlanNode::TaskGroup(group),
         vec![Dependency {
@@ -388,12 +376,12 @@ fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
     );
     set_task_deps(&mut plan, m1, &[DependencyNode::ParentStart]).unwrap();
     set_task_deps(&mut plan, m2, &[task_node(m1)]).unwrap();
-    let after = add_task(&mut plan, Parent::PlanStart);
+    let after = add_task(&mut plan, Parent::Plan);
     set_task_deps(&mut plan, after, &[group_node(group)]).unwrap();
 
     remove_through(&mut plan, PlanNode::TaskGroup(group));
     assert!(plan.task_groups().is_empty());
-    assert_eq!(plan.tasks()[&m1].parent(), Parent::PlanStart);
+    assert_eq!(plan.tasks()[&m1].parent(), Parent::Plan);
     // the start of the group was one day after the first task
     assert_eq!(
         plan.tasks()[&m1].dependencies(),
@@ -440,7 +428,6 @@ mod moving {
         Plan::from(NewPlan {
             id: ShortId::new(),
             name: "P".to_string(),
-            start_date: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
         })
     }
 
@@ -449,7 +436,7 @@ mod moving {
         let new = NewTask {
             id,
             name: "T".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
         id
@@ -476,7 +463,7 @@ mod moving {
         let new = NewTaskGroup {
             id: group,
             name: "G".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
             .unwrap();
@@ -503,9 +490,9 @@ mod moving {
             }]
         );
 
-        let out = plan.moving(PlanNode::Task(x), Parent::PlanStart).unwrap();
+        let out = plan.moving(PlanNode::Task(x), Parent::Plan).unwrap();
         apply(&mut plan, out);
-        assert_eq!(plan.tasks()[&x].parent(), Parent::PlanStart);
+        assert_eq!(plan.tasks()[&x].parent(), Parent::Plan);
         assert_eq!(plan.tasks()[&x].dependencies(), &vec![on(before)]);
     }
 
@@ -516,7 +503,7 @@ mod moving {
         let new = NewTaskGroup {
             id: group,
             name: "G".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
             .unwrap();

@@ -142,7 +142,7 @@ mod tests {
     fn buffer(set_start_day: Option<NaiveDate>, duration: u32) -> PlanBuffer {
         PlanBuffer {
             id: Uuid::now_v7(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
             dependencies: Vec::new(),
             set_start_day,
             duration,

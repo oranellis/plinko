@@ -36,7 +36,6 @@ const CHAIN_LINE: &str = "rgba(229,57,53,0.85)";
 const INSIDE: &str = "#1255a5";
 const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
 const PROBLEM: &str = "#e65100";
-const PLAN_START: &str = "#a78bfa";
 const GROUP_FILL: &str = "rgba(255,255,255,0.035)";
 const GROUP_LINE: &str = "#4a4a4c";
 const RADIUS: f64 = 6.0;
@@ -271,8 +270,7 @@ fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(S
 
 fn mark_of(anchor: Anchor) -> Mark {
     match anchor {
-        Anchor::PlanStart => Mark::PlanStart,
-        Anchor::Start(node) | Anchor::End(node) => Mark::Node(node),
+        Anchor::Start(node) | Anchor::End(node) => node,
     }
 }
 
@@ -284,9 +282,9 @@ fn visible(frame: &Frame, p: &Placed) -> bool {
         return false;
     }
     // names of milestones and notes on warnings run on past the end of the item
-    let long = p.violated || matches!(p.kind, Kind::Milestone) || p.mark == Mark::PlanStart;
+    let long = p.violated || matches!(p.kind, Kind::Milestone);
     let reach = if long { 600.0 } else { 40.0 };
-    let start = frame.scene.plan_start;
+    let start = frame.scene.origin;
     let offset = |date: NaiveDate| (date - start).num_days() as f64;
     let (from, to) = (vp.x(offset(p.span.0)), vp.x(offset(p.span.1)));
     to + reach > 0.0 && from < frame.width + 40.0
@@ -298,7 +296,7 @@ pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
     ctx.set_fill_style_str(BACKGROUND);
     ctx.fill_rect(0.0, 0.0, frame.width, frame.height);
     ctx.set_line_width(1.0);
-    let start = frame.scene.plan_start;
+    let start = frame.scene.origin;
     let vp = frame.viewport;
     let today_x = vp.x((frame.today - start).num_days() as f64);
     if today_x + vp.day_width > 0.0 && today_x < frame.width {
@@ -340,7 +338,7 @@ pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
 
 /// The layer of the items themselves, again the same whatever the pointer does
 pub fn paint_nodes(ctx: &Pen, frame: &Frame, found: &mut Found) {
-    let start = frame.scene.plan_start;
+    let start = frame.scene.origin;
     let offset = |date: NaiveDate| (date - start).num_days() as f64;
     let marked = Marked::of(frame);
     for p in &frame.scene.arrangement.placed {
@@ -349,7 +347,6 @@ pub fn paint_nodes(ctx: &Pen, frame: &Frame, found: &mut Found) {
         }
         let (from, to) = (offset(p.span.0), offset(p.span.1));
         match (p.mark, p.kind) {
-            (Mark::PlanStart, _) => paint_plan_start(ctx, frame, p, from, &marked, found),
             (_, Kind::Milestone) => paint_milestone(ctx, frame, p, from, &marked, found),
             _ => paint_bar(ctx, frame, p, (from, to), &marked, &mut found.hits),
         }
@@ -364,15 +361,11 @@ enum Shape {
 
 impl Shape {
     fn of(frame: &Frame, p: &Placed) -> Self {
-        let start = frame.scene.plan_start;
+        let start = frame.scene.origin;
         let offset = |date: NaiveDate| (date - start).num_days() as f64;
         let vp = frame.viewport;
         match p.kind {
             Kind::Group => Shape::Round(group_box(frame, p), 8.0),
-            Kind::Milestone | Kind::Task | Kind::Buffer if p.mark == Mark::PlanStart => {
-                let (cx, cy) = vp.start_centre(offset(p.span.0), p.lane);
-                Shape::Diamond(cx, cy, 9.0)
-            }
             Kind::Milestone => {
                 let (cx, cy) = vp.start_centre(offset(p.span.0), p.lane);
                 Shape::Diamond(cx, cy, 10.0)
@@ -436,11 +429,6 @@ pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
         if !shape.shows(frame.width, frame.height) {
             continue;
         }
-        if mark == Mark::PlanStart && frame.hover == Some(mark) {
-            shape.trace(ctx);
-            ctx.set_fill_style_str("#c4b5fd");
-            ctx.fill();
-        }
         // what depends on nothing begins where the plan does, shown like the end of a leaf
         if frame.hover == Some(mark) && p.rooted && p.kind != Kind::Group {
             edge_wash(ctx, shape.bounds(), ("167,139,250", 0.85), true, |c| {
@@ -486,7 +474,7 @@ pub fn paint_notes(ctx: &Pen, frame: &Frame) {
 }
 
 pub fn paint_header(ctx: &Pen, frame: &Frame) {
-    let start = frame.scene.plan_start;
+    let start = frame.scene.origin;
     let vp = frame.viewport;
     ctx.set_fill_style_str(HEADER);
     ctx.fill_rect(0.0, 0.0, frame.width, HEADER_HEIGHT);
@@ -614,7 +602,7 @@ fn paint_group(
 
 /// The box a group is drawn in, a little wider than its bar and as tall as its lanes
 fn group_box(frame: &Frame, p: &Placed) -> Rect {
-    let start = frame.scene.plan_start;
+    let start = frame.scene.origin;
     let offset = |date: NaiveDate| (date - start).num_days() as f64;
     let vp = frame.viewport;
     let bar = vp.bar(offset(p.span.0), offset(p.span.1), p.lane);
@@ -641,7 +629,7 @@ fn locate(frame: &Frame, mark: Mark) -> Option<(Geometry, Option<Rect>)> {
         };
         return Some((geometry, Some(rect)));
     }
-    let start = frame.scene.plan_start;
+    let start = frame.scene.origin;
     let offset = |date: NaiveDate| (date - start).num_days() as f64;
     let vp = frame.viewport;
     let geometry = Geometry {
@@ -662,11 +650,11 @@ pub fn paint_links(ctx: &Pen, frame: &Frame) {
             continue;
         };
         let from_point = match link.from {
-            Anchor::Start(_) | Anchor::PlanStart => from.start,
+            Anchor::Start(_) => from.start,
             Anchor::End(_) => from.end,
         };
         let to_point = match link.to {
-            Anchor::Start(_) | Anchor::PlanStart => to.start,
+            Anchor::Start(_) => to.start,
             Anchor::End(_) => to.end,
         };
         let (line, solid) = match link.role {
@@ -943,42 +931,6 @@ fn paint_milestone(
     }
 }
 
-fn paint_plan_start(
-    ctx: &Pen,
-    frame: &Frame,
-    p: &Placed,
-    from: f64,
-    marked: &Marked,
-    found: &mut Found,
-) {
-    let (cx, cy) = frame.viewport.start_centre(from, p.lane);
-    let r = 9.0;
-    path_diamond(ctx, cx, cy, r);
-    ctx.set_fill_style_str(PLAN_START);
-    ctx.fill();
-    path_diamond(ctx, cx, cy, r);
-    stroke_border(ctx, border(frame, p.mark, false, marked));
-    found.labels.push(Label {
-        mark: p.mark,
-        words: "Plan Start".to_string(),
-        x: cx + r + 6.0,
-        y: cy,
-        font: "13px sans-serif",
-        colour: "#bbb",
-        hovered: "#bbb",
-        clip: None,
-    });
-    found.hits.items.push((
-        p.mark,
-        Rect {
-            x: cx - r,
-            y: cy - r,
-            w: r * 2.0,
-            h: r * 2.0,
-        },
-    ));
-}
-
 /// The panel at the bottom left that says what the item under the pointer is
 fn paint_panel(ctx: &Pen, lines: &[String], height: f64) {
     let (pad, margin, title, body) = (10.0, 8.0, 20.0, 15.0);
@@ -1085,7 +1037,7 @@ mod tests {
 
     #[test]
     fn hits_follow_the_layers_to_where_they_are_on_the_screen() {
-        let node = Mark::Node(PlanNode::Task(uuid::Uuid::from_u128(1)));
+        let node = PlanNode::Task(uuid::Uuid::from_u128(1));
         let mut hits = Hits::default();
         hits.items.push((
             node,

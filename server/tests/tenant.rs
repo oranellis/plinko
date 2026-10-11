@@ -81,7 +81,6 @@ fn add_plan(tenant: &mut Tenant, actor: Uuid) -> PlinkoResult<ShortId> {
     let new = NewPlan {
         id,
         name: "My Plan".to_string(),
-        start_date: NaiveDate::from_ymd_opt(2000, 12, 31).unwrap(),
     };
     let update = TenantUpdateType::Plan(PlanTenantUpdate::Add(new));
     apply(tenant, actor, update).map(|()| id)
@@ -101,7 +100,7 @@ fn add_task(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> PlinkoResult<()>
     let task = NewTask {
         id: Uuid::now_v7(),
         name: "Task".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     plan_update(tenant, actor, plan, PlanUpdate::Task(Crud::Add(task)))
 }
@@ -412,7 +411,7 @@ fn add_task_for_placeholder(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> 
     let new = NewTask {
         id,
         name: "Task".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     plan_update(tenant, actor, plan, PlanUpdate::Task(Crud::Add(new))).unwrap();
     let patch = task_patch(id, |p| {

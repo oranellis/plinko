@@ -22,7 +22,7 @@ impl Plan {
             }
             match placement(self, at).0 {
                 Parent::Node(id) => at = PlanNode::TaskGroup(id),
-                Parent::PlanStart => return false,
+                Parent::Plan => return false,
             }
         }
     }

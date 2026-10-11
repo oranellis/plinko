@@ -4,19 +4,14 @@
 //! group can be drawn as one rounded rectangle around them. All of it is worked out from the dates,
 //! and nothing here knows how anything is drawn.
 
-use chrono::{Days, NaiveDate};
+use chrono::NaiveDate;
 use plinko::types::dependency::PlanNode;
 use uuid::Uuid;
 
 use crate::model::Look;
 
 /// What can be shown on the chart
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Mark {
-    /// The synthetic milestone the plan starts from
-    PlanStart,
-    Node(PlanNode),
-}
+pub type Mark = PlanNode;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -105,7 +100,7 @@ impl Lanes {
 
 fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
     Placed {
-        mark: Mark::Node(entry.node),
+        mark: entry.node,
         name: entry.name.clone(),
         kind: entry.kind,
         span: entry.span,
@@ -164,30 +159,10 @@ fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>)
     }
 }
 
-/// Packs a plan's items. The plan's start is a milestone of its own, always the first thing in the
-/// first lane.
-pub fn arrange(plan_start: NaiveDate, entries: &[Entry]) -> Arrangement {
+/// Packs a plan's items
+pub fn arrange(entries: &[Entry]) -> Arrangement {
     let mut lanes = Lanes::default();
-    let day_after = plan_start + Days::new(1);
-    let lane = lanes.place(plan_start, day_after, 1);
-    let mut out = vec![Placed {
-        mark: Mark::PlanStart,
-        name: "Plan Start".to_string(),
-        kind: Kind::Milestone,
-        span: (plan_start, day_after),
-        look: Look::Completed,
-        violated: false,
-        leaf: false,
-        rooted: false,
-        pinned: false,
-        target: false,
-        lane,
-        depth: 0,
-        lanes: 1,
-        levels: 0,
-        members: 0,
-        collapsed: false,
-    }];
+    let mut out = Vec::new();
     pack(entries, 0, &mut lanes, &mut out);
     Arrangement {
         lanes: lanes.free.len(),
@@ -198,6 +173,8 @@ pub fn arrange(plan_start: NaiveDate, entries: &[Entry]) -> Arrangement {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use chrono::Days;
 
     fn d(day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(2024, 1, 1).unwrap() + Days::new(u64::from(day))
@@ -246,10 +223,9 @@ mod tests {
             entry(3, "C", 5, 7),
             entry(4, "D", 7, 9),
         ];
-        let arranged = arrange(d(0), &entries);
+        let arranged = arrange(&entries);
         // A is days 2-4 so the next on its lane starts after day 5. C starts on day 5, with
         // nothing between, so it takes the lane B opened. D is far enough on to go back.
-        assert_eq!(lane_of(&arranged, "Plan Start"), 0);
         assert_eq!(lane_of(&arranged, "A"), 0);
         assert_eq!(lane_of(&arranged, "B"), 1);
         assert_eq!(lane_of(&arranged, "C"), 1);
@@ -261,8 +237,8 @@ mod tests {
     fn the_arrangement_follows_start_then_name_and_not_the_order_given() {
         let forward = [entry(1, "B", 2, 3), entry(2, "A", 2, 3)];
         let reversed = [entry(2, "A", 2, 3), entry(1, "B", 2, 3)];
-        assert_eq!(arrange(d(0), &forward), arrange(d(0), &reversed));
-        let arranged = arrange(d(0), &forward);
+        assert_eq!(arrange(&forward), arrange(&reversed));
+        let arranged = arrange(&forward);
         assert_eq!(lane_of(&arranged, "A"), 0);
         assert_eq!(lane_of(&arranged, "B"), 1);
     }
@@ -272,7 +248,7 @@ mod tests {
         let mut milestone = entry(1, "M", 4, 4);
         milestone.kind = Kind::Milestone;
         let entries = [entry(2, "A", 2, 3), milestone, entry(3, "B", 5, 6)];
-        let arranged = arrange(d(0), &entries);
+        let arranged = arrange(&entries);
         // A ends on day 3, the milestone is on day 4 right after, so it cannot share A's lane
         assert_eq!(lane_of(&arranged, "A"), 0);
         assert_eq!(lane_of(&arranged, "M"), 1);
@@ -288,7 +264,7 @@ mod tests {
             entry(4, "M3", 8, 9),
         ];
         let entries = [group(1, "G", 3, 9, members), entry(5, "X", 3, 4)];
-        let arranged = arrange(d(0), &entries);
+        let arranged = arrange(&entries);
         let g = arranged.placed.iter().find(|p| p.name == "G").unwrap();
         // the name's lane and two lanes of members, since M1 and M2 overlap
         assert_eq!((g.lane, g.lanes, g.members), (0, 3, 3));
@@ -312,7 +288,7 @@ mod tests {
     fn groups_nest_and_outer_groups_know_how_deep_they_are() {
         let inner = group(2, "Inner", 3, 5, vec![entry(3, "T", 3, 5)]);
         let outer = group(1, "Outer", 3, 5, vec![inner]);
-        let arranged = arrange(d(0), &[outer]);
+        let arranged = arrange(&[outer]);
         let get = |name: &str| arranged.placed.iter().find(|p| p.name == name).unwrap();
         assert_eq!(
             (get("Outer").lane, get("Outer").lanes, get("Outer").levels),
@@ -335,17 +311,16 @@ mod tests {
             vec![entry(2, "M1", 3, 5), entry(3, "M2", 4, 6)],
         );
         g.collapsed = true;
-        let arranged = arrange(d(0), &[g]);
-        assert_eq!(arranged.placed.len(), 2, "the plan start and the group");
-        assert_eq!(arranged.placed[1].lanes, 1);
-        assert_eq!(arranged.placed[1].members, 2);
+        let arranged = arrange(&[g]);
+        assert_eq!(arranged.placed.len(), 1, "just the group");
+        assert_eq!(arranged.placed[0].lanes, 1);
+        assert_eq!(arranged.placed[0].members, 2);
     }
 
     #[test]
-    fn empty_groups_still_take_their_lane_and_the_plan_start_can_start_anywhere() {
-        let arranged = arrange(d(5), &[group(1, "G", 6, 8, Vec::new())]);
-        assert_eq!(arranged.placed[0].span.0, d(5));
-        // day 6 follows the start on day 5 with no gap, so the group goes to the next lane
-        assert_eq!(lane_of(&arranged, "G"), 1);
+    fn empty_groups_still_take_their_lane() {
+        let arranged = arrange(&[group(1, "G", 6, 8, Vec::new())]);
+        assert_eq!(lane_of(&arranged, "G"), 0);
+        assert_eq!(arranged.lanes, 1);
     }
 }

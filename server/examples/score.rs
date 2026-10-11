@@ -95,7 +95,6 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
         let new = NewPlan {
             id: plan,
             name: format!("Plan {p}"),
-            start_date: today,
         };
         apply(
             &mut tenant,
@@ -145,7 +144,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 PlanUpdate::Task(Crud::Add(NewTask {
                     id: task,
                     name: format!("Task {i}"),
-                    parent: Parent::PlanStart,
+                    parent: Parent::Plan,
                 })),
             );
             let layer = i / LAYER;
@@ -195,7 +194,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 let new = NewMilestone {
                     id: milestone,
                     name: "Gate".to_string(),
-                    parent: Parent::PlanStart,
+                    parent: Parent::Plan,
                 };
                 send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
                 let gather = nodes.iter().rev().take(4).map(|n| Dependency {
@@ -218,7 +217,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
         let new = NewMilestone {
             id: end,
             name: "End".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
         let after = nodes.iter().rev().take(6).map(|n| Dependency {

@@ -1,7 +1,7 @@
 // modules{{{
 use crate::helpers::double_option;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use uuid::Uuid;
@@ -33,7 +33,6 @@ use crate::{
 pub struct NewPlan {
     pub id: ShortId,
     pub name: String,
-    pub start_date: NaiveDate,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -69,7 +68,7 @@ impl From<NewPlan> for Plan {
             affinities: HashMap::new(),
             targets: HashMap::new(),
             default_availability: RuleSet::default(),
-            scheduler_data: PlanSchedulerData::new(new.start_date),
+            scheduler_data: PlanSchedulerData::default(),
         }
     }
 }
@@ -127,11 +126,6 @@ impl Plan {
 
     pub fn scheduler_data(&self) -> &PlanSchedulerData {
         &self.scheduler_data
-    }
-
-    /// Items that no dependency chain connects to the plan start, so cannot be scheduled
-    pub fn unscheduled(&self) -> HashSet<PlanNode> {
-        graph::unscheduled(self)
     }
 
     /// Whether every affinity linked to the task allows `day`, `None` if there is no such task
@@ -341,9 +335,8 @@ impl Plan {
 }
 // }}}
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanSchedulerData {
-    start_date: NaiveDate,
     priority: i32,
     /// What new top level items depend on to begin with, set by clients for convenience
     #[serde(default)]
@@ -352,18 +345,6 @@ pub struct PlanSchedulerData {
 
 // impl PlanSchedulerData{{{
 impl PlanSchedulerData {
-    fn new(start_date: NaiveDate) -> Self {
-        Self {
-            start_date,
-            priority: 0,
-            default_start: None,
-        }
-    }
-
-    pub fn start_date(&self) -> &NaiveDate {
-        &self.start_date
-    }
-
     pub fn default_start(&self) -> Option<PlanNode> {
         self.default_start
     }
@@ -376,9 +357,6 @@ impl PlanSchedulerData {
 
 impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
     fn apply_patch(&mut self, patch: PlanSchedulerDataPatch) -> PlinkoResult<()> {
-        if let Some(s) = patch.start_date {
-            self.start_date = s;
-        }
         if let Some(p) = patch.priority {
             self.priority = p;
         }
@@ -392,7 +370,6 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlanSchedulerDataPatch {
-    pub start_date: Option<NaiveDate>,
     pub priority: Option<i32>,
     /// The node new top level items depend on, `Some(None)` to have none
     #[serde(

@@ -13,7 +13,7 @@ use wasm_bindgen::JsCast;
 
 use crate::{
     format,
-    gantt::{arrange::Mark, info::info},
+    gantt::info::info,
     guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     mine::{MyTask, use_tasks_of},
@@ -257,7 +257,7 @@ pub fn Allocations(
                         t,
                         t.plans().get(&task.plan)?,
                         state,
-                        Mark::Node(PlanNode::Task(task.task)),
+                        PlanNode::Task(task.task),
                     ))
                 })
                 .unwrap_or_default()

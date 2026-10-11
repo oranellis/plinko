@@ -47,11 +47,7 @@ fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
 }
 
 fn without_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
-    let mut deps: Vec<Dependency> = deps.into_iter().filter(|d| d.node != on(node)).collect();
-    if deps.is_empty() {
-        deps.push(Dependency::default());
-    }
-    deps
+    deps.into_iter().filter(|d| d.node != on(node)).collect()
 }
 
 /// What a resize changes: the days a task is to run, or for one that is done or on hold the day
@@ -73,7 +69,7 @@ fn duration_of(plan: &Plan, node: PlanNode) -> Option<u32> {
 /// The group an item dropped on another ends up in: the group itself, else the group the other is in
 fn parent_for(plan: &Plan, over: Option<PlanNode>) -> Parent {
     match over {
-        None => Parent::PlanStart,
+        None => Parent::Plan,
         Some(PlanNode::TaskGroup(id)) => Parent::Node(id),
         Some(other) => model::parent_of(plan, other),
     }
@@ -245,14 +241,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dependencies_are_added_once_and_cutting_the_last_leaves_the_start() {
+    fn dependencies_are_added_once_and_cutting_the_last_leaves_none() {
         let a = PlanNode::Task(Uuid::from_u128(1));
-        let deps = with_dependency(vec![Dependency::default()], a);
-        assert_eq!(deps.len(), 2);
+        let deps = with_dependency(Vec::new(), a);
+        assert_eq!(deps.len(), 1);
         assert_eq!(with_dependency(deps.clone(), a), deps);
-        assert_eq!(
-            without_dependency(without_dependency(deps, a), a),
-            vec![Dependency::default()]
-        );
+        assert!(without_dependency(without_dependency(deps, a), a).is_empty());
     }
 }

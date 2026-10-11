@@ -42,7 +42,7 @@ Everything is read from `Tenant` and its plans.
 - **Groups:** `Tenant::group_members(group)` (a group and all subgroups) for `Worker::UserGroup`.
 - **Plan membership and tags:** `Plan.users` (and each user's tag ids) for `Worker::Tag`.
 - **Plan state:** tasks, milestones, buffers, task groups, affinities, `PlanSchedulerData`
-  (`start_date`), targets and priorities (see section 10).
+  (priority, default start node), targets (see section 10).
 - **Today:** `Tenant::today()`, one clock for every plan, moved only by `SetToday` updates (admin
   only, sent by the server runner).
 
@@ -76,8 +76,10 @@ Everything is read from `Tenant` and its plans.
 - Time constraint dates are the start of the task or milestone (`TimeConstraint::apply(earliest)`).
 - Unstarted tasks cannot start before tomorrow (Plinko 1; **Assumed**). Milestones may land on
   today. A milestone whose derived status is complete may land in the past (it already happened).
-- Plan start (`ParentStart` at top level) is `max(today, plan start_date)`; a derived-complete
-  milestone uses the plan's `start_date`.
+- A plan has no start date. `ParentStart` at the top level is today, and an item with no dependencies
+  depends on `ParentStart` of its parent. A plan that starts later has a milestone not before then
+  that its items depend on (the plan's default start node, which clients give new items). A
+  derived-complete milestone with nothing but `ParentStart` has no day of its own and lands today.
 - Every node has an exclusive end, the day after its last day. A milestone occupies the one day it
   lands on (`milestone::VolatileState::end()`). A task, group or buffer starts at a dependency's
   end plus lag (`Dependency::start_after`), so a task after a milestone starts the day after it.
@@ -157,7 +159,7 @@ Everything is read from `Tenant` and its plans.
   task after it could start Sunday, which in practice means the first day anyone works. It is
   re-checked against its constraint on its landing date.
 - Derived status: complete when every dependency is done, in progress when any task it depends on
-  is in progress, otherwise not started. Done means: the plan start; a task Completed or Dropped;
+  is in progress, otherwise not started. Done means: a task Completed or Dropped;
   a milestone derived complete; a task group whose own dependencies and all members are done; a
   buffer seen through to its own dependencies (a milestone depending on a buffer sees the buffer's
   dependencies). In progress comes from tasks only, directly or through a buffer or group, and an
@@ -166,9 +168,8 @@ Everything is read from `Tenant` and its plans.
 ### Task groups
 
 One node around the items whose `parent` is the group (tasks, milestones, buffers, nested groups).
-Its own dependencies decide the day its members can start: members anchor with `ParentStart`, which
-is that date. A top-level group needs an explicit `ParentStart` dependency to be anchored to the
-plan start, exactly like a task. The group then
+Its own dependencies decide the day its members can start: members begin at `ParentStart`, which
+is that date, and so do members with no dependencies. The group then
 covers the first member's start to the last member's end (`TaskGroup::place`), so it begins
 overlapping its first task and its end falls on the last day a member runs. Milestone members count
 as their one day. With no members the group lasts 3 calendar days from that date (not configurable); that stops
@@ -213,7 +214,7 @@ the `limit` argument of `PlanBuffer::place`.
 
 After an update that changes an item's dependencies or group, the server follows it with updates
 that drop what other dependencies already imply: `a -> c` goes when `a -> b -> c` exists and the
-chain's lags add up to at least its lag (the plan start, a group's start and a group's end count
+chain's lags add up to at least its lag (today, a group's start and a group's end count
 as links). Both the update and the follow-ups are logged, so replays do not recompute it
 (`Plan::simplifications`).
 
@@ -240,11 +241,10 @@ group depends on each member. Targets on the item go too.
 
 ## 5. Unscheduled items
 
-`Plan::unscheduled()` already finds items with no dependency chain to the plan start. Any chain
-reaching the plan start is enough. An unscheduled dependency does not stop an item that has
-another anchored path (the unscheduled dependency is ignored when computing its start). Reasons:
+Every item is placed unless it falls under a reason below. An unscheduled dependency does not stop
+an item that has another dependency that is placed (it is ignored when computing its start).
+Reasons:
 
-- `NoPathToPlanStart`: no dependency chain reaches the plan start.
 - `NoEligibleWorkers`: a tag or group resolves to nobody.
 - `NoCapacity`: the workers exist but cannot provide the allocation (availability, affinities, or
   the horizon). An allocation shortfall counts as unscheduled.

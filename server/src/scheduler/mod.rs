@@ -1,7 +1,7 @@
 // modules {{{
 use std::{borrow::Cow, cmp::Reverse, collections::HashMap};
 
-use chrono::Days;
+use chrono::{Days, NaiveDate};
 
 use crate::{
     multitenancy::{tenant::Tenant, tenant_update::TenantUpdate},
@@ -34,11 +34,9 @@ pub fn prepare(tenant: &mut Tenant) {
     let today = tenant.today();
     let plans = tenant.plans().values();
     let history = plans.flat_map(|p| {
-        let starts = p
-            .tasks()
+        p.tasks()
             .values()
-            .filter_map(|t| t.persistent_state().actual_start_date);
-        starts.chain([*p.scheduler_data().start_date()])
+            .filter_map(|t| t.persistent_state().actual_start_date)
     });
     let from = history.chain([today]).min().unwrap_or(today);
     tenant.refresh_calendars(from, today + Days::new(u64::from(MAX_FILL_DAYS)));
@@ -79,6 +77,17 @@ pub fn schedule(tenant: &mut Tenant) -> Fixes {
 /// What repair rounds changed in each plan, which a later run that places only some of the work
 /// keeps so that it does not undo what they did
 pub type Fixes = HashMap<ShortId, PlanRepairs>;
+
+/// The order plans are placed in: the one that finishes last on its own first, then by id
+fn plan_order(tenant: &Tenant, end: impl Fn(&ShortId) -> Option<NaiveDate>) -> Vec<ShortId> {
+    let mut order: Vec<_> = tenant
+        .plans()
+        .keys()
+        .map(|id| (Reverse(end(id)), *id))
+        .collect();
+    order.sort();
+    order.into_iter().map(|(_, id)| id).collect()
+}
 
 /// How a schedule was brought up to date
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,20 +220,7 @@ fn solve_with_fixes(tenant: &Tenant) -> (TenantVolatileState, Fixes) {
             )
         })
         .collect();
-    let mut order: Vec<_> = tenant
-        .plans()
-        .values()
-        .map(|plan| {
-            let end = baselines[plan.id()].state.end();
-            (
-                Reverse(end),
-                *plan.scheduler_data().start_date(),
-                *plan.id(),
-            )
-        })
-        .collect();
-    order.sort();
-    let ids: Vec<ShortId> = order.iter().map(|(_, _, id)| *id).collect();
+    let ids = plan_order(tenant, |id| baselines[id].state.end());
     let outcome = repair::solve(tenant, &ids, &baselines);
     let fixes = ids
         .iter()

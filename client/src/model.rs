@@ -80,7 +80,7 @@ pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
         PlanNode::TaskGroup(id) => plan.task_groups().get(&id).map(|g| g.parent()),
         PlanNode::PlanBuffer(id) => plan.plan_buffers().get(&id).map(|b| b.parent()),
     }
-    .unwrap_or(Parent::PlanStart)
+    .unwrap_or(Parent::Plan)
 }
 
 /// The group a node is directly in, found in the plan as the client holds it
@@ -93,7 +93,7 @@ pub fn parent_of_in(
         let plan = t.as_ref()?.plans().get(&plan)?;
         match parent_of(plan, node) {
             Parent::Node(group) => Some(group),
-            Parent::PlanStart => None,
+            Parent::Plan => None,
         }
     })
 }
@@ -189,7 +189,7 @@ pub fn rows(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet<
         collapsed,
         children: &children,
     };
-    context.add_level(Parent::PlanStart, 0, &mut rows);
+    context.add_level(Parent::Plan, 0, &mut rows);
     rows
 }
 
@@ -233,7 +233,6 @@ impl Context<'_> {
 pub fn reason(reason: UnscheduledReason) -> &'static str {
     match reason {
         UnscheduledReason::Dropped => "Dropped",
-        UnscheduledReason::NoPathToPlanStart => "Nothing connects it to the start of the plan",
         UnscheduledReason::DependsOnUnscheduled => "Everything it depends on is unscheduled",
         UnscheduledReason::NoScheduledMembers => "Nothing in the group could be scheduled",
         UnscheduledReason::NoEligibleWorkers => "Nobody is eligible for the work",
@@ -290,7 +289,6 @@ mod tests {
         let new = NewPlan {
             id: ShortId::new(),
             name: "Plan".to_string(),
-            start_date: d(1),
         };
         Plan::from(new)
     }
@@ -323,14 +321,14 @@ mod tests {
     #[test]
     fn rows_go_by_start_with_the_unscheduled_last_and_groups_hold_their_members() {
         let mut plan = plan();
-        let late = task(&mut plan, 1, "Late", Parent::PlanStart);
-        let early = task(&mut plan, 2, "Early", Parent::PlanStart);
-        let loose = task(&mut plan, 3, "Loose", Parent::PlanStart);
+        let late = task(&mut plan, 1, "Late", Parent::Plan);
+        let early = task(&mut plan, 2, "Early", Parent::Plan);
+        let loose = task(&mut plan, 3, "Loose", Parent::Plan);
         let group = Uuid::from_u128(10);
         let new = NewTaskGroup {
             id: group,
             name: "Group".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
             .unwrap();
@@ -342,7 +340,7 @@ mod tests {
         scheduled(&mut state, inside, 3, 5);
         state
             .unscheduled
-            .insert(loose, UnscheduledReason::NoPathToPlanStart);
+            .insert(loose, UnscheduledReason::NoEligibleWorkers);
 
         let names = |collapsed: &HashSet<Uuid>| -> Vec<(String, u32)> {
             rows(&plan, Some(&state), collapsed)
@@ -371,7 +369,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             loose_row.unscheduled,
-            Some(UnscheduledReason::NoPathToPlanStart)
+            Some(UnscheduledReason::NoEligibleWorkers)
         );
         assert_eq!(loose_row.span, None);
     }
@@ -379,7 +377,7 @@ mod tests {
     #[test]
     fn items_are_named_by_kind() {
         let mut plan = plan();
-        let task = task(&mut plan, 1, "Write", Parent::PlanStart);
+        let task = task(&mut plan, 1, "Write", Parent::Plan);
         assert_eq!(node_name(&plan, task), "Write");
         assert_eq!(
             node_name(&plan, PlanNode::Task(Uuid::from_u128(99))),

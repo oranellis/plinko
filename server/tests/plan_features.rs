@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use plinko::{
@@ -11,7 +11,7 @@ use plinko::{
         affinity::{AffinityPatch, NewAffinity},
         crud::Crud,
         data_block::{BlockContent, DataBlockPatch, NewDataBlock, TodoItem},
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::PlanNode,
         error::PlinkoResult,
         milestone::NewMilestone,
         parent::Parent,
@@ -19,7 +19,7 @@ use plinko::{
         short_id::ShortId,
         target::{NewTarget, TargetPatch},
         task::{Assignee, NewTask, TaskPatch, Worker},
-        task_group::{NewTaskGroup, TaskGroupPatch},
+        task_group::NewTaskGroup,
         workload::Workload,
     },
 };
@@ -33,7 +33,6 @@ fn new_plan() -> Plan {
     let new = NewPlan {
         id: ShortId::new(),
         name: "My Plan".to_owned(),
-        start_date: d(2024, 1, 1),
     };
     Plan::from(new)
 }
@@ -69,26 +68,10 @@ fn patch_task(plan: &mut Plan, patch: TaskPatch) -> PlinkoResult<()> {
     plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
 }
 
-fn depends_on(plan: &mut Plan, id: Uuid, nodes: &[DependencyNode]) {
-    let dependencies = nodes
-        .iter()
-        .map(|&node| Dependency { node, lag: 0 })
-        .collect();
-    let patch = TaskPatch {
-        dependencies: Some(dependencies),
-        ..task_patch(id)
-    };
-    patch_task(plan, patch).unwrap();
-}
-
-fn task_node(id: Uuid) -> DependencyNode {
-    DependencyNode::Node(PlanNode::Task(id))
-}
-
 #[test]
 fn allocations_are_hours_per_day_and_may_use_placeholders() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let workers = HashMap::from([(Worker::Placeholder, Workload::new(4).unwrap())]);
     let patch = TaskPatch {
         allocations: Some(workers),
@@ -99,92 +82,6 @@ fn allocations_are_hours_per_day_and_may_use_placeholders() {
         plan.tasks()[&task].allocations()[&Worker::Placeholder].get(),
         4
     );
-}
-
-#[test]
-fn unscheduled_items_do_not_trace_to_the_plan_start() {
-    let mut plan = new_plan();
-    let (anchored, floating, dependent, mixed) = (
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
-        add_task(&mut plan, Parent::PlanStart),
-    );
-    depends_on(&mut plan, anchored, &[DependencyNode::ParentStart]);
-    depends_on(&mut plan, dependent, &[task_node(floating)]);
-    // any anchored path is enough
-    depends_on(
-        &mut plan,
-        mixed,
-        &[task_node(floating), task_node(anchored)],
-    );
-
-    let expected = HashSet::from([PlanNode::Task(floating), PlanNode::Task(dependent)]);
-    assert_eq!(plan.unscheduled(), expected);
-}
-
-#[test]
-fn group_members_anchor_through_the_group_start() {
-    let mut plan = new_plan();
-    let group = Uuid::now_v7();
-    let new = NewTaskGroup {
-        id: group,
-        name: "Group".to_string(),
-        parent: Parent::PlanStart,
-    };
-    plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
-        .unwrap();
-    let member = add_task(&mut plan, Parent::Node(group));
-    depends_on(&mut plan, member, &[DependencyNode::ParentStart]);
-    let after = add_task(&mut plan, Parent::PlanStart);
-    depends_on(
-        &mut plan,
-        after,
-        &[DependencyNode::Node(PlanNode::TaskGroup(group))],
-    );
-
-    // a group with no dependencies never starts, so nothing in or after it is scheduled
-    let all = HashSet::from([
-        PlanNode::TaskGroup(group),
-        PlanNode::Task(member),
-        PlanNode::Task(after),
-    ]);
-    assert_eq!(plan.unscheduled(), all);
-
-    let patch = TaskGroupPatch {
-        id: group,
-        name: None,
-        dependencies: Some(vec![Dependency {
-            node: DependencyNode::ParentStart,
-            lag: 0,
-        }]),
-        parent: None,
-    };
-    plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
-        .unwrap();
-    assert!(plan.unscheduled().is_empty());
-}
-
-#[test]
-fn milestones_and_buffers_count_as_nodes_too() {
-    let mut plan = new_plan();
-    let new = NewMilestone {
-        id: Uuid::now_v7(),
-        name: "Milestone".to_string(),
-        parent: Parent::PlanStart,
-    };
-    let milestone = PlanNode::Milestone(new.id);
-    plan.apply_update(PlanUpdate::Milestone(Crud::Add(new)))
-        .unwrap();
-    let new = NewPlanBuffer {
-        id: Uuid::now_v7(),
-        parent: Parent::PlanStart,
-        duration: 3,
-    };
-    let buffer = PlanNode::PlanBuffer(new.id);
-    plan.apply_update(PlanUpdate::PlanBuffer(Crud::Add(new)))
-        .unwrap();
-    assert_eq!(plan.unscheduled(), HashSet::from([milestone, buffer]));
 }
 
 /// Allowed weekdays, Monday as 0
@@ -224,7 +121,7 @@ fn link(plan: &mut Plan, task: Uuid, affinities: &[Uuid]) -> PlinkoResult<()> {
 #[test]
 fn tasks_only_work_on_days_every_linked_affinity_allows() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let thursdays = add_affinity(&mut plan, days(&[3]));
     let late_week = add_affinity(&mut plan, days(&[3, 4]));
     let weekend = add_affinity(&mut plan, days(&[5, 6]));
@@ -246,7 +143,7 @@ fn tasks_only_work_on_days_every_linked_affinity_allows() {
 #[test]
 fn affinities_must_exist_and_cannot_be_removed_while_linked() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     assert!(link(&mut plan, task, &[Uuid::now_v7()]).is_err());
     assert!(plan.tasks()[&task].affinities().is_empty());
 
@@ -285,12 +182,12 @@ fn targets_must_name_existing_nodes_and_block_their_removal() {
     assert!(add_target(&mut plan, PlanNode::Task(Uuid::now_v7()), 0).is_err());
     assert!(plan.targets().is_empty());
 
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let milestone = Uuid::now_v7();
     let new = NewMilestone {
         id: milestone,
         name: "Done".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     plan.apply_update(PlanUpdate::Milestone(Crud::Add(new)))
         .unwrap();
@@ -328,22 +225,19 @@ fn plan_priority_defaults_to_zero_and_is_patched() {
     let mut plan = new_plan();
     assert_eq!(plan.scheduler_data().priority(), 0);
     let patch = PlanSchedulerDataPatch {
-        start_date: None,
         priority: Some(-3),
         default_start: None,
     };
     plan.apply_update(PlanUpdate::SchedulerData(patch)).unwrap();
     assert_eq!(plan.scheduler_data().priority(), -3);
-    assert_eq!(*plan.scheduler_data().start_date(), d(2024, 1, 1));
 }
 
 #[test]
 fn the_default_start_is_an_existing_node_that_stays_while_it_is_set() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let set = |node| {
         PlanUpdate::SchedulerData(PlanSchedulerDataPatch {
-            start_date: None,
             priority: None,
             default_start: Some(node),
         })
@@ -379,7 +273,7 @@ fn todo(items: &[(&str, bool)]) -> BlockContent {
 #[test]
 fn tasks_and_milestones_hold_data_blocks() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let node = PlanNode::Task(task);
     let block = Uuid::now_v7();
     let new = NewDataBlock {
@@ -433,7 +327,7 @@ fn a_new_affinity_allows_every_day() {
     };
     plan.apply_update(PlanUpdate::Affinity(Crud::Add(new)))
         .unwrap();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     link(&mut plan, task, &[affinity]).unwrap();
     for day in d(2024, 1, 1).iter_days().take(14) {
         assert_eq!(plan.task_allows_day(&task, day), Some(true));
@@ -487,7 +381,7 @@ fn record(plan: &mut Plan, task: Uuid, workers: &[(Worker, Assignee)]) -> Plinko
 #[test]
 fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let allocate = |plan: &mut Plan, slots: &[Worker]| {
         let allocations = slots
             .iter()
@@ -521,7 +415,7 @@ fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
 #[test]
 fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     assert_eq!(plan.tasks()[&task].duration(), 1);
     let zero = TaskPatch {
         duration: Some(0),
@@ -539,7 +433,7 @@ fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
     let new = NewTaskGroup {
         id: group,
         name: "Group".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
         .unwrap();
@@ -548,12 +442,12 @@ fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
 #[test]
 fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither() {
     let mut plan = new_plan();
-    let task = add_task(&mut plan, Parent::PlanStart);
+    let task = add_task(&mut plan, Parent::Plan);
     let milestone = Uuid::now_v7();
     let new = NewMilestone {
         id: milestone,
         name: "M".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     plan.apply_update(PlanUpdate::Milestone(Crud::Add(new)))
         .unwrap();
@@ -561,14 +455,14 @@ fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither(
     let new = NewTaskGroup {
         id: group,
         name: "G".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
         .unwrap();
     let buffer = Uuid::now_v7();
     let new = NewPlanBuffer {
         id: buffer,
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
         duration: 2,
     };
     plan.apply_update(PlanUpdate::PlanBuffer(Crud::Add(new)))

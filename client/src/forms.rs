@@ -61,14 +61,14 @@ pub fn parse_worker(text: &str) -> Option<Worker> {
 
 pub fn parent_value(parent: Parent) -> String {
     match parent {
-        Parent::PlanStart => "plan".to_string(),
+        Parent::Plan => "plan".to_string(),
         Parent::Node(id) => format!("group:{id}"),
     }
 }
 
 pub fn parse_parent(text: &str) -> Option<Parent> {
     match text {
-        "plan" => Some(Parent::PlanStart),
+        "plan" => Some(Parent::Plan),
         _ => text
             .strip_prefix("group:")
             .and_then(|id| Uuid::parse_str(id).ok())
@@ -144,7 +144,7 @@ mod tests {
         ] {
             assert_eq!(parse_worker(&worker_value(worker)), Some(worker));
         }
-        for parent in [Parent::PlanStart, Parent::Node(id())] {
+        for parent in [Parent::Plan, Parent::Node(id())] {
             assert_eq!(parse_parent(&parent_value(parent)), Some(parent));
         }
         for status in [

@@ -61,12 +61,7 @@ pub fn info(
     state: Option<&PlanVolatileState>,
     mark: Mark,
 ) -> Vec<String> {
-    let Mark::Node(node) = mark else {
-        return vec![
-            "Plan Start".to_string(),
-            format!("Date: {}", format::day(*plan.scheduler_data().start_date())),
-        ];
-    };
+    let node = mark;
     let mut lines = vec![node_name(plan, node)];
     let violated = state.is_some_and(|s| s.constraint_violations.contains_key(&node));
     match node {
@@ -134,10 +129,7 @@ pub fn info(
 
 /// What the small warning beside an item says
 pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
-    let Some(v) = (match mark {
-        Mark::Node(node) => state.and_then(|s| s.constraint_violations.get(&node)),
-        Mark::PlanStart => None,
-    }) else {
+    let Some(v) = state.and_then(|s| s.constraint_violations.get(&mark)) else {
         return Vec::new();
     };
     let (kind, date) = forms::constraint_parts(v.constraint);

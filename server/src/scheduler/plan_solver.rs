@@ -8,10 +8,7 @@ use uuid::Uuid;
 use crate::{
     availability::{calendar::Calendar, rule_set::RuleSet},
     multitenancy::tenant::Tenant,
-    planner::{
-        graph::{self, Vertex},
-        plan::Plan,
-    },
+    planner::{graph::Vertex, plan::Plan},
     scheduler::PlanRepairs,
     scheduler::{
         fill::{Filled, Hours, Slot, Spec, fill},
@@ -198,7 +195,6 @@ impl<'a> PlanSolver<'a> {
             .unwrap_or_else(|| RuleSet::default().calendar(today, today - Days::new(1)));
         let net = Network::new(plan);
         let order = net.order().to_vec();
-        let anchored = graph::anchored(plan);
         let mut solver = Self {
             tenant,
             plan,
@@ -225,11 +221,6 @@ impl<'a> PlanSolver<'a> {
         for i in 0..solver.order.len() {
             if solver.ready.waiting[i] == 0 {
                 solver.queue(i);
-            }
-        }
-        for v in solver.order.clone() {
-            if !anchored.contains(&v) {
-                solver.leave_out(v, Reason::NoPathToPlanStart);
             }
         }
         for (id, task) in plan.tasks() {
@@ -392,26 +383,21 @@ impl<'a> PlanSolver<'a> {
         Some(self.placed.get(&Vertex::Node(node))?.range.end())
     }
 
-    /// The day the dependencies of `v` that were placed allow it, `None` if there are none. A
-    /// milestone completing in the past may start from the plan start date, others from today.
+    /// The day the dependencies of `v` that were placed allow it, `None` if there are none. What
+    /// depends on nothing at the top level starts today, except a milestone that already
+    /// happened, which has no day of its own then.
     fn dependency_date(&self, v: &Vertex) -> Option<NaiveDate> {
         let milestone = matches!(v, Vertex::Node(PlanNode::Milestone(_)));
-        let start = *self.plan.scheduler_data().start_date();
-        let plan_start = match v {
-            Vertex::Node(PlanNode::Milestone(id))
-                if self.statuses[id] == DerivedStatus::Completed =>
-            {
-                start
-            }
-            _ => start.max(self.today),
-        };
+        let happened = matches!(v, Vertex::Node(PlanNode::Milestone(id))
+            if self.statuses[id] == DerivedStatus::Completed);
         let dates = self.net.deps(v).iter().filter_map(|e| {
             let dep = Dependency {
                 lag: e.lag,
                 ..Default::default()
             };
             match e.from {
-                None => Some(dep.start_after(plan_start)),
+                None if happened => None,
+                None => Some(dep.start_after(self.today)),
                 Some(g @ Vertex::GroupStart(_)) => {
                     Some(dep.start_after(self.placed.get(&g)?.range.start()))
                 }
@@ -421,7 +407,12 @@ impl<'a> PlanSolver<'a> {
                 Some(Vertex::Node(n)) => self.end_of(n).map(|e| dep.start_after(e)),
             }
         });
-        dates.max().map(|d| d.max(start))
+        let latest = dates.max();
+        if happened {
+            latest.or(Some(self.today))
+        } else {
+            latest
+        }
     }
 
     /// Where a not started task may start: after its dependencies, and not before tomorrow
@@ -1124,7 +1115,7 @@ impl<'a> PlanSolver<'a> {
                 .is_some_and(|s| !matches!(s, Status::NotStarted | Status::Dropped))
         };
         let exact = ranges.keys().filter(|v| started(v)).copied().collect();
-        let first = self.today.max(*self.plan.scheduler_data().start_date());
+        let first = self.today;
         let floor = ranges
             .keys()
             .map(|v| {

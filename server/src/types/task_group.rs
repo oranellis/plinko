@@ -147,7 +147,7 @@ mod tests {
             id: Uuid::now_v7(),
             name: "Group".to_string(),
             dependencies: Vec::new(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
             description: None,
             data: DataBlocks::default(),
         }

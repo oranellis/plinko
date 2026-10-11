@@ -30,7 +30,8 @@ pub struct Unplaced {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene {
-    pub plan_start: NaiveDate,
+    /// The day the chart counts from: today, or the first day of anything before it
+    pub origin: NaiveDate,
     pub arrangement: Arrangement,
     pub unplaced: Vec<Unplaced>,
     /// The day offset after the last day anything is on
@@ -41,9 +42,9 @@ pub struct Scene {
 
 impl Scene {
     /// A scene with nothing in it
-    pub fn empty(plan_start: NaiveDate) -> Self {
+    pub fn empty(origin: NaiveDate) -> Self {
         Self {
-            plan_start,
+            origin,
             arrangement: Arrangement::default(),
             unplaced: Vec::new(),
             last_day: 0.0,
@@ -65,8 +66,12 @@ fn kind_of(node: PlanNode) -> Kind {
     }
 }
 
-pub fn build(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet<Uuid>) -> Scene {
-    let plan_start = *plan.scheduler_data().start_date();
+pub fn build(
+    plan: &Plan,
+    state: Option<&PlanVolatileState>,
+    collapsed: &HashSet<Uuid>,
+    today: NaiveDate,
+) -> Scene {
     let nodes = model::nodes(plan);
     let mut depended: HashSet<PlanNode> = HashSet::new();
     for node in &nodes {
@@ -106,14 +111,16 @@ pub fn build(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet
         targets: &targets,
         children: &children,
     };
-    let entries = context.entries(Parent::PlanStart);
-    let arrangement = arrange(plan_start, &entries);
+    let entries = context.entries(Parent::Plan);
+    let arrangement = arrange(&entries);
+    let first = arrangement.placed.iter().map(|p| p.span.0).min();
+    let origin = first.map_or(today, |first| first.min(today));
     let last = arrangement
         .placed
         .iter()
         .map(|p| p.span.1)
         .max()
-        .unwrap_or(plan_start);
+        .unwrap_or(origin);
     let index = arrangement
         .placed
         .iter()
@@ -121,8 +128,8 @@ pub fn build(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet
         .map(|(i, p)| (p.mark, i))
         .collect();
     Scene {
-        plan_start,
-        last_day: (last - plan_start).num_days() as f64,
+        origin,
+        last_day: (last - origin).num_days() as f64,
         arrangement,
         unplaced,
         index,
@@ -164,7 +171,7 @@ impl Context<'_> {
                         && !model::ends_groups(self.plan, self.state, node)
                             .iter()
                             .any(|group| self.depended.contains(group)),
-                    rooted: model::parent_of(self.plan, node) == Parent::PlanStart
+                    rooted: model::parent_of(self.plan, node) == Parent::Plan
                         && model::dependencies(self.plan, node)
                             .iter()
                             .all(|d| d.node == DependencyNode::ParentStart),
@@ -240,14 +247,13 @@ mod tests {
         let mut plan = Plan::from(NewPlan {
             id: ShortId::new(),
             name: "P".to_string(),
-            start_date: d(1),
         });
         let ids: Vec<Uuid> = (1..=3).map(Uuid::from_u128).collect();
         for (i, id) in ids.iter().enumerate() {
             let new = NewTask {
                 id: *id,
                 name: format!("T{i}"),
-                parent: Parent::PlanStart,
+                parent: Parent::Plan,
             };
             plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
         }
@@ -275,10 +281,10 @@ mod tests {
         scheduled(&mut state, ids[1], 6, 8);
         state
             .unscheduled
-            .insert(PlanNode::Task(ids[2]), UnscheduledReason::NoPathToPlanStart);
+            .insert(PlanNode::Task(ids[2]), UnscheduledReason::NoEligibleWorkers);
 
-        let scene = build(&plan, Some(&state), &HashSet::new());
-        assert_eq!(scene.plan_start, d(1));
+        let scene = build(&plan, Some(&state), &HashSet::new(), d(1));
+        assert_eq!(scene.origin, d(1));
         let get = |name: &str| {
             scene
                 .arrangement
@@ -287,14 +293,13 @@ mod tests {
                 .find(|p| p.name == name)
                 .unwrap()
         };
-        // the plan start, then T0 and T1 in the first lane with a day between them
-        assert_eq!(scene.arrangement.placed.len(), 3);
+        // T0 and T1 in the first lane with a day between them
+        assert_eq!(scene.arrangement.placed.len(), 2);
         assert_eq!((get("T0").lane, get("T1").lane), (0, 0));
         assert!(!get("T0").leaf && get("T1").leaf);
-        assert_eq!(get("Plan Start").mark, Mark::PlanStart);
         assert_eq!(scene.last_day, 7.0);
         assert_eq!(scene.unplaced.len(), 1);
         assert_eq!(scene.unplaced[0].name, "T2");
-        assert!(scene.unplaced[0].reason.contains("connects"));
+        assert!(scene.unplaced[0].reason.contains("eligible"));
     }
 }

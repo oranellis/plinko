@@ -70,7 +70,6 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
                 .find(|n| n.id().to_string() == chosen)
         });
         let patch = PlanSchedulerDataPatch {
-            start_date: None,
             priority: Some(priority.get_untracked().clamp(-1000, 1000) as i32),
             default_start: Some(node),
         };

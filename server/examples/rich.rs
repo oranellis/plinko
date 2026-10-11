@@ -204,7 +204,6 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
         let new = NewPlan {
             id: plan,
             name: format!("Plan {p}"),
-            start_date: today,
         };
         apply(
             &mut tenant,
@@ -292,7 +291,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
                 PlanUpdate::Task(Crud::Add(NewTask {
                     id: task,
                     name: format!("Task {i}"),
-                    parent: Parent::PlanStart,
+                    parent: Parent::Plan,
                 })),
             );
             let layer = i / LAYER;
@@ -387,7 +386,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
                 let new = NewMilestone {
                     id: milestone,
                     name: "Gate".to_string(),
-                    parent: Parent::PlanStart,
+                    parent: Parent::Plan,
                 };
                 send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
                 let gather: Vec<Dependency> = nodes
@@ -416,7 +415,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
         let new = NewMilestone {
             id: end,
             name: "End".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
         let after: Vec<Dependency> = nodes

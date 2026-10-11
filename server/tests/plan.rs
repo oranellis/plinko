@@ -1,4 +1,3 @@
-use chrono::NaiveDate;
 use plinko::{
     planner::{plan::*, plan_update::PlanUpdate},
     types::{
@@ -19,11 +18,9 @@ use uuid::Uuid;
 #[test]
 fn create_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
-    let start_date = NaiveDate::from_ymd_opt(2000, 12, 31).unwrap();
     let plan = Plan::from(NewPlan {
         id,
         name: "My Plan".to_owned(),
-        start_date,
     });
 
     assert_eq!(plan.id().to_owned(), id);
@@ -33,16 +30,14 @@ fn create_plan() {
 #[test]
 fn add_task_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
-    let start_date = NaiveDate::from_ymd_opt(2000, 12, 31).unwrap();
     let mut plan = Plan::from(NewPlan {
         id,
         name: "My Plan".to_owned(),
-        start_date,
     });
     let task = NewTask {
         id: Uuid::now_v7(),
         name: "Task Name".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     let task_id = task.id;
     let update = PlanUpdate::Task(Crud::Add(task));
@@ -53,16 +48,14 @@ fn add_task_to_plan() {
 #[test]
 fn add_milestone_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
-    let start_date = NaiveDate::from_ymd_opt(2000, 12, 31).unwrap();
     let mut plan = Plan::from(NewPlan {
         id,
         name: "My Plan".to_owned(),
-        start_date,
     });
     let milestone = NewMilestone {
         id: Uuid::now_v7(),
         name: "Milestone Name".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     let milestone_id = milestone.id;
     let update = PlanUpdate::Milestone(Crud::Add(milestone));
@@ -73,11 +66,9 @@ fn add_milestone_to_plan() {
 #[test]
 fn add_user_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
-    let start_date = NaiveDate::from_ymd_opt(2000, 12, 31).unwrap();
     let mut plan = Plan::from(NewPlan {
         id,
         name: "My Plan".to_owned(),
-        start_date,
     });
     let user_id = Uuid::now_v7(); // Fake Uuid, would normally match Tenant user Uuid
     let update = PlanUpdate::User(Crud::Add(NewPlanUser { id: user_id }));
@@ -88,11 +79,9 @@ fn add_user_to_plan() {
 #[test]
 fn add_tag_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
-    let start_date = NaiveDate::from_ymd_opt(2000, 12, 31).unwrap();
     let mut plan = Plan::from(NewPlan {
         id,
         name: "My Plan".to_owned(),
-        start_date,
     });
     let tag = NewTag {
         id: Uuid::now_v7(),
@@ -110,7 +99,7 @@ fn add_task_group_to_plan() {
     let group = NewTaskGroup {
         id: Uuid::now_v7(),
         name: "Group".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     let group_id = group.id;
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(group)))
@@ -126,7 +115,7 @@ fn add_plan_buffer_to_plan() {
     let mut plan = new_plan();
     let buffer = NewPlanBuffer {
         id: Uuid::now_v7(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
         duration: 5,
     };
     let buffer_id = buffer.id;
@@ -139,7 +128,6 @@ fn new_plan() -> Plan {
     Plan::from(NewPlan {
         id: ShortId::new(),
         name: "My Plan".to_owned(),
-        start_date: NaiveDate::from_ymd_opt(2000, 12, 31).unwrap(),
     })
 }
 
@@ -167,7 +155,7 @@ fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), Pli
 #[test]
 fn group_parents_reject_cycles_and_missing_groups() {
     let mut plan = new_plan();
-    let outer = add_group(&mut plan, Parent::PlanStart).unwrap();
+    let outer = add_group(&mut plan, Parent::Plan).unwrap();
     let inner = add_group(&mut plan, Parent::Node(outer)).unwrap();
     let leaf = add_group(&mut plan, Parent::Node(inner)).unwrap();
     assert_eq!(plan.task_groups()[&inner].parent(), Parent::Node(outer));
@@ -185,8 +173,8 @@ fn group_parents_reject_cycles_and_missing_groups() {
 fn tasks_move_between_groups_and_block_group_removal() {
     let mut plan = new_plan();
     let (a, b) = (
-        add_group(&mut plan, Parent::PlanStart).unwrap(),
-        add_group(&mut plan, Parent::PlanStart).unwrap(),
+        add_group(&mut plan, Parent::Plan).unwrap(),
+        add_group(&mut plan, Parent::Plan).unwrap(),
     );
     let task = NewTask {
         id: Uuid::now_v7(),

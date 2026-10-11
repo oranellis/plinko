@@ -10,7 +10,6 @@ use plinko::{
 };
 
 use crate::{
-    datepicker::DateInput,
     format,
     nav::Route,
     shell::open_plan,
@@ -21,7 +20,6 @@ use crate::{
 pub struct Card {
     pub id: ShortId,
     pub name: String,
-    start: NaiveDate,
     tasks: usize,
     /// When it finishes and how late that is compared with the plan on its own
     forecast: Option<(NaiveDate, i64)>,
@@ -52,7 +50,6 @@ pub fn use_cards() -> Memo<Vec<Card>> {
                         Card {
                             id: *plan.id(),
                             name: plan.name().to_string(),
-                            start: *plan.scheduler_data().start_date(),
                             tasks: plan.tasks().len(),
                             forecast: state
                                 .and_then(|s| s.plan_end)
@@ -83,7 +80,7 @@ pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
                     <li>
                         <a class="card" href=Route::Plan(id, crate::nav::PlanTab::Gantt, None).path()>
                             <strong>{card.name.clone()}</strong>
-                            <span>{format!("{} tasks · starts {}", card.tasks, format::day(card.start))}</span>
+                            <span>{format!("{} tasks", card.tasks)}</span>
                             {card.forecast.map(|(end, late)| view! {
                                 <span class:late={late > 0}>
                                     {format!("Finishes {} · {}", format::day(end), format::delay(late))}
@@ -158,11 +155,6 @@ pub fn Plans() -> impl IntoView {
 fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
     let name = RwSignal::new(String::new());
-    let start = RwSignal::new(
-        sync.tenant
-            .with(|t| t.as_ref().map(|t| t.today()))
-            .unwrap_or_default(),
-    );
     let make = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
         if name.with_untracked(|n| n.trim().is_empty()) {
@@ -171,7 +163,6 @@ fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
         let new = NewPlan {
             id: ShortId::new(),
             name: name.get_untracked(),
-            start_date: start.get_untracked(),
         };
         sync.send_then(
             TenantUpdateType::Plan(PlanTenantUpdate::Add(new)),
@@ -188,9 +179,6 @@ fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
             <form class="form" on:submit=make>
                 <Field label="Plan Name">
                     <Text value=name on_input=Callback::new(move |v| name.set(v)) placeholder="My Plan" />
-                </Field>
-                <Field label="Start Date">
-                    <DateInput day=start />
                 </Field>
                 <Actions on_cancel=on_close />
             </form>

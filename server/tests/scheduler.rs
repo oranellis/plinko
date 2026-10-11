@@ -12,10 +12,7 @@ use plinko::{
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{
-        plan::{NewPlan, PlanSchedulerDataPatch},
-        plan_update::PlanUpdate,
-    },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
     scheduler::{
         Refreshed, Tracker, prepare, solve_tenant,
         state::{Baseline, PlanVolatileState, UnscheduledReason},
@@ -94,7 +91,6 @@ impl World {
         let new = NewPlan {
             id: world.plan,
             name: "Plan".to_string(),
-            start_date: NaiveDate::from_ymd_opt(2023, 12, 1).unwrap(),
         };
         world.apply(TenantUpdateType::Plan(PlanTenantUpdate::Add(new)));
         world
@@ -164,7 +160,7 @@ impl World {
     }
 
     fn task(&mut self, duration: u32, who: &[(Worker, u8)], on: &[Dep]) -> Uuid {
-        self.task_in(Parent::PlanStart, duration, who, on)
+        self.task_in(Parent::Plan, duration, who, on)
     }
 
     fn task_in(&mut self, parent: Parent, duration: u32, who: &[(Worker, u8)], on: &[Dep]) -> Uuid {
@@ -217,7 +213,7 @@ impl World {
         let new = NewMilestone {
             id,
             name: "Milestone".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         self.plan_update(PlanUpdate::Milestone(Crud::Add(new)));
         let patch = MilestonePatch {
@@ -236,7 +232,7 @@ impl World {
         let id = self.id();
         let new = NewPlanBuffer {
             id,
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
             duration,
         };
         self.plan_update(PlanUpdate::PlanBuffer(Crud::Add(new)));
@@ -256,7 +252,7 @@ impl World {
         let new = NewTaskGroup {
             id,
             name: "Group".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         self.plan_update(PlanUpdate::TaskGroup(Crud::Add(new)));
         let patch = TaskGroupPatch {
@@ -712,24 +708,31 @@ fn recorded_workers_replace_the_named_user() {
 }
 
 #[test]
+fn a_task_that_depends_on_nothing_starts_with_the_plan() {
+    let mut world = World::new();
+    let (alice, bob) = (world.user(), world.user());
+    let free = world.task(1, &[(user(alice), 8)], &[]);
+    let anchored = world.task(1, &[(user(bob), 8)], &[start()]);
+    let state = world.solve();
+    assert_eq!(span(&state, free).0, span(&state, anchored).0);
+}
+
+#[test]
 fn what_cannot_be_scheduled_says_why() {
     let mut world = World::new();
     let (alice, bob) = (world.user(), world.user());
     let nobody = world.tag(&[]);
     // bob never works
     world.weekly_hours(bob, [0; 7]);
-    let floating = world.task(1, &[], &[]);
     let no_one = world.task(1, &[(Worker::Tag(nobody), 8)], &[start()]);
     let no_time = world.task(1, &[(user(bob), 8)], &[start()]);
     let behind = world.task(1, &[(user(alice), 8)], &[after(node(no_one))]);
     let fine = world.task(1, &[(user(alice), 8)], &[start(), after(node(no_one))]);
     let state = world.solve();
     let reason = |task| state.unscheduled[&node(task)];
-    assert_eq!(reason(floating), UnscheduledReason::NoPathToPlanStart);
     assert_eq!(reason(no_one), UnscheduledReason::NoEligibleWorkers);
     assert_eq!(reason(no_time), UnscheduledReason::NoCapacity);
     assert_eq!(reason(behind), UnscheduledReason::DependsOnUnscheduled);
-    // another path to the start is enough
     assert_eq!(span(&state, fine), (d(1), d(2)));
 }
 
@@ -973,20 +976,23 @@ fn a_snapshot_of_a_tenant_schedules_the_same() {
 }
 
 #[test]
-fn what_hangs_from_a_plan_start_in_the_future_begins_on_that_day_and_milestones_land_on_it() {
+fn what_hangs_from_a_start_milestone_in_the_future_begins_on_that_day() {
     let mut world = World::new();
     let alice = world.user();
-    // the plan starts on a Wednesday, well after today
-    let patch = PlanSchedulerDataPatch {
-        start_date: Some(d(10)),
-        priority: None,
-        default_start: None,
-    };
-    world.plan_update(PlanUpdate::SchedulerData(patch));
-    let first = world.task(1, &[(user(alice), 8)], &[start()]);
-    let marker = world.milestone(&[start()]);
+    // a plan that starts on a Wednesday, well after today, is a milestone not before then
+    let begin = world.milestone(&[start()]);
+    world.plan_update(PlanUpdate::Milestone(Crud::Update(MilestonePatch {
+        id: begin,
+        name: None,
+        parent: None,
+        time_constraint: Some(TimeConstraint::Earliest(d(10))),
+        dependencies: None,
+        persistent_state: None,
+    })));
+    let first = world.task(1, &[(user(alice), 8)], &[after(PlanNode::Milestone(begin))]);
+    let marker = world.milestone(&[after(PlanNode::Milestone(begin))]);
     let state = world.solve();
-    assert_eq!(span(&state, first), (d(10), d(11)));
+    assert_eq!(span(&state, first), (d(11), d(12)));
     assert_eq!(state.milestones[&marker].date, d(10));
 }
 
@@ -1106,7 +1112,7 @@ fn a_new_task_is_placed_around_what_is_there() {
     let new = NewTask {
         id,
         name: "New".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     world.tracked(&mut tracker, PlanUpdate::Task(Crud::Add(new)));
     world.tracked(

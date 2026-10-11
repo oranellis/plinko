@@ -69,7 +69,7 @@ fn plan_update_ids(mut update: PlanUpdate) -> Uuid {
 
 #[test]
 fn plan_adds_get_fresh_ids() {
-    let parent = Parent::PlanStart;
+    let parent = Parent::Plan;
     let name = || "Name".to_string();
     let content = || BlockContent::TodoList(Vec::new());
     let updates = [
@@ -173,7 +173,6 @@ fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned() {
     let new = NewPlan {
         id: client_plan,
         name: "Plan".to_string(),
-        start_date: NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
     };
     let mut add = TenantUpdateType::Plan(PlanTenantUpdate::Add(new));
     add.assign_ids();
@@ -185,7 +184,7 @@ fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned() {
     let task = NewTask {
         id: CLIENT_ID,
         name: "Task".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     let inner = PlanUpdate::Task(Crud::Add(task));
     let mut update = TenantUpdateType::Plan(PlanTenantUpdate::Update(client_plan, Box::new(inner)));

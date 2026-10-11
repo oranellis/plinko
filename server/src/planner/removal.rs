@@ -24,7 +24,7 @@ use crate::{
 fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<Dependency>) {
     T::entities(plan)
         .get(&id)
-        .map_or((Parent::PlanStart, Vec::new()), |item| {
+        .map_or((Parent::Plan, Vec::new()), |item| {
             (item.parent(), item.dependencies().to_vec())
         })
 }
@@ -149,7 +149,6 @@ impl Plan {
         );
         if self.scheduler_data().default_start() == Some(node) {
             updates.push(PlanUpdate::SchedulerData(PlanSchedulerDataPatch {
-                start_date: None,
                 priority: None,
                 default_start: Some(None),
             }));

@@ -95,7 +95,6 @@ fn main() {
         let new = NewPlan {
             id: plan,
             name: "Plan".to_string(),
-            start_date: today,
         };
         apply(
             &mut tenant,
@@ -138,7 +137,7 @@ fn main() {
             let new = NewTask {
                 id,
                 name: "Task".to_string(),
-                parent: Parent::PlanStart,
+                parent: Parent::Plan,
             };
             send(&mut tenant, PlanUpdate::Task(Crud::Add(new)));
             let mut on: Vec<Dependency> = Vec::new();
@@ -192,7 +191,7 @@ fn main() {
         let new = NewMilestone {
             id: end,
             name: "End".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
         let after = tasks.iter().rev().take(5).map(|t| Dependency {

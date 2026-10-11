@@ -106,10 +106,7 @@ pub fn Gantt(
     });
     let current = move || viewport.get_untracked().unwrap_or_default();
     let today_offset = move || {
-        let (start, today) = (
-            scene.with_untracked(|s| s.plan_start),
-            today.get_untracked(),
-        );
+        let (start, today) = (scene.with_untracked(|s| s.origin), today.get_untracked());
         (today - start).num_days() as f64
     };
 
@@ -197,10 +194,7 @@ pub fn Gantt(
         focus.set(None);
         let Some(found) = scene.with_untracked(|s| {
             let placed = s.arrangement.placed.iter().find(|p| p.mark == mark)?;
-            Some((
-                (placed.span.0 - s.plan_start).num_days() as f64,
-                placed.lane,
-            ))
+            Some(((placed.span.0 - s.origin).num_days() as f64, placed.lane))
         }) else {
             return;
         };
@@ -224,10 +218,7 @@ pub fn Gantt(
             move || {
                 let Some(found) = scene.with_untracked(|s| {
                     let placed = s.arrangement.placed.iter().find(|p| p.mark == mark)?;
-                    Some((
-                        (placed.span.0 - s.plan_start).num_days() as f64,
-                        placed.lane,
-                    ))
+                    Some(((placed.span.0 - s.origin).num_days() as f64, placed.lane))
                 }) else {
                     return;
                 };
@@ -259,8 +250,8 @@ pub fn Gantt(
     };
     // the handles of the item the pointer is near
     let handles_of = move |node: PlanNode| {
-        let kind = scene.with_untracked(|s| s.placed(Mark::Node(node)).map(|p| p.kind));
-        match (kind, rect_of(Mark::Node(node))) {
+        let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
+        match (kind, rect_of(node)) {
             (Some(kind), Some(rect)) => Grips::of(kind, rect),
             _ => Grips::default(),
         }
@@ -272,7 +263,7 @@ pub fn Gantt(
         let (hovered, picked) = (hover.get(), selected.get());
         // with something selected, the chain to what is under the pointer shows instead
         let chain = match (picked, hovered) {
-            (Some(Mark::Node(a)), Some(Mark::Node(b))) if a != b => editing.chain.run((a, b)),
+            (Some(a), Some(b)) if a != b => editing.chain.run((a, b)),
             _ => Vec::new(),
         };
         if chain.is_empty() {
@@ -397,7 +388,7 @@ pub fn Gantt(
             let target = |own: PlanNode| {
                 hit(at.0, at.1)
                     .map(|(m, _)| m)
-                    .filter(|m| *m != Mark::Node(own))
+                    .filter(|m| *m != own)
                     .and_then(rect_of)
             };
             let view = dragged.map(|d| match d {
@@ -416,7 +407,7 @@ pub fn Gantt(
                         s.arrangement
                             .placed
                             .iter()
-                            .find(|p| p.mark == Mark::Node(node))
+                            .find(|p| p.mark == node)
                             .map(|p| p.name.clone())
                             .unwrap_or_default()
                     });
@@ -433,7 +424,7 @@ pub fn Gantt(
                     };
                     DragView::Move {
                         over: target(node),
-                        origin: rect_of(Mark::Node(node)).unwrap_or(Rect {
+                        origin: rect_of(node).unwrap_or(Rect {
                             x: at.0,
                             y: at.1,
                             w: 0.0,
@@ -450,7 +441,7 @@ pub fn Gantt(
                 } => {
                     let vp = viewport.get_untracked().unwrap_or_default();
                     let (delta, new) = shift::resized(vp.day_at(at.0), last_day, duration);
-                    let origin = rect_of(Mark::Node(node)).unwrap_or(Rect {
+                    let origin = rect_of(node).unwrap_or(Rect {
                         x: at.0,
                         y: at.1,
                         w: 0.0,
@@ -535,8 +526,8 @@ pub fn Gantt(
                             s.arrangement
                                 .placed
                                 .iter()
-                                .find(|p| p.mark == Mark::Node(node))
-                                .map(|p| (s.plan_start, p.span.1))
+                                .find(|p| p.mark == node)
+                                .map(|p| (s.origin, p.span.1))
                         });
                         let last_day = end.map_or(0, |(start, end)| (end - start).num_days() - 1);
                         Drag::Resize {
@@ -586,10 +577,7 @@ pub fn Gantt(
                     h.items()
                         .chain(h.headers().map(|(m, r, _)| (m, r)))
                         .find(|(_, r)| shift::near(*r, x, y))
-                        .and_then(|(m, _)| match m {
-                            Mark::Node(n) => Some(n),
-                            Mark::PlanStart => None,
-                        })
+                        .map(|(m, _)| m)
                 });
                 nearby.set(found);
             }
@@ -650,14 +638,14 @@ pub fn Gantt(
 
     // a tap on an item selects it, with shift on one linked to the selected item cuts the link
     let tap = move |x: f64, y: f64, shifted: bool| {
-        if let Some((Mark::Node(node), fold)) = hit(x, y) {
+        if let Some((node, fold)) = hit(x, y) {
             let on_violation = hits.with_value(|h| h.violations().any(|(_, r)| r.contains(x, y)));
             let chosen = selected.get_untracked();
             match (fold, on_violation) {
                 (_, true) => {}
                 (true, false) => on_toggle.run(node),
                 (false, false) if shifted && chosen.is_some_and(|s| linked_to(links, s, node)) => {
-                    if let Some(Mark::Node(own)) = chosen {
+                    if let Some(own) = chosen {
                         editing.unlink.run((own, node));
                     }
                 }
@@ -677,10 +665,7 @@ pub fn Gantt(
                 tap(x, y, ev.shift_key());
                 return;
             }
-            let over = hit(x, y).and_then(|(m, _)| match m {
-                Mark::Node(n) => Some(n),
-                Mark::PlanStart => None,
-            });
+            let over = hit(x, y).map(|(m, _)| m);
             match done {
                 Drag::Link { node, right } => {
                     if let Some(other) = over.filter(|o| *o != node) {
@@ -787,7 +772,7 @@ pub fn Gantt(
             on:pointermove=moved
             on:pointerup=up
             on:dblclick=move |ev| {
-                if let Some((Mark::Node(node), false)) = hit(f64::from(ev.offset_x()), f64::from(ev.offset_y())) {
+                if let Some((node, false)) = hit(f64::from(ev.offset_x()), f64::from(ev.offset_y())) {
                     on_edit.run(node);
                 }
             }
@@ -817,10 +802,7 @@ fn linked_to(links: Callback<Mark, Vec<Link>>, selected: Mark, node: PlanNode) -
     links.run(selected).iter().any(|l| {
         matches!(l.role, Role::Before | Role::After)
             && [l.from, l.to].iter().any(|a| match a {
-                links::Anchor::Start(n) | links::Anchor::End(n) => {
-                    *n == node && selected != Mark::Node(node)
-                }
-                links::Anchor::PlanStart => false,
+                links::Anchor::Start(n) | links::Anchor::End(n) => *n == node && selected != node,
             })
     })
 }

@@ -57,7 +57,6 @@ fn updates_are_staged_applied_and_scheduled() {
     let new = NewPlan {
         id: ShortId::from_str_checked("AAAAAAAA").unwrap(),
         name: "Plan".to_string(),
-        start_date: day(1),
     };
     send(
         &mut tenant,
@@ -82,7 +81,7 @@ fn updates_are_staged_applied_and_scheduled() {
     let new = NewTask {
         id: CLIENT_ID,
         name: "Task".to_string(),
-        parent: Parent::PlanStart,
+        parent: Parent::Plan,
     };
     send(&mut tenant, in_plan(PlanUpdate::Task(Crud::Add(new)))).unwrap();
     let task = *tenant.plans()[&plan].tasks().keys().next().unwrap();

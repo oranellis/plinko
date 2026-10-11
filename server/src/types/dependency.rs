@@ -43,7 +43,7 @@ impl Dependency {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DependencyNode {
-    /// The start of the enclosing task group, or the plan start for top level items
+    /// The start of the enclosing task group, or today for top level items
     #[default]
     ParentStart,
     Node(PlanNode),

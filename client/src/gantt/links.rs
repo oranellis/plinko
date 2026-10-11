@@ -7,7 +7,7 @@ use plinko::{
     planner::plan::Plan,
     scheduler::state::PlanVolatileState,
     types::{
-        dependency::{DependencyNode, PlanNode},
+        dependency::{Dependency, DependencyNode, PlanNode},
         parent::Parent,
     },
 };
@@ -17,7 +17,6 @@ use crate::{gantt::arrange::Mark, model};
 /// A place a line can end
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Anchor {
-    PlanStart,
     /// The first day of an item, a group's left edge
     Start(PlanNode),
     /// The last day of an item, a group's right edge
@@ -42,35 +41,24 @@ pub struct Link {
 }
 
 /// Only the direct links of the item, one step either way. An item inside a group that depends on
-/// the start of its group is linked to the start of the group, and the plan start for the top level.
+/// the start of its group is linked to the start of the group. At the top level that is no line,
+/// the item just begins when the plan does.
 pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> Vec<Link> {
     let mut out = Vec::new();
     let nodes = model::nodes(plan);
-    let start_of = |parent: Parent| match parent {
-        Parent::PlanStart => Anchor::PlanStart,
-        Parent::Node(group) => Anchor::Start(PlanNode::TaskGroup(group)),
-    };
-    let Mark::Node(node) = hovered else {
-        for other in nodes {
-            let top = model::parent_of(plan, other) == Parent::PlanStart;
-            if top
-                && model::dependencies(plan, other)
-                    .iter()
-                    .any(|d| d.node == DependencyNode::ParentStart)
-            {
-                out.push(Link {
-                    from: Anchor::PlanStart,
-                    to: Anchor::Start(other),
-                    role: Role::After,
-                });
-            }
-        }
-        return out;
-    };
-    for dep in model::dependencies(plan, node) {
+    let node = hovered;
+    let mut deps = model::dependencies(plan, node);
+    if deps.is_empty() {
+        // depending on nothing is depending on the start of the parent
+        deps.push(Dependency::default());
+    }
+    for dep in deps {
         let from = match dep.node {
             DependencyNode::Node(before) => Anchor::End(before),
-            DependencyNode::ParentStart => start_of(model::parent_of(plan, node)),
+            DependencyNode::ParentStart => match model::parent_of(plan, node) {
+                Parent::Plan => continue,
+                Parent::Node(group) => Anchor::Start(PlanNode::TaskGroup(group)),
+            },
         };
         out.push(Link {
             from,
@@ -199,33 +187,17 @@ mod tests {
         Plan::from(NewPlan {
             id: ShortId::new(),
             name: "P".to_string(),
-            start_date: chrono::NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
         })
     }
 
     #[test]
     fn an_item_is_linked_to_what_it_waits_for_and_what_waits_for_it() {
         let mut plan = new_plan();
-        let first = task(
-            &mut plan,
-            1,
-            Parent::PlanStart,
-            &[DependencyNode::ParentStart],
-        );
-        let second = task(
-            &mut plan,
-            2,
-            Parent::PlanStart,
-            &[DependencyNode::Node(first)],
-        );
-        let third = task(
-            &mut plan,
-            3,
-            Parent::PlanStart,
-            &[DependencyNode::Node(second)],
-        );
+        let first = task(&mut plan, 1, Parent::Plan, &[DependencyNode::ParentStart]);
+        let second = task(&mut plan, 2, Parent::Plan, &[DependencyNode::Node(first)]);
+        let third = task(&mut plan, 3, Parent::Plan, &[DependencyNode::Node(second)]);
 
-        let around = links(&plan, None, Mark::Node(second));
+        let around = links(&plan, None, second);
         assert_eq!(around.len(), 2);
         assert!(around.contains(&Link {
             from: Anchor::End(first),
@@ -238,34 +210,24 @@ mod tests {
             role: Role::After
         }));
 
-        // the first waits for the plan start, and the plan start is linked to what starts from it
-        let start = links(&plan, None, Mark::Node(first));
-        assert!(start.contains(&Link {
-            from: Anchor::PlanStart,
-            to: Anchor::Start(first),
-            role: Role::Before
-        }));
-        let from_start = links(&plan, None, Mark::PlanStart);
-        assert_eq!(
-            from_start,
-            [Link {
-                from: Anchor::PlanStart,
-                to: Anchor::Start(first),
-                role: Role::After
-            }]
+        // the first begins when the plan does, which is no line
+        assert!(
+            links(&plan, None, first)
+                .iter()
+                .all(|l| l.role != Role::Before)
         );
     }
 
     #[test]
     fn the_chain_between_two_items_is_the_longest_either_way_round() {
         let mut plan = new_plan();
-        let a = task(&mut plan, 1, Parent::PlanStart, &[]);
-        let b = task(&mut plan, 2, Parent::PlanStart, &[DependencyNode::Node(a)]);
-        let c = task(&mut plan, 3, Parent::PlanStart, &[DependencyNode::Node(b)]);
+        let a = task(&mut plan, 1, Parent::Plan, &[]);
+        let b = task(&mut plan, 2, Parent::Plan, &[DependencyNode::Node(a)]);
+        let c = task(&mut plan, 3, Parent::Plan, &[DependencyNode::Node(b)]);
         let d = task(
             &mut plan,
             4,
-            Parent::PlanStart,
+            Parent::Plan,
             &[DependencyNode::Node(a), DependencyNode::Node(c)],
         );
         let step = |from, to| Link {
@@ -278,7 +240,7 @@ mod tests {
         assert_eq!(chain(&plan, a, d), long);
         assert_eq!(chain(&plan, d, a), long);
         assert!(chain(&plan, b, b).is_empty());
-        let lone = task(&mut plan, 5, Parent::PlanStart, &[]);
+        let lone = task(&mut plan, 5, Parent::Plan, &[]);
         assert!(chain(&plan, a, lone).is_empty());
     }
 
@@ -289,7 +251,7 @@ mod tests {
         let new = NewTaskGroup {
             id,
             name: "G".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
             .unwrap();
@@ -300,19 +262,14 @@ mod tests {
             Parent::Node(id),
             &[DependencyNode::ParentStart],
         );
-        let after = task(
-            &mut plan,
-            2,
-            Parent::PlanStart,
-            &[DependencyNode::Node(group)],
-        );
+        let after = task(&mut plan, 2, Parent::Plan, &[DependencyNode::Node(group)]);
 
-        assert!(links(&plan, None, Mark::Node(member)).contains(&Link {
+        assert!(links(&plan, None, member).contains(&Link {
             from: Anchor::Start(group),
             to: Anchor::Start(member),
             role: Role::Before
         }));
-        let around = links(&plan, None, Mark::Node(group));
+        let around = links(&plan, None, group);
         // what is inside a group is not linked to it
         assert!(!around.iter().any(|l| l.to == Anchor::Start(member)));
         assert!(around.contains(&Link {

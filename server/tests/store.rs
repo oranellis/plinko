@@ -44,7 +44,6 @@ fn a_tenant_loads_from_its_snapshot_and_the_updates_after_it() {
     let new = NewPlan {
         id: ShortId::new(),
         name: "Plan".to_string(),
-        start_date: day(1),
     };
     let mut seq = send(
         &store,
@@ -59,7 +58,7 @@ fn a_tenant_loads_from_its_snapshot_and_the_updates_after_it() {
         let new = NewTask {
             id: Uuid::nil(),
             name: "Task".to_string(),
-            parent: Parent::PlanStart,
+            parent: Parent::Plan,
         };
         let update = PlanUpdate::Task(Crud::Add(new));
         let update = TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, Box::new(update)));

@@ -1,5 +1,5 @@
 //! Where things are on the chart, as numbers, the way Plinko 1 laid it out: day 0 is the day the
-//! plan starts, and everything is a day offset from it. Drawing and the pointer both go through
+//! chart starts, and everything is a day offset from it. Drawing and the pointer both go through
 //! here, so what is drawn is what is hit.
 
 pub const ROW_HEIGHT: f64 = 36.0;
@@ -80,7 +80,7 @@ impl Viewport {
         (first, last)
     }
 
-    /// Keeps the chart in range: half a screen before the plan starts, half a screen after the last
+    /// Keeps the chart in range: half a screen before the chart starts, half a screen after the last
     /// day, and no further than the last lane
     pub fn clamp(&mut self, b: Bounds) {
         let right = (b.last_day * self.day_width + b.width / 2.0).max(0.0);
