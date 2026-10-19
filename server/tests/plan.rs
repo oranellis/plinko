@@ -17,7 +17,7 @@ use plinko::{
 use uuid::Uuid;
 // }}}
 
-// fn create_plan {{{
+// create_plan {{{
 #[test]
 fn create_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -31,7 +31,7 @@ fn create_plan() {
 }
 // }}}
 
-// fn add_task_to_plan {{{
+// add_task_to_plan {{{
 #[test]
 fn add_task_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -51,7 +51,7 @@ fn add_task_to_plan() {
 }
 // }}}
 
-// fn add_milestone_to_plan {{{
+// add_milestone_to_plan {{{
 #[test]
 fn add_milestone_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -71,7 +71,7 @@ fn add_milestone_to_plan() {
 }
 // }}}
 
-// fn add_user_to_plan {{{
+// add_user_to_plan {{{
 #[test]
 fn add_user_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -86,7 +86,7 @@ fn add_user_to_plan() {
 }
 // }}}
 
-// fn add_tag_to_plan {{{
+// add_tag_to_plan {{{
 #[test]
 fn add_tag_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -105,7 +105,7 @@ fn add_tag_to_plan() {
 }
 // }}}
 
-// fn add_task_group_to_plan {{{
+// add_task_group_to_plan {{{
 #[test]
 fn add_task_group_to_plan() {
     let mut plan = new_plan();
@@ -124,7 +124,7 @@ fn add_task_group_to_plan() {
 }
 // }}}
 
-// fn add_plan_buffer_to_plan {{{
+// add_plan_buffer_to_plan {{{
 #[test]
 fn add_plan_buffer_to_plan() {
     let mut plan = new_plan();
@@ -140,16 +140,14 @@ fn add_plan_buffer_to_plan() {
 }
 // }}}
 
-// fn new_plan {{{
+// helpers {{{
 fn new_plan() -> Plan {
     Plan::from(NewPlan {
         id: ShortId::new(),
         name: "My Plan".to_owned(),
     })
 }
-// }}}
 
-// fn add_group {{{
 fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
     let id = Uuid::now_v7();
     let new = NewTaskGroup {
@@ -160,9 +158,7 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))?;
     Ok(id)
 }
-// }}}
 
-// fn set_group_parent {{{
 fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), PlinkoError> {
     let patch = TaskGroupPatch {
         id,
@@ -174,7 +170,7 @@ fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), Pli
 }
 // }}}
 
-// fn group_parents_reject_cycles_and_missing_groups {{{
+// group_parents_reject_cycles_and_missing_groups {{{
 #[test]
 fn group_parents_reject_cycles_and_missing_groups() {
     let mut plan = new_plan();
@@ -193,7 +189,7 @@ fn group_parents_reject_cycles_and_missing_groups() {
 }
 // }}}
 
-// fn tasks_move_between_groups_and_block_group_removal {{{
+// tasks_move_between_groups_and_block_group_removal {{{
 #[test]
 fn tasks_move_between_groups_and_block_group_removal() {
     let mut plan = new_plan();

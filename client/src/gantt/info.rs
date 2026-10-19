@@ -15,7 +15,7 @@ use plinko::{
 use crate::{format, forms, gantt::arrange::Mark, model::node_name};
 // }}}
 
-// fn status_label {{{
+// helpers {{{
 pub fn status_label(status: Status) -> &'static str {
     match status {
         Status::NotStarted => "Not started",
@@ -25,9 +25,7 @@ pub fn status_label(status: Status) -> &'static str {
         Status::Dropped => "Dropped",
     }
 }
-// }}}
 
-// fn last_day {{{
 fn last_day(range: (chrono::NaiveDate, chrono::NaiveDate)) -> chrono::NaiveDate {
     range
         .1
@@ -37,7 +35,7 @@ fn last_day(range: (chrono::NaiveDate, chrono::NaiveDate)) -> chrono::NaiveDate 
 }
 // }}}
 
-// fn worker_name {{{
+// worker_name {{{
 fn worker_name(tenant: &Tenant, plan: &Plan, worker: &Worker) -> String {
     let user = |id| {
         tenant
@@ -63,7 +61,7 @@ fn worker_name(tenant: &Tenant, plan: &Plan, worker: &Worker) -> String {
 }
 // }}}
 
-// fn info {{{
+// info {{{
 pub fn info(
     tenant: &Tenant,
     plan: &Plan,
@@ -137,7 +135,7 @@ pub fn info(
 }
 // }}}
 
-// fn violation {{{
+// violation {{{
 /// What the small warning beside an item says
 pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
     let Some(v) = state.and_then(|s| s.constraint_violations.get(&mark)) else {

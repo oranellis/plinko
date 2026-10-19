@@ -7,7 +7,7 @@ use crate::{
 };
 // }}}
 
-// fn Login {{{
+// Login {{{
 #[component]
 pub fn Login() -> impl IntoView {
     let sync = use_sync();

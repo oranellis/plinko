@@ -15,7 +15,7 @@ use crate::{
 };
 // }}}
 
-// fn Preferences {{{
+// Preferences {{{
 #[component]
 pub fn Preferences() -> impl IntoView {
     view! {
@@ -30,7 +30,7 @@ pub fn Preferences() -> impl IntoView {
 }
 // }}}
 
-// fn Profile {{{
+// Profile {{{
 #[component]
 fn Profile() -> impl IntoView {
     let sync = use_sync();
@@ -74,7 +74,7 @@ fn Profile() -> impl IntoView {
 }
 // }}}
 
-// fn Password {{{
+// Password {{{
 #[component]
 fn Password() -> impl IntoView {
     let current = RwSignal::new(String::new());
@@ -124,7 +124,7 @@ fn Password() -> impl IntoView {
 }
 // }}}
 
-// fn Display {{{
+// Display {{{
 #[component]
 fn Display() -> impl IntoView {
     let sync = use_sync();

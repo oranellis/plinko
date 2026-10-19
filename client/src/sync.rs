@@ -240,7 +240,7 @@ impl Default for Sync {
 }
 // }}}
 
-// fn socket_url {{{
+// socket_url {{{
 fn socket_url() -> String {
     let location = web_sys::window().expect("a browser").location();
     let secure = location.protocol().is_ok_and(|p| p == "https:");

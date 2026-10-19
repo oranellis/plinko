@@ -12,14 +12,6 @@ use crate::{
 };
 // }}}
 
-/// Admins see and edit everything, members create plans and edit the plans they are part of
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Role {
-    Admin,
-    Member,
-}
-
-// Role supporting types {{{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TenantLoginUser {
     id: Uuid,
@@ -99,6 +91,14 @@ impl Patchable<TenantLoginUserPatch> for TenantLoginUser {
     }
 }
 // }}}
+
+// TenantLoginUser supporting types {{{
+/// Admins see and edit everything, members create plans and edit the plans they are part of
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Role {
+    Admin,
+    Member,
+}
 
 /// Derived from a user's rules and rebuilt when they change, so it is never part of the user's
 /// own state

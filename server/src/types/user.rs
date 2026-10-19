@@ -40,23 +40,7 @@ impl Patchable<PlanUserDataPatch> for PlanUserData {
 /// A tenant user group assigned to a plan, so anyone in it can be allocated tasks
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanUserGroupData;
-// }}}
 
-// impl PlanUserGroupData {{{
-impl From<NewPlanUserGroup> for PlanUserGroupData {
-    fn from(_: NewPlanUserGroup) -> Self {
-        Self
-    }
-}
-
-impl Patchable<PlanUserGroupPatch> for PlanUserGroupData {
-    fn apply_patch(&mut self, _patch: PlanUserGroupPatch) -> PlinkoResult<()> {
-        Ok(())
-    }
-}
-// }}}
-
-// PlanUserData supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewPlanUserGroup {
     pub id: Uuid,
@@ -76,5 +60,19 @@ pub struct NewPlanUser {
 pub struct PlanUserDataPatch {
     pub id: Uuid,
     pub tags: Option<HashSet<Uuid>>,
+}
+// }}}
+
+// impl PlanUserGroupData {{{
+impl From<NewPlanUserGroup> for PlanUserGroupData {
+    fn from(_: NewPlanUserGroup) -> Self {
+        Self
+    }
+}
+
+impl Patchable<PlanUserGroupPatch> for PlanUserGroupData {
+    fn apply_patch(&mut self, _patch: PlanUserGroupPatch) -> PlinkoResult<()> {
+        Ok(())
+    }
 }
 // }}}

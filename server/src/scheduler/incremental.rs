@@ -22,7 +22,7 @@ use crate::{
 };
 // }}}
 
-// fn trouble {{{
+// trouble {{{
 /// How bad a schedule is: each hard date missed and the days it is missed by, and each thing
 /// left unscheduled
 pub fn trouble(schedule: &TenantVolatileState) -> i64 {
@@ -39,7 +39,7 @@ pub fn trouble(schedule: &TenantVolatileState) -> i64 {
 }
 // }}}
 
-// fn reschedule {{{
+// reschedule {{{
 /// The schedule `previous` with the plans of `change` placed again around the rest, from what
 /// `scheduler::prepare` cached. `None` if it cannot be done and the whole tenant should be
 /// scheduled. If placing only what depends on the changes leaves more hard dates missed or things

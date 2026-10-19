@@ -24,7 +24,7 @@ const UPCOMING: usize = 4;
 const DAYS: u64 = 7;
 // }}}
 
-// fn Home {{{
+// Home {{{
 #[component]
 pub fn Home() -> impl IntoView {
     let sync = use_sync();
@@ -125,7 +125,7 @@ pub fn Home() -> impl IntoView {
 }
 // }}}
 
-// fn Row {{{
+// Row {{{
 /// A task with the button that moves it on: finish what is in progress, start what is waiting
 #[component]
 fn Row(

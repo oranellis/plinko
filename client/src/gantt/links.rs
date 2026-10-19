@@ -44,7 +44,7 @@ pub struct Link {
 }
 // }}}
 
-// fn links {{{
+// links {{{
 /// Only the direct links of the item, one step either way. An item inside a group that depends on
 /// the start of its group is linked to the start of the group. At the top level that is no line,
 /// the item just begins when the plan does.
@@ -95,7 +95,7 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
 }
 // }}}
 
-// fn chain {{{
+// chain {{{
 /// The longest chain of dependencies between two items, in either direction, as links
 pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
     let nodes = model::nodes(plan);
@@ -119,7 +119,7 @@ pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
 }
 // }}}
 
-// fn path {{{
+// path {{{
 /// The longest run of items from `from` to `to`, each waiting on the one before
 fn path(
     plan: &Plan,

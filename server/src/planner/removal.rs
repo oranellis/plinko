@@ -23,7 +23,7 @@ use crate::{
 };
 // }}}
 
-// fn placed {{{
+// helpers {{{
 fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<Dependency>) {
     T::entities(plan)
         .get(&id)
@@ -31,9 +31,7 @@ fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<Dependency>) {
             (item.parent(), item.dependencies().to_vec())
         })
 }
-// }}}
 
-// fn placement {{{
 /// Where an item is, and what it depends on
 pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>) {
     match node {
@@ -43,9 +41,7 @@ pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>
         PlanNode::TaskGroup(id) => placed::<TaskGroup>(plan, id),
     }
 }
-// }}}
 
-// fn all_nodes {{{
 pub(super) fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
     let mut nodes = [
         graph::nodes::<Task>(plan),

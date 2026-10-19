@@ -41,7 +41,24 @@ struct AppState {
     secure_cookies: bool,
 }
 
-// fn router {{{
+// AppState supporting types {{{
+#[derive(Deserialize)]
+struct Login {
+    email: String,
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct ChangePassword {
+    /// Whose password, the caller's own if left out
+    user: Option<Uuid>,
+    /// The caller's current password, needed to change their own
+    current: Option<String>,
+    new: String,
+}
+// }}}
+
+// router {{{
 /// The routes, serving the client from `files` if given
 pub fn router(handle: Handle, files: Option<PathBuf>, secure_cookies: bool) -> Router {
     let state = AppState {
@@ -109,15 +126,7 @@ async fn blocking<T: Send + 'static>(
 }
 // }}}
 
-// AppState supporting types {{{
-#[derive(Deserialize)]
-struct Login {
-    email: String,
-    password: String,
-}
-// }}}
-
-// fn login {{{
+// login {{{
 async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -146,7 +155,7 @@ async fn login(
 }
 // }}}
 
-// fn logout {{{
+// logout {{{
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if !same_origin(&headers) {
         return StatusCode::FORBIDDEN.into_response();
@@ -158,7 +167,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
 }
 // }}}
 
-// fn me {{{
+// me {{{
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(user) = user_of(&state, &headers).await else {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -170,18 +179,7 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
 }
 // }}}
 
-// AppState supporting types {{{
-#[derive(Deserialize)]
-struct ChangePassword {
-    /// Whose password, the caller's own if left out
-    user: Option<Uuid>,
-    /// The caller's current password, needed to change their own
-    current: Option<String>,
-    new: String,
-}
-// }}}
-
-// fn password {{{
+// password {{{
 /// Anyone may change their own password given the current one, an admin may set anyone's
 async fn password(
     State(state): State<AppState>,
@@ -232,7 +230,7 @@ async fn password(
 }
 // }}}
 
-// fn socket {{{
+// socket {{{
 async fn socket(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -248,7 +246,7 @@ async fn socket(
 }
 // }}}
 
-// fn serve {{{
+// serve {{{
 /// Sends a client what the actor says and gives the actor what the client asks for
 async fn serve(handle: Handle, user: Uuid, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();

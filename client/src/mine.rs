@@ -32,14 +32,14 @@ pub struct MyTask {
     pub days: BTreeMap<NaiveDate, u8>,
 }
 
-// fn use_my_tasks {{{
+// use_my_tasks {{{
 /// Every task scheduled with the person signed in on it, soonest first
 pub fn use_my_tasks() -> Memo<Vec<MyTask>> {
     use_tasks_of(None)
 }
 // }}}
 
-// fn use_tasks_of {{{
+// use_tasks_of {{{
 /// Every task scheduled with `who` on it, or the person signed in, soonest first
 pub fn use_tasks_of(who: Option<Uuid>) -> Memo<Vec<MyTask>> {
     let sync = use_sync();
@@ -91,7 +91,7 @@ pub fn use_tasks_of(who: Option<Uuid>) -> Memo<Vec<MyTask>> {
 }
 // }}}
 
-// fn set_status {{{
+// set_status {{{
 /// Moves a task to a new status, the server fills in the dates that goes with it
 pub fn set_status(plan: ShortId, task: Uuid, status: Status) {
     let sync = use_sync();

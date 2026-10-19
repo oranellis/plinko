@@ -20,9 +20,7 @@ fn day(d: u32) -> NaiveDate {
 fn time() -> DateTime<Utc> {
     DateTime::from_timestamp(978307200, 0).unwrap()
 }
-// }}}
 
-// fn setup {{{
 fn setup() -> (Store, Tenant, Uuid) {
     let tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), day(1));
     let root = *tenant.users().keys().next().unwrap();
@@ -31,9 +29,7 @@ fn setup() -> (Store, Tenant, Uuid) {
     store.create(&tenant).unwrap();
     (store, tenant, root)
 }
-// }}}
 
-// fn send {{{
 fn send(
     store: &Store,
     tenant: &mut Tenant,
@@ -46,7 +42,7 @@ fn send(
 }
 // }}}
 
-// fn a_tenant_loads_from_its_snapshot_and_the_updates_after_it {{{
+// a_tenant_loads_from_its_snapshot_and_the_updates_after_it {{{
 #[test]
 fn a_tenant_loads_from_its_snapshot_and_the_updates_after_it() {
     let (store, mut tenant, root) = setup();
@@ -97,7 +93,7 @@ fn a_tenant_loads_from_its_snapshot_and_the_updates_after_it() {
 }
 // }}}
 
-// fn refused_updates_are_not_saved {{{
+// refused_updates_are_not_saved {{{
 #[test]
 fn refused_updates_are_not_saved() {
     let (store, mut tenant, root) = setup();
@@ -115,7 +111,7 @@ fn refused_updates_are_not_saved() {
 }
 // }}}
 
-// fn snapshots_are_taken_as_the_log_grows {{{
+// snapshots_are_taken_as_the_log_grows {{{
 #[test]
 fn snapshots_are_taken_as_the_log_grows() {
     let (store, mut tenant, root) = setup();
@@ -129,7 +125,7 @@ fn snapshots_are_taken_as_the_log_grows() {
 }
 // }}}
 
-// fn passwords_are_checked_and_sessions_come_and_go {{{
+// passwords_are_checked_and_sessions_come_and_go {{{
 #[test]
 fn passwords_are_checked_and_sessions_come_and_go() {
     let (store, _, _) = setup();

@@ -23,13 +23,11 @@ use crate::{
 };
 // }}}
 
-// fn on {{{
+// helpers {{{
 fn on(node: PlanNode) -> DependencyNode {
     DependencyNode::Node(node)
 }
-// }}}
 
-// fn ended {{{
 /// The days a task really started and ended, for one whose end is recorded
 fn ended(state: PersistentState) -> Option<(NaiveDate, NaiveDate)> {
     match (state.status, state.actual_start_date, state.actual_end_date) {
@@ -39,9 +37,7 @@ fn ended(state: PersistentState) -> Option<(NaiveDate, NaiveDate)> {
         _ => None,
     }
 }
-// }}}
 
-// fn with_dependency {{{
 fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
     let mut deps = deps;
     if !deps.iter().any(|d| d.node == on(node)) {
@@ -52,15 +48,11 @@ fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
     }
     deps
 }
-// }}}
 
-// fn without_dependency {{{
 fn without_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
     deps.into_iter().filter(|d| d.node != on(node)).collect()
 }
-// }}}
 
-// fn duration_of {{{
 /// What a resize changes: the days a task is to run, or for one that is done or on hold the day
 /// it really ended, so its length is the days from its start to its end
 fn duration_of(plan: &Plan, node: PlanNode) -> Option<u32> {
@@ -76,9 +68,7 @@ fn duration_of(plan: &Plan, node: PlanNode) -> Option<u32> {
         _ => None,
     }
 }
-// }}}
 
-// fn parent_for {{{
 /// The group an item dropped on another ends up in: the group itself, else the group the other is in
 fn parent_for(plan: &Plan, over: Option<PlanNode>) -> Parent {
     match over {
@@ -87,9 +77,7 @@ fn parent_for(plan: &Plan, over: Option<PlanNode>) -> Parent {
         Some(other) => model::parent_of(plan, other),
     }
 }
-// }}}
 
-// fn task_state {{{
 fn task_state(id: uuid::Uuid, state: PersistentState) -> PlanUpdate {
     PlanUpdate::Task(Crud::Update(TaskPatch {
         id,
@@ -107,7 +95,7 @@ fn task_state(id: uuid::Uuid, state: PersistentState) -> PlanUpdate {
 }
 // }}}
 
-// fn editing {{{
+// editing {{{
 pub fn editing(plan: ShortId) -> Editing {
     let sync = use_sync();
     let read = move |f: &dyn Fn(&Plan) -> Option<Vec<PlanUpdate>>| {

@@ -14,19 +14,6 @@ use crate::{
 pub const MAX_FILL_DAYS: u32 = 3650;
 // }}}
 
-/// Hours of one person on one day
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Claim {
-    pub user: Uuid,
-    pub day: NaiveDate,
-    pub hours: u8,
-}
-
-// Claim supporting types {{{
-/// The claims of one placement, so it can be taken and given back as a whole
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Run(pub Vec<Claim>);
-
 /// Remaining hours per person per day over a window of days, shared by every plan. Placeholders
 /// are unlimited so have no entry. Days before the window are past and cost nothing, days after
 /// it have no capacity.
@@ -37,6 +24,19 @@ pub struct Ledger {
     capacity: HashMap<Uuid, Vec<u8>>,
     free: HashMap<Uuid, Vec<u8>>,
 }
+
+// Ledger supporting types {{{
+/// Hours of one person on one day
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Claim {
+    pub user: Uuid,
+    pub day: NaiveDate,
+    pub hours: u8,
+}
+
+/// The claims of one placement, so it can be taken and given back as a whole
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Run(pub Vec<Claim>);
 // }}}
 
 // impl Ledger {{{

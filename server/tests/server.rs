@@ -27,9 +27,8 @@ use tower::ServiceExt;
 use uuid::Uuid;
 // }}}
 
-// constants {{{
+// helpers {{{
 const PASSWORD: &str = "correct horse";
-// }}}
 
 struct Server {
     app: Router,
@@ -37,7 +36,6 @@ struct Server {
     admin: Uuid,
 }
 
-// helpers {{{
 fn today() -> NaiveDate {
     chrono::Utc::now().date_naive()
 }
@@ -45,9 +43,7 @@ fn today() -> NaiveDate {
 async fn server() -> Server {
     server_on(today()).await
 }
-// }}}
 
-// fn server_on {{{
 async fn server_on(day: NaiveDate) -> Server {
     let admin = TenantLoginUser::new(
         "Admin".to_string(),
@@ -67,9 +63,7 @@ async fn server_on(day: NaiveDate) -> Server {
         admin: admin_id,
     }
 }
-// }}}
 
-// fn call {{{
 async fn call(
     app: &Router,
     request: Request<Body>,
@@ -85,9 +79,7 @@ async fn call(
         .to_vec();
     (status, headers, body)
 }
-// }}}
 
-// helpers {{{
 fn post(uri: &str, body: &str) -> axum::http::request::Builder {
     let _ = body;
     Request::post(uri).header(header::CONTENT_TYPE, "application/json")
@@ -103,7 +95,7 @@ fn cookie_of(headers: &axum::http::HeaderMap) -> String {
 }
 // }}}
 
-// fn logging_in_gives_a_session_that_logging_out_ends {{{
+// logging_in_gives_a_session_that_logging_out_ends {{{
 #[tokio::test]
 async fn logging_in_gives_a_session_that_logging_out_ends() {
     let server = server().await;
@@ -155,7 +147,7 @@ async fn logging_in_gives_a_session_that_logging_out_ends() {
 }
 // }}}
 
-// fn requests_from_other_origins_are_refused {{{
+// requests_from_other_origins_are_refused {{{
 #[tokio::test]
 async fn requests_from_other_origins_are_refused() {
     let server = server().await;
@@ -174,7 +166,7 @@ async fn requests_from_other_origins_are_refused() {
 }
 // }}}
 
-// fn passwords_change_for_oneself_with_the_old_one_and_for_others_as_admin {{{
+// passwords_change_for_oneself_with_the_old_one_and_for_others_as_admin {{{
 #[tokio::test]
 async fn passwords_change_for_oneself_with_the_old_one_and_for_others_as_admin() {
     let server = server().await;
@@ -231,21 +223,17 @@ async fn passwords_change_for_oneself_with_the_old_one_and_for_others_as_admin()
 }
 // }}}
 
-// Server supporting types {{{
+// helpers {{{
 type Socket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-// }}}
 
-// fn listen {{{
 async fn listen(server: &Server) -> std::net::SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(axum::serve(listener, server.app.clone()).into_future());
     address
 }
-// }}}
 
-// fn connect {{{
 async fn connect(address: std::net::SocketAddr, token: &str) -> Result<Socket, tungstenite::Error> {
     let mut request = format!("ws://{address}/ws").into_client_request().unwrap();
     request.headers_mut().insert(
@@ -256,9 +244,7 @@ async fn connect(address: std::net::SocketAddr, token: &str) -> Result<Socket, t
         .await
         .map(|(socket, _)| socket)
 }
-// }}}
 
-// fn next {{{
 async fn next(socket: &mut Socket) -> ServerMessage {
     loop {
         let message = tokio::time::timeout(Duration::from_secs(20), socket.next())
@@ -271,9 +257,7 @@ async fn next(socket: &mut Socket) -> ServerMessage {
         }
     }
 }
-// }}}
 
-// helpers {{{
 async fn quiet(socket: &mut Socket) -> bool {
     tokio::time::timeout(Duration::from_millis(300), socket.next())
         .await
@@ -287,9 +271,7 @@ async fn send(socket: &mut Socket, request: u32, update: TenantUpdateType) {
         .await
         .unwrap();
 }
-// }}}
 
-// fn answer {{{
 /// Reads until the answer to `request`: its sequence number or why not, and what came before it
 async fn answer(socket: &mut Socket, request: u32) -> (Result<u64, String>, Vec<ServerMessage>) {
     let mut before = Vec::new();
@@ -307,7 +289,7 @@ async fn answer(socket: &mut Socket, request: u32) -> (Result<u64, String>, Vec<
 }
 // }}}
 
-// fn the_socket_needs_a_session_and_starts_with_a_snapshot {{{
+// the_socket_needs_a_session_and_starts_with_a_snapshot {{{
 #[tokio::test]
 async fn the_socket_needs_a_session_and_starts_with_a_snapshot() {
     let server = server().await;
@@ -327,7 +309,7 @@ async fn the_socket_needs_a_session_and_starts_with_a_snapshot() {
 }
 // }}}
 
-// fn updates_are_applied_in_order_and_shared_with_those_who_may_see_them {{{
+// updates_are_applied_in_order_and_shared_with_those_who_may_see_them {{{
 #[tokio::test]
 async fn updates_are_applied_in_order_and_shared_with_those_who_may_see_them() {
     let server = server().await;
@@ -407,7 +389,7 @@ async fn updates_are_applied_in_order_and_shared_with_those_who_may_see_them() {
 }
 // }}}
 
-// fn a_burst_of_updates_ends_with_a_schedule_for_the_last {{{
+// a_burst_of_updates_ends_with_a_schedule_for_the_last {{{
 #[tokio::test]
 async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
     let server = server().await;
@@ -431,7 +413,7 @@ async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
 }
 // }}}
 
-// fn the_server_sets_the_clock_to_today_and_nobody_else_does {{{
+// the_server_sets_the_clock_to_today_and_nobody_else_does {{{
 #[tokio::test]
 async fn the_server_sets_the_clock_to_today_and_nobody_else_does() {
     // it starts on another day, which the server corrects as it starts and is not left to a client

@@ -42,7 +42,7 @@ pub trait PlanItem: Entity<Plan> {
     }
 }
 
-// items {{{
+// plan_item {{{
 macro_rules! plan_item {
     ($ty:ident, $node:ident, $new:ty, $patch:ty, $field:ident
      $(, workers: $workers:expr, affinities: $affinities:expr, recorded: $recorded:expr)?) => {
@@ -114,7 +114,7 @@ plan_item!(
 );
 // }}}
 
-// impl Tag {{{
+// impl Entity for Tag {{{
 impl Entity<Plan> for Tag {
     type New = NewTag;
     type Patch = TagPatch;
@@ -131,7 +131,7 @@ impl Entity<Plan> for Tag {
 }
 // }}}
 
-// impl PlanUserData {{{
+// impl Entity for PlanUserData {{{
 impl Entity<Plan> for PlanUserData {
     type New = NewPlanUser;
     type Patch = PlanUserDataPatch;
@@ -158,7 +158,7 @@ impl Entity<Plan> for PlanUserData {
 }
 // }}}
 
-// impl PlanUserGroupData {{{
+// impl Entity for PlanUserGroupData {{{
 impl Entity<Plan> for PlanUserGroupData {
     type New = NewPlanUserGroup;
     type Patch = PlanUserGroupPatch;
@@ -175,7 +175,7 @@ impl Entity<Plan> for PlanUserGroupData {
 }
 // }}}
 
-// impl Affinity {{{
+// impl Entity for Affinity {{{
 impl Entity<Plan> for Affinity {
     type New = NewAffinity;
     type Patch = AffinityPatch;
@@ -192,7 +192,7 @@ impl Entity<Plan> for Affinity {
 }
 // }}}
 
-// impl Target {{{
+// impl Entity for Target {{{
 impl Entity<Plan> for Target {
     type New = NewTarget;
     type Patch = TargetPatch;

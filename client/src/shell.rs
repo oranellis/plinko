@@ -31,7 +31,7 @@ enum Page {
     Availability(crate::nav::Availability),
 }
 
-// fn Shell {{{
+// Shell {{{
 #[component]
 pub fn Shell() -> impl IntoView {
     let sync = use_sync();
@@ -123,7 +123,7 @@ pub fn Shell() -> impl IntoView {
 }
 // }}}
 
-// fn UserMenu {{{
+// UserMenu {{{
 /// The person circle at the top right, and the menu it opens
 #[component]
 fn UserMenu(on_logout: Callback<()>) -> impl IntoView {
@@ -162,7 +162,7 @@ fn UserMenu(on_logout: Callback<()>) -> impl IntoView {
 }
 // }}}
 
-// fn account_names {{{
+// account_names {{{
 /// The name and email of the person signed in, which follow their profile as it changes
 fn account_names(sync: crate::sync::Sync) -> (Signal<String>, Signal<String>) {
     let me = move || sync.me.with(|m| m.as_ref().map(|m| m.id));
@@ -190,7 +190,7 @@ fn account_names(sync: crate::sync::Sync) -> (Signal<String>, Signal<String>) {
 }
 // }}}
 
-// fn open_plan {{{
+// open_plan {{{
 pub fn open_plan(plan: plinko::types::short_id::ShortId) {
     navigate(Route::Plan(plan, crate::nav::PlanTab::Gantt, None));
 }

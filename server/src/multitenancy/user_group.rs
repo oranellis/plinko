@@ -2,15 +2,12 @@
 use crate::helpers::double_option;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-// }}}
 
-// modules {{{
 use uuid::Uuid;
 
 use crate::{
     helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
 };
-
 // }}}
 
 /// A team of users. A group's parent makes teams hierarchical, so anyone in a subgroup is also

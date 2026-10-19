@@ -51,6 +51,15 @@ pub enum DependencyNode {
     ParentStart,
     Node(PlanNode),
 }
+
+/// A schedulable node. A task group is a single node that ends when all of its members end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PlanNode {
+    Task(Uuid),
+    Milestone(Uuid),
+    PlanBuffer(Uuid),
+    TaskGroup(Uuid),
+}
 // }}}
 
 // impl PlanNode {{{
@@ -63,17 +72,6 @@ impl PlanNode {
             | PlanNode::TaskGroup(id) => id,
         }
     }
-}
-// }}}
-
-// Dependency supporting types {{{
-/// A schedulable node. A task group is a single node that ends when all of its members end.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum PlanNode {
-    Task(Uuid),
-    Milestone(Uuid),
-    PlanBuffer(Uuid),
-    TaskGroup(Uuid),
 }
 // }}}
 

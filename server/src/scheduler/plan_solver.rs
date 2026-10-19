@@ -33,12 +33,10 @@ use crate::{
 };
 // }}}
 
-type Assignments = HashMap<Assignee, BTreeMap<NaiveDate, Workload>>;
-// Assignments supporting types {{{
-type Reason = UnscheduledReason;
-// }}}
-
 // constants {{{
+type Assignments = HashMap<Assignee, BTreeMap<NaiveDate, Workload>>;
+type Reason = UnscheduledReason;
+
 /// The most compaction passes, each can only move things earlier
 const MAX_COMPACT_PASSES: usize = 50;
 
@@ -52,72 +50,6 @@ const DAY_SPAN: i64 = 100_000;
 const SPREAD_DAYS: u64 = 1;
 // }}}
 
-// Assignments supporting types {{{
-#[derive(Clone, Debug)]
-struct Placement {
-    range: DateRange,
-    /// What a task works on, other nodes have none
-    work: Option<Work>,
-}
-
-#[derive(Clone, Debug)]
-struct Work {
-    /// What the task holds in the ledger
-    run: Run,
-    assignments: Assignments,
-    workers: HashMap<Worker, Assignee>,
-}
-
-/// How a task is placed
-#[derive(Clone, Copy)]
-enum Kind {
-    /// Not started, from the given earliest day
-    Open(NaiveDate),
-    /// In progress from its actual start, working at least up to today
-    Active,
-    /// Completed or on hold, fixed to its actual dates
-    Past,
-}
-
-/// Hours of people, from their calendars and the ledger
-struct Availability<'a> {
-    tenant: &'a Tenant,
-    plan_calendar: &'a Calendar<Workload>,
-    ledger: &'a Ledger,
-}
-// }}}
-
-// impl Availability {{{
-impl Availability<'_> {
-    /// Hours the person has booked from `from` up to `to`
-    fn booked(&self, user: Uuid, from: NaiveDate, to: NaiveDate) -> u32 {
-        let days = from.iter_days().take_while(|d| *d < to);
-        let booked = |d| self.ledger.capacity(&user, d) - self.ledger.free(&user, d);
-        days.map(|d| u32::from(booked(d))).sum()
-    }
-}
-
-impl Hours for Availability<'_> {
-    fn cap(&self, who: Assignee, day: NaiveDate) -> Workload {
-        let calendar = match who {
-            Assignee::Placeholder => Some(self.plan_calendar),
-            Assignee::User(user) => self.tenant.calendar(&user),
-        };
-        calendar.and_then(|c| c.on(day)).unwrap_or_default()
-    }
-
-    fn free(&self, who: Assignee, day: NaiveDate) -> Workload {
-        match who {
-            Assignee::User(user) if day >= self.ledger.start() => {
-                Workload::new(self.ledger.free(&user, day)).expect("a ledger holds valid hours")
-            }
-            _ => self.cap(who, day),
-        }
-    }
-}
-// }}}
-
-// Assignments supporting types {{{
 /// Schedules one plan against a ledger shared with other plans, by Plinko 1's stages: work that
 /// has happened or started, then chains to hard dates, then chains to targets, then the rest.
 /// Nodes go in only once everything they depend on is settled, most urgent (longest chain of work
@@ -156,6 +88,70 @@ pub struct PlanSolver<'a> {
     dated: HashMap<Vertex, NaiveDate>,
 }
 
+// PlanSolver supporting types {{{
+#[derive(Clone, Debug)]
+struct Placement {
+    range: DateRange,
+    /// What a task works on, other nodes have none
+    work: Option<Work>,
+}
+
+#[derive(Clone, Debug)]
+struct Work {
+    /// What the task holds in the ledger
+    run: Run,
+    assignments: Assignments,
+    workers: HashMap<Worker, Assignee>,
+}
+
+/// How a task is placed
+#[derive(Clone, Copy)]
+enum Kind {
+    /// Not started, from the given earliest day
+    Open(NaiveDate),
+    /// In progress from its actual start, working at least up to today
+    Active,
+    /// Completed or on hold, fixed to its actual dates
+    Past,
+}
+
+/// Hours of people, from their calendars and the ledger
+struct Availability<'a> {
+    tenant: &'a Tenant,
+    plan_calendar: &'a Calendar<Workload>,
+    ledger: &'a Ledger,
+}
+
+// impl Availability {{{
+impl Availability<'_> {
+    /// Hours the person has booked from `from` up to `to`
+    fn booked(&self, user: Uuid, from: NaiveDate, to: NaiveDate) -> u32 {
+        let days = from.iter_days().take_while(|d| *d < to);
+        let booked = |d| self.ledger.capacity(&user, d) - self.ledger.free(&user, d);
+        days.map(|d| u32::from(booked(d))).sum()
+    }
+}
+
+impl Hours for Availability<'_> {
+    fn cap(&self, who: Assignee, day: NaiveDate) -> Workload {
+        let calendar = match who {
+            Assignee::Placeholder => Some(self.plan_calendar),
+            Assignee::User(user) => self.tenant.calendar(&user),
+        };
+        calendar.and_then(|c| c.on(day)).unwrap_or_default()
+    }
+
+    fn free(&self, who: Assignee, day: NaiveDate) -> Workload {
+        match who {
+            Assignee::User(user) if day >= self.ledger.start() => {
+                Workload::new(self.ledger.free(&user, day)).expect("a ledger holds valid hours")
+            }
+            _ => self.cap(who, day),
+        }
+    }
+}
+// }}}
+
 /// Which nodes have everything they depend on settled, kept up to date as nodes settle, by their
 /// place in the order of the plan
 #[derive(Default)]
@@ -170,7 +166,6 @@ struct Readiness {
     /// Not started tasks that are ready
     open: BTreeSet<usize>,
 }
-// }}}
 
 // impl Readiness {{{
 impl Readiness {
@@ -195,6 +190,7 @@ impl Readiness {
         }
     }
 }
+// }}}
 // }}}
 
 // impl PlanSolver {{{
@@ -1312,7 +1308,7 @@ impl PlanVolatileState {
 }
 // }}}
 
-// fn placement_of {{{
+// helpers {{{
 /// A fixed order of workers, so choices do not depend on map order
 /// A task placed as it was in a schedule
 fn placement_of(state: &task::VolatileState) -> Placement {
@@ -1336,9 +1332,7 @@ fn placement_of(state: &task::VolatileState) -> Placement {
         }),
     }
 }
-// }}}
 
-// fn worker_key {{{
 fn worker_key(worker: &Worker) -> (u8, Uuid) {
     match worker {
         Worker::User(id) => (0, *id),
@@ -1347,9 +1341,7 @@ fn worker_key(worker: &Worker) -> (u8, Uuid) {
         Worker::Placeholder => (3, Uuid::nil()),
     }
 }
-// }}}
 
-// fn merge {{{
 /// One slot for each person, adding up the hours of several requests, and none for no hours
 fn merge(slots: Vec<Slot>) -> Result<Vec<Slot>, Reason> {
     let mut merged: Vec<Slot> = Vec::new();
@@ -1364,9 +1356,7 @@ fn merge(slots: Vec<Slot>) -> Result<Vec<Slot>, Reason> {
     }
     Ok(merged)
 }
-// }}}
 
-// fn build_work {{{
 /// The hours a fill put on the slots, as assignments and the claims on the ledger. A task with
 /// no slots has none.
 fn build_work(slots: &[Slot], filled: Filled, workers: HashMap<Worker, Assignee>) -> Work {
@@ -1390,9 +1380,7 @@ fn build_work(slots: &[Slot], filled: Filled, workers: HashMap<Worker, Assignee>
         workers,
     }
 }
-// }}}
 
-// fn buffer_limits {{{
 /// The latest a buffer may end for the tasks and milestones that depend on it and cannot move
 /// later, the smallest where several do
 fn buffer_limits(plan: &Plan) -> HashMap<Uuid, NaiveDate> {
@@ -1422,9 +1410,7 @@ fn buffer_limits(plan: &Plan) -> HashMap<Uuid, NaiveDate> {
     }
     limits
 }
-// }}}
 
-// fn eligible {{{
 /// The people who may work a tag or group slot, in id order: plan users holding the tag, or
 /// everyone in the group and the groups below it
 pub fn eligible(tenant: &Tenant, plan: &Plan, worker: &Worker) -> Vec<Uuid> {

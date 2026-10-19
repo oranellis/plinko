@@ -118,19 +118,7 @@ pub struct VolatileState {
     pub derived_status: DerivedStatus,
     pub date: NaiveDate,
 }
-// }}}
 
-// impl VolatileState {{{
-impl VolatileState {
-    /// The exclusive end of the one day the milestone lands on, so dependents treat it like any
-    /// other node (see `Dependency::start_after`)
-    pub fn end(&self) -> NaiveDate {
-        self.date + chrono::Days::new(1)
-    }
-}
-// }}}
-
-// Milestone supporting types {{{
 /// Milestones have no status of their own, it comes from what they depend on
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DerivedStatus {
@@ -155,5 +143,15 @@ pub struct MilestonePatch {
     pub time_constraint: Option<TimeConstraint>,
     pub dependencies: Option<Vec<Dependency>>,
     pub persistent_state: Option<PersistentState>,
+}
+// }}}
+
+// impl VolatileState {{{
+impl VolatileState {
+    /// The exclusive end of the one day the milestone lands on, so dependents treat it like any
+    /// other node (see `Dependency::start_after`)
+    pub fn end(&self) -> NaiveDate {
+        self.date + chrono::Days::new(1)
+    }
 }
 // }}}

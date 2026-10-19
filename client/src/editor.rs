@@ -52,9 +52,7 @@ fn snapshot<R>(plan: ShortId, f: impl FnOnce(&Plan) -> Option<R>) -> Option<R> {
 fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {
     (*old != new).then_some(new)
 }
-// }}}
 
-// fn remove_item {{{
 /// Takes an item out of its plan, joining what was around it back together
 pub fn remove_item(sync: Sync, plan: ShortId, node: PlanNode) {
     let updates = sync
@@ -67,7 +65,7 @@ pub fn remove_item(sync: Sync, plan: ShortId, node: PlanNode) {
 }
 // }}}
 
-// fn ItemEditor {{{
+// ItemEditor {{{
 /// The form for one item, to go in a window. `on_close` is for after it is saved or deleted.
 #[component]
 pub fn ItemEditor(
@@ -95,7 +93,7 @@ pub fn ItemEditor(
 }
 // }}}
 
-// fn Info {{{
+// Info {{{
 /// Where the scheduler put the item, and why it could not
 #[component]
 fn Info(plan: ShortId, node: PlanNode) -> impl IntoView {
@@ -147,7 +145,7 @@ fn Info(plan: ShortId, node: PlanNode) -> impl IntoView {
 }
 // }}}
 
-// fn who_name {{{
+// who_name {{{
 fn who_name(who: Assignee) -> String {
     let sync = use_sync();
     match who {

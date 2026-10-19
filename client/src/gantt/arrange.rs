@@ -12,10 +12,16 @@ use uuid::Uuid;
 use crate::model::Look;
 // }}}
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Arrangement {
+    pub placed: Vec<Placed>,
+    pub lanes: usize,
+}
+
+// Arrangement supporting types {{{
 /// What can be shown on the chart
 pub type Mark = PlanNode;
 
-// Mark supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Task,
@@ -70,12 +76,6 @@ pub struct Placed {
     pub collapsed: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Arrangement {
-    pub placed: Vec<Placed>,
-    pub lanes: usize,
-}
-
 /// The days after which each lane is free. An item may start on a day after its lane is free,
 /// which leaves at least one empty day after the item before it.
 #[derive(Default)]
@@ -104,7 +104,7 @@ impl Lanes {
 }
 // }}}
 
-// fn placed {{{
+// helpers {{{
 fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
     Placed {
         mark: entry.node,
@@ -125,15 +125,13 @@ fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
         collapsed: entry.collapsed,
     }
 }
-// }}}
 
-// fn sort_key {{{
 fn sort_key(entry: &Entry) -> (NaiveDate, &str, Uuid) {
     (entry.span.0, entry.name.as_str(), entry.node.id())
 }
 // }}}
 
-// fn pack {{{
+// pack {{{
 /// Packs the entries into `lanes`, groups with their members, and returns what they placed
 fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>) {
     let mut sorted: Vec<&Entry> = entries.iter().collect();
@@ -171,7 +169,7 @@ fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>)
 }
 // }}}
 
-// fn arrange {{{
+// arrange {{{
 /// Packs a plan's items
 pub fn arrange(entries: &[Entry]) -> Arrangement {
     let mut lanes = Lanes::default();

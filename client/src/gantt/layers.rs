@@ -18,6 +18,21 @@ use crate::gantt::{
 };
 // }}}
 
+pub struct Layers {
+    back: Image,
+    nodes: Image,
+    key: Key,
+    /// The size of what is drawn on them, in chart pixels, which can be less than they hold
+    size: (f64, f64),
+    ratio: f64,
+    /// The size they were made for
+    room: (f64, f64),
+    /// Where the top left of what was drawn is in the chart, in pixels
+    origin: (f64, f64),
+    /// The names to draw over the layers, positioned in them
+    pub labels: Vec<Label>,
+}
+
 // constants {{{
 /// How much is drawn past each side of the screen, as a share of the screen up to a limit
 const SPARE: f64 = 0.5;
@@ -25,6 +40,7 @@ const SPARE_X: f64 = 600.0;
 const SPARE_Y: f64 = 400.0;
 // }}}
 
+// Layers supporting types {{{
 /// What the layers were drawn from. They are drawn again when any of it changes.
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
@@ -35,7 +51,6 @@ struct Key {
     today: NaiveDate,
 }
 
-// Key supporting types {{{
 struct Image {
     canvas: HtmlCanvasElement,
     pen: Rc<Pen>,
@@ -64,23 +79,6 @@ impl Image {
             pen: Rc::new(Pen::new(ctx)),
         })
     }
-}
-// }}}
-
-// Key supporting types {{{
-pub struct Layers {
-    back: Image,
-    nodes: Image,
-    key: Key,
-    /// The size of what is drawn on them, in chart pixels, which can be less than they hold
-    size: (f64, f64),
-    ratio: f64,
-    /// The size they were made for
-    room: (f64, f64),
-    /// Where the top left of what was drawn is in the chart, in pixels
-    origin: (f64, f64),
-    /// The names to draw over the layers, positioned in them
-    pub labels: Vec<Label>,
 }
 // }}}
 
@@ -128,7 +126,7 @@ impl Layers {
 }
 // }}}
 
-// fn key {{{
+// key {{{
 fn key(
     (width, height): (f64, f64),
     ratio: f64,
@@ -145,7 +143,7 @@ fn key(
 }
 // }}}
 
-// fn render {{{
+// render {{{
 /// Draws the layers for the screen as it is now, using the images already made if they are the
 /// right size
 pub fn render(

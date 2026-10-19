@@ -37,6 +37,12 @@ impl Vertex {
         }
     }
 }
+
+impl From<PlanNode> for Vertex {
+    fn from(node: PlanNode) -> Self {
+        Vertex::Node(node)
+    }
+}
 // }}}
 
 // Vertex supporting types {{{
@@ -46,20 +52,17 @@ pub(crate) struct Edge {
     pub from: Option<Vertex>,
     pub lag: i32,
 }
-// }}}
 
-// impl Vertex {{{
-impl From<PlanNode> for Vertex {
-    fn from(node: PlanNode) -> Self {
-        Vertex::Node(node)
-    }
-}
-// }}}
-
-// Vertex supporting types {{{
 pub(crate) struct Graph<'a> {
     plan: &'a Plan,
     members: HashMap<Uuid, Vec<PlanNode>>,
+}
+
+/// How much lag the longest chain of dependencies from `from` back to `to` (today when
+/// `None`) adds up to, with the results kept for the next question about the same `to`
+struct Chains<'a, 'p> {
+    graph: &'a Graph<'p>,
+    longest: HashMap<(Vertex, Option<Vertex>), Option<i64>>,
 }
 // }}}
 
@@ -161,7 +164,7 @@ fn resolve(dep: &Dependency, parent: Parent) -> Option<Vertex> {
 }
 // }}}
 
-// fn has_cycle_through {{{
+// cycle check {{{
 /// Whether any dependency path leads from `node` back to itself. Only cycles through the changed
 /// node can be new, so this is all that needs checking after an update.
 pub fn has_cycle_through(plan: &Plan, node: PlanNode) -> bool {
@@ -172,9 +175,7 @@ pub fn has_cycle_through(plan: &Plan, node: PlanNode) -> bool {
     };
     roots.into_iter().any(|root| graph.reaches_itself(root))
 }
-// }}}
 
-// impl Graph {{{
 impl Graph<'_> {
     fn reaches_itself(&self, root: Vertex) -> bool {
         let mut stack = self.waits_on(root);
@@ -192,18 +193,9 @@ impl Graph<'_> {
 }
 // }}}
 
-// fn nodes {{{
+// nodes {{{
 pub(crate) fn nodes<T: PlanItem>(plan: &Plan) -> Vec<PlanNode> {
     T::entities(plan).keys().map(|id| T::node(*id)).collect()
-}
-// }}}
-
-// Vertex supporting types {{{
-/// How much lag the longest chain of dependencies from `from` back to `to` (today when
-/// `None`) adds up to, with the results kept for the next question about the same `to`
-struct Chains<'a, 'p> {
-    graph: &'a Graph<'p>,
-    longest: HashMap<(Vertex, Option<Vertex>), Option<i64>>,
 }
 // }}}
 
@@ -231,7 +223,7 @@ impl Chains<'_, '_> {
 }
 // }}}
 
-// fn simplified {{{
+// simplified {{{
 /// The dependencies the items touching `touched` can do without: those another dependency of the
 /// same item already implies. A chain a to b to c makes a direct a to c redundant when the chain's
 /// lags add up to at least its lag. Gives each changed item with the dependencies to keep, in order.
@@ -301,7 +293,7 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
 }
 // }}}
 
-// fn dependencies {{{
+// dependencies {{{
 fn dependencies<'a, T: PlanItem + 'a>(plan: &'a Plan, id: Uuid) -> &'a [Dependency] {
     T::entities(plan)
         .get(&id)

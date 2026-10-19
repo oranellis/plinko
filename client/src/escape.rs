@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use wasm_bindgen::{JsCast, closure::Closure};
 // }}}
 
-// items {{{
+// state {{{
 thread_local! {
     /// What is open, the last on top, each with what escape does to it
     static OPEN: RefCell<Vec<(u32, Callback<()>)>> = const { RefCell::new(Vec::new()) };
@@ -15,7 +15,7 @@ thread_local! {
 }
 // }}}
 
-// fn listen {{{
+// helpers {{{
 /// Starts listening to the keyboard, once for the whole app
 pub fn listen() {
     let on_key = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|ev: web_sys::KeyboardEvent| {
@@ -33,9 +33,7 @@ pub fn listen() {
     }
     on_key.forget();
 }
-// }}}
 
-// fn on_escape {{{
 /// While `active`, escape runs `close` unless something opened later is on top of it
 pub fn on_escape(active: impl Fn() -> bool + 'static, close: Callback<()>) {
     Effect::new(move |_| {

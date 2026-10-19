@@ -46,7 +46,7 @@ impl Random {
 }
 // }}}
 
-// fn apply {{{
+// apply {{{
 fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
     let time = DateTime::from_timestamp(978307200, 0).unwrap();
     tenant
@@ -70,7 +70,7 @@ struct Made {
 }
 // }}}
 
-// fn make {{{
+// make {{{
 /// A tenant of busy people with `plans` plans of about `total` tasks between them in layers,
 /// each task waiting on one to three of the previous two layers, and a milestone now and then
 /// that gathers several. `dates` says what hard date each task gets, if any.
@@ -260,7 +260,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
 }
 // }}}
 
-// fn export {{{
+// export {{{
 /// Writes the plans and how they were scheduled as JSON for comparing with an exact solver
 fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, path: &str) {
     let person = |u: &Uuid| world.people.iter().position(|p| p == u).unwrap();
@@ -330,7 +330,7 @@ fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, p
 }
 // }}}
 
-// fn main {{{
+// main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
         .skip(1)

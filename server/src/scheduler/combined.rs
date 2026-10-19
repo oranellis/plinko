@@ -16,13 +16,12 @@ use crate::{
 // constants {{{
 /// The most passes of compaction, each can only move things earlier
 const MAX_COMPACT_PASSES: usize = 50;
-// }}}
 
 /// What decides who goes next, lowest first: the layer, two measures inside it, the position of
 /// the plan, then the node
 type Rank = (u8, i64, i64, usize, (u8, Uuid));
+// }}}
 
-// Rank supporting types {{{
 /// What is known about a plan between placements, only the plan that just placed changes
 struct View {
     /// Every node on the way to a hard date, for the compaction that follows
@@ -36,6 +35,7 @@ struct View {
     best: Option<(Rank, Vertex)>,
 }
 
+// View supporting types {{{
 struct Leads {
     by: Vec<(i64, Vertex)>,
     /// Everything before this has a dated node that is settled for good
@@ -128,7 +128,7 @@ impl View {
 }
 // }}}
 
-// fn solve {{{
+// solve {{{
 /// Schedules the plans together against one ledger, in the order they are given, which settles
 /// ties. Finished and held work goes in first, then work in progress, then everything else one
 /// task at a time, whichever is next by `rank` among those ready, so each plan's delay counts
@@ -171,7 +171,7 @@ pub fn solve(
 }
 // }}}
 
-// fn compact {{{
+// helpers {{{
 /// Pulls tasks of every plan into room left by others. Chains to hard dates and targets go first,
 /// earliest start first, so loose work does not take room they can still use, and the rest follow
 /// once they have all had their chance. Repeats until nothing ends sooner.
@@ -201,9 +201,7 @@ fn compact(solvers: &mut [PlanSolver], views: &[View], ledger: &mut Ledger) {
         }
     }
 }
-// }}}
 
-// fn on_chain {{{
 /// Whether a node leads to a hard date or a target
 fn on_chain(solver: &PlanSolver, view: &View, v: &Vertex) -> bool {
     view.on_chain.contains(v) || solver.urgency(v, 0).is_some()

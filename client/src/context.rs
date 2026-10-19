@@ -36,7 +36,7 @@ const STATUSES: [(Status, &str, IconKind, &str); 5] = [
 ];
 // }}}
 
-// fn next {{{
+// helpers {{{
 /// Where a click on the status button takes a task: on towards done
 fn next(status: Status) -> Status {
     match status {
@@ -45,15 +45,13 @@ fn next(status: Status) -> Status {
         Status::Dropped => Status::NotStarted,
     }
 }
-// }}}
 
-// fn position {{{
 fn position(status: Status) -> usize {
     STATUSES.iter().position(|s| s.0 == status).unwrap_or(0)
 }
 // }}}
 
-// fn ContextBar {{{
+// ContextBar {{{
 /// The bar, put where `left` and `top` say on the chart
 #[component]
 pub fn ContextBar(
@@ -84,7 +82,7 @@ pub fn ContextBar(
 }
 // }}}
 
-// fn StatusSwitch {{{
+// StatusSwitch {{{
 /// One button showing where the task goes next, with the others a hover away
 #[component]
 fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
@@ -125,7 +123,7 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
 }
 // }}}
 
-// fn SetStart {{{
+// SetStart {{{
 /// The buffer's set start: set it to where it is scheduled, set it again, or nothing when it is right
 #[component]
 fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {

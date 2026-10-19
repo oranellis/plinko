@@ -1,7 +1,9 @@
 //! Dates and numbers as people read them.
 
+// modules {{{
 use chrono::{Datelike, NaiveDate};
 use leptos::prelude::*;
+// }}}
 
 // constants {{{
 const MONTHS: [&str; 12] = [
@@ -54,6 +56,13 @@ pub enum WeekStart {
     Monday,
     Sunday,
 }
+
+/// What a person has chosen for how things look, kept in this browser between visits
+#[derive(Clone, Copy)]
+pub struct Preferences {
+    pub date_format: RwSignal<DateFormat>,
+    pub week_start: RwSignal<WeekStart>,
+}
 // }}}
 
 // impl WeekStart {{{
@@ -86,21 +95,12 @@ impl WeekStart {
 }
 // }}}
 
-// DateFormat supporting types {{{
-/// What a person has chosen for how things look, kept in this browser between visits
-#[derive(Clone, Copy)]
-pub struct Preferences {
-    pub date_format: RwSignal<DateFormat>,
-    pub week_start: RwSignal<WeekStart>,
-}
-// }}}
-
 // constants {{{
 const DATE_FORMAT: &str = "plinko.date_format";
 const WEEK_START: &str = "plinko.week_start";
 // }}}
 
-// fn provide_preferences {{{
+// provide_preferences {{{
 /// Reads the saved choices and keeps saving them. Call once, above everything that shows dates.
 pub fn provide_preferences() {
     let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
@@ -158,9 +158,7 @@ pub fn day(date: NaiveDate) -> String {
 pub fn iso(date: NaiveDate) -> String {
     date.format("%Y-%m-%d").to_string()
 }
-// }}}
 
-// fn delay {{{
 /// `3 days late`, `on time`
 pub fn delay(days: i64) -> String {
     match days {

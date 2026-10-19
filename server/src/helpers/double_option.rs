@@ -2,9 +2,11 @@
 //! (`Some(Some(value))`), which formats without a marker of their own cannot tell apart.
 //! Use as `#[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]`.
 
+// modules {{{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+// }}}
 
-// fn serialize {{{
+// functions {{{
 pub fn serialize<T: Serialize, S: Serializer>(
     value: &Option<Option<T>>,
     serializer: S,
@@ -14,9 +16,7 @@ pub fn serialize<T: Serialize, S: Serializer>(
         None => serializer.serialize_none(),
     }
 }
-// }}}
 
-// fn deserialize {{{
 pub fn deserialize<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<Option<T>>, D::Error> {

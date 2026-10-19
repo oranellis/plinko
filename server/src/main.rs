@@ -28,7 +28,7 @@ fn required(name: &str) -> String {
 }
 // }}}
 
-// fn main {{{
+// main {{{
 #[tokio::main]
 async fn main() {
     let name = required("PLINKO_TENANT");

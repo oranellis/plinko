@@ -3,7 +3,7 @@
 
 use leptos::prelude::*;
 
-// fn Icon {{{
+// Icon {{{
 #[component]
 pub fn Icon(
     /// Which icon

@@ -196,7 +196,6 @@ pub enum Unit {
     MonthAligned,
     Year,
 }
-// }}}
 
 // impl Every {{{
 impl Every {
@@ -284,7 +283,6 @@ impl<V> DayOverride<V> {
 }
 // }}}
 
-// Rule supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewRule<V> {
     pub id: Uuid,

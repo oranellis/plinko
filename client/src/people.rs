@@ -42,7 +42,7 @@ struct Group {
 }
 // }}}
 
-// fn People {{{
+// People {{{
 #[component]
 pub fn People() -> impl IntoView {
     let sync = use_sync();
@@ -163,7 +163,7 @@ pub fn People() -> impl IntoView {
 }
 // }}}
 
-// fn PersonForm {{{
+// PersonForm {{{
 #[component]
 fn PersonForm(
     which: Option<Uuid>,
@@ -265,7 +265,7 @@ fn PersonForm(
 }
 // }}}
 
-// fn GroupForm {{{
+// GroupForm {{{
 #[component]
 fn GroupForm(
     which: Option<Uuid>,

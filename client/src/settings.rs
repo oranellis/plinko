@@ -27,7 +27,7 @@ use crate::{
 };
 // }}}
 
-// fn PlanSettings {{{
+// PlanSettings {{{
 #[component]
 pub fn PlanSettings(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -119,7 +119,7 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
 }
 // }}}
 
-// fn Targets {{{
+// Targets {{{
 #[component]
 fn Targets(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -209,7 +209,7 @@ fn Targets(plan: ShortId) -> impl IntoView {
 }
 // }}}
 
-// fn People {{{
+// People {{{
 #[component]
 fn People(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -348,7 +348,7 @@ fn People(plan: ShortId) -> impl IntoView {
 }
 // }}}
 
-// fn Tags {{{
+// Tags {{{
 #[component]
 fn Tags(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -397,7 +397,7 @@ fn Tags(plan: ShortId) -> impl IntoView {
 }
 // }}}
 
-// fn Affinities {{{
+// Affinities {{{
 #[component]
 fn Affinities(plan: ShortId) -> impl IntoView {
     let sync = use_sync();

@@ -33,9 +33,7 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
 fn hours(h: u8) -> Workload {
     Workload::new(h).unwrap()
 }
-// }}}
 
-// fn task_state {{{
 fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {
     let assignments = assignments
         .iter()
@@ -52,7 +50,7 @@ fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {
 }
 // }}}
 
-// fn user_schedules_are_derived_from_assignments_across_plans {{{
+// user_schedules_are_derived_from_assignments_across_plans {{{
 #[test]
 fn user_schedules_are_derived_from_assignments_across_plans() {
     let (alice, bob) = (Uuid::now_v7(), Uuid::now_v7());
@@ -89,7 +87,7 @@ fn user_schedules_are_derived_from_assignments_across_plans() {
 }
 // }}}
 
-// fn update {{{
+// update {{{
 fn update(actor: Uuid, update_type: TenantUpdateType) -> TenantUpdate {
     TenantUpdate {
         time: DateTime::from_timestamp(978307200, 0).unwrap(),
@@ -99,7 +97,7 @@ fn update(actor: Uuid, update_type: TenantUpdateType) -> TenantUpdate {
 }
 // }}}
 
-// fn a_successful_update_clears_the_stored_schedule {{{
+// a_successful_update_clears_the_stored_schedule {{{
 #[test]
 fn a_successful_update_clears_the_stored_schedule() {
     let mut tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), d(2024, 1, 1));
@@ -124,7 +122,7 @@ fn a_successful_update_clears_the_stored_schedule() {
 }
 // }}}
 
-// fn milestones_have_a_time_constraint {{{
+// milestones_have_a_time_constraint {{{
 #[test]
 fn milestones_have_a_time_constraint() {
     let mut plan = Plan::from(NewPlan {

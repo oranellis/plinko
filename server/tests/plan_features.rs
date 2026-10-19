@@ -39,9 +39,7 @@ fn new_plan() -> Plan {
     };
     Plan::from(new)
 }
-// }}}
 
-// fn add_task {{{
 fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewTask {
@@ -52,9 +50,7 @@ fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
     plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
     id
 }
-// }}}
 
-// fn task_patch {{{
 fn task_patch(id: Uuid) -> TaskPatch {
     TaskPatch {
         id,
@@ -70,15 +66,13 @@ fn task_patch(id: Uuid) -> TaskPatch {
         persistent_state: None,
     }
 }
-// }}}
 
-// fn patch_task {{{
 fn patch_task(plan: &mut Plan, patch: TaskPatch) -> PlinkoResult<()> {
     plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
 }
 // }}}
 
-// fn allocations_are_hours_per_day_and_may_use_placeholders {{{
+// allocations_are_hours_per_day_and_may_use_placeholders {{{
 #[test]
 fn allocations_are_hours_per_day_and_may_use_placeholders() {
     let mut plan = new_plan();
@@ -96,14 +90,12 @@ fn allocations_are_hours_per_day_and_may_use_placeholders() {
 }
 // }}}
 
-// fn days {{{
+// helpers {{{
 /// Allowed weekdays, Monday as 0
 fn days(allowed: &[usize]) -> [bool; 7] {
     std::array::from_fn(|i| allowed.contains(&i))
 }
-// }}}
 
-// fn add_affinity {{{
 fn add_affinity(plan: &mut Plan, weekly: [bool; 7]) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewAffinity {
@@ -124,9 +116,7 @@ fn add_affinity(plan: &mut Plan, weekly: [bool; 7]) -> Uuid {
         .unwrap();
     id
 }
-// }}}
 
-// fn link {{{
 fn link(plan: &mut Plan, task: Uuid, affinities: &[Uuid]) -> PlinkoResult<()> {
     let patch = TaskPatch {
         affinities: Some(affinities.iter().copied().collect()),
@@ -136,7 +126,7 @@ fn link(plan: &mut Plan, task: Uuid, affinities: &[Uuid]) -> PlinkoResult<()> {
 }
 // }}}
 
-// fn tasks_only_work_on_days_every_linked_affinity_allows {{{
+// tasks_only_work_on_days_every_linked_affinity_allows {{{
 #[test]
 fn tasks_only_work_on_days_every_linked_affinity_allows() {
     let mut plan = new_plan();
@@ -160,7 +150,7 @@ fn tasks_only_work_on_days_every_linked_affinity_allows() {
 }
 // }}}
 
-// fn affinities_must_exist_and_cannot_be_removed_while_linked {{{
+// affinities_must_exist_and_cannot_be_removed_while_linked {{{
 #[test]
 fn affinities_must_exist_and_cannot_be_removed_while_linked() {
     let mut plan = new_plan();
@@ -190,7 +180,7 @@ fn affinities_must_exist_and_cannot_be_removed_while_linked() {
 }
 // }}}
 
-// fn add_target {{{
+// add_target {{{
 fn add_target(plan: &mut Plan, node: PlanNode, priority: i32) -> PlinkoResult<Uuid> {
     let id = Uuid::now_v7();
     let new = NewTarget { id, node, priority };
@@ -199,7 +189,7 @@ fn add_target(plan: &mut Plan, node: PlanNode, priority: i32) -> PlinkoResult<Uu
 }
 // }}}
 
-// fn targets_must_name_existing_nodes_and_block_their_removal {{{
+// targets_must_name_existing_nodes_and_block_their_removal {{{
 #[test]
 fn targets_must_name_existing_nodes_and_block_their_removal() {
     let mut plan = new_plan();
@@ -246,7 +236,7 @@ fn targets_must_name_existing_nodes_and_block_their_removal() {
 }
 // }}}
 
-// fn plan_priority_defaults_to_zero_and_is_patched {{{
+// plan_priority_defaults_to_zero_and_is_patched {{{
 #[test]
 fn plan_priority_defaults_to_zero_and_is_patched() {
     let mut plan = new_plan();
@@ -260,7 +250,7 @@ fn plan_priority_defaults_to_zero_and_is_patched() {
 }
 // }}}
 
-// fn the_default_start_is_an_existing_node_that_stays_while_it_is_set {{{
+// the_default_start_is_an_existing_node_that_stays_while_it_is_set {{{
 #[test]
 fn the_default_start_is_an_existing_node_that_stays_while_it_is_set() {
     let mut plan = new_plan();
@@ -292,7 +282,7 @@ fn the_default_start_is_an_existing_node_that_stays_while_it_is_set() {
 }
 // }}}
 
-// fn todo {{{
+// todo {{{
 fn todo(items: &[(&str, bool)]) -> BlockContent {
     let items = items.iter().map(|&(text, done)| TodoItem {
         text: text.to_string(),
@@ -302,7 +292,7 @@ fn todo(items: &[(&str, bool)]) -> BlockContent {
 }
 // }}}
 
-// fn tasks_and_milestones_hold_data_blocks {{{
+// tasks_and_milestones_hold_data_blocks {{{
 #[test]
 fn tasks_and_milestones_hold_data_blocks() {
     let mut plan = new_plan();
@@ -351,7 +341,7 @@ fn tasks_and_milestones_hold_data_blocks() {
 }
 // }}}
 
-// fn a_new_affinity_allows_every_day {{{
+// a_new_affinity_allows_every_day {{{
 #[test]
 fn a_new_affinity_allows_every_day() {
     let mut plan = new_plan();
@@ -370,7 +360,7 @@ fn a_new_affinity_allows_every_day() {
 }
 // }}}
 
-// fn plan_users_hold_tags_by_id {{{
+// plan_users_hold_tags_by_id {{{
 #[test]
 fn plan_users_hold_tags_by_id() {
     use plinko::types::{
@@ -408,7 +398,7 @@ fn plan_users_hold_tags_by_id() {
 }
 // }}}
 
-// fn record {{{
+// record {{{
 fn record(plan: &mut Plan, task: Uuid, workers: &[(Worker, Assignee)]) -> PlinkoResult<()> {
     let patch = TaskPatch {
         actual_workers: Some(workers.iter().copied().collect()),
@@ -418,7 +408,7 @@ fn record(plan: &mut Plan, task: Uuid, workers: &[(Worker, Assignee)]) -> Plinko
 }
 // }}}
 
-// fn the_person_who_did_the_work_is_recorded_per_requested_worker {{{
+// the_person_who_did_the_work_is_recorded_per_requested_worker {{{
 #[test]
 fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
     let mut plan = new_plan();
@@ -454,7 +444,7 @@ fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
 }
 // }}}
 
-// fn task_and_group_durations_start_at_one_and_cannot_be_zero {{{
+// task_and_group_durations_start_at_one_and_cannot_be_zero {{{
 #[test]
 fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
     let mut plan = new_plan();
@@ -483,7 +473,7 @@ fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
 }
 // }}}
 
-// fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither {{{
+// tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither {{{
 #[test]
 fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither() {
     let mut plan = new_plan();

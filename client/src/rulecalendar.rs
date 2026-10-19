@@ -38,7 +38,7 @@ pub trait Value: DayValue + Send + Sync {
     fn off_text() -> &'static str;
 }
 
-// impl Workload {{{
+// impl Value {{{
 impl Value for Workload {
     const MAX: u8 = 8;
     fn level(&self) -> u8 {
@@ -54,9 +54,7 @@ impl Value for Workload {
         "Time off"
     }
 }
-// }}}
 
-// impl bool {{{
 impl Value for bool {
     const MAX: u8 = 1;
     fn level(&self) -> u8 {
@@ -74,13 +72,11 @@ impl Value for bool {
 }
 // }}}
 
-// fn weekday {{{
+// helpers {{{
 fn weekday(index: usize) -> Weekday {
     Weekday::try_from(index as u8).unwrap_or(Weekday::Mon)
 }
-// }}}
 
-// constants {{{
 const UNITS: [(Unit, &str, &str); 5] = [
     (Unit::Day, "day", "Day(s)"),
     (Unit::Week, "week", "Week(s)"),
@@ -88,15 +84,11 @@ const UNITS: [(Unit, &str, &str); 5] = [
     (Unit::MonthAligned, "aligned", "Month(s) Aligned"),
     (Unit::Year, "year", "Year(s)"),
 ];
-// }}}
 
-// fn unit_name {{{
 fn unit_name(unit: Unit) -> &'static str {
     UNITS.iter().find(|u| u.0 == unit).map_or("day", |u| u.1)
 }
-// }}}
 
-// fn title {{{
 /// What a rule is called: the name it was given, or its kind
 fn title<V: Value>(rule: &Rule<V>, off: &str) -> String {
     if *rule.id() == DEFAULT_RULE {
@@ -113,9 +105,7 @@ fn title<V: Value>(rule: &Rule<V>, off: &str) -> String {
     }
     .to_string()
 }
-// }}}
 
-// fn when {{{
 /// When a rule starts, with when it ends if it does
 fn when<V>(rule: &Rule<V>) -> String {
     if *rule.id() == DEFAULT_RULE {
@@ -130,9 +120,8 @@ fn when<V>(rule: &Rule<V>) -> String {
         None => format!("from {}", format::day(rule.start_day())),
     }
 }
-// }}}
 
-// fn for_day {{{
+// for_day {{{
 /// The rules to list for a day, latest first and the default week last. Only the latest change of
 /// weekly schedule is listed, the earlier ones are replaced by it.
 fn for_day<V: Value>(set: &RuleSet<V>, day: Option<NaiveDate>) -> Vec<&Rule<V>> {
@@ -158,6 +147,7 @@ fn for_day<V: Value>(set: &RuleSet<V>, day: Option<NaiveDate>) -> Vec<&Rule<V>> 
     });
     rules
 }
+// }}}
 // }}}
 
 // Value supporting types {{{
@@ -296,15 +286,13 @@ impl Draft {
 }
 // }}}
 
-// constants {{{
+// helpers {{{
 /// Every month has room for six rows of weeks, so months sit at a fixed height and only the ones
 /// in view need drawing
 const MONTH_HEIGHT: f64 = 310.0;
 /// How many months past what could matter the calendar keeps going
 const SLACK: i32 = 6;
-// }}}
 
-// helpers {{{
 fn month_index(day: NaiveDate) -> i32 {
     day.year() * 12 + day.month0() as i32
 }
@@ -315,7 +303,7 @@ fn month_start(index: i32) -> NaiveDate {
 }
 // }}}
 
-// fn RuleCalendar {{{
+// RuleCalendar {{{
 /// The calendar and the pane beside it. `send` makes a change to the rules.
 #[component]
 pub fn RuleCalendar<V: Value>(
@@ -523,7 +511,7 @@ pub fn RuleCalendar<V: Value>(
 }
 // }}}
 
-// fn day_cell {{{
+// day_cell {{{
 /// A day of the calendar: shaded by what it is worth, with a dot on the day a rule was made
 fn day_cell<V: Value>(
     day: NaiveDate,
@@ -554,7 +542,7 @@ fn day_cell<V: Value>(
 }
 // }}}
 
-// fn RuleForm {{{
+// RuleForm {{{
 #[component]
 fn RuleForm(
     draft: Draft,

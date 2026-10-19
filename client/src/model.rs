@@ -64,9 +64,16 @@ pub struct Row {
     pub has_members: bool,
     pub collapsed: bool,
 }
+
+struct Context<'a> {
+    plan: &'a Plan,
+    state: Option<&'a PlanVolatileState>,
+    collapsed: &'a HashSet<Uuid>,
+    children: &'a HashMap<Parent, Vec<PlanNode>>,
+}
 // }}}
 
-// fn node_name {{{
+// helpers {{{
 pub fn node_name(plan: &Plan, node: PlanNode) -> String {
     match node {
         PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.name().to_string()),
@@ -79,9 +86,7 @@ pub fn node_name(plan: &Plan, node: PlanNode) -> String {
     }
     .unwrap_or_else(|| "Missing".to_string())
 }
-// }}}
 
-// fn parent_of {{{
 pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
     match node {
         PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.parent()),
@@ -91,9 +96,7 @@ pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
     }
     .unwrap_or(Parent::Plan)
 }
-// }}}
 
-// fn parent_of_in {{{
 /// The group a node is directly in, found in the plan as the client holds it
 pub fn parent_of_in(
     sync: crate::sync::Sync,
@@ -108,9 +111,7 @@ pub fn parent_of_in(
         }
     })
 }
-// }}}
 
-// fn dependencies {{{
 /// What a node depends on
 pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<Dependency> {
     match node {
@@ -127,9 +128,7 @@ pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<Dependency> {
     }
     .unwrap_or_default()
 }
-// }}}
 
-// fn nodes {{{
 /// Every node of the plan
 pub fn nodes(plan: &Plan) -> Vec<PlanNode> {
     let tasks = plan.tasks().keys().map(|id| PlanNode::Task(*id));
@@ -147,7 +146,7 @@ pub fn nodes(plan: &Plan) -> Vec<PlanNode> {
 }
 // }}}
 
-// fn span_of {{{
+// span_of {{{
 pub fn span_of(
     state: Option<&PlanVolatileState>,
     node: PlanNode,
@@ -171,7 +170,7 @@ pub fn span_of(
 }
 // }}}
 
-// fn look_of {{{
+// look_of {{{
 pub fn look_of(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -> Look {
     match node {
         PlanNode::Task(id) => plan
@@ -186,7 +185,7 @@ pub fn look_of(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -
 }
 // }}}
 
-// fn rows {{{
+// rows {{{
 /// The plan's items in order, groups first with what is in them below, each level by when it
 /// starts. What is not scheduled comes last. Members of a collapsed group are left out.
 pub fn rows(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet<Uuid>) -> Vec<Row> {
@@ -212,15 +211,6 @@ pub fn rows(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet<
     };
     context.add_level(Parent::Plan, 0, &mut rows);
     rows
-}
-// }}}
-
-// Look supporting types {{{
-struct Context<'a> {
-    plan: &'a Plan,
-    state: Option<&'a PlanVolatileState>,
-    collapsed: &'a HashSet<Uuid>,
-    children: &'a HashMap<Parent, Vec<PlanNode>>,
 }
 // }}}
 
@@ -255,7 +245,7 @@ impl Context<'_> {
 }
 // }}}
 
-// fn reason {{{
+// helpers {{{
 /// What it is that keeps an item off the schedule, in words
 pub fn reason(reason: UnscheduledReason) -> &'static str {
     match reason {
@@ -266,9 +256,7 @@ pub fn reason(reason: UnscheduledReason) -> &'static str {
         UnscheduledReason::NoCapacity => "The people available cannot fit the work",
     }
 }
-// }}}
 
-// fn ends_groups {{{
 /// Every group that ends with the node, innermost first: its group when it ends on the group's
 /// last day, then that group's own group when the group ends on its last day too, and so on
 pub fn ends_groups(
@@ -284,9 +272,7 @@ pub fn ends_groups(
     }
     groups
 }
-// }}}
 
-// fn ends_group {{{
 /// The group a node is in when it ends on the group's last day, so the group ends with it
 fn ends_group(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -> Option<PlanNode> {
     let Parent::Node(group) = parent_of(plan, node) else {

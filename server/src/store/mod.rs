@@ -35,7 +35,7 @@ impl From<rusqlite::Error> for PlinkoError {
 }
 // }}}
 
-// fn tenant_dir {{{
+// tenant_dir {{{
 /// Where a tenant keeps its files: `data/<name>` under the directory the server runs from. The
 /// name is a folder name, so it is only letters, digits, `-` and `_`.
 pub fn tenant_dir(name: &str) -> PlinkoResult<PathBuf> {

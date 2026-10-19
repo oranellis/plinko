@@ -30,7 +30,7 @@ pub struct Card {
     pub favourite: bool,
 }
 
-// fn use_cards {{{
+// use_cards {{{
 /// The plans the person signed in can see, by name
 pub fn use_cards() -> Memo<Vec<Card>> {
     let sync = use_sync();
@@ -71,7 +71,7 @@ pub fn use_cards() -> Memo<Vec<Card>> {
 }
 // }}}
 
-// fn PlanCards {{{
+// PlanCards {{{
 /// Plans as cards, each with a star to favourite it
 #[component]
 pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
@@ -113,7 +113,7 @@ pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
 }
 // }}}
 
-// fn Plans {{{
+// Plans {{{
 #[component]
 pub fn Plans() -> impl IntoView {
     let cards = use_cards();
@@ -159,7 +159,7 @@ pub fn Plans() -> impl IntoView {
 }
 // }}}
 
-// fn NewPlanForm {{{
+// NewPlanForm {{{
 #[component]
 fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();

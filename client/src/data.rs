@@ -33,7 +33,7 @@ const KINDS: [(&str, &str); 3] = [
 ];
 // }}}
 
-// fn kind_of {{{
+// helpers {{{
 fn kind_of(content: &BlockContent) -> &'static str {
     match content {
         BlockContent::TodoList(_) => "todo",
@@ -41,9 +41,7 @@ fn kind_of(content: &BlockContent) -> &'static str {
         BlockContent::Budget(_) => "budget",
     }
 }
-// }}}
 
-// fn empty {{{
 fn empty(kind: &str) -> BlockContent {
     match kind {
         "links" => BlockContent::Links(Vec::new()),
@@ -57,7 +55,7 @@ fn empty(kind: &str) -> BlockContent {
 }
 // }}}
 
-// fn data_of {{{
+// data_of {{{
 /// What an item says about itself: its description, and the data blocks it holds
 fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
     let (description, blocks) = match node {
@@ -86,14 +84,14 @@ fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
 }
 // }}}
 
-// fn has_data {{{
+// has_data {{{
 /// Whether an item can hold data, which buffers cannot
 pub fn has_data(node: PlanNode) -> bool {
     !matches!(node, PlanNode::PlanBuffer(_))
 }
 // }}}
 
-// fn DataWindow {{{
+// DataWindow {{{
 #[component]
 pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
@@ -166,7 +164,7 @@ pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
 }
 // }}}
 
-// fn BlockEditor {{{
+// BlockEditor {{{
 /// One block, saved as each box in it is left
 #[component]
 fn BlockEditor(plan: ShortId, node: PlanNode, block: DataBlock) -> impl IntoView {
@@ -207,7 +205,7 @@ fn BlockEditor(plan: ShortId, node: PlanNode, block: DataBlock) -> impl IntoView
 }
 // }}}
 
-// fn Todos {{{
+// Todos {{{
 #[component]
 fn Todos(items: Vec<TodoItem>, send: Callback<BlockContent>) -> impl IntoView {
     let items = RwSignal::new(items);
@@ -248,7 +246,7 @@ fn Todos(items: Vec<TodoItem>, send: Callback<BlockContent>) -> impl IntoView {
 }
 // }}}
 
-// fn Links {{{
+// Links {{{
 #[component]
 fn Links(links: Vec<Link>, send: Callback<BlockContent>) -> impl IntoView {
     let links = RwSignal::new(links);
@@ -303,7 +301,7 @@ fn parsed(text: &str) -> i64 {
 }
 // }}}
 
-// fn Money {{{
+// Money {{{
 #[component]
 fn Money(budget: Budget, send: Callback<BlockContent>) -> impl IntoView {
     let planned = RwSignal::new(shown(budget.planned));

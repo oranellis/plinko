@@ -1,5 +1,7 @@
+// modules {{{
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
+// }}}
 
 /// The days from `start` up to but not including `end`, so a zero length range has equal ends
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]

@@ -16,7 +16,7 @@ const KEPT: f64 = 0.93;
 const STOP: f64 = 0.03;
 // }}}
 
-// fn speed {{{
+// helpers {{{
 /// The speed after another wheel event of `delta` pixels, `dt` milliseconds after the last
 fn speed(before: f64, delta: f64, dt: f64) -> f64 {
     // a long pause is a new gesture
@@ -26,9 +26,7 @@ fn speed(before: f64, delta: f64, dt: f64) -> f64 {
     let now = delta / dt.max(4.0);
     0.5 * now + 0.5 * before
 }
-// }}}
 
-// fn fade {{{
 /// The speed a frame of `dt` milliseconds later
 fn fade(speed: f64, dt: f64) -> f64 {
     speed * KEPT.powf(dt.clamp(1.0, 50.0) / (1000.0 / 60.0))

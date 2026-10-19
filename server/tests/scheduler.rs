@@ -52,11 +52,9 @@ fn today() -> NaiveDate {
 fn h(hours: u8) -> Workload {
     Workload::new(hours).unwrap()
 }
-// }}}
 
 type Dep = (DependencyNode, i32);
 
-// helpers {{{
 fn start() -> Dep {
     (DependencyNode::ParentStart, 0)
 }
@@ -74,9 +72,8 @@ fn deps(deps: &[Dep]) -> Vec<Dependency> {
         .map(|&(node, lag)| Dependency { node, lag })
         .collect()
 }
-// }}}
 
-// Dep supporting types {{{
+// World {{{
 /// A tenant with one plan, built with ids that repeat from one world to the next
 struct World {
     tenant: Tenant,
@@ -84,9 +81,7 @@ struct World {
     plan: ShortId,
     next: u128,
 }
-// }}}
 
-// impl World {{{
 impl World {
     fn new() -> Self {
         let tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), today());
@@ -316,7 +311,6 @@ impl World {
 }
 // }}}
 
-// helpers {{{
 fn user(id: Uuid) -> Worker {
     Worker::User(id)
 }
@@ -347,7 +341,7 @@ fn only_days(state: &PlanVolatileState, task: Uuid, who: Uuid) -> Vec<u32> {
 }
 // }}}
 
-// fn a_task_works_its_duration_in_days {{{
+// a_task_works_its_duration_in_days {{{
 #[test]
 fn a_task_works_its_duration_in_days() {
     let mut world = World::new();
@@ -365,7 +359,7 @@ fn a_task_works_its_duration_in_days() {
 }
 // }}}
 
-// fn tasks_with_no_workers_last_their_duration_in_plan_working_days {{{
+// tasks_with_no_workers_last_their_duration_in_plan_working_days {{{
 #[test]
 fn tasks_with_no_workers_last_their_duration_in_plan_working_days() {
     let mut world = World::new();
@@ -377,7 +371,7 @@ fn tasks_with_no_workers_last_their_duration_in_plan_working_days() {
 }
 // }}}
 
-// fn two_strict_tasks_share_a_person_who_has_the_hours {{{
+// two_strict_tasks_share_a_person_who_has_the_hours {{{
 #[test]
 fn two_strict_tasks_share_a_person_who_has_the_hours() {
     let mut world = World::new();
@@ -390,7 +384,7 @@ fn two_strict_tasks_share_a_person_who_has_the_hours() {
 }
 // }}}
 
-// fn strict_workers_stay_on_the_same_days {{{
+// strict_workers_stay_on_the_same_days {{{
 #[test]
 fn strict_workers_stay_on_the_same_days() {
     let mut world = World::new();
@@ -408,7 +402,7 @@ fn strict_workers_stay_on_the_same_days() {
 }
 // }}}
 
-// fn strict_runs_restart_on_a_busy_day_but_not_across_weekends {{{
+// strict_runs_restart_on_a_busy_day_but_not_across_weekends {{{
 #[test]
 fn strict_runs_restart_on_a_busy_day_but_not_across_weekends() {
     let mut world = World::new();
@@ -429,7 +423,7 @@ fn strict_runs_restart_on_a_busy_day_but_not_across_weekends() {
 }
 // }}}
 
-// fn relaxed_tasks_use_what_is_free {{{
+// relaxed_tasks_use_what_is_free {{{
 #[test]
 fn relaxed_tasks_use_what_is_free() {
     let mut world = World::new();
@@ -449,7 +443,7 @@ fn relaxed_tasks_use_what_is_free() {
 }
 // }}}
 
-// fn work_in_progress_claims_hours_before_longer_chains {{{
+// work_in_progress_claims_hours_before_longer_chains {{{
 #[test]
 fn work_in_progress_claims_hours_before_longer_chains() {
     let mut world = World::new();
@@ -467,7 +461,7 @@ fn work_in_progress_claims_hours_before_longer_chains() {
 }
 // }}}
 
-// fn work_in_progress_runs_up_to_today_even_past_its_duration {{{
+// work_in_progress_runs_up_to_today_even_past_its_duration {{{
 #[test]
 fn work_in_progress_runs_up_to_today_even_past_its_duration() {
     let mut world = World::new();
@@ -481,7 +475,7 @@ fn work_in_progress_runs_up_to_today_even_past_its_duration() {
 }
 // }}}
 
-// fn completed_work_is_inferred_from_its_dates {{{
+// completed_work_is_inferred_from_its_dates {{{
 #[test]
 fn completed_work_is_inferred_from_its_dates() {
     let mut world = World::new();
@@ -505,7 +499,7 @@ fn completed_work_is_inferred_from_its_dates() {
 }
 // }}}
 
-// fn milestones_land_on_the_last_day_of_the_work_before_them {{{
+// milestones_land_on_the_last_day_of_the_work_before_them {{{
 #[test]
 fn milestones_land_on_the_last_day_of_the_work_before_them() {
     let mut world = World::new();
@@ -532,7 +526,7 @@ fn milestones_land_on_the_last_day_of_the_work_before_them() {
 }
 // }}}
 
-// fn milestones_stay_on_a_day_worked_outside_the_usual_week {{{
+// milestones_stay_on_a_day_worked_outside_the_usual_week {{{
 #[test]
 fn milestones_stay_on_a_day_worked_outside_the_usual_week() {
     let mut world = World::new();
@@ -553,7 +547,7 @@ fn milestones_stay_on_a_day_worked_outside_the_usual_week() {
 }
 // }}}
 
-// fn milestone_statuses_follow_what_they_depend_on {{{
+// milestone_statuses_follow_what_they_depend_on {{{
 #[test]
 fn milestone_statuses_follow_what_they_depend_on() {
     let mut world = World::new();
@@ -584,7 +578,7 @@ fn milestone_statuses_follow_what_they_depend_on() {
 }
 // }}}
 
-// fn dropped_tasks_are_transparent_and_on_hold_tasks_end_when_held {{{
+// dropped_tasks_are_transparent_and_on_hold_tasks_end_when_held {{{
 #[test]
 fn dropped_tasks_are_transparent_and_on_hold_tasks_end_when_held() {
     let mut world = World::new();
@@ -614,7 +608,7 @@ fn dropped_tasks_are_transparent_and_on_hold_tasks_end_when_held() {
 }
 // }}}
 
-// fn negative_lag_starts_before_the_end_of_a_dependency {{{
+// negative_lag_starts_before_the_end_of_a_dependency {{{
 #[test]
 fn negative_lag_starts_before_the_end_of_a_dependency() {
     let mut world = World::new();
@@ -626,7 +620,7 @@ fn negative_lag_starts_before_the_end_of_a_dependency() {
 }
 // }}}
 
-// fn time_constraints_hold_or_are_reported_violated {{{
+// time_constraints_hold_or_are_reported_violated {{{
 #[test]
 fn time_constraints_hold_or_are_reported_violated() {
     let mut world = World::new();
@@ -661,7 +655,7 @@ fn time_constraints_hold_or_are_reported_violated() {
 }
 // }}}
 
-// fn hard_dated_chains_go_before_target_chains_before_the_rest {{{
+// hard_dated_chains_go_before_target_chains_before_the_rest {{{
 #[test]
 fn hard_dated_chains_go_before_target_chains_before_the_rest() {
     let mut world = World::new();
@@ -685,7 +679,7 @@ fn hard_dated_chains_go_before_target_chains_before_the_rest() {
 }
 // }}}
 
-// fn tasks_off_the_target_chain_never_delay_it {{{
+// tasks_off_the_target_chain_never_delay_it {{{
 #[test]
 fn tasks_off_the_target_chain_never_delay_it() {
     let mut world = World::new();
@@ -701,7 +695,7 @@ fn tasks_off_the_target_chain_never_delay_it() {
 }
 // }}}
 
-// fn tags_and_groups_pick_whoever_finishes_first {{{
+// tags_and_groups_pick_whoever_finishes_first {{{
 #[test]
 fn tags_and_groups_pick_whoever_finishes_first() {
     let mut world = World::new();
@@ -738,7 +732,7 @@ fn tags_and_groups_pick_whoever_finishes_first() {
 }
 // }}}
 
-// fn recorded_workers_replace_the_named_user {{{
+// recorded_workers_replace_the_named_user {{{
 #[test]
 fn recorded_workers_replace_the_named_user() {
     let mut world = World::new();
@@ -757,7 +751,7 @@ fn recorded_workers_replace_the_named_user() {
 }
 // }}}
 
-// fn a_task_that_depends_on_nothing_starts_with_the_plan {{{
+// a_task_that_depends_on_nothing_starts_with_the_plan {{{
 #[test]
 fn a_task_that_depends_on_nothing_starts_with_the_plan() {
     let mut world = World::new();
@@ -769,7 +763,7 @@ fn a_task_that_depends_on_nothing_starts_with_the_plan() {
 }
 // }}}
 
-// fn what_cannot_be_scheduled_says_why {{{
+// what_cannot_be_scheduled_says_why {{{
 #[test]
 fn what_cannot_be_scheduled_says_why() {
     let mut world = World::new();
@@ -790,7 +784,7 @@ fn what_cannot_be_scheduled_says_why() {
 }
 // }}}
 
-// fn affinities_limit_the_days_worked {{{
+// affinities_limit_the_days_worked {{{
 #[test]
 fn affinities_limit_the_days_worked() {
     let mut world = World::new();
@@ -829,7 +823,7 @@ fn affinities_limit_the_days_worked() {
 }
 // }}}
 
-// fn groups_cover_their_members_and_start_them_together {{{
+// groups_cover_their_members_and_start_them_together {{{
 #[test]
 fn groups_cover_their_members_and_start_them_together() {
     let mut world = World::new();
@@ -854,7 +848,7 @@ fn groups_cover_their_members_and_start_them_together() {
 }
 // }}}
 
-// fn empty_groups_last_three_calendar_days_and_groups_of_unscheduled_members_are_unscheduled {{{
+// empty_groups_last_three_calendar_days_and_groups_of_unscheduled_members_are_unscheduled {{{
 #[test]
 fn empty_groups_last_three_calendar_days_and_groups_of_unscheduled_members_are_unscheduled() {
     let mut world = World::new();
@@ -877,7 +871,7 @@ fn empty_groups_last_three_calendar_days_and_groups_of_unscheduled_members_are_u
 }
 // }}}
 
-// fn buffers_hold_back_what_follows_and_shrink_for_hard_dates {{{
+// buffers_hold_back_what_follows_and_shrink_for_hard_dates {{{
 #[test]
 fn buffers_hold_back_what_follows_and_shrink_for_hard_dates() {
     let mut world = World::new();
@@ -901,7 +895,7 @@ fn buffers_hold_back_what_follows_and_shrink_for_hard_dates() {
 }
 // }}}
 
-// fn compaction_fills_room_left_by_other_tasks {{{
+// compaction_fills_room_left_by_other_tasks {{{
 #[test]
 fn compaction_fills_room_left_by_other_tasks() {
     let mut world = World::new();
@@ -917,7 +911,7 @@ fn compaction_fills_room_left_by_other_tasks() {
 }
 // }}}
 
-// fn build {{{
+// build {{{
 fn build(world: &mut World) -> PlanVolatileState {
     let people: Vec<Uuid> = (0..3).map(|_| world.user()).collect();
     let tag = world.tag(&people);
@@ -938,7 +932,7 @@ fn build(world: &mut World) -> PlanVolatileState {
 }
 // }}}
 
-// fn the_same_updates_give_the_same_schedule {{{
+// the_same_updates_give_the_same_schedule {{{
 #[test]
 fn the_same_updates_give_the_same_schedule() {
     let (mut a, mut b) = (World::new(), World::new());
@@ -949,7 +943,7 @@ fn the_same_updates_give_the_same_schedule() {
 }
 // }}}
 
-// fn slack_is_how_much_later_a_node_can_finish_before_the_plan_does {{{
+// slack_is_how_much_later_a_node_can_finish_before_the_plan_does {{{
 #[test]
 fn slack_is_how_much_later_a_node_can_finish_before_the_plan_does() {
     let mut world = World::new();
@@ -965,7 +959,7 @@ fn slack_is_how_much_later_a_node_can_finish_before_the_plan_does() {
 }
 // }}}
 
-// fn slack_counts_the_order_people_work_in {{{
+// slack_counts_the_order_people_work_in {{{
 #[test]
 fn slack_counts_the_order_people_work_in() {
     let mut world = World::new();
@@ -988,7 +982,7 @@ fn slack_counts_the_order_people_work_in() {
 }
 // }}}
 
-// fn slack_follows_targets_and_hard_dates {{{
+// slack_follows_targets_and_hard_dates {{{
 #[test]
 fn slack_follows_targets_and_hard_dates() {
     let mut world = World::new();
@@ -1009,7 +1003,7 @@ fn slack_follows_targets_and_hard_dates() {
 }
 // }}}
 
-// fn slack_is_negative_once_a_hard_date_is_missed {{{
+// slack_is_negative_once_a_hard_date_is_missed {{{
 #[test]
 fn slack_is_negative_once_a_hard_date_is_missed() {
     let mut world = World::new();
@@ -1025,7 +1019,7 @@ fn slack_is_negative_once_a_hard_date_is_missed() {
 }
 // }}}
 
-// fn a_snapshot_of_a_tenant_schedules_the_same {{{
+// a_snapshot_of_a_tenant_schedules_the_same {{{
 #[test]
 fn a_snapshot_of_a_tenant_schedules_the_same() {
     let mut world = World::new();
@@ -1053,7 +1047,7 @@ fn a_snapshot_of_a_tenant_schedules_the_same() {
 }
 // }}}
 
-// fn what_hangs_from_a_start_milestone_in_the_future_begins_on_that_day {{{
+// what_hangs_from_a_start_milestone_in_the_future_begins_on_that_day {{{
 #[test]
 fn what_hangs_from_a_start_milestone_in_the_future_begins_on_that_day() {
     let mut world = World::new();
@@ -1076,7 +1070,7 @@ fn what_hangs_from_a_start_milestone_in_the_future_begins_on_that_day() {
 }
 // }}}
 
-// fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_is_days_off {{{
+// a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_is_days_off {{{
 #[test]
 fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_is_days_off() {
     let mut world = World::new();
@@ -1102,7 +1096,7 @@ fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_i
 }
 // }}}
 
-// fn scheduled_world {{{
+// scheduled_world {{{
 /// What the tracker gives back for the tenant, which has a full schedule to start from
 fn scheduled_world() -> (World, Uuid, [Uuid; 3], Uuid) {
     let mut world = World::new();
@@ -1117,7 +1111,7 @@ fn scheduled_world() -> (World, Uuid, [Uuid; 3], Uuid) {
 }
 // }}}
 
-// fn a_change_places_what_depends_on_it_again_and_leaves_the_rest {{{
+// a_change_places_what_depends_on_it_again_and_leaves_the_rest {{{
 #[test]
 fn a_change_places_what_depends_on_it_again_and_leaves_the_rest() {
     let (mut world, _, [a, b, c], apart) = scheduled_world();
@@ -1160,7 +1154,7 @@ fn a_change_places_what_depends_on_it_again_and_leaves_the_rest() {
 }
 // }}}
 
-// fn updates_that_change_nothing_scheduled_leave_the_schedule_alone {{{
+// updates_that_change_nothing_scheduled_leave_the_schedule_alone {{{
 #[test]
 fn updates_that_change_nothing_scheduled_leave_the_schedule_alone() {
     let (mut world, _, [a, ..], _) = scheduled_world();
@@ -1191,7 +1185,7 @@ fn updates_that_change_nothing_scheduled_leave_the_schedule_alone() {
 }
 // }}}
 
-// fn a_new_task_is_placed_around_what_is_there {{{
+// a_new_task_is_placed_around_what_is_there {{{
 #[test]
 fn a_new_task_is_placed_around_what_is_there() {
     let (mut world, alice, [a, b, c], apart) = scheduled_world();
@@ -1230,7 +1224,7 @@ fn a_new_task_is_placed_around_what_is_there() {
 }
 // }}}
 
-// fn changes_to_people_or_the_clock_schedule_everything_again {{{
+// changes_to_people_or_the_clock_schedule_everything_again {{{
 #[test]
 fn changes_to_people_or_the_clock_schedule_everything_again() {
     let (mut world, alice, ..) = scheduled_world();
@@ -1254,7 +1248,7 @@ fn changes_to_people_or_the_clock_schedule_everything_again() {
 }
 // }}}
 
-// fn a_date_the_work_before_it_cannot_meet_is_not_counted_as_avoidable {{{
+// a_date_the_work_before_it_cannot_meet_is_not_counted_as_avoidable {{{
 #[test]
 fn a_date_the_work_before_it_cannot_meet_is_not_counted_as_avoidable() {
     let mut world = World::new();

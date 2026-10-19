@@ -121,7 +121,7 @@ impl Outcome {
 }
 // }}}
 
-// fn run {{{
+// run {{{
 fn run(
     tenant: &Tenant,
     ids: &[ShortId],
@@ -180,7 +180,7 @@ fn run(
 }
 // }}}
 
-// fn bump {{{
+// bump {{{
 /// Makes each worst target more urgent by as many days as it is late
 fn bump(worst: &[&Reached], repairs: &Repairs) -> Repairs {
     let mut next = repairs.clone();
@@ -191,7 +191,7 @@ fn bump(worst: &[&Reached], repairs: &Repairs) -> Repairs {
 }
 // }}}
 
-// fn rebalance {{{
+// rebalance {{{
 /// Hard dates made earlier by as many days as they were missed and the ones that were kept with
 /// room to spare later by half that room, so the work that keeps them gives way to the work that
 /// missed, `None` if nothing was missed
@@ -235,7 +235,7 @@ fn rebalance(
 }
 // }}}
 
-// fn dated_nodes {{{
+// dated_nodes {{{
 /// The tasks of a plan with a Fixed or Latest date
 fn dated_nodes(plan: &crate::planner::plan::Plan) -> Vec<PlanNode> {
     plan.tasks()
@@ -262,7 +262,7 @@ fn dated_nodes(plan: &crate::planner::plan::Plan) -> Vec<PlanNode> {
 }
 // }}}
 
-// fn escalate {{{
+// escalate {{{
 /// Makes the hard dates that were missed urgent, `None` if they all are
 fn escalate(outcome: &Outcome, repairs: &Repairs) -> Option<Repairs> {
     let mut next = repairs.clone();
@@ -278,7 +278,7 @@ fn escalate(outcome: &Outcome, repairs: &Repairs) -> Option<Repairs> {
 }
 // }}}
 
-// fn demote {{{
+// demote {{{
 /// Takes hard dates that were kept with room to spare out of the ones that go first, `None` if
 /// there are none
 fn demote(
@@ -310,7 +310,7 @@ fn demote(
 }
 // }}}
 
-// fn reassign {{{
+// reassign {{{
 /// Moves tag and group work off the bottleneck people the worst targets wait on, to whoever
 /// eligible is least booked, `None` if there is nothing to move
 fn reassign(
@@ -380,7 +380,7 @@ fn reassign(
 }
 // }}}
 
-// fn solve {{{
+// solve {{{
 /// Schedules the plans, in the order given, then repairs the result in rounds. A round tries
 /// making the worst targets more urgent and moving work off the bottleneck people they wait on,
 /// each by rescheduling everything, and keeps the better one if it beats the worst effective delay
@@ -428,7 +428,7 @@ pub fn solve(
 }
 // }}}
 
-// fn improve {{{
+// improve {{{
 /// Repairs a schedule in rounds, each tries the changes below, scheduling everything again for
 /// each, and keeps the best that beats the objective
 fn improve(

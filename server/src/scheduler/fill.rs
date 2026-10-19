@@ -48,6 +48,15 @@ pub struct Filled {
     /// Whether all the effort found days before `Spec::stop`
     pub complete: bool,
 }
+
+#[derive(Clone, Copy, PartialEq)]
+enum Day {
+    /// Someone cannot work a full block, which pauses the task without breaking a strict run
+    Gap,
+    /// Someone has the hours but another task holds them
+    Blocked,
+    Free,
+}
 // }}}
 
 // impl Filled {{{
@@ -67,17 +76,6 @@ impl Filled {
 }
 // }}}
 
-// Hours supporting types {{{
-#[derive(Clone, Copy, PartialEq)]
-enum Day {
-    /// Someone cannot work a full block, which pauses the task without breaking a strict run
-    Gap,
-    /// Someone has the hours but another task holds them
-    Blocked,
-    Free,
-}
-// }}}
-
 // impl Spec {{{
 impl Spec<'_> {
     fn days(&self) -> impl Iterator<Item = NaiveDate> {
@@ -92,7 +90,7 @@ impl Spec<'_> {
 }
 // }}}
 
-// fn fill {{{
+// fill {{{
 /// Places the slots from the start of the spec without changing anything. Strict tasks work whole
 /// blocks on the same days for every slot, and a blocked day restarts the run, whereas relaxed
 /// slots each take whatever is free.
@@ -104,7 +102,7 @@ pub fn fill(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
 }
 // }}}
 
-// fn day_state {{{
+// helpers {{{
 fn day_state(hours: &impl Hours, slots: &[Slot], mode: ScheduleMode, day: NaiveDate) -> Day {
     let mut blocked = false;
     for slot in slots {
@@ -115,9 +113,7 @@ fn day_state(hours: &impl Hours, slots: &[Slot], mode: ScheduleMode, day: NaiveD
     }
     if blocked { Day::Blocked } else { Day::Free }
 }
-// }}}
 
-// fn strict {{{
 fn strict(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
     let duration = spec.duration as usize;
     let mut days: Vec<NaiveDate> = Vec::new();
@@ -143,9 +139,7 @@ fn strict(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
             .collect(),
     }
 }
-// }}}
 
-// fn relaxed {{{
 fn relaxed(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
     let mut filled = Filled {
         days: Vec::new(),

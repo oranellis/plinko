@@ -42,11 +42,9 @@ impl Ids {
 }
 // }}}
 
-// Ids supporting types {{{
+// Random {{{
 struct Random(u64);
-// }}}
 
-// impl Random {{{
 impl Random {
     fn below(&mut self, n: u64) -> u64 {
         self.0 = self
@@ -58,7 +56,7 @@ impl Random {
 }
 // }}}
 
-// fn apply {{{
+// apply {{{
 fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
     let time = DateTime::from_timestamp(978307200, 0).unwrap();
     tenant
@@ -71,7 +69,7 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
 }
 // }}}
 
-// fn main {{{
+// main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
         .skip(1)

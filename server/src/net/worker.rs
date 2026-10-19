@@ -61,7 +61,7 @@ impl Scheduler {
 }
 // }}}
 
-// fn start {{{
+// start {{{
 pub fn start(mut tenant: Tenant, mut seq: u64, results: UnboundedSender<Command>) -> Scheduler {
     let (sender, receiver): (Sender<Message>, Receiver<Message>) = std::sync::mpsc::channel();
     let to_self = sender.clone();

@@ -22,15 +22,6 @@ use crate::{
 };
 // }}}
 
-/// An item with no place on the chart
-#[derive(Clone, Debug, PartialEq)]
-pub struct Unplaced {
-    pub node: PlanNode,
-    pub name: String,
-    pub reason: String,
-}
-
-// Unplaced supporting types {{{
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene {
     /// The day the chart counts from: today, or the first day of anything before it
@@ -41,6 +32,24 @@ pub struct Scene {
     pub last_day: f64,
     /// Where each item is in the arrangement
     index: HashMap<Mark, usize>,
+}
+
+// Scene supporting types {{{
+/// An item with no place on the chart
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unplaced {
+    pub node: PlanNode,
+    pub name: String,
+    pub reason: String,
+}
+
+struct Context<'a> {
+    plan: &'a Plan,
+    state: Option<&'a PlanVolatileState>,
+    collapsed: &'a HashSet<Uuid>,
+    depended: &'a HashSet<PlanNode>,
+    targets: &'a HashSet<PlanNode>,
+    children: &'a HashMap<Parent, Vec<PlanNode>>,
 }
 // }}}
 
@@ -63,7 +72,7 @@ impl Scene {
 }
 // }}}
 
-// fn kind_of {{{
+// kind_of {{{
 fn kind_of(node: PlanNode) -> Kind {
     match node {
         PlanNode::Task(_) => Kind::Task,
@@ -74,7 +83,7 @@ fn kind_of(node: PlanNode) -> Kind {
 }
 // }}}
 
-// fn build {{{
+// build {{{
 pub fn build(
     plan: &Plan,
     state: Option<&PlanVolatileState>,
@@ -143,17 +152,6 @@ pub fn build(
         unplaced,
         index,
     }
-}
-// }}}
-
-// Unplaced supporting types {{{
-struct Context<'a> {
-    plan: &'a Plan,
-    state: Option<&'a PlanVolatileState>,
-    collapsed: &'a HashSet<Uuid>,
-    depended: &'a HashSet<PlanNode>,
-    targets: &'a HashSet<PlanNode>,
-    children: &'a HashMap<Parent, Vec<PlanNode>>,
 }
 // }}}
 

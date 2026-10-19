@@ -8,7 +8,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::types::error::{PlinkoError, PlinkoResult};
 // }}}
 
-// helpers {{{
+// functions {{{
 pub fn encode<T: Serialize>(value: &T) -> PlinkoResult<Vec<u8>> {
     rmp_serde::to_vec_named(value).map_err(|e| PlinkoError::Codec(e.to_string()))
 }

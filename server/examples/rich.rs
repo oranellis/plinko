@@ -58,7 +58,7 @@ impl Random {
 }
 // }}}
 
-// fn apply {{{
+// apply {{{
 fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
     let time = DateTime::from_timestamp(978307200, 0).unwrap();
     tenant
@@ -105,7 +105,7 @@ struct Opts {
 }
 // }}}
 
-// fn make {{{
+// make {{{
 /// Plans with layers of dense dependencies sharing people some of whom work part time or half
 /// days. `dates` sets hard dates on tasks and `pins` who does the tag and group work of a task.
 fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid, usize>) -> Made {
@@ -467,7 +467,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
 }
 // }}}
 
-// fn node_ids {{{
+// node_ids {{{
 fn node_ids(deps: &[Dependency]) -> Vec<Uuid> {
     deps.iter()
         .filter_map(|d| match d.node {
@@ -478,7 +478,7 @@ fn node_ids(deps: &[Dependency]) -> Vec<Uuid> {
 }
 // }}}
 
-// fn export {{{
+// export {{{
 fn export(
     world: &Made,
     state: &scheduler::state::TenantVolatileState,
@@ -555,7 +555,7 @@ fn export(
 }
 // }}}
 
-// Random supporting types {{{
+// score {{{
 #[derive(Default)]
 struct Score {
     dated: f64,
@@ -566,9 +566,7 @@ struct Score {
     delay: f64,
     seconds: f64,
 }
-// }}}
 
-// fn score {{{
 fn score(
     state: &scheduler::state::TenantVolatileState,
     since: NaiveDate,
@@ -592,7 +590,7 @@ fn score(
 }
 // }}}
 
-// fn main {{{
+// main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
         .skip(1)
@@ -686,7 +684,7 @@ fn main() {
 }
 // }}}
 
-// fn incremental {{{
+// incremental {{{
 /// Makes `count` small edits one at a time, brings the schedule up to date after each as the server
 /// does and times it, then schedules the tenant afresh to see what the edits cost in quality
 fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
@@ -815,7 +813,7 @@ fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
 }
 // }}}
 
-// fn validate {{{
+// validate {{{
 /// Fixes every task on the day and with the person a solver chose and checks the scheduler puts
 /// each exactly there without missing a date or leaving anything out
 fn validate(

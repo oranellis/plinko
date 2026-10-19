@@ -31,11 +31,9 @@ use plinko::{
 use uuid::Uuid;
 // }}}
 
-// constants {{{
+// helpers {{{
 const CLIENT_ID: Uuid = Uuid::nil();
-// }}}
 
-// fn rule_update {{{
 fn rule_update<V>(kind: RuleKind<V>) -> RuleSetUpdate<V> {
     RuleSetUpdate::Rule(Crud::Add(NewRule {
         name: String::new(),
@@ -45,18 +43,14 @@ fn rule_update<V>(kind: RuleKind<V>) -> RuleSetUpdate<V> {
         kind,
     }))
 }
-// }}}
 
-// fn rule_id {{{
 fn rule_id<V>(update: &RuleSetUpdate<V>) -> Uuid {
     match update {
         RuleSetUpdate::Rule(Crud::Add(new)) => new.id,
         _ => panic!("expected a rule add"),
     }
 }
-// }}}
 
-// fn plan_update_ids {{{
 fn plan_update_ids(mut update: PlanUpdate) -> Uuid {
     update.assign_ids();
     match update {
@@ -77,7 +71,7 @@ fn plan_update_ids(mut update: PlanUpdate) -> Uuid {
 }
 // }}}
 
-// fn plan_adds_get_fresh_ids {{{
+// plan_adds_get_fresh_ids {{{
 #[test]
 fn plan_adds_get_fresh_ids() {
     let parent = Parent::Plan;
@@ -134,7 +128,7 @@ fn plan_adds_get_fresh_ids() {
 }
 // }}}
 
-// helpers {{{
+// existing_tenant_users_and_groups_keep_their_ids_in_a_plan {{{
 #[test]
 fn existing_tenant_users_and_groups_keep_their_ids_in_a_plan() {
     let user = PlanUpdate::User(Crud::Add(NewPlanUser { id: CLIENT_ID }));
@@ -142,7 +136,9 @@ fn existing_tenant_users_and_groups_keep_their_ids_in_a_plan() {
     let group = PlanUpdate::UserGroup(Crud::Add(NewPlanUserGroup { id: CLIENT_ID }));
     assert_eq!(plan_update_ids(group), CLIENT_ID);
 }
+// }}}
 
+// updates_and_removals_keep_the_ids_they_name {{{
 #[test]
 fn updates_and_removals_keep_the_ids_they_name() {
     let mut remove = PlanUpdate::Task(Crud::Remove(CLIENT_ID));
@@ -151,7 +147,7 @@ fn updates_and_removals_keep_the_ids_they_name() {
 }
 // }}}
 
-// fn tenant_adds_get_fresh_ids {{{
+// tenant_adds_get_fresh_ids {{{
 #[test]
 fn tenant_adds_get_fresh_ids() {
     let mut user = TenantUpdateType::User(Crud::Add(NewTenantLoginUser {
@@ -183,7 +179,7 @@ fn tenant_adds_get_fresh_ids() {
 }
 // }}}
 
-// fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned {{{
+// new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned {{{
 #[test]
 fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned() {
     let client_plan = ShortId::from_str_checked("AAAAAAAA").unwrap();

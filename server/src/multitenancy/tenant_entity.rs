@@ -17,7 +17,7 @@ use crate::{
 };
 // }}}
 
-// impl TenantLoginUser {{{
+// impl Entity for TenantLoginUser {{{
 impl Entity<Tenant> for TenantLoginUser {
     type New = NewTenantLoginUser;
     type Patch = TenantLoginUserPatch;
@@ -50,7 +50,7 @@ impl Entity<Tenant> for TenantLoginUser {
 }
 // }}}
 
-// impl TenantUserGroup {{{
+// impl Entity for TenantUserGroup {{{
 impl Entity<Tenant> for TenantUserGroup {
     type New = NewTenantUserGroup;
     type Patch = TenantUserGroupPatch;

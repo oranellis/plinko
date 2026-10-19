@@ -1,5 +1,7 @@
+// modules {{{
 use crate::types::error::{PlinkoError, PlinkoResult};
 use serde::{Deserialize, Serialize};
+// }}}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
@@ -21,17 +23,13 @@ impl Workload {
         self.value
     }
 }
-// }}}
 
-// impl u8 {{{
 impl From<Workload> for u8 {
     fn from(workload: Workload) -> Self {
         workload.value
     }
 }
-// }}}
 
-// impl Workload {{{
 impl TryFrom<u8> for Workload {
     type Error = PlinkoError;
 

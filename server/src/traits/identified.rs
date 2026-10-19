@@ -27,7 +27,7 @@ pub trait Identified {
     fn set_id(&mut self, id: Uuid);
 }
 
-// items {{{
+// macros {{{
 macro_rules! identified {
     ($($ty:ty),* $(,)?) => {
         $(impl Identified for $ty {
@@ -40,6 +40,7 @@ macro_rules! identified {
         })*
     };
 }
+// }}}
 
 identified!(
     NewAffinity,
@@ -67,7 +68,6 @@ identified!(
     NewTenantUserGroup,
     TenantUserGroupPatch,
 );
-// }}}
 
 // impl NewRule {{{
 impl<V> Identified for NewRule<V> {

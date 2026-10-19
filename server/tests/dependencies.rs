@@ -18,16 +18,14 @@ use plinko::{
 use uuid::Uuid;
 // }}}
 
-// fn new_plan {{{
+// helpers {{{
 fn new_plan() -> Plan {
     Plan::from(NewPlan {
         id: ShortId::new(),
         name: "My Plan".to_owned(),
     })
 }
-// }}}
 
-// fn add_task {{{
 fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewTask {
@@ -38,9 +36,7 @@ fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
     plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
     id
 }
-// }}}
 
-// fn add_group {{{
 fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewTaskGroup {
@@ -52,18 +48,14 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
         .unwrap();
     id
 }
-// }}}
 
-// fn depend {{{
 fn depend(nodes: &[DependencyNode]) -> Vec<Dependency> {
     nodes
         .iter()
         .map(|&node| Dependency { node, lag: 0 })
         .collect()
 }
-// }}}
 
-// fn task_patch {{{
 fn task_patch(id: Uuid) -> TaskPatch {
     TaskPatch {
         id,
@@ -79,9 +71,7 @@ fn task_patch(id: Uuid) -> TaskPatch {
         persistent_state: None,
     }
 }
-// }}}
 
-// helpers {{{
 fn set_task_deps(plan: &mut Plan, id: Uuid, nodes: &[DependencyNode]) -> PlinkoResult<()> {
     let patch = TaskPatch {
         dependencies: Some(depend(nodes)),
@@ -111,7 +101,7 @@ fn remove_task(plan: &mut Plan, id: Uuid) -> PlinkoResult<()> {
 }
 // }}}
 
-// fn dependency_on_missing_node_is_rejected {{{
+// dependency_on_missing_node_is_rejected {{{
 #[test]
 fn dependency_on_missing_node_is_rejected() {
     let mut plan = new_plan();
@@ -122,7 +112,7 @@ fn dependency_on_missing_node_is_rejected() {
 }
 // }}}
 
-// fn dependency_cycles_are_rejected_and_rolled_back {{{
+// dependency_cycles_are_rejected_and_rolled_back {{{
 #[test]
 fn dependency_cycles_are_rejected_and_rolled_back() {
     let mut plan = new_plan();
@@ -140,7 +130,7 @@ fn dependency_cycles_are_rejected_and_rolled_back() {
 }
 // }}}
 
-// fn group_end_waits_on_members {{{
+// group_end_waits_on_members {{{
 #[test]
 fn group_end_waits_on_members() {
     let mut plan = new_plan();
@@ -170,7 +160,7 @@ fn group_end_waits_on_members() {
 }
 // }}}
 
-// fn members_anchor_to_group_start {{{
+// members_anchor_to_group_start {{{
 #[test]
 fn members_anchor_to_group_start() {
     let mut plan = new_plan();
@@ -190,7 +180,7 @@ fn members_anchor_to_group_start() {
 }
 // }}}
 
-// fn referenced_items_cannot_be_removed {{{
+// referenced_items_cannot_be_removed {{{
 #[test]
 fn referenced_items_cannot_be_removed() {
     let mut plan = new_plan();
@@ -205,7 +195,7 @@ fn referenced_items_cannot_be_removed() {
 }
 // }}}
 
-// fn allocated_tags_must_exist_and_cannot_be_removed {{{
+// allocated_tags_must_exist_and_cannot_be_removed {{{
 #[test]
 fn allocated_tags_must_exist_and_cannot_be_removed() {
     let mut plan = new_plan();
@@ -435,7 +425,7 @@ fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
 }
 // }}}
 
-// mod moving {{{
+// moving {{{
 mod moving {
     use plinko::planner::plan_update::PlanUpdate;
     use plinko::{

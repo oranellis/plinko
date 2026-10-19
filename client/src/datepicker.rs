@@ -11,15 +11,13 @@ use crate::{
 };
 // }}}
 
-// fn month_shifted {{{
+// helpers {{{
 /// The first day of the month `months` away from `day`'s
 fn month_shifted(day: NaiveDate, months: i32) -> NaiveDate {
     let index = day.year() * 12 + day.month0() as i32 + months;
     NaiveDate::from_ymd_opt(index.div_euclid(12), index.rem_euclid(12) as u32 + 1, 1).unwrap_or(day)
 }
-// }}}
 
-// fn month_cells {{{
 /// The days of the month `first` starts, a week to a row, with blanks to line them up
 fn month_cells(first: NaiveDate, week: WeekStart) -> Vec<Option<NaiveDate>> {
     let blanks = week.offset(first);
@@ -32,7 +30,7 @@ fn month_cells(first: NaiveDate, week: WeekStart) -> Vec<Option<NaiveDate>> {
 }
 // }}}
 
-// fn DatePicker {{{
+// DatePicker {{{
 /// A date that is picked from a calendar. With `clearable` it can be taken away again.
 #[component]
 pub fn DatePicker(
@@ -149,7 +147,7 @@ pub fn DatePicker(
 }
 // }}}
 
-// fn DateInput {{{
+// DateInput {{{
 /// A date that is always there
 #[component]
 pub fn DateInput(
@@ -166,7 +164,7 @@ pub fn DateInput(
 }
 // }}}
 
-// fn OptionalDate {{{
+// OptionalDate {{{
 /// A date that can be left empty
 #[component]
 pub fn OptionalDate(

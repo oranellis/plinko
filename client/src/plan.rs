@@ -38,7 +38,7 @@ use crate::{
 };
 // }}}
 
-// fn task_patch {{{
+// task_patch {{{
 fn task_patch(id: Uuid) -> TaskPatch {
     TaskPatch {
         id,
@@ -56,11 +56,11 @@ fn task_patch(id: Uuid) -> TaskPatch {
 }
 // }}}
 
+// types {{{
 /// Sets up a new item once it exists: what it depends on to begin with, and for a task who does it
 type Anchor =
     fn(Uuid, ShortId, &crate::sync::Sync, Option<Dependency>, Box<dyn FnOnce(Option<Created>)>);
 
-// Anchor supporting types {{{
 #[derive(Clone, Copy)]
 enum Kind {
     Task,
@@ -70,7 +70,7 @@ enum Kind {
 }
 // }}}
 
-// fn PlanPage {{{
+// PlanPage {{{
 #[component]
 pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -525,7 +525,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
 }
 // }}}
 
-// fn AddMenu {{{
+// AddMenu {{{
 /// The plus button of the toolbar, which lists what can be added when the pointer is over it and
 /// stays listed once it has been clicked
 #[component]
@@ -595,7 +595,7 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
 }
 // }}}
 
-// fn blank_click {{{
+// helpers {{{
 /// Whether a click landed on nothing in particular, rather than on something that does its own thing
 pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
     use wasm_bindgen::JsCast;
@@ -608,9 +608,7 @@ pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
                 .is_none()
         })
 }
-// }}}
 
-// fn focus_first_box {{{
 /// Puts the cursor in the first box of the pane's form, with what it holds selected
 fn focus_first_box() {
     use wasm_bindgen::JsCast;
@@ -625,7 +623,7 @@ fn focus_first_box() {
 }
 // }}}
 
-// fn ItemPane {{{
+// ItemPane {{{
 /// The pane beside the chart for editing the item that is open
 #[component]
 pub fn ItemPane(
@@ -680,7 +678,7 @@ pub fn ItemPane(
 }
 // }}}
 
-// fn SearchWindow {{{
+// SearchWindow {{{
 /// Filter the items by name, then go to one
 #[component]
 fn SearchWindow(
@@ -748,7 +746,7 @@ fn SearchWindow(
 }
 // }}}
 
-// fn UnplacedWindow {{{
+// UnplacedWindow {{{
 /// Everything the scheduler could not place, and why
 #[component]
 fn UnplacedWindow(
@@ -777,7 +775,7 @@ fn UnplacedWindow(
 }
 // }}}
 
-// fn List {{{
+// List {{{
 #[component]
 fn List(
     rows: Memo<Vec<Row>>,

@@ -112,6 +112,72 @@ pub struct TargetSlack {
     pub priority: i32,
     pub slack: HashMap<PlanNode, i64>,
 }
+
+/// One plan's schedule. Items it could schedule are in the maps for their kind, the rest are in
+/// `unscheduled` with the reason.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlanVolatileState {
+    pub tasks: HashMap<Uuid, task::VolatileState>,
+    pub task_groups: HashMap<Uuid, task_group::VolatileState>,
+    pub milestones: HashMap<Uuid, milestone::VolatileState>,
+    pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
+    pub unscheduled: HashMap<PlanNode, UnscheduledReason>,
+    /// Forecast of each of the plan's targets
+    pub targets: HashMap<Uuid, TargetForecast>,
+    /// Forecast of the plan's last day, the target of a plan that has none of its own
+    pub plan_end: Option<TargetForecast>,
+    /// Tasks and milestones that landed on a date their time constraint does not allow
+    pub constraint_violations: HashMap<PlanNode, ConstraintViolation>,
+}
+
+/// When a target lands as scheduled, against when its plan would land it with no other plans
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TargetForecast {
+    pub forecast: NaiveDate,
+    pub baseline: NaiveDate,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum UnscheduledReason {
+    /// The task was dropped, so it is out of the plan
+    Dropped,
+    /// The workers the task asks for resolve to nobody, like a tag no one has or an empty group
+    NoEligibleWorkers,
+    /// Every dependency of the item could not be scheduled, so there is nothing to start it from
+    DependsOnUnscheduled,
+    /// A task group none of whose members could be scheduled
+    NoScheduledMembers,
+    /// The workers exist but cannot provide the allocation within the scheduling horizon, from a
+    /// lack of availability or allowed days
+    NoCapacity,
+}
+
+/// The constraint is not met, so the item was pushed to the closest date it could take
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ConstraintViolation {
+    pub constraint: TimeConstraint,
+    pub scheduled: NaiveDate,
+    /// The earliest it could start however free people are, if worked out. Starting later than
+    /// the date but no later than this is not something scheduling could have avoided.
+    pub earliest: Option<NaiveDate>,
+}
+
+/// A person's work across every plan, to see what they are assigned on past, present and
+/// upcoming days and how booked they are
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct UserSchedule {
+    pub assignments: BTreeMap<NaiveDate, Vec<UserAssignment>>,
+    /// Booked hours as a share of available hours from their first to last assigned day, set by
+    /// the solver which knows availability. Near 1 or above marks a bottleneck.
+    pub bottleneck: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct UserAssignment {
+    pub plan: ShortId,
+    pub task: Uuid,
+    pub hours: Workload,
+}
 // }}}
 
 // impl PlanVolatileState {{{
@@ -139,65 +205,12 @@ impl PlanVolatileState {
 }
 // }}}
 
-// TenantVolatileState supporting types {{{
-/// One plan's schedule. Items it could schedule are in the maps for their kind, the rest are in
-/// `unscheduled` with the reason.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct PlanVolatileState {
-    pub tasks: HashMap<Uuid, task::VolatileState>,
-    pub task_groups: HashMap<Uuid, task_group::VolatileState>,
-    pub milestones: HashMap<Uuid, milestone::VolatileState>,
-    pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
-    pub unscheduled: HashMap<PlanNode, UnscheduledReason>,
-    /// Forecast of each of the plan's targets
-    pub targets: HashMap<Uuid, TargetForecast>,
-    /// Forecast of the plan's last day, the target of a plan that has none of its own
-    pub plan_end: Option<TargetForecast>,
-    /// Tasks and milestones that landed on a date their time constraint does not allow
-    pub constraint_violations: HashMap<PlanNode, ConstraintViolation>,
-}
-
-/// When a target lands as scheduled, against when its plan would land it with no other plans
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct TargetForecast {
-    pub forecast: NaiveDate,
-    pub baseline: NaiveDate,
-}
-// }}}
-
 // impl TargetForecast {{{
 impl TargetForecast {
     /// Days the target is later than the plan alone, never negative
     pub fn delay(&self) -> i64 {
         (self.forecast - self.baseline).num_days().max(0)
     }
-}
-// }}}
-
-// TenantVolatileState supporting types {{{
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum UnscheduledReason {
-    /// The task was dropped, so it is out of the plan
-    Dropped,
-    /// The workers the task asks for resolve to nobody, like a tag no one has or an empty group
-    NoEligibleWorkers,
-    /// Every dependency of the item could not be scheduled, so there is nothing to start it from
-    DependsOnUnscheduled,
-    /// A task group none of whose members could be scheduled
-    NoScheduledMembers,
-    /// The workers exist but cannot provide the allocation within the scheduling horizon, from a
-    /// lack of availability or allowed days
-    NoCapacity,
-}
-
-/// The constraint is not met, so the item was pushed to the closest date it could take
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ConstraintViolation {
-    pub constraint: TimeConstraint,
-    pub scheduled: NaiveDate,
-    /// The earliest it could start however free people are, if worked out. Starting later than
-    /// the date but no later than this is not something scheduling could have avoided.
-    pub earliest: Option<NaiveDate>,
 }
 // }}}
 
@@ -214,33 +227,12 @@ impl ConstraintViolation {
 }
 // }}}
 
-// TenantVolatileState supporting types {{{
-/// A person's work across every plan, to see what they are assigned on past, present and
-/// upcoming days and how booked they are
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct UserSchedule {
-    pub assignments: BTreeMap<NaiveDate, Vec<UserAssignment>>,
-    /// Booked hours as a share of available hours from their first to last assigned day, set by
-    /// the solver which knows availability. Near 1 or above marks a bottleneck.
-    pub bottleneck: f32,
-}
-// }}}
-
 // impl UserSchedule {{{
 impl UserSchedule {
     pub fn booked_on(&self, day: NaiveDate) -> u32 {
         let assignments = self.assignments.get(&day).into_iter().flatten();
         assignments.map(|a| u32::from(a.hours.get())).sum()
     }
-}
-// }}}
-
-// TenantVolatileState supporting types {{{
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct UserAssignment {
-    pub plan: ShortId,
-    pub task: Uuid,
-    pub hours: Workload,
 }
 // }}}
 

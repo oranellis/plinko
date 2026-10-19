@@ -22,9 +22,6 @@ use crate::{
 };
 // }}}
 
-pub type Subscriber = u64;
-
-// Subscriber supporting types {{{
 pub enum Command {
     /// A client connected as `user`. The answer is `None` if there is no such user.
     Subscribe {
@@ -55,13 +52,15 @@ pub enum Command {
     },
 }
 
+// Command supporting types {{{
+pub type Subscriber = u64;
+
 /// How to reach the actor
 #[derive(Clone)]
 pub struct Handle {
     pub commands: mpsc::UnboundedSender<Command>,
     pub store: Arc<Store>,
 }
-// }}}
 
 // impl Handle {{{
 impl Handle {
@@ -93,7 +92,6 @@ impl Handle {
 }
 // }}}
 
-// Subscriber supporting types {{{
 struct Connection {
     user: Uuid,
     out: mpsc::UnboundedSender<ServerMessage>,
@@ -111,7 +109,7 @@ struct Actor {
 }
 // }}}
 
-// fn start {{{
+// start {{{
 /// Starts the actor for a tenant that has been saved in the store
 pub fn start(store: Arc<Store>) -> crate::types::error::PlinkoResult<Handle> {
     let (tenant, seq) = store.load()?;
@@ -310,7 +308,7 @@ impl Actor {
 }
 // }}}
 
-// fn plan_of {{{
+// plan_of {{{
 /// The plan an update is about, `None` for the tenant as a whole
 fn plan_of(update: &TenantUpdate) -> Option<ShortId> {
     match &update.update_type {

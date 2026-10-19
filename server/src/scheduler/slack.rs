@@ -19,7 +19,7 @@ enum Link {
     Lag { lag: i32, milestone: bool },
 }
 
-// fn late_ends {{{
+// late_ends {{{
 /// The latest each vertex may end without passing the ends already known for others in
 /// `initial`, working back from them over dependencies and the order people work in (`resource`,
 /// pairs of tasks where the second follows the first). Vertices that nothing limits are left out.
@@ -90,12 +90,10 @@ pub fn late_ends(
 }
 // }}}
 
-// Link supporting types {{{
+// early_starts {{{
 /// Where a vertex would start and end if it could start on a day
 pub type Span<'a> = dyn Fn(&Vertex, NaiveDate) -> Option<(NaiveDate, NaiveDate)> + 'a;
-// }}}
 
-// fn early_starts {{{
 /// The earliest each vertex can start however free people are, taking the lengths in `placed`,
 /// the ends of what has happened and the dates in `floor` as they are. A start in `exact` is
 /// kept (work that has started or is done), the rest start no sooner than their `floor`, the

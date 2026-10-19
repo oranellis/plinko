@@ -54,6 +54,10 @@ pub enum Availability {
     User(Uuid),
     Plan(ShortId),
 }
+
+/// A task to show when the chart of its plan opens, asked for from another page
+#[derive(Clone, Copy)]
+pub struct Reveal(pub RwSignal<Option<(ShortId, Uuid)>>);
 // }}}
 
 // impl Route {{{
@@ -108,21 +112,13 @@ impl Route {
 }
 // }}}
 
-// PlanTab supporting types {{{
-/// A task to show when the chart of its plan opens, asked for from another page
-#[derive(Clone, Copy)]
-pub struct Reveal(pub RwSignal<Option<(ShortId, Uuid)>>);
-// }}}
-
-// fn navigate {{{
+// helpers {{{
 pub fn navigate(route: Route) {
     if let Some(window) = web_sys::window() {
         let _ = window.location().set_hash(&route.path());
     }
 }
-// }}}
 
-// fn use_route {{{
 /// The current route, following the address
 pub fn use_route() -> RwSignal<Route> {
     let read = || {

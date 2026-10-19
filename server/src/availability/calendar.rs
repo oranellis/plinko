@@ -119,7 +119,7 @@ impl<V: DayValue> RuleSet<V> {
 }
 // }}}
 
-// fn rank_of {{{
+// rank_of {{{
 pub(super) fn rank_of<V>(kind: &RuleKind<V>) -> u8 {
     match kind {
         RuleKind::Weekly(_) | RuleKind::ResetWeekly => 0,

@@ -50,9 +50,7 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) -> Pli
         update_type,
     })
 }
-// }}}
 
-// fn add_user {{{
 fn add_user(tenant: &mut Tenant, actor: Uuid, role: Role) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewTenantLoginUser {
@@ -64,9 +62,7 @@ fn add_user(tenant: &mut Tenant, actor: Uuid, role: Role) -> Uuid {
     apply(tenant, actor, TenantUpdateType::User(Crud::Add(new))).unwrap();
     id
 }
-// }}}
 
-// fn add_group {{{
 fn add_group(
     tenant: &mut Tenant,
     actor: Uuid,
@@ -82,9 +78,7 @@ fn add_group(
     };
     apply(tenant, actor, TenantUpdateType::UserGroup(Crud::Add(new))).map(|()| id)
 }
-// }}}
 
-// fn add_plan {{{
 fn add_plan(tenant: &mut Tenant, actor: Uuid) -> PlinkoResult<ShortId> {
     let id = ShortId::new();
     let new = NewPlan {
@@ -94,9 +88,7 @@ fn add_plan(tenant: &mut Tenant, actor: Uuid) -> PlinkoResult<ShortId> {
     let update = TenantUpdateType::Plan(PlanTenantUpdate::Add(new));
     apply(tenant, actor, update).map(|()| id)
 }
-// }}}
 
-// fn plan_update {{{
 fn plan_update(
     tenant: &mut Tenant,
     actor: Uuid,
@@ -106,9 +98,7 @@ fn plan_update(
     let update = TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, Box::new(update)));
     apply(tenant, actor, update)
 }
-// }}}
 
-// fn add_task {{{
 fn add_task(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> PlinkoResult<()> {
     let task = NewTask {
         id: Uuid::now_v7(),
@@ -119,7 +109,7 @@ fn add_task(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> PlinkoResult<()>
 }
 // }}}
 
-// fn create_tenant_with_root_admin {{{
+// create_tenant_with_root_admin {{{
 #[test]
 fn create_tenant_with_root_admin() {
     let tenant_id = ShortId::new();
@@ -136,7 +126,7 @@ fn create_tenant_with_root_admin() {
 }
 // }}}
 
-// fn create_tenant_with_login {{{
+// create_tenant_with_login {{{
 #[test]
 fn create_tenant_with_login() {
     let user = TenantLoginUser::new(
@@ -151,7 +141,7 @@ fn create_tenant_with_login() {
 }
 // }}}
 
-// fn plan_updates_through_tenant {{{
+// plan_updates_through_tenant {{{
 #[test]
 fn plan_updates_through_tenant() {
     let (mut tenant, root) = new_tenant();
@@ -167,14 +157,16 @@ fn plan_updates_through_tenant() {
 }
 // }}}
 
-// helpers {{{
+// missing_plan_update_errors {{{
 #[test]
 fn missing_plan_update_errors() {
     let (mut tenant, root) = new_tenant();
     let remove = TenantUpdateType::Plan(PlanTenantUpdate::Remove(ShortId::new()));
     assert!(apply(&mut tenant, root, remove).is_err());
 }
+// }}}
 
+// unknown_actor_is_forbidden {{{
 #[test]
 fn unknown_actor_is_forbidden() {
     let (mut tenant, _) = new_tenant();
@@ -182,7 +174,7 @@ fn unknown_actor_is_forbidden() {
 }
 // }}}
 
-// fn members_only_edit_their_own_plans {{{
+// members_only_edit_their_own_plans {{{
 #[test]
 fn members_only_edit_their_own_plans() {
     let (mut tenant, root) = new_tenant();
@@ -207,7 +199,7 @@ fn members_only_edit_their_own_plans() {
 }
 // }}}
 
-// fn only_admins_manage_users_and_groups {{{
+// only_admins_manage_users_and_groups {{{
 #[test]
 fn only_admins_manage_users_and_groups() {
     let (mut tenant, root) = new_tenant();
@@ -237,7 +229,7 @@ fn only_admins_manage_users_and_groups() {
 }
 // }}}
 
-// fn user_groups_nest_and_include_subgroup_members {{{
+// user_groups_nest_and_include_subgroup_members {{{
 #[test]
 fn user_groups_nest_and_include_subgroup_members() {
     let (mut tenant, root) = new_tenant();
@@ -271,7 +263,7 @@ fn user_groups_nest_and_include_subgroup_members() {
 }
 // }}}
 
-// fn group_members_edit_plans_their_group_is_assigned_to {{{
+// group_members_edit_plans_their_group_is_assigned_to {{{
 #[test]
 fn group_members_edit_plans_their_group_is_assigned_to() {
     let (mut tenant, root) = new_tenant();
@@ -292,7 +284,7 @@ fn group_members_edit_plans_their_group_is_assigned_to() {
 }
 // }}}
 
-// fn holiday {{{
+// holiday {{{
 fn holiday(day: NaiveDate) -> RuleSetUpdate<Workload> {
     let new = NewRule {
         name: String::new(),
@@ -305,7 +297,7 @@ fn holiday(day: NaiveDate) -> RuleSetUpdate<Workload> {
 }
 // }}}
 
-// fn availability_is_edited_by_the_user_or_an_admin {{{
+// availability_is_edited_by_the_user_or_an_admin {{{
 #[test]
 fn availability_is_edited_by_the_user_or_an_admin() {
     let (mut tenant, root) = new_tenant();
@@ -329,7 +321,7 @@ fn availability_is_edited_by_the_user_or_an_admin() {
 }
 // }}}
 
-// fn plan_default_availability_is_set_through_plan_updates {{{
+// plan_default_availability_is_set_through_plan_updates {{{
 #[test]
 fn plan_default_availability_is_set_through_plan_updates() {
     let (mut tenant, root) = new_tenant();
@@ -347,7 +339,7 @@ fn plan_default_availability_is_set_through_plan_updates() {
 }
 // }}}
 
-// fn calendars_are_rebuilt_only_when_availability_changes {{{
+// calendars_are_rebuilt_only_when_availability_changes {{{
 #[test]
 fn calendars_are_rebuilt_only_when_availability_changes() {
     let (mut tenant, root) = new_tenant();
@@ -385,7 +377,7 @@ fn calendars_are_rebuilt_only_when_availability_changes() {
 }
 // }}}
 
-// fn plan_default_calendars_are_cached_until_their_rules_change {{{
+// plan_default_calendars_are_cached_until_their_rules_change {{{
 #[test]
 fn plan_default_calendars_are_cached_until_their_rules_change() {
     let (mut tenant, root) = new_tenant();
@@ -422,7 +414,7 @@ fn plan_default_calendars_are_cached_until_their_rules_change() {
 }
 // }}}
 
-// fn the_last_admin_cannot_be_demoted_or_removed {{{
+// the_last_admin_cannot_be_demoted_or_removed {{{
 #[test]
 fn the_last_admin_cannot_be_demoted_or_removed() {
     let (mut tenant, root) = new_tenant();
@@ -448,7 +440,7 @@ fn the_last_admin_cannot_be_demoted_or_removed() {
 }
 // }}}
 
-// fn add_task_for_placeholder {{{
+// helpers {{{
 fn add_task_for_placeholder(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewTask {
@@ -466,9 +458,7 @@ fn add_task_for_placeholder(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> 
     plan_update(tenant, actor, plan, PlanUpdate::Task(Crud::Update(patch))).unwrap();
     id
 }
-// }}}
 
-// fn task_patch {{{
 fn task_patch(id: Uuid, change: impl FnOnce(&mut TaskPatch)) -> TaskPatch {
     let mut patch = TaskPatch {
         id,
@@ -486,9 +476,7 @@ fn task_patch(id: Uuid, change: impl FnOnce(&mut TaskPatch)) -> TaskPatch {
     change(&mut patch);
     patch
 }
-// }}}
 
-// fn start {{{
 fn start(task: Uuid) -> TaskPatch {
     task_patch(task, |p| {
         p.persistent_state = Some(PersistentState {
@@ -498,9 +486,7 @@ fn start(task: Uuid) -> TaskPatch {
         });
     })
 }
-// }}}
 
-// fn scheduled_for {{{
 fn scheduled_for(task: Uuid, plan: ShortId, people: &[(Worker, Assignee)]) -> TenantVolatileState {
     let state = task::VolatileState {
         date_range: DateRange::new(
@@ -515,16 +501,14 @@ fn scheduled_for(task: Uuid, plan: ShortId, people: &[(Worker, Assignee)]) -> Te
     plan_state.tasks.insert(task, state);
     TenantVolatileState::from_plans(HashMap::from([(plan, plan_state)]))
 }
-// }}}
 
-// fn started_update {{{
 fn started_update(plan: ShortId, patch: TaskPatch) -> TenantUpdateType {
     let update = PlanUpdate::Task(Crud::Update(patch));
     TenantUpdateType::Plan(PlanTenantUpdate::Update(plan, Box::new(update)))
 }
 // }}}
 
-// fn starting_a_task_records_the_people_last_scheduled_for_it {{{
+// starting_a_task_records_the_people_last_scheduled_for_it {{{
 #[test]
 fn starting_a_task_records_the_people_last_scheduled_for_it() {
     let (mut tenant, root) = new_tenant();
@@ -559,7 +543,7 @@ fn starting_a_task_records_the_people_last_scheduled_for_it() {
 }
 // }}}
 
-// fn recorded_people_must_exist_and_cannot_be_removed {{{
+// recorded_people_must_exist_and_cannot_be_removed {{{
 #[test]
 fn recorded_people_must_exist_and_cannot_be_removed() {
     let (mut tenant, root) = new_tenant();
@@ -587,7 +571,7 @@ fn recorded_people_must_exist_and_cannot_be_removed() {
 }
 // }}}
 
-// fn recorded_in {{{
+// recorded_in {{{
 fn recorded_in(update: &TenantUpdateType) -> Option<&HashMap<Worker, Assignee>> {
     let TenantUpdateType::Plan(PlanTenantUpdate::Update(_, inner)) = update else {
         panic!("expected a plan update");
@@ -599,7 +583,7 @@ fn recorded_in(update: &TenantUpdateType) -> Option<&HashMap<Worker, Assignee>> 
 }
 // }}}
 
-// fn the_clock_is_a_tenant_setting_only_admins_move {{{
+// the_clock_is_a_tenant_setting_only_admins_move {{{
 #[test]
 fn the_clock_is_a_tenant_setting_only_admins_move() {
     let (mut tenant, root) = new_tenant();
@@ -612,7 +596,7 @@ fn the_clock_is_a_tenant_setting_only_admins_move() {
 }
 // }}}
 
-// fn people_star_the_plans_they_are_in_for_themselves {{{
+// people_star_the_plans_they_are_in_for_themselves {{{
 #[test]
 fn people_star_the_plans_they_are_in_for_themselves() {
     let (mut tenant, root) = new_tenant();
@@ -637,7 +621,7 @@ fn people_star_the_plans_they_are_in_for_themselves() {
 }
 // }}}
 
-// fn nobody_removes_their_own_login {{{
+// nobody_removes_their_own_login {{{
 #[test]
 fn nobody_removes_their_own_login() {
     let (mut tenant, root) = new_tenant();

@@ -216,24 +216,7 @@ pub enum ScheduleMode {
     /// Any day with free time, using whatever is free up to the daily block
     Relaxed,
 }
-// }}}
 
-// impl ScheduleMode {{{
-impl ScheduleMode {
-    /// The hours worked on a day when `wanted` are asked for and `available` are free
-    pub fn hours_on(self, wanted: Workload, available: Workload) -> Workload {
-        match self {
-            ScheduleMode::Strict if available.get() >= wanted.get() => wanted,
-            ScheduleMode::Strict => Workload::default(),
-            ScheduleMode::Relaxed => {
-                Workload::new(wanted.get().min(available.get())).expect("at most the wanted hours")
-            }
-        }
-    }
-}
-// }}}
-
-// Task supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Worker {
     Tag(Uuid),
@@ -264,6 +247,21 @@ pub struct TaskPatch {
     pub affinities: Option<HashSet<Uuid>>,
     pub actual_workers: Option<HashMap<Worker, Assignee>>,
     pub persistent_state: Option<PersistentState>,
+}
+// }}}
+
+// impl ScheduleMode {{{
+impl ScheduleMode {
+    /// The hours worked on a day when `wanted` are asked for and `available` are free
+    pub fn hours_on(self, wanted: Workload, available: Workload) -> Workload {
+        match self {
+            ScheduleMode::Strict if available.get() >= wanted.get() => wanted,
+            ScheduleMode::Strict => Workload::default(),
+            ScheduleMode::Relaxed => {
+                Workload::new(wanted.get().min(available.get())).expect("at most the wanted hours")
+            }
+        }
+    }
 }
 // }}}
 

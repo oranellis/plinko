@@ -32,9 +32,7 @@ pub struct RuleSet<V> {
 pub enum RuleSetUpdate<V> {
     Rule(Crud<NewRule<V>, RulePatch<V>>),
 }
-// }}}
 
-// impl RuleSetUpdate {{{
 impl<V> RuleSetUpdate<V> {
     /// Gives any new rule a fresh id, see `Crud::assign_id`
     pub fn assign_ids(&mut self) {
@@ -82,7 +80,7 @@ impl<V: DayValue> RuleSet<V> {
 }
 // }}}
 
-// impl Rule {{{
+// impl Entity {{{
 impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
     type New = NewRule<V>;
     type Patch = RulePatch<V>;
@@ -132,7 +130,7 @@ impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
 }
 // }}}
 
-// fn is_weekly {{{
+// is_weekly {{{
 fn is_weekly<V>(kind: &RuleKind<V>) -> bool {
     matches!(kind, RuleKind::Weekly(_) | RuleKind::ResetWeekly)
 }

@@ -14,7 +14,7 @@ use crate::{
 };
 // }}}
 
-// fn milestone_statuses {{{
+// milestone_statuses {{{
 /// The derived status of every milestone in the plan. It follows what the milestone depends on,
 /// not the schedule, so it is known before anything is placed.
 pub fn milestone_statuses(plan: &Plan) -> HashMap<Uuid, DerivedStatus> {

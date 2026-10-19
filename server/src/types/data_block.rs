@@ -32,7 +32,6 @@ pub struct DataBlock {
     title: String,
     content: BlockContent,
 }
-// }}}
 
 // impl DataBlock {{{
 impl DataBlock {
@@ -85,7 +84,6 @@ impl Entity<DataBlocks> for DataBlock {
 }
 // }}}
 
-// DataBlocks supporting types {{{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum BlockContent {
     TodoList(Vec<TodoItem>),

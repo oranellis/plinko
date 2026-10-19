@@ -46,7 +46,7 @@ const TASK_SHARE: f64 = 0.65;
 const NAME_ROOM: f64 = 22.0 + 10.0 + 6.0;
 // }}}
 
-// fn text_width {{{
+// helpers {{{
 /// How wide `text` is drawn in `font`, measured on a canvas that is not shown
 fn text_width(font: &str, text: &str) -> f64 {
     thread_local! {
@@ -64,9 +64,7 @@ fn text_width(font: &str, text: &str) -> f64 {
         })
     })
 }
-// }}}
 
-// fn task_column {{{
 /// How wide the task names get out of a name cell `room` wide: 65% to start with, then the line
 /// between the names moves to where one side has all the width its longest name needs
 fn task_column(room: f64, longest_task: f64, longest_plan: f64) -> f64 {
@@ -96,13 +94,13 @@ const COLOURS: [&str; 10] = [
 ];
 // }}}
 
-// fn colour_of {{{
+// colour_of {{{
 fn colour_of(task: Uuid) -> &'static str {
     COLOURS[(task.as_u128() % COLOURS.len() as u128) as usize]
 }
 // }}}
 
-// fn HourPie {{{
+// HourPie {{{
 /// A day as a pie of eight slices, one to an hour, with the hours booked filled in. A day with
 /// nothing booked has no pie. The slices are green when the hours booked are all the hours the
 /// person has, orange while there are still hours left, and red when they are overbooked.
@@ -134,7 +132,7 @@ fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoV
 }
 // }}}
 
-// fn slice {{{
+// slice {{{
 /// The path of slice `i` of eight, which starts at the top and goes round clockwise
 fn slice(i: u8) -> String {
     let (centre, radius) = (13.0_f64, 11.0_f64);
@@ -148,7 +146,7 @@ fn slice(i: u8) -> String {
 }
 // }}}
 
-// fn Allocations {{{
+// Allocations {{{
 #[component]
 pub fn Allocations(
     /// Whose, yours when left out

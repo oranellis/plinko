@@ -14,7 +14,6 @@ use crate::{
 };
 // }}}
 
-// modules {{{
 mod combined;
 pub mod fill;
 pub mod impact;
@@ -27,9 +26,8 @@ pub use repair::PlanRepairs;
 mod slack;
 pub mod state;
 pub mod status;
-// }}}
 
-// fn prepare {{{
+// prepare {{{
 /// Caches what a run reads: calendars from the earliest day any plan has history on until the
 /// search horizon, and the baseline of each plan that has none. Call it before `solve_tenant` and
 /// after any update.
@@ -69,7 +67,7 @@ pub fn prepare(tenant: &mut Tenant) {
 }
 // }}}
 
-// fn schedule {{{
+// schedule {{{
 /// Schedules the tenant and keeps the result on it, for `Tenant::schedule`. The server runs this
 /// after every update, `Tenant::apply_and_schedule` does.
 pub fn schedule(tenant: &mut Tenant) -> Fixes {
@@ -80,11 +78,7 @@ pub fn schedule(tenant: &mut Tenant) -> Fixes {
 }
 // }}}
 
-/// What repair rounds changed in each plan, which a later run that places only some of the work
-/// keeps so that it does not undo what they did
-pub type Fixes = HashMap<ShortId, PlanRepairs>;
-
-// fn plan_order {{{
+// plan_order {{{
 /// The order plans are placed in: the one that finishes last on its own first, then by id
 fn plan_order(tenant: &Tenant, end: impl Fn(&ShortId) -> Option<NaiveDate>) -> Vec<ShortId> {
     let mut order: Vec<_> = tenant
@@ -97,7 +91,11 @@ fn plan_order(tenant: &Tenant, end: impl Fn(&ShortId) -> Option<NaiveDate>) -> V
 }
 // }}}
 
-// Fixes supporting types {{{
+// Tracker supporting types {{{
+/// What repair rounds changed in each plan, which a later run that places only some of the work
+/// keeps so that it does not undo what they did
+pub type Fixes = HashMap<ShortId, PlanRepairs>;
+
 /// How a schedule was brought up to date
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refreshed {
@@ -108,6 +106,7 @@ pub enum Refreshed {
     /// Everything was scheduled again
     Fully,
 }
+// }}}
 
 /// Keeps a tenant's schedule up to date as updates arrive: apply updates through it, then ask for
 /// the schedule. The schedule of the last run is kept, so a few changes cost placing those
@@ -123,15 +122,12 @@ pub struct Tracker {
     trouble: Option<i64>,
     fixes: Fixes,
 }
-// }}}
 
-// constants {{{
+// impl Tracker {{{
 /// How much worse than the last full run an incremental one may leave the schedule, half and
 /// this much besides, before everything is scheduled again
 const DRIFT: i64 = 30;
-// }}}
 
-// impl Tracker {{{
 impl Tracker {
     /// Applies an update to the tenant, noting what it may change in the schedule
     pub fn apply(
@@ -206,7 +202,7 @@ impl Tracker {
 }
 // }}}
 
-// fn baseline {{{
+// baseline {{{
 /// The plan scheduled with every person's hours to itself
 fn baseline(tenant: &Tenant, plan: &ShortId) -> Baseline {
     let mut ledger = Ledger::from_tenant(tenant, tenant.today());
@@ -214,7 +210,7 @@ fn baseline(tenant: &Tenant, plan: &ShortId) -> Baseline {
 }
 // }}}
 
-// fn solve_tenant {{{
+// solve_tenant {{{
 /// Schedules every plan in the tenant, from what `prepare` cached.
 ///
 /// Plans share one ledger of people's hours and are placed together, see `combined::solve`. Where
@@ -224,9 +220,7 @@ fn baseline(tenant: &Tenant, plan: &ShortId) -> Baseline {
 pub fn solve_tenant(tenant: &Tenant) -> TenantVolatileState {
     solve_with_fixes(tenant).0
 }
-// }}}
 
-// fn solve_with_fixes {{{
 fn solve_with_fixes(tenant: &Tenant) -> (TenantVolatileState, Fixes) {
     let baselines: HashMap<ShortId, Cow<Baseline>> = tenant
         .plans()

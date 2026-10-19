@@ -84,7 +84,7 @@ impl Guard {
 }
 // }}}
 
-// fn ConfirmLeave {{{
+// ConfirmLeave {{{
 /// The question asked when leaving an edit with changes: save them, drop them or stay
 #[component]
 pub fn ConfirmLeave(guard: Guard) -> impl IntoView {

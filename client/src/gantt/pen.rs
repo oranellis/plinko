@@ -9,17 +9,7 @@ use wasm_bindgen::{JsValue, intern};
 use web_sys::{CanvasGradient, CanvasRenderingContext2d};
 // }}}
 
-#[derive(Clone, Default)]
-struct State {
-    fill: Option<String>,
-    stroke: Option<String>,
-    font: Option<String>,
-    baseline: Option<String>,
-    align: Option<String>,
-    width: Option<f64>,
-}
-
-// fn changed {{{
+// changed {{{
 /// Set the field to `value` and say whether that is a change
 fn changed<T: PartialEq + Clone>(field: &mut Option<T>, value: &T) -> bool {
     if field.as_ref() == Some(value) {
@@ -30,13 +20,23 @@ fn changed<T: PartialEq + Clone>(field: &mut Option<T>, value: &T) -> bool {
 }
 // }}}
 
-// State supporting types {{{
 pub struct Pen {
     ctx: CanvasRenderingContext2d,
     state: RefCell<State>,
     saved: RefCell<Vec<State>>,
     /// How wide names are in the current font, which does not change between drawings
     widths: RefCell<std::collections::HashMap<(String, String), f64>>,
+}
+
+// Pen supporting types {{{
+#[derive(Clone, Default)]
+struct State {
+    fill: Option<String>,
+    stroke: Option<String>,
+    font: Option<String>,
+    baseline: Option<String>,
+    align: Option<String>,
+    width: Option<f64>,
 }
 // }}}
 

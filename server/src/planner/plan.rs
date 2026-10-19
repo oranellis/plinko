@@ -29,13 +29,6 @@ use crate::{
 };
 // }}}
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct NewPlan {
-    pub id: ShortId,
-    pub name: String,
-}
-
-// NewPlan supporting types {{{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
     id: ShortId,
@@ -336,12 +329,19 @@ impl Plan {
 }
 // }}}
 
+// Plan supporting types {{{
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanSchedulerData {
     priority: i32,
     /// What new top level items depend on to begin with, set by clients for convenience
     #[serde(default)]
     default_start: Option<PlanNode>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct NewPlan {
+    pub id: ShortId,
+    pub name: String,
 }
 
 // impl PlanSchedulerData{{{

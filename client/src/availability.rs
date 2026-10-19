@@ -19,7 +19,7 @@ use crate::{
 };
 // }}}
 
-// fn hours_of {{{
+// hours_of {{{
 /// The hours rules of a person or plan, and a way to change them
 fn hours_of(
     of: Of,
@@ -45,7 +45,7 @@ fn hours_of(
 }
 // }}}
 
-// fn title_of {{{
+// title_of {{{
 fn title_of(of: Of) -> Signal<String> {
     let sync = use_sync();
     Signal::derive(move || {
@@ -64,7 +64,7 @@ fn title_of(of: Of) -> Signal<String> {
 }
 // }}}
 
-// fn Availability {{{
+// Availability {{{
 /// The calendar as a page of its own, for changing your hours
 #[component]
 pub fn Availability(of: Of) -> impl IntoView {
@@ -90,7 +90,7 @@ pub fn Availability(of: Of) -> impl IntoView {
 }
 // }}}
 
-// fn AvailabilityWindow {{{
+// AvailabilityWindow {{{
 /// The calendar in a window over the page it was opened from
 #[component]
 pub fn AvailabilityWindow(of: Of, on_close: Callback<()>) -> impl IntoView {
@@ -103,7 +103,7 @@ pub fn AvailabilityWindow(of: Of, on_close: Callback<()>) -> impl IntoView {
 }
 // }}}
 
-// fn AffinityWindow {{{
+// AffinityWindow {{{
 /// The days an affinity lets work happen on, in a window
 #[component]
 pub fn AffinityWindow(plan: ShortId, affinity: Uuid, on_close: Callback<()>) -> impl IntoView {
