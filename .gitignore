@@ -1,1 +1,4 @@
 /target
+/client/dist
+/client/e2e/node_modules
+/data

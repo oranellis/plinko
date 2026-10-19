@@ -1,0 +1,22 @@
+# systemd template, one instance per tenant: `systemctl enable --now plinko@acme`.
+# new_tenant.sh writes /etc/plinko/<name>.env (the port and the first admin) and does this.
+# The tenant's files are in /opt/plinko/data/<name>, install.sh puts the prefix in the paths.
+[Unit]
+Description=Plinko tenant %i
+After=network.target
+
+[Service]
+User=plinko
+WorkingDirectory=/opt/plinko
+Environment=PLINKO_TENANT=%i
+EnvironmentFile=/etc/plinko/%i.env
+ExecStart=/opt/plinko/plinko-server
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/plinko/data
+
+[Install]
+WantedBy=multi-user.target

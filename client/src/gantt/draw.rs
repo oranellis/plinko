@@ -1,0 +1,1061 @@
+//! Painting the chart on a canvas, the way Plinko 1 did: dark, rounded bars with their names on
+//! them, diamonds for milestones, groups as faint rounded boxes around their members, and the
+//! dependencies of the item under the pointer as lines behind the bars. It draws from what it is
+//! given and keeps no state, and it hands back where everything ended up so the pointer can hit it.
+
+use crate::gantt::pen::Pen;
+use chrono::{Datelike, NaiveDate, Weekday};
+use plinko::types::dependency::PlanNode;
+
+use crate::{
+    format,
+    gantt::{
+        arrange::{Kind, Mark, Placed},
+        layout::{HEADER_HEIGHT, MONTH_HEIGHT, ROW_HEIGHT, Rect, Viewport},
+        links::{Anchor, Link, Role},
+        scene::Scene,
+    },
+    model::Look,
+};
+
+const BACKGROUND: &str = "#1e1e1e";
+const HEADER: &str = "#252526";
+const WEEKEND: &str = "#1e1e1e";
+const BORDER: &str = "#3a3a3c";
+const GRID: &str = "#2a2a2c";
+const MONTH_LINE: &str = "#4a4a4e";
+const TODAY_BAND: &str = "rgba(64,91,200,0.18)";
+const TODAY_TEXT: &str = "#4a90d9";
+const TARGET: &str = "#ffd600";
+const HOVERED: &str = "#1e88e5";
+const BEFORE: &str = "#fc1ef1";
+const AFTER: &str = "#07fcd7";
+const BEFORE_LINE: &str = "rgba(252,30,241,0.66)";
+const CHAIN: &str = "#e53935";
+const CHAIN_LINE: &str = "rgba(229,57,53,0.85)";
+const INSIDE: &str = "#1255a5";
+const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
+const PROBLEM: &str = "#e65100";
+const GROUP_FILL: &str = "rgba(255,255,255,0.035)";
+const GROUP_LINE: &str = "#4a4a4c";
+const RADIUS: f64 = 6.0;
+
+fn look_colour(look: Look) -> &'static str {
+    match look {
+        Look::NotStarted => "#555555",
+        Look::InProgress => "#f5a623",
+        Look::OnHold => "#b39ddb",
+        Look::Completed => "#66bb6a",
+    }
+}
+
+fn milestone_colour(look: Look) -> &'static str {
+    match look {
+        Look::Completed => "#66bb6a",
+        Look::InProgress => "#f5a623",
+        _ => "#888888",
+    }
+}
+
+/// Everything one frame needs
+pub struct Frame<'a> {
+    pub width: f64,
+    pub height: f64,
+    /// Rows above this are out of sight, for the header over them
+    pub top: f64,
+    pub viewport: Viewport,
+    pub scene: &'a Scene,
+    pub today: NaiveDate,
+    pub hover: Option<Mark>,
+    pub selected: Option<Mark>,
+    pub links: &'a [Link],
+    /// Something to outline in red, and how strongly
+    pub flash: Option<(Mark, f64, &'static str)>,
+    /// What to say about the item under the pointer, the title first
+    pub info: &'a [String],
+    /// A short note by the pointer for a violation under it, and where the pointer is
+    pub tip: Option<(&'a [String], (f64, f64))>,
+}
+
+/// Where the things drawn are, for hit testing
+#[derive(Default)]
+pub struct Hits {
+    items: Vec<(Mark, Rect)>,
+    violations: Vec<(Mark, Rect)>,
+    /// A group's name strip, and the small arrow in it that folds the group
+    headers: Vec<(Mark, Rect, Rect)>,
+    /// How far the layers they were found on are from the screen now
+    pub offset: (f64, f64),
+}
+
+impl Hits {
+    fn shifted(&self, r: Rect) -> Rect {
+        Rect {
+            x: r.x + self.offset.0,
+            y: r.y + self.offset.1,
+            ..r
+        }
+    }
+
+    /// What is under a point of the screen: warnings first, then items, then the names of groups,
+    /// and whether it is on the arrow of a group's name
+    pub fn hit(&self, x: f64, y: f64) -> Option<(Mark, bool)> {
+        let (x, y) = (x - self.offset.0, y - self.offset.1);
+        let over = |list: &[(Mark, Rect)]| {
+            list.iter()
+                .rev()
+                .find(|(_, r)| r.contains(x, y))
+                .map(|(m, _)| *m)
+        };
+        over(&self.violations)
+            .or_else(|| over(&self.items))
+            .map(|m| (m, false))
+            .or_else(|| {
+                self.headers
+                    .iter()
+                    .rev()
+                    .find(|(_, strip, _)| strip.contains(x, y))
+                    .map(|(m, _, arrow)| (*m, arrow.contains(x, y)))
+            })
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = (Mark, Rect)> + '_ {
+        self.items.iter().map(|(m, r)| (*m, self.shifted(*r)))
+    }
+
+    pub fn violations(&self) -> impl Iterator<Item = (Mark, Rect)> + '_ {
+        self.violations.iter().map(|(m, r)| (*m, self.shifted(*r)))
+    }
+
+    /// Each group with its name strip and the arrow that folds it
+    pub fn headers(&self) -> impl Iterator<Item = (Mark, Rect, Rect)> + '_ {
+        self.headers
+            .iter()
+            .map(|(m, strip, arrow)| (*m, self.shifted(*strip), self.shifted(*arrow)))
+    }
+}
+
+/// Text that is drawn on top of the layers, since what it looks like depends on the pointer
+pub struct Label {
+    pub mark: Mark,
+    pub words: String,
+    pub x: f64,
+    pub y: f64,
+    pub font: &'static str,
+    pub colour: &'static str,
+    /// The colour while the item is under the pointer
+    pub hovered: &'static str,
+    pub clip: Option<Rect>,
+}
+
+/// What drawing the layers found: where things are, and the text to put on them
+#[derive(Default)]
+pub struct Found {
+    pub hits: Hits,
+    pub labels: Vec<Label>,
+}
+
+/// Where an item or group sits: its first day, its last day, and for a group its box
+#[derive(Clone, Copy)]
+struct Geometry {
+    start: (f64, f64),
+    end: (f64, f64),
+}
+
+fn path_round(ctx: &Pen, r: Rect, radius: f64) {
+    let radius = radius.min(r.w / 2.0).min(r.h / 2.0);
+    ctx.begin_path();
+    ctx.move_to(r.x + radius, r.y);
+    ctx.line_to(r.x + r.w - radius, r.y);
+    ctx.quadratic_curve_to(r.x + r.w, r.y, r.x + r.w, r.y + radius);
+    ctx.line_to(r.x + r.w, r.y + r.h - radius);
+    ctx.quadratic_curve_to(r.x + r.w, r.y + r.h, r.x + r.w - radius, r.y + r.h);
+    ctx.line_to(r.x + radius, r.y + r.h);
+    ctx.quadratic_curve_to(r.x, r.y + r.h, r.x, r.y + r.h - radius);
+    ctx.line_to(r.x, r.y + radius);
+    ctx.quadratic_curve_to(r.x, r.y, r.x + radius, r.y);
+    ctx.close_path();
+}
+
+fn path_diamond(ctx: &Pen, cx: f64, cy: f64, r: f64) {
+    ctx.begin_path();
+    ctx.move_to(cx, cy - r);
+    ctx.line_to(cx + r, cy);
+    ctx.line_to(cx, cy + r);
+    ctx.line_to(cx - r, cy);
+    ctx.close_path();
+}
+
+fn text(ctx: &Pen, colour: &str, font: &str, words: &str, x: f64, y: f64) {
+    ctx.set_fill_style_str(colour);
+    ctx.set_font(font);
+    let _ = ctx.fill_text(words, x, y);
+}
+
+fn clip_rect(ctx: &Pen, r: Rect) {
+    ctx.begin_path();
+    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.clip();
+}
+
+/// The border an item gets for what it is to the item under the pointer or for being found
+/// What is outlined besides the item under the pointer
+struct Marked {
+    before: Vec<Mark>,
+    after: Vec<Mark>,
+    /// Everything inside the group under the pointer
+    inside: Vec<Mark>,
+    /// The ends of the chain from the selected item to the one under the pointer
+    chain: Vec<Mark>,
+}
+
+impl Marked {
+    fn of(frame: &Frame) -> Self {
+        let linked = |role: Role| frame.links.iter().filter(move |l| l.role == role);
+        let placed = &frame.scene.arrangement.placed;
+        let group = placed
+            .iter()
+            .find(|p| p.kind == Kind::Group && Some(p.mark) == frame.hover);
+        Self {
+            // a group's start is only marked by its diamond, the group itself is not before
+            before: linked(Role::Before)
+                .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
+                .map(|l| mark_of(l.from))
+                .collect(),
+            // the end of a group is only marked by its diamond
+            after: linked(Role::After)
+                .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
+                .map(|l| mark_of(l.to))
+                .collect(),
+            chain: linked(Role::Chain)
+                .flat_map(|l| [mark_of(l.from), mark_of(l.to)])
+                .collect(),
+            // a group's block takes the lanes under its name
+            inside: group
+                .map(|g| {
+                    placed
+                        .iter()
+                        .filter(|p| p.lane > g.lane && p.lane < g.lane + g.lanes)
+                        .map(|p| p.mark)
+                        .collect()
+                })
+                .unwrap_or_default(),
+        }
+    }
+}
+
+fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(String, f64)> {
+    match frame.flash {
+        Some((flashed, alpha, rgb)) if flashed == mark => {
+            return Some((format!("rgba({rgb},{alpha})"), 4.0));
+        }
+        _ => {}
+    }
+    if marked.chain.contains(&mark) {
+        Some((CHAIN.to_string(), 3.5))
+    } else if target {
+        Some((TARGET.to_string(), 3.0))
+    } else if frame.hover == Some(mark) || frame.selected == Some(mark) {
+        Some((HOVERED.to_string(), 3.5))
+    } else if marked.inside.contains(&mark) {
+        Some((INSIDE.to_string(), 3.0))
+    } else if marked.before.contains(&mark) {
+        Some((BEFORE.to_string(), 3.0))
+    } else if marked.after.contains(&mark) {
+        Some((AFTER.to_string(), 3.0))
+    } else {
+        None
+    }
+}
+
+fn mark_of(anchor: Anchor) -> Mark {
+    match anchor {
+        Anchor::Start(node) | Anchor::End(node) => node,
+    }
+}
+
+/// Whether an item is on the layer being drawn, with room for the names that run past its end
+fn visible(frame: &Frame, p: &Placed) -> bool {
+    let vp = frame.viewport;
+    let top = vp.lane_top(p.lane);
+    if top + ROW_HEIGHT * p.lanes as f64 <= frame.top || top >= frame.height {
+        return false;
+    }
+    // names of milestones and notes on warnings run on past the end of the item
+    let long = p.violated || matches!(p.kind, Kind::Milestone);
+    let reach = if long { 600.0 } else { 40.0 };
+    let start = frame.scene.origin;
+    let offset = |date: NaiveDate| (date - start).num_days() as f64;
+    let (from, to) = (vp.x(offset(p.span.0)), vp.x(offset(p.span.1)));
+    to + reach > 0.0 && from < frame.width + 40.0
+}
+
+/// The layer behind the items: the colour, today, the lines between days and the boxes of groups.
+/// It looks the same whatever the pointer does, so it is drawn once and reused.
+pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
+    ctx.set_fill_style_str(BACKGROUND);
+    ctx.fill_rect(0.0, 0.0, frame.width, frame.height);
+    ctx.set_line_width(1.0);
+    let start = frame.scene.origin;
+    let vp = frame.viewport;
+    let today_x = vp.x((frame.today - start).num_days() as f64);
+    if today_x + vp.day_width > 0.0 && today_x < frame.width {
+        ctx.set_fill_style_str(TODAY_BAND);
+        ctx.fill_rect(today_x, 0.0, vp.day_width, frame.height);
+    }
+    // the lines between days, the ones between months on their own so they are one path each
+    let (first, last) = vp.visible_days(frame.width);
+    let (mut days, mut months) = (Vec::new(), Vec::new());
+    for offset in first..=last {
+        let Some(date) = start.checked_add_signed(chrono::Duration::days(offset)) else {
+            continue;
+        };
+        let x = vp.x(offset as f64);
+        if date.day() == 1 {
+            &mut months
+        } else {
+            &mut days
+        }
+        .push(x);
+    }
+    for (xs, colour) in [(days, GRID), (months, MONTH_LINE)] {
+        ctx.set_stroke_style_str(colour);
+        ctx.begin_path();
+        for x in xs {
+            ctx.move_to(x, 0.0);
+            ctx.line_to(x, frame.height);
+        }
+        ctx.stroke();
+    }
+    let marked = Marked::of(frame);
+    for p in &frame.scene.arrangement.placed {
+        if p.kind == Kind::Group && visible(frame, p) {
+            let rect = group_box(frame, p);
+            paint_group(ctx, frame, p, rect, &marked, found);
+        }
+    }
+}
+
+/// The layer of the items themselves, again the same whatever the pointer does
+pub fn paint_nodes(ctx: &Pen, frame: &Frame, found: &mut Found) {
+    let start = frame.scene.origin;
+    let offset = |date: NaiveDate| (date - start).num_days() as f64;
+    let marked = Marked::of(frame);
+    for p in &frame.scene.arrangement.placed {
+        if p.kind == Kind::Group || !visible(frame, p) {
+            continue;
+        }
+        let (from, to) = (offset(p.span.0), offset(p.span.1));
+        match (p.mark, p.kind) {
+            (_, Kind::Milestone) => paint_milestone(ctx, frame, p, from, &marked, found),
+            _ => paint_bar(ctx, frame, p, (from, to), &marked, &mut found.hits),
+        }
+    }
+}
+
+/// The shape an item is drawn in, to outline it again when something marks it
+enum Shape {
+    Round(Rect, f64),
+    Diamond(f64, f64, f64),
+}
+
+impl Shape {
+    fn of(frame: &Frame, p: &Placed) -> Self {
+        let start = frame.scene.origin;
+        let offset = |date: NaiveDate| (date - start).num_days() as f64;
+        let vp = frame.viewport;
+        match p.kind {
+            Kind::Group => Shape::Round(group_box(frame, p), 8.0),
+            Kind::Milestone => {
+                let (cx, cy) = vp.start_centre(offset(p.span.0), p.lane);
+                Shape::Diamond(cx, cy, 10.0)
+            }
+            Kind::Task | Kind::Buffer => {
+                Shape::Round(vp.bar(offset(p.span.0), offset(p.span.1), p.lane), RADIUS)
+            }
+        }
+    }
+
+    fn trace(&self, ctx: &Pen) {
+        match *self {
+            Shape::Round(rect, radius) => path_round(ctx, rect, radius),
+            Shape::Diamond(x, y, r) => path_diamond(ctx, x, y, r),
+        }
+    }
+
+    fn bounds(&self) -> Rect {
+        match *self {
+            Shape::Round(rect, _) => rect,
+            Shape::Diamond(x, y, r) => Rect {
+                x: x - r,
+                y: y - r,
+                w: 2.0 * r,
+                h: 2.0 * r,
+            },
+        }
+    }
+
+    /// Whether any of it can be seen on a chart `width` by `height`
+    fn shows(&self, width: f64, height: f64) -> bool {
+        let (x, y, w, h) = match *self {
+            Shape::Round(r, _) => (r.x, r.y, r.w, r.h),
+            Shape::Diamond(x, y, r) => (x - r, y - r, 2.0 * r, 2.0 * r),
+        };
+        x + w > -4.0 && x < width + 4.0 && y + h > -4.0 && y < height + 4.0
+    }
+}
+
+/// What the pointer, the selection and a flash do to the items: their outlines, and the colour of
+/// the names that are drawn over the layers. `by` is how far the layers are from where they were drawn.
+pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
+    let marked = Marked::of(frame);
+    let mut marks: Vec<Mark> = [frame.hover, frame.selected, frame.flash.map(|f| f.0)]
+        .into_iter()
+        .flatten()
+        .collect();
+    for list in [&marked.chain, &marked.inside, &marked.before, &marked.after] {
+        marks.extend(list.iter().copied());
+    }
+    let mut seen: Vec<Mark> = Vec::new();
+    for mark in marks {
+        if seen.contains(&mark) {
+            continue;
+        }
+        seen.push(mark);
+        let Some(p) = frame.scene.placed(mark) else {
+            continue;
+        };
+        let shape = Shape::of(frame, p);
+        if !shape.shows(frame.width, frame.height) {
+            continue;
+        }
+        // what depends on nothing begins where the plan does, shown like the end of a leaf
+        if frame.hover == Some(mark) && p.rooted && p.kind != Kind::Group {
+            edge_wash(ctx, shape.bounds(), ("167,139,250", 0.85), true, |c| {
+                shape.trace(c)
+            });
+        }
+        shape.trace(ctx);
+        stroke_border(ctx, border(frame, mark, p.target, &marked));
+    }
+    ctx.save();
+    ctx.translate(by.0, by.1).ok();
+    for label in labels {
+        let hovered = frame.hover == Some(label.mark);
+        if let Some(clip) = label.clip {
+            ctx.save();
+            clip_rect(ctx, clip);
+        }
+        ctx.set_text_baseline("middle");
+        text(
+            ctx,
+            if hovered { label.hovered } else { label.colour },
+            label.font,
+            &label.words,
+            label.x,
+            label.y,
+        );
+        if label.clip.is_some() {
+            ctx.restore();
+        }
+    }
+    ctx.restore();
+    ctx.set_text_baseline("alphabetic");
+}
+
+/// The panel about the item under the pointer and the note on a warning, over everything
+pub fn paint_notes(ctx: &Pen, frame: &Frame) {
+    if !frame.info.is_empty() {
+        paint_panel(ctx, frame.info, frame.height);
+    }
+    if let Some((lines, pointer)) = frame.tip {
+        paint_tip(ctx, lines, pointer, frame.width, frame.height);
+    }
+}
+
+pub fn paint_header(ctx: &Pen, frame: &Frame) {
+    let start = frame.scene.origin;
+    let vp = frame.viewport;
+    ctx.set_fill_style_str(HEADER);
+    ctx.fill_rect(0.0, 0.0, frame.width, HEADER_HEIGHT);
+    let (first, last) = vp.visible_days(frame.width);
+    let today = (frame.today - start).num_days();
+    let mut month_from: Option<NaiveDate> = None;
+    let day_row = HEADER_HEIGHT - MONTH_HEIGHT;
+    for offset in first..=last {
+        let Some(date) = start.checked_add_signed(chrono::Duration::days(offset)) else {
+            continue;
+        };
+        let x = vp.x(offset as f64);
+        // each month is named once, when its first day or the first day on screen comes round
+        let this_month = date.with_day(1).unwrap_or(date);
+        if month_from != Some(this_month) {
+            month_from = Some(this_month);
+            paint_month(ctx, frame, start, this_month);
+        }
+        let weekend = matches!(date.weekday(), Weekday::Sat | Weekday::Sun);
+        ctx.set_fill_style_str(if weekend { WEEKEND } else { HEADER });
+        ctx.fill_rect(x, MONTH_HEIGHT, vp.day_width, day_row);
+        let colour = if offset == today {
+            TODAY_TEXT
+        } else if weekend {
+            "#555"
+        } else {
+            "#aaa"
+        };
+        if vp.day_width >= 18.0 {
+            ctx.set_text_align("center");
+            text(
+                ctx,
+                colour,
+                "12px sans-serif",
+                &date.day().to_string(),
+                x + vp.day_width / 2.0,
+                43.0,
+            );
+            ctx.set_text_align("left");
+        }
+        ctx.set_stroke_style_str(if date.day() == 1 { MONTH_LINE } else { GRID });
+        ctx.begin_path();
+        ctx.move_to(x, if date.day() == 1 { 0.0 } else { MONTH_HEIGHT });
+        ctx.line_to(x, HEADER_HEIGHT);
+        ctx.stroke();
+    }
+    ctx.set_stroke_style_str(BORDER);
+    ctx.begin_path();
+    ctx.move_to(0.0, HEADER_HEIGHT);
+    ctx.line_to(frame.width, HEADER_HEIGHT);
+    ctx.stroke();
+}
+
+/// The name of a month, at the left of the month and held at the left of the chart while the month
+/// is partly off it, until the end of the month pushes it out
+fn paint_month(ctx: &Pen, frame: &Frame, start: NaiveDate, month: NaiveDate) {
+    let vp = frame.viewport;
+    let next = month
+        .checked_add_months(chrono::Months::new(1))
+        .unwrap_or(month);
+    let from = vp.x((month - start).num_days() as f64);
+    let to = vp.x((next - start).num_days() as f64);
+    let label = format!("{} {}", format::month(month), month.year());
+    ctx.set_font("13px sans-serif");
+    let width = ctx.measure_text(&label).map_or(0.0, |m| m.width());
+    let x = (from + 4.0).max(4.0).min(to - width - 4.0);
+    if x + width > 0.0 && x < frame.width && x >= from {
+        text(ctx, "#888", "13px sans-serif", &label, x, 15.0);
+    }
+}
+
+fn paint_group(
+    ctx: &Pen,
+    frame: &Frame,
+    p: &Placed,
+    rect: Rect,
+    marked: &Marked,
+    found: &mut Found,
+) {
+    path_round(ctx, rect, 8.0);
+    ctx.set_fill_style_str(GROUP_FILL);
+    ctx.fill();
+    let outline = border(frame, p.mark, p.target, marked);
+    ctx.set_stroke_style_str(outline.as_ref().map_or(GROUP_LINE, |(c, _)| c.as_str()));
+    ctx.set_line_width(outline.as_ref().map_or(1.0, |(_, w)| *w));
+    ctx.stroke();
+    ctx.set_line_width(1.0);
+
+    // the name along the top lane of the group, with the arrow that folds it
+    let lane_top = frame.viewport.lane_top(p.lane);
+    let strip = Rect {
+        x: rect.x,
+        y: lane_top,
+        w: rect.w,
+        h: ROW_HEIGHT,
+    };
+    let arrow = Rect {
+        x: rect.x + 4.0,
+        y: lane_top + 4.0,
+        w: 20.0,
+        h: ROW_HEIGHT - 8.0,
+    };
+    let label = if p.collapsed {
+        format!("▸  {} ({})", p.name, p.members)
+    } else {
+        format!("▾  {}", p.name)
+    };
+    found.labels.push(Label {
+        mark: p.mark,
+        words: label,
+        x: rect.x + 8.0,
+        y: lane_top + ROW_HEIGHT / 2.0,
+        font: "13px sans-serif",
+        colour: "#aaa",
+        hovered: "#f5d040",
+        clip: Some(Rect {
+            x: rect.x + 4.0,
+            y: lane_top,
+            w: (rect.w - 8.0).max(0.0),
+            h: ROW_HEIGHT,
+        }),
+    });
+    found.hits.headers.push((p.mark, strip, arrow));
+}
+
+/// The box a group is drawn in, a little wider than its bar and as tall as its lanes
+fn group_box(frame: &Frame, p: &Placed) -> Rect {
+    let start = frame.scene.origin;
+    let offset = |date: NaiveDate| (date - start).num_days() as f64;
+    let vp = frame.viewport;
+    let bar = vp.bar(offset(p.span.0), offset(p.span.1), p.lane);
+    let expand = 4.0 + 4.0 * f64::from(p.levels);
+    // the top and bottom of nested groups share the lines of the grid, only the sides step out
+    let inset = 2.0;
+    Rect {
+        x: bar.x - expand,
+        y: vp.lane_top(p.lane) + inset,
+        w: bar.w + 2.0 * expand,
+        h: ROW_HEIGHT * p.lanes as f64 - 2.0 * inset,
+    }
+}
+
+/// Where a line meets an item, and the box of a group
+fn locate(frame: &Frame, mark: Mark) -> Option<(Geometry, Option<Rect>)> {
+    let p = frame.scene.placed(mark)?;
+    if p.kind == Kind::Group {
+        let rect = group_box(frame, p);
+        let middle = rect.y + rect.h / 2.0;
+        let geometry = Geometry {
+            start: (rect.x, middle),
+            end: (rect.x + rect.w, middle),
+        };
+        return Some((geometry, Some(rect)));
+    }
+    let start = frame.scene.origin;
+    let offset = |date: NaiveDate| (date - start).num_days() as f64;
+    let vp = frame.viewport;
+    let geometry = Geometry {
+        start: vp.start_centre(offset(p.span.0), p.lane),
+        end: vp.end_centre(offset(p.span.1), p.lane),
+    };
+    Some((geometry, None))
+}
+
+pub fn paint_links(ctx: &Pen, frame: &Frame) {
+    ctx.set_line_width(1.5);
+    let mut diamonds: Vec<(Mark, (f64, f64), &str)> = Vec::new();
+    for link in frame.links {
+        let (Some((from, _)), Some((to, _))) = (
+            locate(frame, mark_of(link.from)),
+            locate(frame, mark_of(link.to)),
+        ) else {
+            continue;
+        };
+        let from_point = match link.from {
+            Anchor::Start(_) => from.start,
+            Anchor::End(_) => from.end,
+        };
+        let to_point = match link.to {
+            Anchor::Start(_) => to.start,
+            Anchor::End(_) => to.end,
+        };
+        let (line, solid) = match link.role {
+            Role::Before => (BEFORE_LINE, BEFORE),
+            Role::After => (AFTER_LINE, AFTER),
+            Role::Chain => (CHAIN_LINE, CHAIN),
+        };
+        ctx.set_stroke_style_str(line);
+        ctx.begin_path();
+        ctx.move_to(from_point.0, from_point.1);
+        ctx.line_to(to_point.0, to_point.1);
+        ctx.stroke();
+        for (anchor, point) in [(link.from, from_point), (link.to, to_point)] {
+            if matches!(
+                anchor,
+                Anchor::Start(PlanNode::TaskGroup(_)) | Anchor::End(PlanNode::TaskGroup(_))
+            ) {
+                diamonds.push((mark_of(anchor), point, solid));
+            }
+        }
+    }
+    // the border of a group lights up from the edge a line meets, fading over a quarter of its width
+    for (mark, (x, _), colour) in &diamonds {
+        // a group under the pointer is plain blue all round
+        let (Some(group), false) = (
+            locate(frame, *mark).and_then(|g| g.1),
+            frame.hover == Some(*mark),
+        ) else {
+            continue;
+        };
+        let reach = group.w * 0.25;
+        let left = (*x - group.x).abs() < (*x - group.x - group.w).abs();
+        let inward = if left { *x + reach } else { *x - reach };
+        let glow = ctx.create_linear_gradient(*x, 0.0, inward, 0.0);
+        let _ = glow.add_color_stop(0.0, colour);
+        let _ = glow.add_color_stop(1.0, &faded(colour));
+        ctx.set_stroke_style_canvas_gradient(&glow);
+        ctx.set_line_width(3.0);
+        path_round(ctx, group, 8.0);
+        ctx.stroke();
+    }
+    // a small milestone marker where a line meets the edge of a group
+    for (_, (x, y), colour) in diamonds {
+        path_diamond(ctx, x, y, 5.0);
+        ctx.set_fill_style_str(colour);
+        ctx.fill();
+    }
+    ctx.set_line_width(1.0);
+}
+
+/// `#rrggbb` with no opacity, to fade a gradient out without going through black
+fn faded(hex: &str) -> String {
+    let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0);
+    format!("rgba({},{},{},0)", channel(1), channel(3), channel(5))
+}
+
+fn stroke_border(ctx: &Pen, outline: Option<(String, f64)>) {
+    if let Some((colour, width)) = outline {
+        ctx.set_stroke_style_str(&colour);
+        ctx.set_line_width(width);
+        ctx.stroke();
+        ctx.set_line_width(1.0);
+    }
+}
+
+/// The blue wash on the right of something nothing depends on, kept inside the path `shape` draws
+fn leaf_wash(ctx: &Pen, rect: Rect, shape: impl Fn(&Pen)) {
+    edge_wash(ctx, rect, ("30,136,229", 0.65), false, shape);
+}
+
+/// A colour (as `r,g,b` and opacity) fading in over the last 28 pixels of the right edge of
+/// `rect`, or the first of the left, kept inside the path `shape` draws
+fn edge_wash(ctx: &Pen, rect: Rect, (rgb, alpha): (&str, f64), left: bool, shape: impl Fn(&Pen)) {
+    let width = rect.w.min(28.0);
+    let (clear, solid) = if left {
+        (rect.x + width, rect.x)
+    } else {
+        (rect.x + rect.w - width, rect.x + rect.w)
+    };
+    let gradient = ctx.create_linear_gradient(clear, 0.0, solid, 0.0);
+    let _ = gradient.add_color_stop(0.0, &format!("rgba({rgb},0)"));
+    let _ = gradient.add_color_stop(1.0, &format!("rgba({rgb},{alpha})"));
+    // the gradient is clear before it starts, so filling the whole shape washes only the edge
+    shape(ctx);
+    ctx.set_fill_style_canvas_gradient(&gradient);
+    ctx.fill();
+}
+
+fn paint_bar(
+    ctx: &Pen,
+    frame: &Frame,
+    p: &Placed,
+    (from, to): (f64, f64),
+    marked: &Marked,
+    hits: &mut Hits,
+) {
+    let rect = frame.viewport.bar(from, to, p.lane);
+    if p.kind == Kind::Buffer {
+        paint_buffer(ctx, frame, p, rect, marked, hits);
+        return;
+    }
+    path_round(ctx, rect, RADIUS);
+    ctx.set_fill_style_str(look_colour(p.look));
+    ctx.fill();
+    if p.leaf {
+        leaf_wash(ctx, rect, |c| path_round(c, rect, RADIUS));
+    }
+    path_round(ctx, rect, RADIUS);
+    stroke_border(ctx, border(frame, p.mark, p.target, marked));
+
+    // the name inside the bar
+    let colour = if p.look == Look::InProgress {
+        "rgba(0,0,0,0.85)"
+    } else {
+        "rgba(255,255,255,0.9)"
+    };
+    ctx.set_font("16px sans-serif");
+    // a name that fits needs no clipping, which is slow to draw
+    let clipped = ctx.text_width(&p.name) + 10.0 > rect.w;
+    if clipped {
+        ctx.save();
+        clip_rect(
+            ctx,
+            Rect {
+                x: rect.x + 4.0,
+                y: rect.y,
+                w: (rect.w - 8.0).max(0.0),
+                h: rect.h,
+            },
+        );
+    }
+    ctx.set_text_baseline("middle");
+    text(
+        ctx,
+        colour,
+        "16px sans-serif",
+        &p.name,
+        rect.x + 6.0,
+        rect.y + rect.h / 2.0,
+    );
+    ctx.set_text_baseline("alphabetic");
+    if clipped {
+        ctx.restore();
+    }
+    hits.items.push((p.mark, rect));
+    if p.violated {
+        paint_violation(
+            ctx,
+            p.mark,
+            rect.x + rect.w + 10.0,
+            rect.y + rect.h / 2.0,
+            hits,
+        );
+    }
+}
+
+/// A buffer is a dotted line between two dotted end bars, with its days written on it
+fn paint_buffer(
+    ctx: &Pen,
+    frame: &Frame,
+    p: &Placed,
+    rect: Rect,
+    marked: &Marked,
+    hits: &mut Hits,
+) {
+    let middle = rect.y + rect.h / 2.0;
+    let reach = rect.h / 2.0;
+    // dotted until it has a day it is set to start on, then solid
+    if !p.pinned {
+        let _ = ctx.set_line_dash(&js_sys::Array::of2(&3.0.into(), &3.0.into()));
+    }
+    ctx.set_stroke_style_str("#8a8a8a");
+    ctx.set_line_width(1.5);
+    ctx.begin_path();
+    ctx.move_to(rect.x, middle);
+    ctx.line_to(rect.x + rect.w, middle);
+    for x in [rect.x, rect.x + rect.w] {
+        ctx.move_to(x, middle - reach);
+        ctx.line_to(x, middle + reach);
+    }
+    ctx.stroke();
+    let _ = ctx.set_line_dash(&js_sys::Array::new());
+    ctx.set_line_width(1.0);
+    // the days sit on the line, which stops for them
+    ctx.set_font("13px sans-serif");
+    let width = ctx.measure_text(&p.name).map_or(0.0, |m| m.width());
+    let label = Rect {
+        x: rect.x + (rect.w - width) / 2.0 - 3.0,
+        y: middle - 8.0,
+        w: width + 6.0,
+        h: 16.0,
+    };
+    if label.w < rect.w {
+        ctx.set_fill_style_str(BACKGROUND);
+        ctx.fill_rect(label.x, label.y, label.w, label.h);
+        ctx.set_text_baseline("middle");
+        text(
+            ctx,
+            "#bbb",
+            "13px sans-serif",
+            &p.name,
+            label.x + 3.0,
+            middle,
+        );
+        ctx.set_text_baseline("alphabetic");
+    }
+    path_round(ctx, rect, RADIUS);
+    stroke_border(ctx, border(frame, p.mark, p.target, marked));
+    hits.items.push((p.mark, rect));
+}
+
+fn paint_violation(ctx: &Pen, mark: Mark, x: f64, y: f64, hits: &mut Hits) {
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("middle");
+    text(ctx, PROBLEM, "bold 16px sans-serif", "!", x, y);
+    ctx.set_text_align("left");
+    ctx.set_text_baseline("alphabetic");
+    hits.violations.push((
+        mark,
+        Rect {
+            x: x - 8.0,
+            y: y - 10.0,
+            w: 16.0,
+            h: 20.0,
+        },
+    ));
+}
+
+fn paint_milestone(
+    ctx: &Pen,
+    frame: &Frame,
+    p: &Placed,
+    from: f64,
+    marked: &Marked,
+    found: &mut Found,
+) {
+    let (cx, cy) = frame.viewport.start_centre(from, p.lane);
+    let r = 10.0;
+    path_diamond(ctx, cx, cy, r);
+    ctx.set_fill_style_str(milestone_colour(p.look));
+    ctx.fill();
+    if p.leaf {
+        let square = Rect {
+            x: cx - r,
+            y: cy - r,
+            w: r * 2.0,
+            h: r * 2.0,
+        };
+        leaf_wash(ctx, square, |c| path_diamond(c, cx, cy, r));
+    }
+    path_diamond(ctx, cx, cy, r);
+    stroke_border(ctx, border(frame, p.mark, p.target, marked));
+    found.labels.push(Label {
+        mark: p.mark,
+        words: p.name.clone(),
+        x: cx + r + 6.0 + if p.violated { 20.0 } else { 0.0 },
+        y: cy,
+        font: "14px sans-serif",
+        colour: "#bbb",
+        hovered: "#f5d040",
+        clip: None,
+    });
+    found.hits.items.push((
+        p.mark,
+        Rect {
+            x: cx - r,
+            y: cy - r,
+            w: r * 2.0,
+            h: r * 2.0,
+        },
+    ));
+    if p.violated {
+        paint_violation(ctx, p.mark, cx + r + 10.0, cy, &mut found.hits);
+    }
+}
+
+/// The panel at the bottom left that says what the item under the pointer is
+fn paint_panel(ctx: &Pen, lines: &[String], height: f64) {
+    let (pad, margin, title, body) = (10.0, 8.0, 20.0, 15.0);
+    ctx.set_font(&format!("{title}px sans-serif"));
+    let mut wide = ctx.measure_text(&lines[0]).map_or(0.0, |m| m.width());
+    ctx.set_font(&format!("{body}px sans-serif"));
+    for line in &lines[1..] {
+        wide = wide.max(ctx.measure_text(line).map_or(0.0, |m| m.width()));
+    }
+    let rows = (lines.len() - 1) as f64;
+    let h = pad * 2.0
+        + title * 1.25
+        + if rows > 0.0 {
+            4.0 + rows * (body * 1.4 + 4.0) - 4.0
+        } else {
+            0.0
+        };
+    let rect = Rect {
+        x: margin,
+        y: height - margin - h,
+        w: wide + pad * 2.0,
+        h,
+    };
+    ctx.set_fill_style_str("rgba(0,0,0,0.19)");
+    path_round(
+        ctx,
+        Rect {
+            x: rect.x + 2.0,
+            y: rect.y + 3.0,
+            ..rect
+        },
+        6.0,
+    );
+    ctx.fill();
+    path_round(ctx, rect, 6.0);
+    ctx.set_fill_style_str("rgba(30,30,30,0.86)");
+    ctx.fill();
+    ctx.set_stroke_style_str("#4a4a4a");
+    ctx.stroke();
+    ctx.set_text_baseline("top");
+    text(
+        ctx,
+        "#d4d4d4",
+        &format!("{title}px sans-serif"),
+        &lines[0],
+        rect.x + pad,
+        rect.y + pad,
+    );
+    for (i, line) in lines[1..].iter().enumerate() {
+        let y = rect.y + pad + title * 1.25 + 4.0 + i as f64 * (body * 1.4 + 4.0);
+        text(
+            ctx,
+            "#8a8a8a",
+            &format!("{body}px sans-serif"),
+            line,
+            rect.x + pad,
+            y,
+        );
+    }
+    ctx.set_text_baseline("alphabetic");
+}
+
+/// A small note by the pointer for something that has gone wrong
+fn paint_tip(ctx: &Pen, lines: &[String], (mx, my): (f64, f64), width: f64, height: f64) {
+    let (pad, line_h) = (7.0, 17.0);
+    ctx.set_font("12px sans-serif");
+    let wide = lines
+        .iter()
+        .map(|l| ctx.measure_text(l).map_or(0.0, |m| m.width()))
+        .fold(0.0, f64::max);
+    let (w, h) = (
+        wide + pad * 2.0,
+        lines.len() as f64 * line_h + pad * 2.0 - 3.0,
+    );
+    let mut x = mx + 14.0;
+    if x + w > width - 4.0 {
+        x = mx - w - 10.0;
+    }
+    let y = (my - h / 2.0).clamp(4.0, (height - 4.0 - h).max(4.0));
+    path_round(ctx, Rect { x, y, w, h }, 4.0);
+    ctx.set_fill_style_str("rgba(18,18,18,0.95)");
+    ctx.fill();
+    ctx.set_stroke_style_str(PROBLEM);
+    ctx.set_line_width(1.5);
+    ctx.stroke();
+    ctx.set_line_width(1.0);
+    ctx.set_text_baseline("top");
+    for (i, line) in lines.iter().enumerate() {
+        text(
+            ctx,
+            "#e8a87c",
+            "12px sans-serif",
+            line,
+            x + pad,
+            y + pad + i as f64 * line_h,
+        );
+    }
+    ctx.set_text_baseline("alphabetic");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hits_follow_the_layers_to_where_they_are_on_the_screen() {
+        let node = PlanNode::Task(uuid::Uuid::from_u128(1));
+        let mut hits = Hits::default();
+        hits.items.push((
+            node,
+            Rect {
+                x: 100.0,
+                y: 100.0,
+                w: 50.0,
+                h: 20.0,
+            },
+        ));
+        // drawn where the screen was, then the chart scrolled 30 pixels left and 10 up
+        assert_eq!(hits.hit(110.0, 110.0), Some((node, false)));
+        hits.offset = (-30.0, -10.0);
+        assert_eq!(hits.hit(110.0, 115.0), None);
+        assert_eq!(hits.hit(80.0, 100.0), Some((node, false)));
+        assert_eq!(
+            hits.items().next().map(|(_, r)| (r.x, r.y)),
+            Some((70.0, 90.0))
+        );
+    }
+}
