@@ -97,4 +97,6 @@ impl From<&str> for PlinkoError {
 }
 // }}}
 
+// PlinkoError supporting types {{{
 pub type PlinkoResult<T> = Result<T, PlinkoError>;
+// }}}

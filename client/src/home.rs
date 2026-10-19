@@ -1,5 +1,6 @@
 //! Where you land: what you are doing today and next, and the plans you go to most.
 
+// modules {{{
 use chrono::{Days, NaiveDate};
 use leptos::prelude::*;
 use plinko::types::task::Status;
@@ -12,14 +13,18 @@ use crate::{
     plans::{PlanCards, use_cards},
     ui::use_sync,
 };
+// }}}
 
+// constants {{{
 /// The fewest tasks still to start that are shown, if there are that many
 const UPCOMING: usize = 4;
 
 /// How many days ahead the upcoming work is laid out over, a column for each starting tomorrow on,
 /// with one more for what starts later. Everything starting within them is shown.
 const DAYS: u64 = 7;
+// }}}
 
+// fn Home {{{
 #[component]
 pub fn Home() -> impl IntoView {
     let sync = use_sync();
@@ -118,7 +123,9 @@ pub fn Home() -> impl IntoView {
         </div>
     }
 }
+// }}}
 
+// fn Row {{{
 /// A task with the button that moves it on: finish what is in progress, start what is waiting
 #[component]
 fn Row(
@@ -180,3 +187,4 @@ fn Row(
         </li>
     }
 }
+// }}}

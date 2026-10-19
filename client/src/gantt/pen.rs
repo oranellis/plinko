@@ -2,10 +2,12 @@
 //! call across to JavaScript (and a font parse) to set what is already set. Every method here
 //! shadows the one of the same name on the context, which the rest is reached through.
 
+// modules {{{
 use std::{cell::RefCell, ops::Deref};
 
 use wasm_bindgen::{JsValue, intern};
 use web_sys::{CanvasGradient, CanvasRenderingContext2d};
+// }}}
 
 #[derive(Clone, Default)]
 struct State {
@@ -17,6 +19,7 @@ struct State {
     width: Option<f64>,
 }
 
+// fn changed {{{
 /// Set the field to `value` and say whether that is a change
 fn changed<T: PartialEq + Clone>(field: &mut Option<T>, value: &T) -> bool {
     if field.as_ref() == Some(value) {
@@ -25,7 +28,9 @@ fn changed<T: PartialEq + Clone>(field: &mut Option<T>, value: &T) -> bool {
     *field = Some(value.clone());
     true
 }
+// }}}
 
+// State supporting types {{{
 pub struct Pen {
     ctx: CanvasRenderingContext2d,
     state: RefCell<State>,
@@ -33,7 +38,9 @@ pub struct Pen {
     /// How wide names are in the current font, which does not change between drawings
     widths: RefCell<std::collections::HashMap<(String, String), f64>>,
 }
+// }}}
 
+// impl Pen {{{
 impl Deref for Pen {
     type Target = CanvasRenderingContext2d;
     fn deref(&self) -> &CanvasRenderingContext2d {
@@ -131,3 +138,4 @@ impl Pen {
         self.ctx.restore();
     }
 }
+// }}}

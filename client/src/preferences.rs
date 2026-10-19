@@ -1,5 +1,6 @@
 //! What is particular to the person signed in: their name, password and how dates look.
 
+// modules {{{
 use leptos::{prelude::*, task::spawn_local};
 use plinko::{
     multitenancy::{tenant_update::TenantUpdateType, user::TenantLoginUserPatch},
@@ -12,7 +13,9 @@ use crate::{
     nav::{Availability, Route},
     ui::{Back, Field, Select, Text, use_sync},
 };
+// }}}
 
+// fn Preferences {{{
 #[component]
 pub fn Preferences() -> impl IntoView {
     view! {
@@ -25,7 +28,9 @@ pub fn Preferences() -> impl IntoView {
         </div>
     }
 }
+// }}}
 
+// fn Profile {{{
 #[component]
 fn Profile() -> impl IntoView {
     let sync = use_sync();
@@ -67,7 +72,9 @@ fn Profile() -> impl IntoView {
         </section>
     }
 }
+// }}}
 
+// fn Password {{{
 #[component]
 fn Password() -> impl IntoView {
     let current = RwSignal::new(String::new());
@@ -115,7 +122,9 @@ fn Password() -> impl IntoView {
         </section>
     }
 }
+// }}}
 
+// fn Display {{{
 #[component]
 fn Display() -> impl IntoView {
     let sync = use_sync();
@@ -154,3 +163,4 @@ fn Display() -> impl IntoView {
         </section>
     }
 }
+// }}}

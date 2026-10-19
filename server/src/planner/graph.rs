@@ -24,6 +24,7 @@ pub(crate) enum Vertex {
     GroupStart(Uuid),
 }
 
+// impl Vertex {{{
 impl Vertex {
     /// A total order over vertices, for results that must not depend on map order
     pub(crate) fn key(&self) -> (u8, Uuid) {
@@ -36,24 +37,31 @@ impl Vertex {
         }
     }
 }
+// }}}
 
+// Vertex supporting types {{{
 /// A dependency of a vertex, on today when `from` is `None`
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Edge {
     pub from: Option<Vertex>,
     pub lag: i32,
 }
+// }}}
 
+// impl Vertex {{{
 impl From<PlanNode> for Vertex {
     fn from(node: PlanNode) -> Self {
         Vertex::Node(node)
     }
 }
+// }}}
 
+// Vertex supporting types {{{
 pub(crate) struct Graph<'a> {
     plan: &'a Plan,
     members: HashMap<Uuid, Vec<PlanNode>>,
 }
+// }}}
 
 // impl Graph{{{
 impl<'a> Graph<'a> {
@@ -153,6 +161,7 @@ fn resolve(dep: &Dependency, parent: Parent) -> Option<Vertex> {
 }
 // }}}
 
+// fn has_cycle_through {{{
 /// Whether any dependency path leads from `node` back to itself. Only cycles through the changed
 /// node can be new, so this is all that needs checking after an update.
 pub fn has_cycle_through(plan: &Plan, node: PlanNode) -> bool {
@@ -163,7 +172,9 @@ pub fn has_cycle_through(plan: &Plan, node: PlanNode) -> bool {
     };
     roots.into_iter().any(|root| graph.reaches_itself(root))
 }
+// }}}
 
+// impl Graph {{{
 impl Graph<'_> {
     fn reaches_itself(&self, root: Vertex) -> bool {
         let mut stack = self.waits_on(root);
@@ -179,18 +190,24 @@ impl Graph<'_> {
         false
     }
 }
+// }}}
 
+// fn nodes {{{
 pub(crate) fn nodes<T: PlanItem>(plan: &Plan) -> Vec<PlanNode> {
     T::entities(plan).keys().map(|id| T::node(*id)).collect()
 }
+// }}}
 
+// Vertex supporting types {{{
 /// How much lag the longest chain of dependencies from `from` back to `to` (today when
 /// `None`) adds up to, with the results kept for the next question about the same `to`
 struct Chains<'a, 'p> {
     graph: &'a Graph<'p>,
     longest: HashMap<(Vertex, Option<Vertex>), Option<i64>>,
 }
+// }}}
 
+// impl Chains {{{
 impl Chains<'_, '_> {
     fn lag(&mut self, from: Vertex, to: Option<Vertex>) -> Option<i64> {
         if let Some(known) = self.longest.get(&(from, to)) {
@@ -212,7 +229,9 @@ impl Chains<'_, '_> {
         best
     }
 }
+// }}}
 
+// fn simplified {{{
 /// The dependencies the items touching `touched` can do without: those another dependency of the
 /// same item already implies. A chain a to b to c makes a direct a to c redundant when the chain's
 /// lags add up to at least its lag. Gives each changed item with the dependencies to keep, in order.
@@ -280,9 +299,12 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
     }
     changed
 }
+// }}}
 
+// fn dependencies {{{
 fn dependencies<'a, T: PlanItem + 'a>(plan: &'a Plan, id: Uuid) -> &'a [Dependency] {
     T::entities(plan)
         .get(&id)
         .map_or(&[], |item| item.dependencies())
 }
+// }}}

@@ -5,6 +5,7 @@
 //! scheduling everything gives, so once updates stop for a moment everything is scheduled again
 //! on a copy, which replaces the schedule if nothing has changed meanwhile.
 
+// modules {{{
 use std::{
     sync::mpsc::{Receiver, RecvTimeoutError, Sender},
     time::Duration,
@@ -23,9 +24,12 @@ use crate::{
 };
 
 use std::collections::HashMap;
+// }}}
 
+// constants {{{
 /// How long updates have to stop for before everything is scheduled again
 const QUIET: Duration = Duration::from_millis(1500);
+// }}}
 
 /// An update the actor accepted, as update `seq`
 pub struct Applied {
@@ -33,6 +37,7 @@ pub struct Applied {
     pub update: TenantUpdate,
 }
 
+// Applied supporting types {{{
 enum Message {
     Applied(Applied),
     /// Everything scheduled again on a copy of the tenant as of update `seq`
@@ -46,13 +51,17 @@ enum Message {
 
 /// Where to send updates for the scheduler
 pub struct Scheduler(Sender<Message>);
+// }}}
 
+// impl Scheduler {{{
 impl Scheduler {
     pub fn send(&self, applied: Applied) -> Result<(), ()> {
         self.0.send(Message::Applied(applied)).map_err(|_| ())
     }
 }
+// }}}
 
+// fn start {{{
 pub fn start(mut tenant: Tenant, mut seq: u64, results: UnboundedSender<Command>) -> Scheduler {
     let (sender, receiver): (Sender<Message>, Receiver<Message>) = std::sync::mpsc::channel();
     let to_self = sender.clone();
@@ -154,3 +163,4 @@ pub fn start(mut tenant: Tenant, mut seq: u64, results: UnboundedSender<Command>
     });
     Scheduler(sender)
 }
+// }}}

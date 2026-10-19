@@ -1,5 +1,6 @@
 //! A date picker: a button that opens a calendar, with the date written in the chosen format.
 
+// modules {{{
 use chrono::{Datelike, NaiveDate};
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsValue;
@@ -8,13 +9,17 @@ use crate::{
     format::{self, WeekStart, use_date_format, use_preferences},
     ui::use_sync,
 };
+// }}}
 
+// fn month_shifted {{{
 /// The first day of the month `months` away from `day`'s
 fn month_shifted(day: NaiveDate, months: i32) -> NaiveDate {
     let index = day.year() * 12 + day.month0() as i32 + months;
     NaiveDate::from_ymd_opt(index.div_euclid(12), index.rem_euclid(12) as u32 + 1, 1).unwrap_or(day)
 }
+// }}}
 
+// fn month_cells {{{
 /// The days of the month `first` starts, a week to a row, with blanks to line them up
 fn month_cells(first: NaiveDate, week: WeekStart) -> Vec<Option<NaiveDate>> {
     let blanks = week.offset(first);
@@ -25,7 +30,9 @@ fn month_cells(first: NaiveDate, week: WeekStart) -> Vec<Option<NaiveDate>> {
     cells.extend((1..=days).filter_map(|d| first.with_day(d)).map(Some));
     cells
 }
+// }}}
 
+// fn DatePicker {{{
 /// A date that is picked from a calendar. With `clearable` it can be taken away again.
 #[component]
 pub fn DatePicker(
@@ -140,7 +147,9 @@ pub fn DatePicker(
         </Show>
     }
 }
+// }}}
 
+// fn DateInput {{{
 /// A date that is always there
 #[component]
 pub fn DateInput(
@@ -155,7 +164,9 @@ pub fn DateInput(
         />
     }
 }
+// }}}
 
+// fn OptionalDate {{{
 /// A date that can be left empty
 #[component]
 pub fn OptionalDate(
@@ -171,7 +182,9 @@ pub fn OptionalDate(
         />
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,3 +220,4 @@ mod tests {
         assert_eq!(cells.iter().take_while(|c| c.is_none()).count(), 5);
     }
 }
+// }}}

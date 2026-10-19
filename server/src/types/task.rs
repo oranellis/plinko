@@ -167,6 +167,7 @@ impl Patchable<TaskPatch> for Task {
 }
 // }}}
 
+// Task supporting types {{{
 /// What users record as a task goes: its status and the days it really started and ended. A task
 /// put on hold ends on the day that happens (see `Plan::apply_update`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -215,7 +216,9 @@ pub enum ScheduleMode {
     /// Any day with free time, using whatever is free up to the daily block
     Relaxed,
 }
+// }}}
 
+// impl ScheduleMode {{{
 impl ScheduleMode {
     /// The hours worked on a day when `wanted` are asked for and `available` are free
     pub fn hours_on(self, wanted: Workload, available: Workload) -> Workload {
@@ -228,7 +231,9 @@ impl ScheduleMode {
         }
     }
 }
+// }}}
 
+// Task supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Worker {
     Tag(Uuid),
@@ -260,7 +265,9 @@ pub struct TaskPatch {
     pub actual_workers: Option<HashMap<Worker, Assignee>>,
     pub persistent_state: Option<PersistentState>,
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,3 +287,4 @@ mod tests {
         assert_eq!(relaxed.hours_on(hours(4), hours(0)), hours(0));
     }
 }
+// }}}

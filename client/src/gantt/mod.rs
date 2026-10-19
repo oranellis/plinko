@@ -2,6 +2,7 @@
 //! it, shift and the wheel (or a pinch) zooms, hovering shows an item's dependencies and a panel
 //! about it, and tapping opens it.
 
+// modules {{{
 pub mod arrange;
 pub mod draw;
 pub mod info;
@@ -28,12 +29,15 @@ use crate::gantt::{
     scene::Scene,
     shift::{Drag, DragView, Editing, Grips, Handle, Overlay},
 };
+// }}}
 
+// constants {{{
 /// Movement under this many pixels is a tap, not a drag (more for a finger)
 const TAP_MOUSE: f64 = 4.0;
 const TAP_TOUCH: f64 = 10.0;
 /// What is left of a flick each frame
 const FRICTION: f64 = 0.85;
+// }}}
 
 #[derive(Default)]
 struct Gesture {
@@ -46,10 +50,13 @@ struct Gesture {
     generation: u32,
 }
 
+// fn now {{{
 fn now() -> f64 {
     js_sys::Date::now()
 }
+// }}}
 
+// fn Gantt {{{
 #[component]
 pub fn Gantt(
     scene: Signal<Scene>,
@@ -797,7 +804,9 @@ pub fn Gantt(
         ></canvas>
     }
 }
+// }}}
 
+// fn day_shift {{{
 /// The whole days the pointer at `x` is from the day that was grabbed
 fn day_shift(viewport: RwSignal<Option<Viewport>>, x: f64, grabbed: f64) -> i32 {
     (viewport
@@ -807,7 +816,9 @@ fn day_shift(viewport: RwSignal<Option<Viewport>>, x: f64, grabbed: f64) -> i32 
         .floor()
         - grabbed) as i32
 }
+// }}}
 
+// fn linked_to {{{
 /// Whether the item has a dependency line to or from the selected one
 fn linked_to(links: Callback<Mark, Vec<Link>>, selected: Mark, node: PlanNode) -> bool {
     links.run(selected).iter().any(|l| {
@@ -817,7 +828,9 @@ fn linked_to(links: Callback<Mark, Vec<Link>>, selected: Mark, node: PlanNode) -
             })
     })
 }
+// }}}
 
+// fn edge_scroll {{{
 /// Scrolls the chart while a handle is dragged to its edge
 fn edge_scroll(
     viewport: RwSignal<Option<Viewport>>,
@@ -852,7 +865,9 @@ fn edge_scroll(
     }
     request_animation_frame(move || edge_scroll(viewport, bounds, pointer, drag));
 }
+// }}}
 
+// fn flick {{{
 /// Keeps the chart moving after a flick, slowing down each frame
 fn flick(
     viewport: RwSignal<Option<Viewport>>,
@@ -877,13 +892,19 @@ fn flick(
     viewport.try_set(Some(vp));
     request_animation_frame(move || flick(viewport, bounds, gesture, generation, (vx, vy)));
 }
+// }}}
 
+// constants {{{
 /// The colours an outline can flash in, as red green blue
 const RED: &str = "229,57,53";
 const LIGHT: &str = "200,200,205";
+// }}}
 
+// Gesture supporting types {{{
 type Flash = RwSignal<Option<(Mark, f64, &'static str)>>;
+// }}}
 
+// fn fade_item {{{
 /// Lets an outline fade away
 fn fade_item(flash: Flash, mark: Mark, rgb: &'static str) {
     fn fade(flash: Flash, mark: Mark, rgb: &'static str, alpha: f64) {
@@ -899,7 +920,9 @@ fn fade_item(flash: Flash, mark: Mark, rgb: &'static str) {
     }
     fade(flash, mark, rgb, 1.0);
 }
+// }}}
 
+// fn flash_item {{{
 /// Flashes an outline on and off, three times, then lets it fade away
 fn flash_item(flash: Flash, mark: Mark) {
     fn step(flash: Flash, mark: Mark, count: u32) {
@@ -915,3 +938,4 @@ fn flash_item(flash: Flash, mark: Mark) {
     }
     set_timeout(move || step(flash, mark, 0), Duration::from_millis(300));
 }
+// }}}

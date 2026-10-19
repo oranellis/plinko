@@ -1,5 +1,6 @@
 //! Small pieces the pages share.
 
+// modules {{{
 use leptos::{html, prelude::*};
 
 use crate::{
@@ -7,11 +8,15 @@ use crate::{
     nav::Route,
     sync::{Link, Sync},
 };
+// }}}
 
+// fn use_sync {{{
 pub fn use_sync() -> Sync {
     expect_context::<Sync>()
 }
+// }}}
 
+// fn Back {{{
 /// The way back from a page that is not one of the main ones, at its top left
 #[component]
 pub fn Back(to: Route) -> impl IntoView {
@@ -23,7 +28,9 @@ pub fn Back(to: Route) -> impl IntoView {
         </div>
     }
 }
+// }}}
 
+// fn IconButton {{{
 /// A small button that is only an icon
 #[component]
 pub fn IconButton(
@@ -37,7 +44,9 @@ pub fn IconButton(
         </button>
     }
 }
+// }}}
 
+// fn Modal {{{
 /// A panel over the page, a sheet from the bottom on a phone
 #[component]
 pub fn Modal(
@@ -62,7 +71,9 @@ pub fn Modal(
         </div>
     }
 }
+// }}}
 
+// fn Field {{{
 #[component]
 pub fn Field(#[prop(into)] label: Signal<String>, children: Children) -> impl IntoView {
     view! {
@@ -72,7 +83,9 @@ pub fn Field(#[prop(into)] label: Signal<String>, children: Children) -> impl In
         </label>
     }
 }
+// }}}
 
+// fn Block {{{
 /// A labelled group of controls, for the ones a label cannot wrap
 #[component]
 pub fn Block(
@@ -89,7 +102,9 @@ pub fn Block(
         </div>
     }
 }
+// }}}
 
+// fn Segmented {{{
 /// Buttons side by side, one of which is picked
 #[component]
 pub fn Segmented(
@@ -160,6 +175,7 @@ pub fn Segmented(
         </div>
     }
 }
+// }}}
 
 /// One thing a `Picker` can pick. `tone` is a CSS class that colours it: `start` or `target`.
 #[derive(Clone, Debug, PartialEq)]
@@ -169,6 +185,7 @@ pub struct Choice {
     pub tone: &'static str,
 }
 
+// impl Choice {{{
 impl Choice {
     pub fn new(value: impl Into<String>, label: impl Into<String>, tone: &'static str) -> Self {
         Self {
@@ -178,7 +195,9 @@ impl Choice {
         }
     }
 }
+// }}}
 
+// fn Picker {{{
 /// A button that opens a searchable list of `choices`, holding the value that is picked
 #[component]
 pub fn Picker(
@@ -263,7 +282,9 @@ pub fn Picker(
         </Show>
     }
 }
+// }}}
 
+// fn Hours {{{
 /// A level out of `max`: a thin cell for none, then a cell for each step, lit from the left
 #[component]
 pub fn Hours(
@@ -298,7 +319,9 @@ pub fn Hours(
         </div>
     }
 }
+// }}}
 
+// fn List {{{
 /// A bordered list of rows with an add button under it
 #[component]
 pub fn List(
@@ -328,7 +351,9 @@ pub fn List(
         </div>
     }
 }
+// }}}
 
+// fn Actions {{{
 /// The buttons under a form: an optional delete on the left, then cancel and save
 #[component]
 pub fn Actions(
@@ -344,7 +369,9 @@ pub fn Actions(
         </div>
     }
 }
+// }}}
 
+// fn Text {{{
 /// A text box that tells its owner when it changes
 #[component]
 pub fn Text(
@@ -367,7 +394,9 @@ pub fn Text(
         />
     }
 }
+// }}}
 
+// fn Number {{{
 /// A box for a whole number
 #[component]
 pub fn Number(
@@ -391,7 +420,9 @@ pub fn Number(
         />
     }
 }
+// }}}
 
+// fn Select {{{
 /// A choice of `options` (value and label), holding the value that is picked
 #[component]
 pub fn Select(
@@ -415,7 +446,9 @@ pub fn Select(
         </select>
     }
 }
+// }}}
 
+// fn options {{{
 pub fn options<const N: usize>(pairs: [(&str, &str); N]) -> Signal<Vec<(String, String)>> {
     let pairs: Vec<(String, String)> = pairs
         .iter()
@@ -423,7 +456,9 @@ pub fn options<const N: usize>(pairs: [(&str, &str); N]) -> Signal<Vec<(String, 
         .collect();
     Signal::stored(pairs)
 }
+// }}}
 
+// fn Status {{{
 /// How the connection and the schedule are doing
 #[component]
 pub fn Status() -> impl IntoView {
@@ -439,7 +474,9 @@ pub fn Status() -> impl IntoView {
         </span>
     }
 }
+// }}}
 
+// fn hashed {{{
 /// A cheap key for a list entry that is drawn again whenever anything in it changes
 pub fn hashed<T: std::hash::Hash>(item: &T) -> u64 {
     use std::hash::Hasher;
@@ -447,3 +484,4 @@ pub fn hashed<T: std::hash::Hash>(item: &T) -> u64 {
     item.hash(&mut hasher);
     hasher.finish()
 }
+// }}}

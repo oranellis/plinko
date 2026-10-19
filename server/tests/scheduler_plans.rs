@@ -1,3 +1,4 @@
+// modules {{{
 use chrono::{DateTime, NaiveDate};
 use plinko::{
     multitenancy::{
@@ -24,10 +25,13 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
+// fn day {{{
 fn day(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).unwrap()
 }
+// }}}
 
 struct Plans {
     tenant: Tenant,
@@ -35,6 +39,7 @@ struct Plans {
     shared: Uuid,
 }
 
+// impl Plans {{{
 impl Plans {
     fn new() -> Self {
         let tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), day(2023, 12, 31));
@@ -212,12 +217,16 @@ impl Plans {
         solve_tenant(&self.tenant)
     }
 }
+// }}}
 
+// fn first_day {{{
 /// The first day of the task
 fn first_day(state: &TenantVolatileState, plan: ShortId, task: Uuid) -> NaiveDate {
     state.plans[&plan].tasks[&task].date_range.start()
 }
+// }}}
 
+// fn repair_puts_the_short_plan_first_to_cut_the_worst_delay {{{
 #[test]
 fn repair_puts_the_short_plan_first_to_cut_the_worst_delay() {
     let mut plans = Plans::new();
@@ -230,7 +239,9 @@ fn repair_puts_the_short_plan_first_to_cut_the_worst_delay() {
     assert_eq!(first_day(&state, long, long_task), day(2024, 1, 2));
     assert_eq!(state.users[&plans.shared].booked_on(day(2024, 1, 4)), 8);
 }
+// }}}
 
+// fn equal_ends_go_by_id {{{
 #[test]
 fn equal_ends_go_by_id() {
     let mut plans = Plans::new();
@@ -244,7 +255,9 @@ fn equal_ends_go_by_id() {
     assert_eq!(first_day(&state, low.0, low.1), day(2024, 1, 1));
     assert_eq!(first_day(&state, high.0, high.1), day(2024, 1, 2));
 }
+// }}}
 
+// fn forecasts_are_compared_with_the_plan_on_its_own {{{
 #[test]
 fn forecasts_are_compared_with_the_plan_on_its_own() {
     let mut plans = Plans::new();
@@ -260,7 +273,9 @@ fn forecasts_are_compared_with_the_plan_on_its_own() {
         day(2024, 1, 3)
     );
 }
+// }}}
 
+// fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes {{{
 #[test]
 fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
     let mut plans = Plans::new();
@@ -288,7 +303,9 @@ fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
     plans.solve();
     assert!(plans.tenant.baseline(&two).is_some());
 }
+// }}}
 
+// fn chain {{{
 /// A plan of one task for each of the given days, one after the other, with a target at the end
 fn chain(plans: &mut Plans, days: &[u32]) -> (ShortId, Vec<Uuid>) {
     let plan = plans.empty();
@@ -306,7 +323,9 @@ fn chain(plans: &mut Plans, days: &[u32]) -> (ShortId, Vec<Uuid>) {
     plans.target(plan, end);
     (plan, tasks)
 }
+// }}}
 
+// fn plan_priority_decides_who_gets_contended_hours {{{
 #[test]
 fn plan_priority_decides_who_gets_contended_hours() {
     for favoured in [0, 1] {
@@ -322,7 +341,9 @@ fn plan_priority_decides_who_gets_contended_hours() {
         assert_eq!(plan.targets.values().next().unwrap().delay(), 2);
     }
 }
+// }}}
 
+// fn target_priority_counts_beside_plan_priority {{{
 #[test]
 fn target_priority_counts_beside_plan_priority() {
     let mut plans = Plans::new();
@@ -340,7 +361,9 @@ fn target_priority_counts_beside_plan_priority() {
     // 3 beats 2 whichever plan is first by the usual order
     assert_eq!(first_day(&state, plan, made[1].1[0]), day(2024, 1, 1));
 }
+// }}}
 
+// fn work_off_the_target_chain_waits_for_every_chain {{{
 #[test]
 fn work_off_the_target_chain_waits_for_every_chain() {
     let mut plans = Plans::new();
@@ -352,7 +375,9 @@ fn work_off_the_target_chain_waits_for_every_chain() {
     assert_eq!(first_day(&state, short, short_chain[0]), day(2024, 1, 1));
     assert_eq!(first_day(&state, long, rest), day(2024, 1, 5));
 }
+// }}}
 
+// fn chains_to_close_hard_dates_go_before_target_chains {{{
 #[test]
 fn chains_to_close_hard_dates_go_before_target_chains() {
     let mut plans = Plans::new();
@@ -367,7 +392,9 @@ fn chains_to_close_hard_dates_go_before_target_chains() {
     // a three day run cannot straddle the day taken, so it starts after it
     assert_eq!(first_day(&state, long, long_chain[0]), day(2024, 1, 4));
 }
+// }}}
 
+// fn work_in_progress_in_any_plan_claims_hours_first {{{
 #[test]
 fn work_in_progress_in_any_plan_claims_hours_first() {
     let mut plans = Plans::new();
@@ -383,10 +410,14 @@ fn work_in_progress_in_any_plan_claims_hours_first() {
     assert_eq!(first_day(&state, active, active_task), day(2024, 1, 1));
     assert_eq!(first_day(&state, first, first_chain[0]), day(2024, 1, 4));
 }
+// }}}
 
+// Plans supporting types {{{
 /// A small random generator, so the same plans come out every run
 struct Random(u64);
+// }}}
 
+// impl Random {{{
 impl Random {
     fn below(&mut self, n: u64) -> u64 {
         self.0 = self
@@ -396,7 +427,9 @@ impl Random {
         (self.0 >> 33) % n
     }
 }
+// }}}
 
+// fn random_plans_never_overbook_a_person_or_start_before_their_dependencies {{{
 #[test]
 fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
     let mut random = Random(12345);
@@ -448,13 +481,17 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
         }
     }
 }
+// }}}
 
+// fn fixed {{{
 fn fixed(plans: &mut Plans, plan: ShortId, task: Uuid, date: NaiveDate) {
     plans.patch(plan, task, |p| {
         p.time_constraint = Some(TimeConstraint::Fixed(date))
     });
 }
+// }}}
 
+// fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help {{{
 #[test]
 fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help() {
     let mut plans = Plans::new();
@@ -478,7 +515,9 @@ fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help() {
     let worker = state.plans[&tagged].tasks[&held].workers[&Worker::Tag(tag)];
     assert_eq!(worker, Assignee::User(high));
 }
+// }}}
 
+// fn someone_much_less_booked_is_worth_finishing_a_day_later {{{
 #[test]
 fn someone_much_less_booked_is_worth_finishing_a_day_later() {
     let mut plans = Plans::new();
@@ -507,3 +546,4 @@ fn someone_much_less_booked_is_worth_finishing_a_day_later() {
     assert_eq!(worker, Assignee::User(bob));
     assert_eq!(first_day(&state, plan, task), day(2024, 1, 2));
 }
+// }}}

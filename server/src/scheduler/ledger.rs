@@ -9,8 +9,10 @@ use crate::{
 };
 // }}}
 
+// constants {{{
 /// How far past the start of a search the scheduler looks for capacity
 pub const MAX_FILL_DAYS: u32 = 3650;
+// }}}
 
 /// Hours of one person on one day
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,6 +22,7 @@ pub struct Claim {
     pub hours: u8,
 }
 
+// Claim supporting types {{{
 /// The claims of one placement, so it can be taken and given back as a whole
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Run(pub Vec<Claim>);
@@ -34,6 +37,7 @@ pub struct Ledger {
     capacity: HashMap<Uuid, Vec<u8>>,
     free: HashMap<Uuid, Vec<u8>>,
 }
+// }}}
 
 // impl Ledger {{{
 impl Ledger {
@@ -161,6 +165,7 @@ impl Ledger {
 }
 // }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,3 +266,4 @@ mod tests {
         assert_eq!(ledger.load(&Uuid::now_v7()), 0.0);
     }
 }
+// }}}

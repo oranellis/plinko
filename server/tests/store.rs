@@ -1,3 +1,4 @@
+// modules {{{
 use chrono::{DateTime, NaiveDate, Utc};
 use plinko::{
     multitenancy::{
@@ -9,7 +10,9 @@ use plinko::{
     types::{crud::Crud, parent::Parent, short_id::ShortId, task::NewTask},
 };
 use uuid::Uuid;
+// }}}
 
+// helpers {{{
 fn day(d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2024, 1, d).unwrap()
 }
@@ -17,7 +20,9 @@ fn day(d: u32) -> NaiveDate {
 fn time() -> DateTime<Utc> {
     DateTime::from_timestamp(978307200, 0).unwrap()
 }
+// }}}
 
+// fn setup {{{
 fn setup() -> (Store, Tenant, Uuid) {
     let tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), day(1));
     let root = *tenant.users().keys().next().unwrap();
@@ -26,7 +31,9 @@ fn setup() -> (Store, Tenant, Uuid) {
     store.create(&tenant).unwrap();
     (store, tenant, root)
 }
+// }}}
 
+// fn send {{{
 fn send(
     store: &Store,
     tenant: &mut Tenant,
@@ -37,7 +44,9 @@ fn send(
     let update = tenant.stage(time(), actor, update);
     store.commit(tenant, seq, update).unwrap()
 }
+// }}}
 
+// fn a_tenant_loads_from_its_snapshot_and_the_updates_after_it {{{
 #[test]
 fn a_tenant_loads_from_its_snapshot_and_the_updates_after_it() {
     let (store, mut tenant, root) = setup();
@@ -86,7 +95,9 @@ fn a_tenant_loads_from_its_snapshot_and_the_updates_after_it() {
         [2, 3, 4, 5]
     );
 }
+// }}}
 
+// fn refused_updates_are_not_saved {{{
 #[test]
 fn refused_updates_are_not_saved() {
     let (store, mut tenant, root) = setup();
@@ -102,7 +113,9 @@ fn refused_updates_are_not_saved() {
     assert_eq!(store.since(0).unwrap().len(), 1);
     assert_eq!(tenant.today(), day(2));
 }
+// }}}
 
+// fn snapshots_are_taken_as_the_log_grows {{{
 #[test]
 fn snapshots_are_taken_as_the_log_grows() {
     let (store, mut tenant, root) = setup();
@@ -114,7 +127,9 @@ fn snapshots_are_taken_as_the_log_grows() {
     let (loaded, loaded_seq) = store.load().unwrap();
     assert_eq!((loaded_seq, loaded.today()), (205, tenant.today()));
 }
+// }}}
 
+// fn passwords_are_checked_and_sessions_come_and_go {{{
 #[test]
 fn passwords_are_checked_and_sessions_come_and_go() {
     let (store, _, _) = setup();
@@ -142,3 +157,4 @@ fn passwords_are_checked_and_sessions_come_and_go() {
     store.end_sessions_of(user).unwrap();
     assert_eq!(store.session_user(&second).unwrap(), None);
 }
+// }}}

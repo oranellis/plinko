@@ -13,6 +13,7 @@ pub struct Dependency {
     pub lag: i32,
 }
 
+// impl Dependency {{{
 impl Dependency {
     /// Each node once, with the longest lag it was given
     pub fn merged(deps: Vec<Dependency>) -> Vec<Dependency> {
@@ -40,7 +41,9 @@ impl Dependency {
         self.start_after(end) - Duration::days(1)
     }
 }
+// }}}
 
+// Dependency supporting types {{{
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DependencyNode {
     /// The start of the enclosing task group, or today for top level items
@@ -48,7 +51,9 @@ pub enum DependencyNode {
     ParentStart,
     Node(PlanNode),
 }
+// }}}
 
+// impl PlanNode {{{
 impl PlanNode {
     pub fn id(&self) -> Uuid {
         match *self {
@@ -59,7 +64,9 @@ impl PlanNode {
         }
     }
 }
+// }}}
 
+// Dependency supporting types {{{
 /// A schedulable node. A task group is a single node that ends when all of its members end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlanNode {
@@ -68,7 +75,9 @@ pub enum PlanNode {
     PlanBuffer(Uuid),
     TaskGroup(Uuid),
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,3 +148,4 @@ mod tests {
         assert_eq!(Dependency::merged(vec![on(1), on(3), on(2)]), vec![on(3)]);
     }
 }
+// }}}

@@ -1,3 +1,4 @@
+// modules {{{
 use chrono::NaiveDate;
 use plinko::{
     availability::{
@@ -28,9 +29,13 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
+// constants {{{
 const CLIENT_ID: Uuid = Uuid::nil();
+// }}}
 
+// fn rule_update {{{
 fn rule_update<V>(kind: RuleKind<V>) -> RuleSetUpdate<V> {
     RuleSetUpdate::Rule(Crud::Add(NewRule {
         name: String::new(),
@@ -40,14 +45,18 @@ fn rule_update<V>(kind: RuleKind<V>) -> RuleSetUpdate<V> {
         kind,
     }))
 }
+// }}}
 
+// fn rule_id {{{
 fn rule_id<V>(update: &RuleSetUpdate<V>) -> Uuid {
     match update {
         RuleSetUpdate::Rule(Crud::Add(new)) => new.id,
         _ => panic!("expected a rule add"),
     }
 }
+// }}}
 
+// fn plan_update_ids {{{
 fn plan_update_ids(mut update: PlanUpdate) -> Uuid {
     update.assign_ids();
     match update {
@@ -66,7 +75,9 @@ fn plan_update_ids(mut update: PlanUpdate) -> Uuid {
         _ => panic!("expected an add"),
     }
 }
+// }}}
 
+// fn plan_adds_get_fresh_ids {{{
 #[test]
 fn plan_adds_get_fresh_ids() {
     let parent = Parent::Plan;
@@ -121,7 +132,9 @@ fn plan_adds_get_fresh_ids() {
         assert_ne!(plan_update_ids(update), CLIENT_ID);
     }
 }
+// }}}
 
+// helpers {{{
 #[test]
 fn existing_tenant_users_and_groups_keep_their_ids_in_a_plan() {
     let user = PlanUpdate::User(Crud::Add(NewPlanUser { id: CLIENT_ID }));
@@ -136,7 +149,9 @@ fn updates_and_removals_keep_the_ids_they_name() {
     remove.assign_ids();
     assert!(matches!(remove, PlanUpdate::Task(Crud::Remove(id)) if id == CLIENT_ID));
 }
+// }}}
 
+// fn tenant_adds_get_fresh_ids {{{
 #[test]
 fn tenant_adds_get_fresh_ids() {
     let mut user = TenantUpdateType::User(Crud::Add(NewTenantLoginUser {
@@ -166,7 +181,9 @@ fn tenant_adds_get_fresh_ids() {
     assert_eq!(user, CLIENT_ID);
     assert_ne!(rule_id::<Workload>(&update), CLIENT_ID);
 }
+// }}}
 
+// fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned {{{
 #[test]
 fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned() {
     let client_plan = ShortId::from_str_checked("AAAAAAAA").unwrap();
@@ -198,3 +215,4 @@ fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned() {
     assert_eq!(plan, client_plan, "the plan being edited is not reassigned");
     assert_ne!(new.id, CLIENT_ID);
 }
+// }}}

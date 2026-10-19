@@ -1,5 +1,6 @@
 //! Managing the tenant: who has a login and the groups they are in. For admins.
 
+// modules {{{
 use std::collections::HashSet;
 
 use leptos::{prelude::*, task::spawn_local};
@@ -21,6 +22,7 @@ use crate::{
     nav::{Availability, Route, navigate},
     ui::{Actions, Block, Choice, Field, IconButton, Modal, Picker, Select, Text, use_sync},
 };
+// }}}
 
 #[derive(Clone, Debug, PartialEq)]
 struct Person {
@@ -30,6 +32,7 @@ struct Person {
     admin: bool,
 }
 
+// Person supporting types {{{
 #[derive(Clone, Debug, PartialEq)]
 struct Group {
     id: Uuid,
@@ -37,7 +40,9 @@ struct Group {
     parent: Option<Uuid>,
     members: Vec<Uuid>,
 }
+// }}}
 
+// fn People {{{
 #[component]
 pub fn People() -> impl IntoView {
     let sync = use_sync();
@@ -156,7 +161,9 @@ pub fn People() -> impl IntoView {
         })}
     }
 }
+// }}}
 
+// fn PersonForm {{{
 #[component]
 fn PersonForm(
     which: Option<Uuid>,
@@ -256,7 +263,9 @@ fn PersonForm(
         </Modal>
     }
 }
+// }}}
 
+// fn GroupForm {{{
 #[component]
 fn GroupForm(
     which: Option<Uuid>,
@@ -374,3 +383,4 @@ fn GroupForm(
         </Modal>
     }
 }
+// }}}

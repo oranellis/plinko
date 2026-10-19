@@ -1,6 +1,7 @@
 //! Choices in a form as text, and back. A select holds a string, so everything a select picks
 //! has a way to be written down and read again.
 
+// modules {{{
 use chrono::NaiveDate;
 use plinko::types::{
     common::TimeConstraint,
@@ -9,7 +10,9 @@ use plinko::types::{
     task::{Status, Worker},
 };
 use uuid::Uuid;
+// }}}
 
+// fn node_value {{{
 pub fn node_value(node: DependencyNode) -> String {
     match node {
         DependencyNode::ParentStart => "start".to_string(),
@@ -19,7 +22,9 @@ pub fn node_value(node: DependencyNode) -> String {
         DependencyNode::Node(PlanNode::TaskGroup(id)) => format!("group:{id}"),
     }
 }
+// }}}
 
+// fn parse_node {{{
 pub fn parse_node(text: &str) -> Option<DependencyNode> {
     if text == "start" {
         return Some(DependencyNode::ParentStart);
@@ -35,7 +40,9 @@ pub fn parse_node(text: &str) -> Option<DependencyNode> {
     };
     Some(DependencyNode::Node(node))
 }
+// }}}
 
+// fn worker_value {{{
 pub fn worker_value(worker: Worker) -> String {
     match worker {
         Worker::User(id) => format!("user:{id}"),
@@ -44,7 +51,9 @@ pub fn worker_value(worker: Worker) -> String {
         Worker::Placeholder => "placeholder".to_string(),
     }
 }
+// }}}
 
+// fn parse_worker {{{
 pub fn parse_worker(text: &str) -> Option<Worker> {
     if text == "placeholder" {
         return Some(Worker::Placeholder);
@@ -58,14 +67,18 @@ pub fn parse_worker(text: &str) -> Option<Worker> {
         _ => None,
     }
 }
+// }}}
 
+// fn parent_value {{{
 pub fn parent_value(parent: Parent) -> String {
     match parent {
         Parent::Plan => "plan".to_string(),
         Parent::Node(id) => format!("group:{id}"),
     }
 }
+// }}}
 
+// fn parse_parent {{{
 pub fn parse_parent(text: &str) -> Option<Parent> {
     match text {
         "plan" => Some(Parent::Plan),
@@ -75,7 +88,9 @@ pub fn parse_parent(text: &str) -> Option<Parent> {
             .map(Parent::Node),
     }
 }
+// }}}
 
+// fn constraint_parts {{{
 /// The kind of constraint a form has, and the day for the kinds that have one
 pub fn constraint_parts(constraint: TimeConstraint) -> (&'static str, Option<NaiveDate>) {
     match constraint {
@@ -85,7 +100,9 @@ pub fn constraint_parts(constraint: TimeConstraint) -> (&'static str, Option<Nai
         TimeConstraint::Fixed(day) => ("fixed", Some(day)),
     }
 }
+// }}}
 
+// fn constraint_from {{{
 pub fn constraint_from(kind: &str, day: NaiveDate) -> TimeConstraint {
     match kind {
         "earliest" => TimeConstraint::Earliest(day),
@@ -94,7 +111,9 @@ pub fn constraint_from(kind: &str, day: NaiveDate) -> TimeConstraint {
         _ => TimeConstraint::None,
     }
 }
+// }}}
 
+// fn status_value {{{
 pub fn status_value(status: Status) -> &'static str {
     match status {
         Status::NotStarted => "not-started",
@@ -104,7 +123,9 @@ pub fn status_value(status: Status) -> &'static str {
         Status::Dropped => "dropped",
     }
 }
+// }}}
 
+// fn parse_status {{{
 pub fn parse_status(text: &str) -> Option<Status> {
     [
         Status::NotStarted,
@@ -116,7 +137,9 @@ pub fn parse_status(text: &str) -> Option<Status> {
     .into_iter()
     .find(|s| status_value(*s) == text)
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,3 +204,4 @@ mod tests {
         }
     }
 }
+// }}}

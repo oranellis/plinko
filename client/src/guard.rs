@@ -1,13 +1,17 @@
 //! Asking before an edit pane is left with changes that were not saved.
 
+// modules {{{
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::ui::Modal;
+// }}}
 
+// constants {{{
 /// The elements inside a pane that change what is being edited when they are clicked
 const CHANGERS: &str = ".segmented button, .hours .cell, .popover li button, .list button, \
                        button.add, .calendar .day, .calendar .foot button";
+// }}}
 
 #[derive(Clone, Copy)]
 pub struct Guard {
@@ -18,6 +22,7 @@ pub struct Guard {
     asking: RwSignal<Option<Callback<()>>>,
 }
 
+// impl Guard {{{
 impl Guard {
     pub fn new() -> Self {
         Self {
@@ -77,7 +82,9 @@ impl Guard {
         }
     }
 }
+// }}}
 
+// fn ConfirmLeave {{{
 /// The question asked when leaving an edit with changes: save them, drop them or stay
 #[component]
 pub fn ConfirmLeave(guard: Guard) -> impl IntoView {
@@ -113,3 +120,4 @@ pub fn ConfirmLeave(guard: Guard) -> impl IntoView {
         </Show>
     }
 }
+// }}}

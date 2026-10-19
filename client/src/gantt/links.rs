@@ -1,6 +1,7 @@
 //! The dependency lines shown for the item under the pointer: what it waits for, and what waits
 //! for it. Which ends they join is worked out here and where they are is drawn from it.
 
+// modules {{{
 use std::collections::HashMap;
 
 use plinko::{
@@ -13,6 +14,7 @@ use plinko::{
 };
 
 use crate::{gantt::arrange::Mark, model};
+// }}}
 
 /// A place a line can end
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,6 +25,7 @@ pub enum Anchor {
     End(PlanNode),
 }
 
+// Anchor supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     /// Comes before the item under the pointer
@@ -39,7 +42,9 @@ pub struct Link {
     pub to: Anchor,
     pub role: Role,
 }
+// }}}
 
+// fn links {{{
 /// Only the direct links of the item, one step either way. An item inside a group that depends on
 /// the start of its group is linked to the start of the group. At the top level that is no line,
 /// the item just begins when the plan does.
@@ -88,7 +93,9 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
     }
     out
 }
+// }}}
 
+// fn chain {{{
 /// The longest chain of dependencies between two items, in either direction, as links
 pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
     let nodes = model::nodes(plan);
@@ -110,7 +117,9 @@ pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
         })
         .collect()
 }
+// }}}
 
+// fn path {{{
 /// The longest run of items from `from` to `to`, each waiting on the one before
 fn path(
     plan: &Plan,
@@ -140,7 +149,9 @@ fn path(
     known.insert(from, best.clone());
     best
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use plinko::{
@@ -279,3 +290,4 @@ mod tests {
         }));
     }
 }
+// }}}

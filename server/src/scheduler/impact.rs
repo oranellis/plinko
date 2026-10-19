@@ -1,6 +1,7 @@
 //! What an update can change in the schedule, so the schedule can be brought up to date without
 //! working everything out again: nothing, some nodes of a plan, one whole plan, or everything.
 
+// modules {{{
 use std::collections::{HashMap, HashSet};
 
 use crate::{
@@ -11,6 +12,7 @@ use crate::{
     planner::plan_update::PlanUpdate,
     types::{crud::Crud, dependency::PlanNode, short_id::ShortId},
 };
+// }}}
 
 /// What an update changes in one plan
 #[derive(Clone, Debug, PartialEq)]
@@ -21,6 +23,7 @@ pub enum PlanChange {
     Whole,
 }
 
+// PlanChange supporting types {{{
 /// What a run of updates changes
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Change {
@@ -30,7 +33,9 @@ pub struct Change {
     /// Plans that are gone, whose hours are free again
     pub removed: HashSet<ShortId>,
 }
+// }}}
 
+// impl Change {{{
 impl Change {
     /// Whether the schedule is still right
     pub fn is_none(&self) -> bool {
@@ -146,3 +151,4 @@ impl Change {
         }
     }
 }
+// }}}

@@ -34,8 +34,11 @@ use crate::{
 // }}}
 
 type Assignments = HashMap<Assignee, BTreeMap<NaiveDate, Workload>>;
+// Assignments supporting types {{{
 type Reason = UnscheduledReason;
+// }}}
 
+// constants {{{
 /// The most compaction passes, each can only move things earlier
 const MAX_COMPACT_PASSES: usize = 50;
 
@@ -47,7 +50,9 @@ const DAY_SPAN: i64 = 100_000;
 
 /// Days later a person may finish a task for being much less booked than the first to finish
 const SPREAD_DAYS: u64 = 1;
+// }}}
 
+// Assignments supporting types {{{
 #[derive(Clone, Debug)]
 struct Placement {
     range: DateRange,
@@ -80,7 +85,9 @@ struct Availability<'a> {
     plan_calendar: &'a Calendar<Workload>,
     ledger: &'a Ledger,
 }
+// }}}
 
+// impl Availability {{{
 impl Availability<'_> {
     /// Hours the person has booked from `from` up to `to`
     fn booked(&self, user: Uuid, from: NaiveDate, to: NaiveDate) -> u32 {
@@ -108,7 +115,9 @@ impl Hours for Availability<'_> {
         }
     }
 }
+// }}}
 
+// Assignments supporting types {{{
 /// Schedules one plan against a ledger shared with other plans, by Plinko 1's stages: work that
 /// has happened or started, then chains to hard dates, then chains to targets, then the rest.
 /// Nodes go in only once everything they depend on is settled, most urgent (longest chain of work
@@ -161,7 +170,9 @@ struct Readiness {
     /// Not started tasks that are ready
     open: BTreeSet<usize>,
 }
+// }}}
 
+// impl Readiness {{{
 impl Readiness {
     fn new(order: &[Vertex], net: &Network) -> Self {
         let index: HashMap<Vertex, usize> =
@@ -184,6 +195,7 @@ impl Readiness {
         }
     }
 }
+// }}}
 
 // impl PlanSolver {{{
 impl<'a> PlanSolver<'a> {
@@ -1274,6 +1286,7 @@ impl<'a> PlanSolver<'a> {
 }
 // }}}
 
+// impl PlanVolatileState {{{
 impl PlanVolatileState {
     /// Records a violation if a hard date is passed by the start of the node
     fn violation(
@@ -1297,7 +1310,9 @@ impl PlanVolatileState {
         }
     }
 }
+// }}}
 
+// fn placement_of {{{
 /// A fixed order of workers, so choices do not depend on map order
 /// A task placed as it was in a schedule
 fn placement_of(state: &task::VolatileState) -> Placement {
@@ -1321,7 +1336,9 @@ fn placement_of(state: &task::VolatileState) -> Placement {
         }),
     }
 }
+// }}}
 
+// fn worker_key {{{
 fn worker_key(worker: &Worker) -> (u8, Uuid) {
     match worker {
         Worker::User(id) => (0, *id),
@@ -1330,7 +1347,9 @@ fn worker_key(worker: &Worker) -> (u8, Uuid) {
         Worker::Placeholder => (3, Uuid::nil()),
     }
 }
+// }}}
 
+// fn merge {{{
 /// One slot for each person, adding up the hours of several requests, and none for no hours
 fn merge(slots: Vec<Slot>) -> Result<Vec<Slot>, Reason> {
     let mut merged: Vec<Slot> = Vec::new();
@@ -1345,7 +1364,9 @@ fn merge(slots: Vec<Slot>) -> Result<Vec<Slot>, Reason> {
     }
     Ok(merged)
 }
+// }}}
 
+// fn build_work {{{
 /// The hours a fill put on the slots, as assignments and the claims on the ledger. A task with
 /// no slots has none.
 fn build_work(slots: &[Slot], filled: Filled, workers: HashMap<Worker, Assignee>) -> Work {
@@ -1369,7 +1390,9 @@ fn build_work(slots: &[Slot], filled: Filled, workers: HashMap<Worker, Assignee>
         workers,
     }
 }
+// }}}
 
+// fn buffer_limits {{{
 /// The latest a buffer may end for the tasks and milestones that depend on it and cannot move
 /// later, the smallest where several do
 fn buffer_limits(plan: &Plan) -> HashMap<Uuid, NaiveDate> {
@@ -1399,7 +1422,9 @@ fn buffer_limits(plan: &Plan) -> HashMap<Uuid, NaiveDate> {
     }
     limits
 }
+// }}}
 
+// fn eligible {{{
 /// The people who may work a tag or group slot, in id order: plan users holding the tag, or
 /// everyone in the group and the groups below it
 pub fn eligible(tenant: &Tenant, plan: &Plan, worker: &Worker) -> Vec<Uuid> {
@@ -1417,3 +1442,4 @@ pub fn eligible(tenant: &Tenant, plan: &Plan, worker: &Worker) -> Vec<Uuid> {
     people.sort();
     people
 }
+// }}}

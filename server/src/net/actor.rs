@@ -1,6 +1,7 @@
 //! The actor of a tenant. It is the only thing that changes the tenant, so updates have an order,
 //! which is the order they are logged in and sent to clients in.
 
+// modules {{{
 use std::{collections::HashMap, sync::Arc};
 
 use chrono::Utc;
@@ -19,9 +20,11 @@ use crate::{
     store::Store,
     types::short_id::ShortId,
 };
+// }}}
 
 pub type Subscriber = u64;
 
+// Subscriber supporting types {{{
 pub enum Command {
     /// A client connected as `user`. The answer is `None` if there is no such user.
     Subscribe {
@@ -58,7 +61,9 @@ pub struct Handle {
     pub commands: mpsc::UnboundedSender<Command>,
     pub store: Arc<Store>,
 }
+// }}}
 
+// impl Handle {{{
 impl Handle {
     pub async fn user_by_email(&self, email: String) -> Option<Uuid> {
         let (reply, answer) = oneshot::channel();
@@ -86,7 +91,9 @@ impl Handle {
         answer.await.ok()?
     }
 }
+// }}}
 
+// Subscriber supporting types {{{
 struct Connection {
     user: Uuid,
     out: mpsc::UnboundedSender<ServerMessage>,
@@ -102,7 +109,9 @@ struct Actor {
     schedule: Option<(u64, TenantVolatileState)>,
     scheduler: worker::Scheduler,
 }
+// }}}
 
+// fn start {{{
 /// Starts the actor for a tenant that has been saved in the store
 pub fn start(store: Arc<Store>) -> crate::types::error::PlinkoResult<Handle> {
     let (tenant, seq) = store.load()?;
@@ -135,6 +144,7 @@ pub fn start(store: Arc<Store>) -> crate::types::error::PlinkoResult<Handle> {
     });
     Ok(Handle { commands, store })
 }
+// }}}
 
 // impl Actor {{{
 impl Actor {
@@ -300,6 +310,7 @@ impl Actor {
 }
 // }}}
 
+// fn plan_of {{{
 /// The plan an update is about, `None` for the tenant as a whole
 fn plan_of(update: &TenantUpdate) -> Option<ShortId> {
     match &update.update_type {
@@ -310,3 +321,4 @@ fn plan_of(update: &TenantUpdate) -> Option<ShortId> {
         _ => None,
     }
 }
+// }}}

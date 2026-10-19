@@ -12,6 +12,7 @@ use crate::{
 };
 // }}}
 
+// constants {{{
 /// Rules may only start within this range, which keeps the calendars built from them a sane size
 pub const RULE_START_RANGE: std::ops::RangeInclusive<NaiveDate> =
     NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()..=NaiveDate::from_ymd_opt(2100, 12, 31).unwrap();
@@ -25,6 +26,7 @@ pub const DEFAULT_RULE: Uuid = Uuid::max();
 
 /// The day the default weekly schedule starts on, which is outside `RULE_START_RANGE`
 pub const EPOCH: NaiveDate = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+// }}}
 
 /// Something that sets availability from `start_day` going forward until `stop_day`
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -120,6 +122,7 @@ impl<V> Patchable<RulePatch<V>> for Rule<V> {
 }
 // }}}
 
+// Rule supporting types {{{
 /// In increasing priority: a weekly schedule, overrides of single days or runs of them, and
 /// holidays. A rule that starts later wins over an earlier one of its kind.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -193,7 +196,9 @@ pub enum Unit {
     MonthAligned,
     Year,
 }
+// }}}
 
+// impl Every {{{
 impl Every {
     /// The first day of the occurrence that starts last on or before `day`, counting from `start`.
     /// Months and years go by the day of the month, so the 31st falls on the last day of a shorter
@@ -264,7 +269,9 @@ impl Every {
         first.with_day(day)
     }
 }
+// }}}
 
+// impl DayOverride {{{
 impl<V> DayOverride<V> {
     /// Whether `day` is one of the days set, for a rule that starts on `start`
     pub fn sets(&self, start: NaiveDate, day: NaiveDate) -> bool {
@@ -275,7 +282,9 @@ impl<V> DayOverride<V> {
         first.is_some_and(|first| day >= first && (day - first).num_days() < i64::from(self.days))
     }
 }
+// }}}
 
+// Rule supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewRule<V> {
     pub id: Uuid,
@@ -301,3 +310,4 @@ pub struct RulePatch<V> {
     pub kind: Option<RuleKind<V>>,
     pub name: Option<String>,
 }
+// }}}

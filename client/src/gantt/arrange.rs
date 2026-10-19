@@ -4,15 +4,18 @@
 //! group can be drawn as one rounded rectangle around them. All of it is worked out from the dates,
 //! and nothing here knows how anything is drawn.
 
+// modules {{{
 use chrono::NaiveDate;
 use plinko::types::dependency::PlanNode;
 use uuid::Uuid;
 
 use crate::model::Look;
+// }}}
 
 /// What can be shown on the chart
 pub type Mark = PlanNode;
 
+// Mark supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Task,
@@ -79,7 +82,9 @@ pub struct Arrangement {
 struct Lanes {
     free: Vec<NaiveDate>,
 }
+// }}}
 
+// impl Lanes {{{
 impl Lanes {
     fn fits(&self, lane: usize, height: usize, start: NaiveDate) -> bool {
         (lane..lane + height).all(|l| self.free.get(l).is_none_or(|free| start > *free))
@@ -97,7 +102,9 @@ impl Lanes {
         lane
     }
 }
+// }}}
 
+// fn placed {{{
 fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
     Placed {
         mark: entry.node,
@@ -118,11 +125,15 @@ fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
         collapsed: entry.collapsed,
     }
 }
+// }}}
 
+// fn sort_key {{{
 fn sort_key(entry: &Entry) -> (NaiveDate, &str, Uuid) {
     (entry.span.0, entry.name.as_str(), entry.node.id())
 }
+// }}}
 
+// fn pack {{{
 /// Packs the entries into `lanes`, groups with their members, and returns what they placed
 fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>) {
     let mut sorted: Vec<&Entry> = entries.iter().collect();
@@ -158,7 +169,9 @@ fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>)
         }
     }
 }
+// }}}
 
+// fn arrange {{{
 /// Packs a plan's items
 pub fn arrange(entries: &[Entry]) -> Arrangement {
     let mut lanes = Lanes::default();
@@ -169,7 +182,9 @@ pub fn arrange(entries: &[Entry]) -> Arrangement {
         placed: out,
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -324,3 +339,4 @@ mod tests {
         assert_eq!(arranged.lanes, 1);
     }
 }
+// }}}

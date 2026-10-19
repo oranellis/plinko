@@ -42,6 +42,7 @@ pub trait PlanItem: Entity<Plan> {
     }
 }
 
+// items {{{
 macro_rules! plan_item {
     ($ty:ident, $node:ident, $new:ty, $patch:ty, $field:ident
      $(, workers: $workers:expr, affinities: $affinities:expr, recorded: $recorded:expr)?) => {
@@ -111,7 +112,9 @@ plan_item!(
     TaskGroupPatch,
     task_groups
 );
+// }}}
 
+// impl Tag {{{
 impl Entity<Plan> for Tag {
     type New = NewTag;
     type Patch = TagPatch;
@@ -126,7 +129,9 @@ impl Entity<Plan> for Tag {
         plan.worker_in_use(Worker::Tag(id)) || plan.users.values().any(|u| u.tags().contains(&id))
     }
 }
+// }}}
 
+// impl PlanUserData {{{
 impl Entity<Plan> for PlanUserData {
     type New = NewPlanUser;
     type Patch = PlanUserDataPatch;
@@ -151,7 +156,9 @@ impl Entity<Plan> for PlanUserData {
         plan.worker_in_use(Worker::User(id)) || plan.recorded_in_use(Assignee::User(id))
     }
 }
+// }}}
 
+// impl PlanUserGroupData {{{
 impl Entity<Plan> for PlanUserGroupData {
     type New = NewPlanUserGroup;
     type Patch = PlanUserGroupPatch;
@@ -166,7 +173,9 @@ impl Entity<Plan> for PlanUserGroupData {
         plan.worker_in_use(Worker::UserGroup(id))
     }
 }
+// }}}
 
+// impl Affinity {{{
 impl Entity<Plan> for Affinity {
     type New = NewAffinity;
     type Patch = AffinityPatch;
@@ -181,7 +190,9 @@ impl Entity<Plan> for Affinity {
         plan.tasks.values().any(|t| t.affinities().contains(&id))
     }
 }
+// }}}
 
+// impl Target {{{
 impl Entity<Plan> for Target {
     type New = NewTarget;
     type Patch = TargetPatch;
@@ -196,3 +207,4 @@ impl Entity<Plan> for Target {
         plan.ensure_node_exists(&plan.targets[&id].node())
     }
 }
+// }}}

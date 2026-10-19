@@ -1,6 +1,7 @@
 //! Bringing a schedule up to date after updates without working all of it out again: what the
 //! updates cannot have changed stays where it was, and only the rest is placed, around it.
 
+// modules {{{
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
@@ -19,7 +20,9 @@ use crate::{
     },
     types::{common::TimeConstraint, dependency::PlanNode, short_id::ShortId},
 };
+// }}}
 
+// fn trouble {{{
 /// How bad a schedule is: each hard date missed and the days it is missed by, and each thing
 /// left unscheduled
 pub fn trouble(schedule: &TenantVolatileState) -> i64 {
@@ -34,7 +37,9 @@ pub fn trouble(schedule: &TenantVolatileState) -> i64 {
     }
     cost
 }
+// }}}
 
+// fn reschedule {{{
 /// The schedule `previous` with the plans of `change` placed again around the rest, from what
 /// `scheduler::prepare` cached. `None` if it cannot be done and the whole tenant should be
 /// scheduled. If placing only what depends on the changes leaves more hard dates missed or things
@@ -124,3 +129,4 @@ pub fn reschedule(
         dependents
     })
 }
+// }}}

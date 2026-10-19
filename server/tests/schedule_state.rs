@@ -1,3 +1,4 @@
+// modules {{{
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, NaiveDate};
@@ -22,7 +23,9 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
+// helpers {{{
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
@@ -30,7 +33,9 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
 fn hours(h: u8) -> Workload {
     Workload::new(h).unwrap()
 }
+// }}}
 
+// fn task_state {{{
 fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {
     let assignments = assignments
         .iter()
@@ -45,7 +50,9 @@ fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {
         workers: HashMap::new(),
     }
 }
+// }}}
 
+// fn user_schedules_are_derived_from_assignments_across_plans {{{
 #[test]
 fn user_schedules_are_derived_from_assignments_across_plans() {
     let (alice, bob) = (Uuid::now_v7(), Uuid::now_v7());
@@ -80,7 +87,9 @@ fn user_schedules_are_derived_from_assignments_across_plans() {
     assert_eq!(state.users[&bob].booked_on(monday), 8);
     assert_eq!(state.users.len(), 2, "placeholders have no schedule");
 }
+// }}}
 
+// fn update {{{
 fn update(actor: Uuid, update_type: TenantUpdateType) -> TenantUpdate {
     TenantUpdate {
         time: DateTime::from_timestamp(978307200, 0).unwrap(),
@@ -88,7 +97,9 @@ fn update(actor: Uuid, update_type: TenantUpdateType) -> TenantUpdate {
         update_type,
     }
 }
+// }}}
 
+// fn a_successful_update_clears_the_stored_schedule {{{
 #[test]
 fn a_successful_update_clears_the_stored_schedule() {
     let mut tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), d(2024, 1, 1));
@@ -111,7 +122,9 @@ fn a_successful_update_clears_the_stored_schedule() {
     tenant.apply_update(update(root, add)).unwrap();
     assert!(tenant.schedule().is_none());
 }
+// }}}
 
+// fn milestones_have_a_time_constraint {{{
 #[test]
 fn milestones_have_a_time_constraint() {
     let mut plan = Plan::from(NewPlan {
@@ -144,3 +157,4 @@ fn milestones_have_a_time_constraint() {
     let constraint = plan.milestones()[&id].time_constraint();
     assert_eq!(constraint, TimeConstraint::Fixed(d(2024, 3, 1)));
 }
+// }}}

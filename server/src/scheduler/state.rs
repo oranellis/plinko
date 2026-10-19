@@ -84,6 +84,7 @@ impl TenantVolatileState {
 }
 // }}}
 
+// TenantVolatileState supporting types {{{
 /// A plan scheduled on its own, with no other plan wanting its people: what other results are
 /// measured against
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -111,7 +112,9 @@ pub struct TargetSlack {
     pub priority: i32,
     pub slack: HashMap<PlanNode, i64>,
 }
+// }}}
 
+// impl PlanVolatileState {{{
 impl PlanVolatileState {
     /// Sets each forecast's baseline from the plan scheduled on its own
     pub fn compare_to(&mut self, alone: &PlanVolatileState) {
@@ -134,7 +137,9 @@ impl PlanVolatileState {
         tasks.chain(groups).chain(buffers).chain(milestones).max()
     }
 }
+// }}}
 
+// TenantVolatileState supporting types {{{
 /// One plan's schedule. Items it could schedule are in the maps for their kind, the rest are in
 /// `unscheduled` with the reason.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -158,14 +163,18 @@ pub struct TargetForecast {
     pub forecast: NaiveDate,
     pub baseline: NaiveDate,
 }
+// }}}
 
+// impl TargetForecast {{{
 impl TargetForecast {
     /// Days the target is later than the plan alone, never negative
     pub fn delay(&self) -> i64 {
         (self.forecast - self.baseline).num_days().max(0)
     }
 }
+// }}}
 
+// TenantVolatileState supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UnscheduledReason {
     /// The task was dropped, so it is out of the plan
@@ -190,7 +199,9 @@ pub struct ConstraintViolation {
     /// the date but no later than this is not something scheduling could have avoided.
     pub earliest: Option<NaiveDate>,
 }
+// }}}
 
+// impl ConstraintViolation {{{
 impl ConstraintViolation {
     /// Days the node starts later than the date and than it had to
     pub fn avoidable(&self) -> i64 {
@@ -201,7 +212,9 @@ impl ConstraintViolation {
         (self.scheduled - reachable).num_days().max(0)
     }
 }
+// }}}
 
+// TenantVolatileState supporting types {{{
 /// A person's work across every plan, to see what they are assigned on past, present and
 /// upcoming days and how booked they are
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -211,21 +224,27 @@ pub struct UserSchedule {
     /// the solver which knows availability. Near 1 or above marks a bottleneck.
     pub bottleneck: f32,
 }
+// }}}
 
+// impl UserSchedule {{{
 impl UserSchedule {
     pub fn booked_on(&self, day: NaiveDate) -> u32 {
         let assignments = self.assignments.get(&day).into_iter().flatten();
         assignments.map(|a| u32::from(a.hours.get())).sum()
     }
 }
+// }}}
 
+// TenantVolatileState supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserAssignment {
     pub plan: ShortId,
     pub task: Uuid,
     pub hours: Workload,
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,3 +264,4 @@ mod tests {
         assert_eq!(early.delay(), 0);
     }
 }
+// }}}

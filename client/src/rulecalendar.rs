@@ -2,6 +2,7 @@
 //! them, a click on a day lists the rules in effect there, and a pane beside it edits them. It
 //! works on the rules of a person or plan (hours) and on those of an affinity (days allowed).
 
+// modules {{{
 use std::collections::HashMap;
 
 use chrono::{Datelike, Days, NaiveDate, Weekday};
@@ -24,6 +25,7 @@ use crate::{
     format::{self, use_preferences},
     ui::{Field, Hours, Select, options, use_sync},
 };
+// }}}
 
 /// What a rule can give a day, as a level from nothing up to `MAX`
 pub trait Value: DayValue + Send + Sync {
@@ -36,6 +38,7 @@ pub trait Value: DayValue + Send + Sync {
     fn off_text() -> &'static str;
 }
 
+// impl Workload {{{
 impl Value for Workload {
     const MAX: u8 = 8;
     fn level(&self) -> u8 {
@@ -51,7 +54,9 @@ impl Value for Workload {
         "Time off"
     }
 }
+// }}}
 
+// impl bool {{{
 impl Value for bool {
     const MAX: u8 = 1;
     fn level(&self) -> u8 {
@@ -67,11 +72,15 @@ impl Value for bool {
         "Not allowed"
     }
 }
+// }}}
 
+// fn weekday {{{
 fn weekday(index: usize) -> Weekday {
     Weekday::try_from(index as u8).unwrap_or(Weekday::Mon)
 }
+// }}}
 
+// constants {{{
 const UNITS: [(Unit, &str, &str); 5] = [
     (Unit::Day, "day", "Day(s)"),
     (Unit::Week, "week", "Week(s)"),
@@ -79,11 +88,15 @@ const UNITS: [(Unit, &str, &str); 5] = [
     (Unit::MonthAligned, "aligned", "Month(s) Aligned"),
     (Unit::Year, "year", "Year(s)"),
 ];
+// }}}
 
+// fn unit_name {{{
 fn unit_name(unit: Unit) -> &'static str {
     UNITS.iter().find(|u| u.0 == unit).map_or("day", |u| u.1)
 }
+// }}}
 
+// fn title {{{
 /// What a rule is called: the name it was given, or its kind
 fn title<V: Value>(rule: &Rule<V>, off: &str) -> String {
     if *rule.id() == DEFAULT_RULE {
@@ -100,7 +113,9 @@ fn title<V: Value>(rule: &Rule<V>, off: &str) -> String {
     }
     .to_string()
 }
+// }}}
 
+// fn when {{{
 /// When a rule starts, with when it ends if it does
 fn when<V>(rule: &Rule<V>) -> String {
     if *rule.id() == DEFAULT_RULE {
@@ -115,7 +130,9 @@ fn when<V>(rule: &Rule<V>) -> String {
         None => format!("from {}", format::day(rule.start_day())),
     }
 }
+// }}}
 
+// fn for_day {{{
 /// The rules to list for a day, latest first and the default week last. Only the latest change of
 /// weekly schedule is listed, the earlier ones are replaced by it.
 fn for_day<V: Value>(set: &RuleSet<V>, day: Option<NaiveDate>) -> Vec<&Rule<V>> {
@@ -141,7 +158,9 @@ fn for_day<V: Value>(set: &RuleSet<V>, day: Option<NaiveDate>) -> Vec<&Rule<V>> 
     });
     rules
 }
+// }}}
 
+// Value supporting types {{{
 /// The fields of a rule being written, before it is saved
 #[derive(Clone, Copy)]
 struct Draft {
@@ -161,7 +180,9 @@ struct Draft {
     until_on: RwSignal<bool>,
     until: RwSignal<NaiveDate>,
 }
+// }}}
 
+// impl Draft {{{
 impl Draft {
     fn new<V: Value>(day: NaiveDate, existing: Option<&Rule<V>>) -> Self {
         let start = existing.map_or(day, Rule::start_day);
@@ -273,13 +294,17 @@ impl Draft {
         })
     }
 }
+// }}}
 
+// constants {{{
 /// Every month has room for six rows of weeks, so months sit at a fixed height and only the ones
 /// in view need drawing
 const MONTH_HEIGHT: f64 = 310.0;
 /// How many months past what could matter the calendar keeps going
 const SLACK: i32 = 6;
+// }}}
 
+// helpers {{{
 fn month_index(day: NaiveDate) -> i32 {
     day.year() * 12 + day.month0() as i32
 }
@@ -288,7 +313,9 @@ fn month_start(index: i32) -> NaiveDate {
     NaiveDate::from_ymd_opt(index.div_euclid(12), index.rem_euclid(12) as u32 + 1, 1)
         .unwrap_or(NaiveDate::MIN)
 }
+// }}}
 
+// fn RuleCalendar {{{
 /// The calendar and the pane beside it. `send` makes a change to the rules.
 #[component]
 pub fn RuleCalendar<V: Value>(
@@ -494,7 +521,9 @@ pub fn RuleCalendar<V: Value>(
         </div>
     }
 }
+// }}}
 
+// fn day_cell {{{
 /// A day of the calendar: shaded by what it is worth, with a dot on the day a rule was made
 fn day_cell<V: Value>(
     day: NaiveDate,
@@ -523,7 +552,9 @@ fn day_cell<V: Value>(
         </button>
     }
 }
+// }}}
 
+// fn RuleForm {{{
 #[component]
 fn RuleForm(
     draft: Draft,
@@ -635,7 +666,9 @@ fn RuleForm(
         </form>
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -764,3 +797,4 @@ mod tests {
         assert_eq!(new.stop_day, Some(d(6)));
     }
 }
+// }}}

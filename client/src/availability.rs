@@ -2,6 +2,7 @@
 //! days an affinity allows. The rules are the ones the scheduler uses, so the calendar shown is
 //! what it will schedule against. Both a full page and a window over the current page.
 
+// modules {{{
 use leptos::prelude::*;
 use plinko::{
     availability::rule_set::{RuleSet, RuleSetUpdate},
@@ -16,7 +17,9 @@ use crate::{
     rulecalendar::RuleCalendar,
     ui::{Back, Modal, use_sync},
 };
+// }}}
 
+// fn hours_of {{{
 /// The hours rules of a person or plan, and a way to change them
 fn hours_of(
     of: Of,
@@ -40,7 +43,9 @@ fn hours_of(
     });
     (rules.into(), send)
 }
+// }}}
 
+// fn title_of {{{
 fn title_of(of: Of) -> Signal<String> {
     let sync = use_sync();
     Signal::derive(move || {
@@ -57,7 +62,9 @@ fn title_of(of: Of) -> Signal<String> {
             .unwrap_or_default()
     })
 }
+// }}}
 
+// fn Availability {{{
 /// The calendar as a page of its own, for changing your hours
 #[component]
 pub fn Availability(of: Of) -> impl IntoView {
@@ -81,7 +88,9 @@ pub fn Availability(of: Of) -> impl IntoView {
         </div>
     }
 }
+// }}}
 
+// fn AvailabilityWindow {{{
 /// The calendar in a window over the page it was opened from
 #[component]
 pub fn AvailabilityWindow(of: Of, on_close: Callback<()>) -> impl IntoView {
@@ -92,7 +101,9 @@ pub fn AvailabilityWindow(of: Of, on_close: Callback<()>) -> impl IntoView {
         </Modal>
     }
 }
+// }}}
 
+// fn AffinityWindow {{{
 /// The days an affinity lets work happen on, in a window
 #[component]
 pub fn AffinityWindow(plan: ShortId, affinity: Uuid, on_close: Callback<()>) -> impl IntoView {
@@ -130,3 +141,4 @@ pub fn AffinityWindow(plan: ShortId, affinity: Uuid, on_close: Callback<()>) -> 
         </Modal>
     }
 }
+// }}}

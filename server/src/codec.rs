@@ -2,10 +2,13 @@
 //! with field names, so a field added with a default later still reads old data, and with map
 //! keys of any type, which `HashMap<Worker, Workload>` needs.
 
+// modules {{{
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::types::error::{PlinkoError, PlinkoResult};
+// }}}
 
+// helpers {{{
 pub fn encode<T: Serialize>(value: &T) -> PlinkoResult<Vec<u8>> {
     rmp_serde::to_vec_named(value).map_err(|e| PlinkoError::Codec(e.to_string()))
 }
@@ -13,7 +16,9 @@ pub fn encode<T: Serialize>(value: &T) -> PlinkoResult<Vec<u8>> {
 pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> PlinkoResult<T> {
     rmp_serde::from_slice(bytes).map_err(|e| PlinkoError::Codec(e.to_string()))
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -88,3 +93,4 @@ mod tests {
         assert!(decode::<Workload>(&[0xc1]).is_err());
     }
 }
+// }}}

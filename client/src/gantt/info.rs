@@ -1,6 +1,7 @@
 //! What the panel says about the item under the pointer: its name as the title, then its details,
 //! in the way Plinko 1 worded them.
 
+// modules {{{
 use plinko::{
     multitenancy::tenant::Tenant,
     planner::plan::Plan,
@@ -12,7 +13,9 @@ use plinko::{
 };
 
 use crate::{format, forms, gantt::arrange::Mark, model::node_name};
+// }}}
 
+// fn status_label {{{
 pub fn status_label(status: Status) -> &'static str {
     match status {
         Status::NotStarted => "Not started",
@@ -22,7 +25,9 @@ pub fn status_label(status: Status) -> &'static str {
         Status::Dropped => "Dropped",
     }
 }
+// }}}
 
+// fn last_day {{{
 fn last_day(range: (chrono::NaiveDate, chrono::NaiveDate)) -> chrono::NaiveDate {
     range
         .1
@@ -30,7 +35,9 @@ fn last_day(range: (chrono::NaiveDate, chrono::NaiveDate)) -> chrono::NaiveDate 
         .filter(|d| *d >= range.0)
         .unwrap_or(range.0)
 }
+// }}}
 
+// fn worker_name {{{
 fn worker_name(tenant: &Tenant, plan: &Plan, worker: &Worker) -> String {
     let user = |id| {
         tenant
@@ -54,7 +61,9 @@ fn worker_name(tenant: &Tenant, plan: &Plan, worker: &Worker) -> String {
         Worker::Placeholder => "(unassigned)".to_string(),
     }
 }
+// }}}
 
+// fn info {{{
 pub fn info(
     tenant: &Tenant,
     plan: &Plan,
@@ -126,7 +135,9 @@ pub fn info(
     }
     lines
 }
+// }}}
 
+// fn violation {{{
 /// What the small warning beside an item says
 pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
     let Some(v) = state.and_then(|s| s.constraint_violations.get(&mark)) else {
@@ -150,3 +161,4 @@ pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
     }
     lines
 }
+// }}}

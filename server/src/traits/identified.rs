@@ -1,3 +1,4 @@
+// modules {{{
 use uuid::Uuid;
 
 use crate::{
@@ -18,6 +19,7 @@ use crate::{
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
     },
 };
+// }}}
 
 /// Update payloads that name the item they apply to
 pub trait Identified {
@@ -25,6 +27,7 @@ pub trait Identified {
     fn set_id(&mut self, id: Uuid);
 }
 
+// items {{{
 macro_rules! identified {
     ($($ty:ty),* $(,)?) => {
         $(impl Identified for $ty {
@@ -64,7 +67,9 @@ identified!(
     NewTenantUserGroup,
     TenantUserGroupPatch,
 );
+// }}}
 
+// impl NewRule {{{
 impl<V> Identified for NewRule<V> {
     fn id(&self) -> Uuid {
         self.id
@@ -73,7 +78,9 @@ impl<V> Identified for NewRule<V> {
         self.id = id;
     }
 }
+// }}}
 
+// impl RulePatch {{{
 impl<V> Identified for RulePatch<V> {
     fn id(&self) -> Uuid {
         self.id
@@ -82,3 +89,4 @@ impl<V> Identified for RulePatch<V> {
         self.id = id;
     }
 }
+// }}}

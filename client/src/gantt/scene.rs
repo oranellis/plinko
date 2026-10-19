@@ -1,6 +1,7 @@
 //! A plan turned into what the chart needs: its items arranged in lanes, and the ones that could
 //! not be placed because the scheduler gave them no dates.
 
+// modules {{{
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
@@ -19,6 +20,7 @@ use crate::{
     gantt::arrange::{Arrangement, Entry, Kind, Mark, Placed, arrange},
     model::{self, node_name},
 };
+// }}}
 
 /// An item with no place on the chart
 #[derive(Clone, Debug, PartialEq)]
@@ -28,6 +30,7 @@ pub struct Unplaced {
     pub reason: String,
 }
 
+// Unplaced supporting types {{{
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene {
     /// The day the chart counts from: today, or the first day of anything before it
@@ -39,7 +42,9 @@ pub struct Scene {
     /// Where each item is in the arrangement
     index: HashMap<Mark, usize>,
 }
+// }}}
 
+// impl Scene {{{
 impl Scene {
     /// A scene with nothing in it
     pub fn empty(origin: NaiveDate) -> Self {
@@ -56,7 +61,9 @@ impl Scene {
         self.arrangement.placed.get(*self.index.get(&mark)?)
     }
 }
+// }}}
 
+// fn kind_of {{{
 fn kind_of(node: PlanNode) -> Kind {
     match node {
         PlanNode::Task(_) => Kind::Task,
@@ -65,7 +72,9 @@ fn kind_of(node: PlanNode) -> Kind {
         PlanNode::TaskGroup(_) => Kind::Group,
     }
 }
+// }}}
 
+// fn build {{{
 pub fn build(
     plan: &Plan,
     state: Option<&PlanVolatileState>,
@@ -135,7 +144,9 @@ pub fn build(
         index,
     }
 }
+// }}}
 
+// Unplaced supporting types {{{
 struct Context<'a> {
     plan: &'a Plan,
     state: Option<&'a PlanVolatileState>,
@@ -144,7 +155,9 @@ struct Context<'a> {
     targets: &'a HashSet<PlanNode>,
     children: &'a HashMap<Parent, Vec<PlanNode>>,
 }
+// }}}
 
+// impl Context {{{
 impl Context<'_> {
     fn entries(&self, parent: Parent) -> Vec<Entry> {
         let nodes = self.children.get(&parent).into_iter().flatten().copied();
@@ -210,7 +223,9 @@ impl Context<'_> {
         (name, (span.0, span.1.max(span.0 + chrono::Days::new(1))))
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use plinko::{
@@ -303,3 +318,4 @@ mod tests {
         assert!(scene.unplaced[0].reason.contains("eligible"));
     }
 }
+// }}}

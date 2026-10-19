@@ -43,6 +43,7 @@ pub enum PlanUpdate {
     SchedulerData(PlanSchedulerDataPatch),
 }
 
+// impl PlanUpdate {{{
 impl PlanUpdate {
     /// Replaces the dependencies of an item and changes nothing else
     pub fn set_dependencies(node: PlanNode, dependencies: Vec<Dependency>) -> Self {
@@ -147,3 +148,4 @@ impl PlanUpdate {
         }
     }
 }
+// }}}

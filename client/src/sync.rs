@@ -2,6 +2,7 @@
 //! snapshot of what this user may see, then every update to it in order, which are applied with
 //! the same code the server runs, and the schedule when it has one.
 
+// modules {{{
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -21,6 +22,7 @@ use plinko::{
     scheduler::state::TenantVolatileState,
     types::short_id::ShortId,
 };
+// }}}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Link {
@@ -29,6 +31,7 @@ pub enum Link {
     Down,
 }
 
+// Link supporting types {{{
 type Then = Box<dyn FnOnce(Option<Created>)>;
 
 #[derive(Clone, Copy)]
@@ -47,7 +50,9 @@ pub struct Sync {
     /// Set to drop the connection and start again from a snapshot
     resync: StoredValue<bool>,
 }
+// }}}
 
+// impl Sync {{{
 impl Sync {
     pub fn new() -> Self {
         Self {
@@ -233,10 +238,13 @@ impl Default for Sync {
         Self::new()
     }
 }
+// }}}
 
+// fn socket_url {{{
 fn socket_url() -> String {
     let location = web_sys::window().expect("a browser").location();
     let secure = location.protocol().is_ok_and(|p| p == "https:");
     let host = location.host().unwrap_or_default();
     format!("{}://{host}/ws", if secure { "wss" } else { "ws" })
 }
+// }}}

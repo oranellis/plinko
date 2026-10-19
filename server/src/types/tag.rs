@@ -1,9 +1,11 @@
+// modules {{{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
 };
+// }}}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Tag {
@@ -42,6 +44,7 @@ impl Patchable<TagPatch> for Tag {
 }
 // }}}
 
+// Tag supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewTag {
     pub id: Uuid,
@@ -55,3 +58,4 @@ pub struct TagPatch {
     pub id: Uuid,
     pub name: Option<String>,
 }
+// }}}

@@ -8,6 +8,7 @@ pub struct DateRange {
     end: NaiveDate,
 }
 
+// impl DateRange {{{
 impl DateRange {
     /// `None` if `end` is before `start`
     pub fn new(start: NaiveDate, end: NaiveDate) -> Option<Self> {
@@ -22,7 +23,9 @@ impl DateRange {
         self.end
     }
 }
+// }}}
 
+// DateRange supporting types {{{
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub enum TimeConstraint {
     #[default]
@@ -39,7 +42,9 @@ pub struct ConstrainedStart {
     /// The constraint asks for something its dependencies do not allow
     pub violated: bool,
 }
+// }}}
 
+// impl TimeConstraint {{{
 impl TimeConstraint {
     /// The start a task or milestone gets when its dependencies allow `earliest`. The constraint
     /// date is the item's start. A fixed or latest date that is already passed cannot be met, so
@@ -54,7 +59,9 @@ impl TimeConstraint {
         ConstrainedStart { start, violated }
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,3 +88,4 @@ mod tests {
         assert_eq!(applied(Fixed(d(3)), 5), (d(5), true));
     }
 }
+// }}}

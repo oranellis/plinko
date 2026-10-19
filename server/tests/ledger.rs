@@ -1,14 +1,19 @@
+// modules {{{
 use chrono::NaiveDate;
 use plinko::{
     multitenancy::tenant::Tenant,
     scheduler::ledger::{Claim, Ledger, MAX_FILL_DAYS, Run},
     types::short_id::ShortId,
 };
+// }}}
 
+// fn d {{{
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
+// }}}
 
+// fn tenant_ledgers_start_with_each_users_calendar {{{
 #[test]
 fn tenant_ledgers_start_with_each_users_calendar() {
     let start = d(2024, 1, 1);
@@ -31,3 +36,4 @@ fn tenant_ledgers_start_with_each_users_calendar() {
     assert!(ledger.claim(&run));
     assert!(!ledger.claim(&run));
 }
+// }}}

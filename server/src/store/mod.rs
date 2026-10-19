@@ -2,6 +2,7 @@
 //! does not replay everything, and the logins (see `auth`). Rows are written once and the log is
 //! never rewritten, which makes the file an incremental backup of every change.
 
+// modules {{{
 pub mod auth;
 
 use std::{
@@ -16,19 +17,25 @@ use crate::{
     multitenancy::{tenant::Tenant, tenant_update::TenantUpdate},
     types::error::{PlinkoError, PlinkoResult},
 };
+// }}}
 
+// constants {{{
 /// A snapshot is taken every this many updates
 const SNAPSHOT_EVERY: u64 = 200;
 
 /// Snapshots older than the newest few are dropped
 const SNAPSHOTS_KEPT: u64 = 3;
+// }}}
 
+// impl PlinkoError {{{
 impl From<rusqlite::Error> for PlinkoError {
     fn from(error: rusqlite::Error) -> Self {
         PlinkoError::Store(error.to_string())
     }
 }
+// }}}
 
+// fn tenant_dir {{{
 /// Where a tenant keeps its files: `data/<name>` under the directory the server runs from. The
 /// name is a folder name, so it is only letters, digits, `-` and `_`.
 pub fn tenant_dir(name: &str) -> PlinkoResult<PathBuf> {
@@ -41,6 +48,7 @@ pub fn tenant_dir(name: &str) -> PlinkoResult<PathBuf> {
     }
     Ok(Path::new("data").join(name))
 }
+// }}}
 
 pub struct Store {
     pub(crate) db: Mutex<Connection>,
@@ -161,6 +169,7 @@ impl Store {
 }
 // }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,3 +182,4 @@ mod tests {
         }
     }
 }
+// }}}

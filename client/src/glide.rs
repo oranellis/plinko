@@ -1,17 +1,22 @@
 //! Momentum for scrolling sideways by wheel or touchpad: the scroll follows the gesture at once,
 //! and when it lets go the speed it had carries on and fades.
 
+// modules {{{
 use std::{cell::Cell, rc::Rc};
 
 use leptos::prelude::request_animation_frame;
+// }}}
 
+// constants {{{
 /// How long without a wheel event counts as having let go, in milliseconds
 const RELEASE_MS: f64 = 70.0;
 /// What is left of the speed after a frame of 1/60th of a second
 const KEPT: f64 = 0.93;
 /// Pixels per millisecond under which it stops, and under which a release does not carry on
 const STOP: f64 = 0.03;
+// }}}
 
+// fn speed {{{
 /// The speed after another wheel event of `delta` pixels, `dt` milliseconds after the last
 fn speed(before: f64, delta: f64, dt: f64) -> f64 {
     // a long pause is a new gesture
@@ -21,11 +26,14 @@ fn speed(before: f64, delta: f64, dt: f64) -> f64 {
     let now = delta / dt.max(4.0);
     0.5 * now + 0.5 * before
 }
+// }}}
 
+// fn fade {{{
 /// The speed a frame of `dt` milliseconds later
 fn fade(speed: f64, dt: f64) -> f64 {
     speed * KEPT.powf(dt.clamp(1.0, 50.0) / (1000.0 / 60.0))
 }
+// }}}
 
 #[derive(Clone)]
 pub struct Glide {
@@ -39,6 +47,7 @@ pub struct Glide {
     apply: Rc<dyn Fn(f64) -> bool>,
 }
 
+// impl Glide {{{
 impl Glide {
     pub fn new(apply: impl Fn(f64) -> bool + 'static) -> Self {
         Self {
@@ -94,7 +103,9 @@ impl Glide {
         request_animation_frame(move || this.frame(now));
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,3 +136,4 @@ mod tests {
         assert!(travelled < -150.0 && travelled > -600.0, "{travelled}");
     }
 }
+// }}}

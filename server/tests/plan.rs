@@ -1,3 +1,4 @@
+// modules {{{
 use plinko::{
     planner::{plan::*, plan_update::PlanUpdate},
     types::{
@@ -14,7 +15,9 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
+// fn create_plan {{{
 #[test]
 fn create_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -26,7 +29,9 @@ fn create_plan() {
     assert_eq!(plan.id().to_owned(), id);
     assert_eq!(plan.name(), "My Plan");
 }
+// }}}
 
+// fn add_task_to_plan {{{
 #[test]
 fn add_task_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -44,7 +49,9 @@ fn add_task_to_plan() {
     plan.apply_update(update).expect("should not error");
     assert!(plan.tasks().contains_key(&task_id));
 }
+// }}}
 
+// fn add_milestone_to_plan {{{
 #[test]
 fn add_milestone_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -62,7 +69,9 @@ fn add_milestone_to_plan() {
     plan.apply_update(update).expect("should not error");
     assert!(plan.milestones().contains_key(&milestone_id));
 }
+// }}}
 
+// fn add_user_to_plan {{{
 #[test]
 fn add_user_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -75,7 +84,9 @@ fn add_user_to_plan() {
     plan.apply_update(update).expect("should not error");
     assert!(plan.users().contains_key(&user_id));
 }
+// }}}
 
+// fn add_tag_to_plan {{{
 #[test]
 fn add_tag_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -92,7 +103,9 @@ fn add_tag_to_plan() {
     plan.apply_update(update).expect("should not error");
     assert!(plan.tags().contains_key(&tag_id));
 }
+// }}}
 
+// fn add_task_group_to_plan {{{
 #[test]
 fn add_task_group_to_plan() {
     let mut plan = new_plan();
@@ -109,7 +122,9 @@ fn add_task_group_to_plan() {
         .expect("should not error");
     assert!(plan.task_groups().is_empty());
 }
+// }}}
 
+// fn add_plan_buffer_to_plan {{{
 #[test]
 fn add_plan_buffer_to_plan() {
     let mut plan = new_plan();
@@ -123,14 +138,18 @@ fn add_plan_buffer_to_plan() {
         .expect("should not error");
     assert_eq!(*plan.plan_buffers()[&buffer_id].duration(), 5);
 }
+// }}}
 
+// fn new_plan {{{
 fn new_plan() -> Plan {
     Plan::from(NewPlan {
         id: ShortId::new(),
         name: "My Plan".to_owned(),
     })
 }
+// }}}
 
+// fn add_group {{{
 fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
     let id = Uuid::now_v7();
     let new = NewTaskGroup {
@@ -141,7 +160,9 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))?;
     Ok(id)
 }
+// }}}
 
+// fn set_group_parent {{{
 fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), PlinkoError> {
     let patch = TaskGroupPatch {
         id,
@@ -151,7 +172,9 @@ fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), Pli
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
 }
+// }}}
 
+// fn group_parents_reject_cycles_and_missing_groups {{{
 #[test]
 fn group_parents_reject_cycles_and_missing_groups() {
     let mut plan = new_plan();
@@ -168,7 +191,9 @@ fn group_parents_reject_cycles_and_missing_groups() {
     set_group_parent(&mut plan, leaf, Parent::Node(outer)).unwrap();
     assert_eq!(plan.task_groups()[&leaf].parent(), Parent::Node(outer));
 }
+// }}}
 
+// fn tasks_move_between_groups_and_block_group_removal {{{
 #[test]
 fn tasks_move_between_groups_and_block_group_removal() {
     let mut plan = new_plan();
@@ -207,3 +232,4 @@ fn tasks_move_between_groups_and_block_group_removal() {
     remove(&mut plan, a).unwrap();
     assert!(remove(&mut plan, b).is_err());
 }
+// }}}

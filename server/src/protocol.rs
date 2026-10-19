@@ -1,6 +1,7 @@
 //! The messages on the WebSocket, in the format of `codec`. A client sends updates and the server
 //! answers each, and sends everything that changes what that client may see.
 
+// modules {{{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -13,6 +14,7 @@ use crate::{
     scheduler::state::TenantVolatileState,
     types::{crud::Crud, short_id::ShortId},
 };
+// }}}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum ClientMessage {
@@ -23,6 +25,7 @@ pub enum ClientMessage {
     },
 }
 
+// ClientMessage supporting types {{{
 #[derive(Serialize, Deserialize)]
 pub enum ServerMessage {
     /// The tenant as `user` may see it after update `seq`, replacing what the client has. Sent
@@ -69,7 +72,9 @@ pub enum Created {
     Plan(ShortId),
     Item(Uuid),
 }
+// }}}
 
+// impl Created {{{
 impl Created {
     /// What the update adds, if it adds a plan or an item of one
     pub fn by(update: &TenantUpdateType) -> Option<Self> {
@@ -88,3 +93,4 @@ impl Created {
         }
     }
 }
+// }}}

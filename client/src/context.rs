@@ -1,5 +1,6 @@
 //! The bar of buttons under the item selected on the chart: its status, its data and editing it.
 
+// modules {{{
 use leptos::prelude::*;
 use plinko::{
     planner::plan_update::PlanUpdate,
@@ -17,7 +18,9 @@ use crate::{
     model,
     ui::use_sync,
 };
+// }}}
 
+// constants {{{
 /// Every status in the order the column lists them, with its icon and the colour it lights up in
 const STATUSES: [(Status, &str, IconKind, &str); 5] = [
     (
@@ -31,7 +34,9 @@ const STATUSES: [(Status, &str, IconKind, &str); 5] = [
     (Status::Completed, "Completed", IconKind::Tick, "#43c463"),
     (Status::Dropped, "Dropped", IconKind::Drop, "#8d6e63"),
 ];
+// }}}
 
+// fn next {{{
 /// Where a click on the status button takes a task: on towards done
 fn next(status: Status) -> Status {
     match status {
@@ -40,11 +45,15 @@ fn next(status: Status) -> Status {
         Status::Dropped => Status::NotStarted,
     }
 }
+// }}}
 
+// fn position {{{
 fn position(status: Status) -> usize {
     STATUSES.iter().position(|s| s.0 == status).unwrap_or(0)
 }
+// }}}
 
+// fn ContextBar {{{
 /// The bar, put where `left` and `top` say on the chart
 #[component]
 pub fn ContextBar(
@@ -73,7 +82,9 @@ pub fn ContextBar(
         </div>
     }
 }
+// }}}
 
+// fn StatusSwitch {{{
 /// One button showing where the task goes next, with the others a hover away
 #[component]
 fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
@@ -112,7 +123,9 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
         </div>
     }
 }
+// }}}
 
+// fn SetStart {{{
 /// The buffer's set start: set it to where it is scheduled, set it again, or nothing when it is right
 #[component]
 fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
@@ -181,7 +194,9 @@ fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
         </button>
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,3 +226,4 @@ mod tests {
         assert_eq!(position(Status::OnHold), 2);
     }
 }
+// }}}

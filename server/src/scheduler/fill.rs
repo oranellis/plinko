@@ -17,6 +17,7 @@ pub trait Hours {
     fn free(&self, who: Assignee, day: NaiveDate) -> Workload;
 }
 
+// Hours supporting types {{{
 /// A person working `hours` a day on a task
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Slot {
@@ -47,7 +48,9 @@ pub struct Filled {
     /// Whether all the effort found days before `Spec::stop`
     pub complete: bool,
 }
+// }}}
 
+// impl Filled {{{
 impl Filled {
     pub fn first(&self) -> Option<NaiveDate> {
         self.days
@@ -62,7 +65,9 @@ impl Filled {
         self.days.iter().filter_map(last).max()
     }
 }
+// }}}
 
+// Hours supporting types {{{
 #[derive(Clone, Copy, PartialEq)]
 enum Day {
     /// Someone cannot work a full block, which pauses the task without breaking a strict run
@@ -71,7 +76,9 @@ enum Day {
     Blocked,
     Free,
 }
+// }}}
 
+// impl Spec {{{
 impl Spec<'_> {
     fn days(&self) -> impl Iterator<Item = NaiveDate> {
         let stop = self.stop;
@@ -83,7 +90,9 @@ impl Spec<'_> {
         effort_done && self.through.is_none_or(|t| day > t)
     }
 }
+// }}}
 
+// fn fill {{{
 /// Places the slots from the start of the spec without changing anything. Strict tasks work whole
 /// blocks on the same days for every slot, and a blocked day restarts the run, whereas relaxed
 /// slots each take whatever is free.
@@ -93,7 +102,9 @@ pub fn fill(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
         ScheduleMode::Relaxed => relaxed(hours, slots, spec),
     }
 }
+// }}}
 
+// fn day_state {{{
 fn day_state(hours: &impl Hours, slots: &[Slot], mode: ScheduleMode, day: NaiveDate) -> Day {
     let mut blocked = false;
     for slot in slots {
@@ -104,7 +115,9 @@ fn day_state(hours: &impl Hours, slots: &[Slot], mode: ScheduleMode, day: NaiveD
     }
     if blocked { Day::Blocked } else { Day::Free }
 }
+// }}}
 
+// fn strict {{{
 fn strict(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
     let duration = spec.duration as usize;
     let mut days: Vec<NaiveDate> = Vec::new();
@@ -130,7 +143,9 @@ fn strict(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
             .collect(),
     }
 }
+// }}}
 
+// fn relaxed {{{
 fn relaxed(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
     let mut filled = Filled {
         days: Vec::new(),
@@ -164,7 +179,9 @@ fn relaxed(hours: &impl Hours, slots: &[Slot], spec: &Spec) -> Filled {
     }
     filled
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -358,3 +375,4 @@ mod tests {
         assert_eq!(days(&filled, 0), [1, 2, 5, 8]);
     }
 }
+// }}}

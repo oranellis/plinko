@@ -1,6 +1,7 @@
 //! Taking an item out of a plan without breaking the chains through it: what waited on it waits
 //! on what it waited on, and a group's members move up into the group's parent.
 
+// modules {{{
 use uuid::Uuid;
 
 use crate::{
@@ -20,7 +21,9 @@ use crate::{
         task_group::TaskGroup,
     },
 };
+// }}}
 
+// fn placed {{{
 fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<Dependency>) {
     T::entities(plan)
         .get(&id)
@@ -28,7 +31,9 @@ fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<Dependency>) {
             (item.parent(), item.dependencies().to_vec())
         })
 }
+// }}}
 
+// fn placement {{{
 /// Where an item is, and what it depends on
 pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>) {
     match node {
@@ -38,7 +43,9 @@ pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>
         PlanNode::TaskGroup(id) => placed::<TaskGroup>(plan, id),
     }
 }
+// }}}
 
+// fn all_nodes {{{
 pub(super) fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
     let mut nodes = [
         graph::nodes::<Task>(plan),
@@ -50,7 +57,9 @@ pub(super) fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
     nodes.sort_by_key(|n| n.id());
     nodes
 }
+// }}}
 
+// impl Plan {{{
 impl Plan {
     /// The updates that remove `node` and leave the rest of the plan connected, the last of them
     /// removes it. Whatever depended on it depends on what it depended on, with the lags added.
@@ -157,3 +166,4 @@ impl Plan {
         updates
     }
 }
+// }}}

@@ -17,6 +17,7 @@ use crate::{
 };
 // }}}
 
+// impl TenantLoginUser {{{
 impl Entity<Tenant> for TenantLoginUser {
     type New = NewTenantLoginUser;
     type Patch = TenantLoginUserPatch;
@@ -47,7 +48,9 @@ impl Entity<Tenant> for TenantLoginUser {
             || tenant.user_groups.values().any(|g| g.users().contains(&id))
     }
 }
+// }}}
 
+// impl TenantUserGroup {{{
 impl Entity<Tenant> for TenantUserGroup {
     type New = NewTenantUserGroup;
     type Patch = TenantUserGroupPatch;
@@ -87,3 +90,4 @@ impl Entity<Tenant> for TenantUserGroup {
             || tenant.user_groups.values().any(|g| g.parent() == Some(id))
     }
 }
+// }}}

@@ -19,6 +19,7 @@ pub enum Role {
     Member,
 }
 
+// Role supporting types {{{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TenantLoginUser {
     id: Uuid,
@@ -121,3 +122,4 @@ pub struct TenantLoginUserPatch {
     pub email: Option<String>,
     pub role: Option<Role>,
 }
+// }}}

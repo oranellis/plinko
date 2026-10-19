@@ -1,10 +1,12 @@
 //! Where the user is, kept in the address (`#/plan/AbCdEfGh/gantt`) so links and the back button
 //! work.
 
+// modules {{{
 use leptos::prelude::*;
 use plinko::types::short_id::ShortId;
 use uuid::Uuid;
 use wasm_bindgen::{JsCast, closure::Closure};
+// }}}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlanTab {
@@ -13,6 +15,7 @@ pub enum PlanTab {
     Settings,
 }
 
+// impl PlanTab {{{
 impl PlanTab {
     fn name(self) -> &'static str {
         match self {
@@ -28,7 +31,9 @@ impl PlanTab {
             .find(|t| t.name() == text)
     }
 }
+// }}}
 
+// PlanTab supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
     Home,
@@ -49,7 +54,9 @@ pub enum Availability {
     User(Uuid),
     Plan(ShortId),
 }
+// }}}
 
+// impl Route {{{
 impl Route {
     pub fn path(&self) -> String {
         match self {
@@ -99,17 +106,23 @@ impl Route {
         }
     }
 }
+// }}}
 
+// PlanTab supporting types {{{
 /// A task to show when the chart of its plan opens, asked for from another page
 #[derive(Clone, Copy)]
 pub struct Reveal(pub RwSignal<Option<(ShortId, Uuid)>>);
+// }}}
 
+// fn navigate {{{
 pub fn navigate(route: Route) {
     if let Some(window) = web_sys::window() {
         let _ = window.location().set_hash(&route.path());
     }
 }
+// }}}
 
+// fn use_route {{{
 /// The current route, following the address
 pub fn use_route() -> RwSignal<Route> {
     let read = || {
@@ -125,7 +138,9 @@ pub fn use_route() -> RwSignal<Route> {
     listener.forget();
     route
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,3 +172,4 @@ mod tests {
         assert_eq!(Route::parse("#/nowhere/at/all"), Route::Home);
     }
 }
+// }}}

@@ -6,6 +6,7 @@
 //! `solution_<plans>_<seed>.json` (every task's start and person) and checks the scheduler
 //! accepts it exactly: every task is fixed on that day with that person and must land there.
 
+// modules {{{
 use std::{
     collections::{HashMap, HashSet},
     time::Instant,
@@ -41,9 +42,11 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
 struct Random(u64);
 
+// impl Random {{{
 impl Random {
     fn below(&mut self, n: u64) -> u64 {
         self.0 = self
@@ -53,7 +56,9 @@ impl Random {
         (self.0 >> 33) % n
     }
 }
+// }}}
 
+// fn apply {{{
 fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
     let time = DateTime::from_timestamp(978307200, 0).unwrap();
     tenant
@@ -64,7 +69,9 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
         })
         .unwrap();
 }
+// }}}
 
+// Random supporting types {{{
 /// One task as made, for exporting
 struct Info {
     id: Uuid,
@@ -96,7 +103,9 @@ struct Opts {
     per_plan: usize,
     people: usize,
 }
+// }}}
 
+// fn make {{{
 /// Plans with layers of dense dependencies sharing people some of whom work part time or half
 /// days. `dates` sets hard dates on tasks and `pins` who does the tag and group work of a task.
 fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid, usize>) -> Made {
@@ -456,7 +465,9 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
         ends,
     }
 }
+// }}}
 
+// fn node_ids {{{
 fn node_ids(deps: &[Dependency]) -> Vec<Uuid> {
     deps.iter()
         .filter_map(|d| match d.node {
@@ -465,7 +476,9 @@ fn node_ids(deps: &[Dependency]) -> Vec<Uuid> {
         })
         .collect()
 }
+// }}}
 
+// fn export {{{
 fn export(
     world: &Made,
     state: &scheduler::state::TenantVolatileState,
@@ -540,7 +553,9 @@ fn export(
     );
     std::fs::write(path, json).unwrap();
 }
+// }}}
 
+// Random supporting types {{{
 #[derive(Default)]
 struct Score {
     dated: f64,
@@ -551,7 +566,9 @@ struct Score {
     delay: f64,
     seconds: f64,
 }
+// }}}
 
+// fn score {{{
 fn score(
     state: &scheduler::state::TenantVolatileState,
     since: NaiveDate,
@@ -573,7 +590,9 @@ fn score(
     }
     (violated, late, worst, end, delay)
 }
+// }}}
 
+// fn main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
         .skip(1)
@@ -665,7 +684,9 @@ fn main() {
         total.seconds / n
     );
 }
+// }}}
 
+// fn incremental {{{
 /// Makes `count` small edits one at a time, brings the schedule up to date after each as the server
 /// does and times it, then schedules the tenant afresh to see what the edits cost in quality
 fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
@@ -792,7 +813,9 @@ fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
         "  after them: {m1} missed {l1} days late plan end {e1}; scheduled afresh: {m2} missed {l2} days late plan end {e2}"
     );
 }
+// }}}
 
+// fn validate {{{
 /// Fixes every task on the day and with the person a solver chose and checks the scheduler puts
 /// each exactly there without missing a date or leaving anything out
 fn validate(
@@ -863,3 +886,4 @@ fn validate(
         path
     );
 }
+// }}}

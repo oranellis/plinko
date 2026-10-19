@@ -535,6 +535,8 @@ impl Tenant {
 }
 // }}}
 
+// fn allow {{{
 fn allow(permitted: bool, actor: Uuid) -> PlinkoResult<()> {
     permitted.then_some(()).ok_or(PlinkoError::Forbidden(actor))
 }
+// }}}

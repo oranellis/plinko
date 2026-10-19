@@ -1,3 +1,4 @@
+// modules {{{
 use std::collections::HashMap;
 
 use plinko::{
@@ -15,14 +16,18 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
+// fn new_plan {{{
 fn new_plan() -> Plan {
     Plan::from(NewPlan {
         id: ShortId::new(),
         name: "My Plan".to_owned(),
     })
 }
+// }}}
 
+// fn add_task {{{
 fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewTask {
@@ -33,7 +38,9 @@ fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
     plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
     id
 }
+// }}}
 
+// fn add_group {{{
 fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
     let id = Uuid::now_v7();
     let new = NewTaskGroup {
@@ -45,14 +52,18 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
         .unwrap();
     id
 }
+// }}}
 
+// fn depend {{{
 fn depend(nodes: &[DependencyNode]) -> Vec<Dependency> {
     nodes
         .iter()
         .map(|&node| Dependency { node, lag: 0 })
         .collect()
 }
+// }}}
 
+// fn task_patch {{{
 fn task_patch(id: Uuid) -> TaskPatch {
     TaskPatch {
         id,
@@ -68,7 +79,9 @@ fn task_patch(id: Uuid) -> TaskPatch {
         persistent_state: None,
     }
 }
+// }}}
 
+// helpers {{{
 fn set_task_deps(plan: &mut Plan, id: Uuid, nodes: &[DependencyNode]) -> PlinkoResult<()> {
     let patch = TaskPatch {
         dependencies: Some(depend(nodes)),
@@ -96,7 +109,9 @@ fn group_node(id: Uuid) -> DependencyNode {
 fn remove_task(plan: &mut Plan, id: Uuid) -> PlinkoResult<()> {
     plan.apply_update(PlanUpdate::Task(Crud::Remove(id)))
 }
+// }}}
 
+// fn dependency_on_missing_node_is_rejected {{{
 #[test]
 fn dependency_on_missing_node_is_rejected() {
     let mut plan = new_plan();
@@ -105,7 +120,9 @@ fn dependency_on_missing_node_is_rejected() {
     assert!(set_task_deps(&mut plan, task, &[missing]).is_err());
     assert!(plan.tasks()[&task].dependencies().is_empty());
 }
+// }}}
 
+// fn dependency_cycles_are_rejected_and_rolled_back {{{
 #[test]
 fn dependency_cycles_are_rejected_and_rolled_back() {
     let mut plan = new_plan();
@@ -121,7 +138,9 @@ fn dependency_cycles_are_rejected_and_rolled_back() {
     assert!(plan.tasks()[&a].dependencies().is_empty());
     set_task_deps(&mut plan, a, &[DependencyNode::ParentStart]).unwrap();
 }
+// }}}
 
+// fn group_end_waits_on_members {{{
 #[test]
 fn group_end_waits_on_members() {
     let mut plan = new_plan();
@@ -149,7 +168,9 @@ fn group_end_waits_on_members() {
     assert!(set_task_parent(&mut plan, dependent, Parent::Node(group)).is_err());
     assert_eq!(plan.tasks()[&dependent].parent(), Parent::Plan);
 }
+// }}}
 
+// fn members_anchor_to_group_start {{{
 #[test]
 fn members_anchor_to_group_start() {
     let mut plan = new_plan();
@@ -167,7 +188,9 @@ fn members_anchor_to_group_start() {
     let update = PlanUpdate::TaskGroup(Crud::Update(patch));
     assert!(plan.apply_update(update).is_err());
 }
+// }}}
 
+// fn referenced_items_cannot_be_removed {{{
 #[test]
 fn referenced_items_cannot_be_removed() {
     let mut plan = new_plan();
@@ -180,7 +203,9 @@ fn referenced_items_cannot_be_removed() {
     set_task_deps(&mut plan, b, &[]).unwrap();
     remove_task(&mut plan, a).unwrap();
 }
+// }}}
 
+// fn allocated_tags_must_exist_and_cannot_be_removed {{{
 #[test]
 fn allocated_tags_must_exist_and_cannot_be_removed() {
     let mut plan = new_plan();
@@ -208,6 +233,7 @@ fn allocated_tags_must_exist_and_cannot_be_removed() {
     let remove = PlanUpdate::Tag(Crud::Remove(tag));
     plan.apply_update(remove).unwrap();
 }
+// }}}
 
 // simplification {{{
 fn lagged(node: DependencyNode, lag: i32) -> Dependency {
@@ -409,6 +435,7 @@ fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
 }
 // }}}
 
+// mod moving {{{
 mod moving {
     use plinko::planner::plan_update::PlanUpdate;
     use plinko::{
@@ -513,3 +540,4 @@ mod moving {
         );
     }
 }
+// }}}

@@ -13,6 +13,7 @@ pub trait DayValue: Copy + Debug + Default + PartialEq + 'static {
     fn default_week() -> [Self; 7];
 }
 
+// impl Workload {{{
 impl DayValue for Workload {
     fn is_working(&self) -> bool {
         self.get() >= 1
@@ -22,7 +23,9 @@ impl DayValue for Workload {
         [8, 8, 8, 8, 8, 0, 0].map(|h| Workload::new(h).expect("default hours are valid"))
     }
 }
+// }}}
 
+// impl bool {{{
 impl DayValue for bool {
     fn is_working(&self) -> bool {
         *self
@@ -32,3 +35,4 @@ impl DayValue for bool {
         [true; 7]
     }
 }
+// }}}

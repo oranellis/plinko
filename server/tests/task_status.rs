@@ -1,3 +1,4 @@
+// modules {{{
 use chrono::{DateTime, NaiveDate};
 use plinko::{
     multitenancy::{
@@ -14,10 +15,13 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
+// fn d {{{
 fn d(day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2024, 1, day).unwrap()
 }
+// }}}
 
 struct Setup {
     tenant: Tenant,
@@ -26,6 +30,7 @@ struct Setup {
     task: Uuid,
 }
 
+// fn apply {{{
 fn apply(setup: &mut Setup, update_type: TenantUpdateType) -> PlinkoResult<()> {
     setup.tenant.apply_update(TenantUpdate {
         time: DateTime::from_timestamp(978307200, 0).unwrap(),
@@ -33,7 +38,9 @@ fn apply(setup: &mut Setup, update_type: TenantUpdateType) -> PlinkoResult<()> {
         update_type,
     })
 }
+// }}}
 
+// fn setup {{{
 fn setup() -> Setup {
     let tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), d(1));
     let root = *tenant.users().keys().next().unwrap();
@@ -62,11 +69,15 @@ fn setup() -> Setup {
     apply(&mut setup, TenantUpdateType::Plan(update)).unwrap();
     setup
 }
+// }}}
 
+// fn set_today {{{
 fn set_today(setup: &mut Setup, day: u32) {
     apply(setup, TenantUpdateType::SetToday(d(day))).unwrap();
 }
+// }}}
 
+// fn set_state {{{
 fn set_state(setup: &mut Setup, state: PersistentState) {
     let patch = TaskPatch {
         id: setup.task,
@@ -85,7 +96,9 @@ fn set_state(setup: &mut Setup, state: PersistentState) {
     let update = PlanTenantUpdate::Update(setup.plan, Box::new(update));
     apply(setup, TenantUpdateType::Plan(update)).unwrap();
 }
+// }}}
 
+// helpers {{{
 fn state(setup: &Setup) -> PersistentState {
     setup.tenant.plans()[&setup.plan].tasks()[&setup.task].persistent_state()
 }
@@ -97,7 +110,9 @@ fn with(status: Status, start: Option<u32>, end: Option<u32>) -> PersistentState
         actual_end_date: end.map(d),
     }
 }
+// }}}
 
+// fn task_status_and_actual_dates_can_be_set {{{
 #[test]
 fn task_status_and_actual_dates_can_be_set() {
     let mut s = setup();
@@ -107,7 +122,9 @@ fn task_status_and_actual_dates_can_be_set() {
     set_state(&mut s, with(Status::Completed, Some(2), Some(9)));
     assert_eq!(state(&s), with(Status::Completed, Some(2), Some(9)));
 }
+// }}}
 
+// fn putting_a_task_on_hold_ends_it_today_and_resuming_clears_the_end {{{
 #[test]
 fn putting_a_task_on_hold_ends_it_today_and_resuming_clears_the_end() {
     let mut s = setup();
@@ -124,7 +141,9 @@ fn putting_a_task_on_hold_ends_it_today_and_resuming_clears_the_end() {
     set_state(&mut s, with(Status::InProgress, Some(2), Some(5)));
     assert_eq!(state(&s), with(Status::InProgress, Some(2), None));
 }
+// }}}
 
+// fn started_and_completed_tasks_default_their_dates_to_today {{{
 #[test]
 fn started_and_completed_tasks_default_their_dates_to_today() {
     let mut s = setup();
@@ -140,7 +159,9 @@ fn started_and_completed_tasks_default_their_dates_to_today() {
     set_state(&mut s, with(Status::Completed, Some(2), Some(4)));
     assert_eq!(state(&s), with(Status::Completed, Some(2), Some(4)));
 }
+// }}}
 
+// helpers {{{
 #[test]
 fn an_end_date_sent_with_the_hold_is_kept() {
     let mut s = setup();
@@ -156,3 +177,4 @@ fn the_clock_moves_by_update() {
     set_today(&mut s, 7);
     assert_eq!(s.tenant.today(), d(7));
 }
+// }}}

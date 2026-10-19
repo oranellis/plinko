@@ -1,3 +1,4 @@
+// modules {{{
 use chrono::{DateTime, NaiveDate, Utc};
 use plinko::{
     multitenancy::{
@@ -17,9 +18,13 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
+// constants {{{
 const CLIENT_ID: Uuid = Uuid::nil();
+// }}}
 
+// helpers {{{
 fn day(d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(2024, 1, d).unwrap()
 }
@@ -27,7 +32,9 @@ fn day(d: u32) -> NaiveDate {
 fn time() -> DateTime<Utc> {
     DateTime::from_timestamp(978307200, 0).unwrap()
 }
+// }}}
 
+// fn patch {{{
 fn patch(id: Uuid) -> TaskPatch {
     TaskPatch {
         id,
@@ -43,7 +50,9 @@ fn patch(id: Uuid) -> TaskPatch {
         persistent_state: None,
     }
 }
+// }}}
 
+// fn updates_are_staged_applied_and_scheduled {{{
 #[test]
 fn updates_are_staged_applied_and_scheduled() {
     let mut tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), day(1));
@@ -135,3 +144,4 @@ fn updates_are_staged_applied_and_scheduled() {
     assert_eq!(tenant.today(), day(1));
     assert_eq!(tenant.schedule(), Some(&before));
 }
+// }}}

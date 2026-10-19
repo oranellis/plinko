@@ -13,6 +13,7 @@ use crate::{
 };
 // }}}
 
+// constants {{{
 /// A single node around the items whose `parent` is this group (tasks, milestones, buffers and
 /// nested groups). Its dependencies decide the day members can start (`ParentStart`). The group
 /// then covers the first member's start to the last member's end, so it begins with its first
@@ -20,6 +21,7 @@ use crate::{
 /// days instead, and that stops applying as soon as a member is added.
 /// How many calendar days a group with no members lasts
 pub const EMPTY_DAYS: i64 = 3;
+// }}}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TaskGroup {
@@ -109,6 +111,7 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
 }
 // }}}
 
+// TaskGroup supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewTaskGroup {
     pub id: Uuid,
@@ -129,7 +132,9 @@ pub struct TaskGroupPatch {
 pub struct VolatileState {
     pub date_range: DateRange,
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,3 +177,4 @@ mod tests {
         assert_eq!(group().place(d(3), &[range(3, 4)]), Some(range(3, 4)));
     }
 }
+// }}}

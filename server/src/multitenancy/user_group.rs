@@ -1,6 +1,8 @@
+// modules {{{
 use crate::helpers::double_option;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+// }}}
 
 // modules {{{
 use uuid::Uuid;
@@ -68,6 +70,7 @@ impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
 }
 // }}}
 
+// TenantUserGroup supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewTenantUserGroup {
     pub id: Uuid,
@@ -88,3 +91,4 @@ pub struct TenantUserGroupPatch {
     pub parent: Option<Option<Uuid>>,
     pub users: Option<HashSet<Uuid>>,
 }
+// }}}

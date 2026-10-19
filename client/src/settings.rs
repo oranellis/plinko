@@ -1,6 +1,7 @@
 //! A plan's settings: what new items start from, its targets, who is in it and how they are tagged, the days
 //! work may be done on, and removing it.
 
+// modules {{{
 use std::collections::HashSet;
 
 use leptos::prelude::*;
@@ -24,7 +25,9 @@ use crate::{
     nav::{Availability, Route, navigate},
     ui::{Choice, Field, Number, Picker, Select, Text, use_sync},
 };
+// }}}
 
+// fn PlanSettings {{{
 #[component]
 pub fn PlanSettings(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -114,7 +117,9 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
     }
     .into_any()
 }
+// }}}
 
+// fn Targets {{{
 #[component]
 fn Targets(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -202,7 +207,9 @@ fn Targets(plan: ShortId) -> impl IntoView {
         </section>
     }
 }
+// }}}
 
+// fn People {{{
 #[component]
 fn People(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -339,7 +346,9 @@ fn People(plan: ShortId) -> impl IntoView {
         </section>
     }
 }
+// }}}
 
+// fn Tags {{{
 #[component]
 fn Tags(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -386,7 +395,9 @@ fn Tags(plan: ShortId) -> impl IntoView {
         </section>
     }
 }
+// }}}
 
+// fn Affinities {{{
 #[component]
 fn Affinities(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -438,3 +449,4 @@ fn Affinities(plan: ShortId) -> impl IntoView {
         })}
     }
 }
+// }}}

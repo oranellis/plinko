@@ -7,6 +7,7 @@ pub struct Workload {
     value: u8,
 }
 
+// impl Workload {{{
 impl Workload {
     pub fn new(value: u8) -> PlinkoResult<Self> {
         if value <= 8 {
@@ -20,13 +21,17 @@ impl Workload {
         self.value
     }
 }
+// }}}
 
+// impl u8 {{{
 impl From<Workload> for u8 {
     fn from(workload: Workload) -> Self {
         workload.value
     }
 }
+// }}}
 
+// impl Workload {{{
 impl TryFrom<u8> for Workload {
     type Error = PlinkoError;
 
@@ -34,7 +39,9 @@ impl TryFrom<u8> for Workload {
         Self::new(value)
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,3 +59,4 @@ mod tests {
         assert!(Workload::new(9).is_err());
     }
 }
+// }}}

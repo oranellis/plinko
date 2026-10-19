@@ -23,6 +23,7 @@ use crate::{
 };
 // }}}
 
+// constants {{{
 /// The most rounds of repair, each takes the best change that improves the result
 const MAX_ROUNDS: usize = 24;
 
@@ -31,6 +32,7 @@ const DEMOTE_ROOM: i64 = 7;
 
 /// A person booked this much of their time is a bottleneck for work that waits on them
 const BOTTLENECK_LOAD: f32 = 0.9;
+// }}}
 
 /// What rounds have changed in one plan
 #[derive(Clone, Default)]
@@ -42,6 +44,7 @@ pub struct PlanRepairs {
     pub urgent: HashSet<PlanNode>,
 }
 
+// PlanRepairs supporting types {{{
 /// What rounds have changed, for each plan in the order they are scheduled in
 #[derive(Clone)]
 pub struct Repairs {
@@ -71,7 +74,9 @@ pub struct Outcome {
     /// How many hard dates are missed, and by how many days in all
     missed: (i64, i64),
 }
+// }}}
 
+// impl Repairs {{{
 impl Repairs {
     /// What was changed in the plan at this position
     pub fn of(&self, plan: usize) -> PlanRepairs {
@@ -92,7 +97,9 @@ impl Repairs {
         }
     }
 }
+// }}}
 
+// impl Outcome {{{
 impl Outcome {
     /// The worst effective delay, then the total, lower is better
     fn objective(&self) -> (i64, i64, i64, i64) {
@@ -112,7 +119,9 @@ impl Outcome {
         behind.filter(|r| Some(r.effective) == worst).collect()
     }
 }
+// }}}
 
+// fn run {{{
 fn run(
     tenant: &Tenant,
     ids: &[ShortId],
@@ -169,7 +178,9 @@ fn run(
         missed,
     }
 }
+// }}}
 
+// fn bump {{{
 /// Makes each worst target more urgent by as many days as it is late
 fn bump(worst: &[&Reached], repairs: &Repairs) -> Repairs {
     let mut next = repairs.clone();
@@ -178,7 +189,9 @@ fn bump(worst: &[&Reached], repairs: &Repairs) -> Repairs {
     }
     next
 }
+// }}}
 
+// fn rebalance {{{
 /// Hard dates made earlier by as many days as they were missed and the ones that were kept with
 /// room to spare later by half that room, so the work that keeps them gives way to the work that
 /// missed, `None` if nothing was missed
@@ -220,7 +233,9 @@ fn rebalance(
     }
     Some(next)
 }
+// }}}
 
+// fn dated_nodes {{{
 /// The tasks of a plan with a Fixed or Latest date
 fn dated_nodes(plan: &crate::planner::plan::Plan) -> Vec<PlanNode> {
     plan.tasks()
@@ -245,7 +260,9 @@ fn dated_nodes(plan: &crate::planner::plan::Plan) -> Vec<PlanNode> {
         )
         .collect()
 }
+// }}}
 
+// fn escalate {{{
 /// Makes the hard dates that were missed urgent, `None` if they all are
 fn escalate(outcome: &Outcome, repairs: &Repairs) -> Option<Repairs> {
     let mut next = repairs.clone();
@@ -259,7 +276,9 @@ fn escalate(outcome: &Outcome, repairs: &Repairs) -> Option<Repairs> {
     }
     changed.then_some(next)
 }
+// }}}
 
+// fn demote {{{
 /// Takes hard dates that were kept with room to spare out of the ones that go first, `None` if
 /// there are none
 fn demote(
@@ -289,7 +308,9 @@ fn demote(
     }
     changed.then_some(next)
 }
+// }}}
 
+// fn reassign {{{
 /// Moves tag and group work off the bottleneck people the worst targets wait on, to whoever
 /// eligible is least booked, `None` if there is nothing to move
 fn reassign(
@@ -357,7 +378,9 @@ fn reassign(
     }
     changed.then_some(next)
 }
+// }}}
 
+// fn solve {{{
 /// Schedules the plans, in the order given, then repairs the result in rounds. A round tries
 /// making the worst targets more urgent and moving work off the bottleneck people they wait on,
 /// each by rescheduling everything, and keeps the better one if it beats the worst effective delay
@@ -403,7 +426,9 @@ pub fn solve(
     // the rounds compare schedules without compaction, which only fills room in the end
     run(tenant, ids, baselines, &best.repairs, true)
 }
+// }}}
 
+// fn improve {{{
 /// Repairs a schedule in rounds, each tries the changes below, scheduling everything again for
 /// each, and keeps the best that beats the objective
 fn improve(
@@ -453,3 +478,4 @@ fn improve(
     }
     best
 }
+// }}}

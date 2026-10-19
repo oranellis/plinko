@@ -1,5 +1,6 @@
 //! Moving an item into, out of or between task groups without breaking the chains around it.
 
+// modules {{{
 use crate::{
     planner::{
         plan::Plan,
@@ -11,7 +12,9 @@ use crate::{
         parent::Parent,
     },
 };
+// }}}
 
+// impl Plan {{{
 impl Plan {
     /// Whether `node` is `group` or sits somewhere inside it
     fn is_within(&self, node: PlanNode, group: PlanNode) -> bool {
@@ -109,3 +112,4 @@ impl Plan {
         Ok(updates)
     }
 }
+// }}}

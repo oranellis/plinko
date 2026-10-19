@@ -2,6 +2,7 @@
 //! can be given, at most one of each kind: a to-do list, links and a budget. Changes are saved as
 //! each box is left.
 
+// modules {{{
 use leptos::prelude::*;
 use plinko::{
     planner::{plan::Plan, plan_update::PlanUpdate},
@@ -21,14 +22,18 @@ use crate::{
     model::node_name,
     ui::{IconButton, Modal, use_sync},
 };
+// }}}
 
+// constants {{{
 /// The kinds of block, in the order they are listed, with what they are called
 const KINDS: [(&str, &str); 3] = [
     ("todo", "To-do list"),
     ("links", "Links"),
     ("budget", "Budget"),
 ];
+// }}}
 
+// fn kind_of {{{
 fn kind_of(content: &BlockContent) -> &'static str {
     match content {
         BlockContent::TodoList(_) => "todo",
@@ -36,7 +41,9 @@ fn kind_of(content: &BlockContent) -> &'static str {
         BlockContent::Budget(_) => "budget",
     }
 }
+// }}}
 
+// fn empty {{{
 fn empty(kind: &str) -> BlockContent {
     match kind {
         "links" => BlockContent::Links(Vec::new()),
@@ -48,7 +55,9 @@ fn empty(kind: &str) -> BlockContent {
         _ => BlockContent::TodoList(Vec::new()),
     }
 }
+// }}}
 
+// fn data_of {{{
 /// What an item says about itself: its description, and the data blocks it holds
 fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
     let (description, blocks) = match node {
@@ -75,12 +84,16 @@ fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
     });
     Some((description.unwrap_or_default().to_string(), blocks))
 }
+// }}}
 
+// fn has_data {{{
 /// Whether an item can hold data, which buffers cannot
 pub fn has_data(node: PlanNode) -> bool {
     !matches!(node, PlanNode::PlanBuffer(_))
 }
+// }}}
 
+// fn DataWindow {{{
 #[component]
 pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
@@ -151,7 +164,9 @@ pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
         </Modal>
     }
 }
+// }}}
 
+// fn BlockEditor {{{
 /// One block, saved as each box in it is left
 #[component]
 fn BlockEditor(plan: ShortId, node: PlanNode, block: DataBlock) -> impl IntoView {
@@ -190,7 +205,9 @@ fn BlockEditor(plan: ShortId, node: PlanNode, block: DataBlock) -> impl IntoView
         </section>
     }
 }
+// }}}
 
+// fn Todos {{{
 #[component]
 fn Todos(items: Vec<TodoItem>, send: Callback<BlockContent>) -> impl IntoView {
     let items = RwSignal::new(items);
@@ -229,7 +246,9 @@ fn Todos(items: Vec<TodoItem>, send: Callback<BlockContent>) -> impl IntoView {
         }>"+ Add item"</button>
     }
 }
+// }}}
 
+// fn Links {{{
 #[component]
 fn Links(links: Vec<Link>, send: Callback<BlockContent>) -> impl IntoView {
     let links = RwSignal::new(links);
@@ -270,7 +289,9 @@ fn Links(links: Vec<Link>, send: Callback<BlockContent>) -> impl IntoView {
         }>"+ Add link"</button>
     }
 }
+// }}}
 
+// helpers {{{
 /// Money is kept in minor units, shown here as the main unit with two decimals
 fn shown(minor: i64) -> String {
     format!("{}.{:02}", minor / 100, (minor % 100).abs())
@@ -280,7 +301,9 @@ fn parsed(text: &str) -> i64 {
     let value: f64 = text.trim().parse().unwrap_or(0.0);
     (value * 100.0).round() as i64
 }
+// }}}
 
+// fn Money {{{
 #[component]
 fn Money(budget: Budget, send: Callback<BlockContent>) -> impl IntoView {
     let planned = RwSignal::new(shown(budget.planned));
@@ -310,7 +333,9 @@ fn Money(budget: Budget, send: Callback<BlockContent>) -> impl IntoView {
         </label>
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,3 +356,4 @@ mod tests {
         }
     }
 }
+// }}}

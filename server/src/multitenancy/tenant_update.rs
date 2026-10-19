@@ -23,6 +23,7 @@ pub struct TenantUpdate {
     pub update_type: TenantUpdateType,
 }
 
+// TenantUpdate supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub enum TenantUpdateType {
     User(Crud<NewTenantLoginUser, TenantLoginUserPatch>),
@@ -43,7 +44,9 @@ pub enum PlanTenantUpdate {
     /// Mutate the contents of an existing plan
     Update(ShortId, Box<PlanUpdate>),
 }
+// }}}
 
+// impl TenantUpdateType {{{
 impl TenantUpdateType {
     /// Gives everything the update creates a fresh id, replacing whatever a client sent. A server
     /// handler calls this before building the `TenantUpdate` it applies and logs.
@@ -57,7 +60,9 @@ impl TenantUpdateType {
         }
     }
 }
+// }}}
 
+// impl PlanTenantUpdate {{{
 impl PlanTenantUpdate {
     fn assign_ids(&mut self) {
         match self {
@@ -67,3 +72,4 @@ impl PlanTenantUpdate {
         }
     }
 }
+// }}}

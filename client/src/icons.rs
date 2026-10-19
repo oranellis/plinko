@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 
+// fn Icon {{{
 #[component]
 pub fn Icon(
     /// Which icon
@@ -181,6 +182,7 @@ pub fn Icon(
         </svg>
     }
 }
+// }}}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IconKind {

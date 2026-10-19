@@ -2,6 +2,7 @@
 //! chart starts, and everything is a day offset from it. Drawing and the pointer both go through
 //! here, so what is drawn is what is hit.
 
+// constants {{{
 pub const ROW_HEIGHT: f64 = 36.0;
 pub const HEADER_HEIGHT: f64 = 56.0;
 /// The month row of the header, the day row is the rest
@@ -13,6 +14,7 @@ pub const MAX_DAY_WIDTH: f64 = 80.0;
 pub const BAR_INSET_Y: f64 = 6.0;
 /// The thinnest a bar is drawn
 pub const MIN_BAR_WIDTH: f64 = 4.0;
+// }}}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
@@ -22,12 +24,15 @@ pub struct Rect {
     pub h: f64,
 }
 
+// impl Rect {{{
 impl Rect {
     pub fn contains(&self, x: f64, y: f64) -> bool {
         x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
     }
 }
+// }}}
 
+// Rect supporting types {{{
 /// The size of the canvas and how much there is to scroll over
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bounds {
@@ -47,7 +52,9 @@ pub struct Viewport {
     pub scroll_y: f64,
     pub day_width: f64,
 }
+// }}}
 
+// impl Viewport {{{
 impl Default for Viewport {
     fn default() -> Self {
         Self {
@@ -155,7 +162,9 @@ impl Viewport {
         self.start_centre(end - 1.0, lane)
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,3 +253,4 @@ mod tests {
         assert_eq!(view.end_centre(5.0, 1).0, 4.0 * DAY_WIDTH + DAY_WIDTH / 2.0);
     }
 }
+// }}}

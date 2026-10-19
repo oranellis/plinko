@@ -27,11 +27,14 @@ pub struct RuleSet<V> {
     pub(super) rules: HashMap<Uuid, Rule<V>>,
 }
 
+// RuleSet supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub enum RuleSetUpdate<V> {
     Rule(Crud<NewRule<V>, RulePatch<V>>),
 }
+// }}}
 
+// impl RuleSetUpdate {{{
 impl<V> RuleSetUpdate<V> {
     /// Gives any new rule a fresh id, see `Crud::assign_id`
     pub fn assign_ids(&mut self) {
@@ -40,6 +43,7 @@ impl<V> RuleSetUpdate<V> {
         }
     }
 }
+// }}}
 
 // impl RuleSet{{{
 impl<V: DayValue> Default for RuleSet<V> {
@@ -78,6 +82,7 @@ impl<V: DayValue> RuleSet<V> {
 }
 // }}}
 
+// impl Rule {{{
 impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
     type New = NewRule<V>;
     type Patch = RulePatch<V>;
@@ -125,11 +130,15 @@ impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
         id == DEFAULT_RULE
     }
 }
+// }}}
 
+// fn is_weekly {{{
 fn is_weekly<V>(kind: &RuleKind<V>) -> bool {
     matches!(kind, RuleKind::Weekly(_) | RuleKind::ResetWeekly)
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -542,3 +551,4 @@ mod tests {
         assert_eq!(results, [true, false, false, true]);
     }
 }
+// }}}

@@ -3,6 +3,7 @@
 //! dependencies of the item under the pointer as lines behind the bars. It draws from what it is
 //! given and keeps no state, and it hands back where everything ended up so the pointer can hit it.
 
+// modules {{{
 use crate::gantt::pen::Pen;
 use chrono::{Datelike, NaiveDate, Weekday};
 use plinko::types::dependency::PlanNode;
@@ -17,7 +18,9 @@ use crate::{
     },
     model::Look,
 };
+// }}}
 
+// constants {{{
 const BACKGROUND: &str = "#1e1e1e";
 const HEADER: &str = "#252526";
 const WEEKEND: &str = "#1e1e1e";
@@ -39,7 +42,9 @@ const PROBLEM: &str = "#e65100";
 const GROUP_FILL: &str = "rgba(255,255,255,0.035)";
 const GROUP_LINE: &str = "#4a4a4c";
 const RADIUS: f64 = 6.0;
+// }}}
 
+// fn look_colour {{{
 fn look_colour(look: Look) -> &'static str {
     match look {
         Look::NotStarted => "#555555",
@@ -48,7 +53,9 @@ fn look_colour(look: Look) -> &'static str {
         Look::Completed => "#66bb6a",
     }
 }
+// }}}
 
+// fn milestone_colour {{{
 fn milestone_colour(look: Look) -> &'static str {
     match look {
         Look::Completed => "#66bb6a",
@@ -56,6 +63,7 @@ fn milestone_colour(look: Look) -> &'static str {
         _ => "#888888",
     }
 }
+// }}}
 
 /// Everything one frame needs
 pub struct Frame<'a> {
@@ -77,6 +85,7 @@ pub struct Frame<'a> {
     pub tip: Option<(&'a [String], (f64, f64))>,
 }
 
+// Frame supporting types {{{
 /// Where the things drawn are, for hit testing
 #[derive(Default)]
 pub struct Hits {
@@ -87,7 +96,9 @@ pub struct Hits {
     /// How far the layers they were found on are from the screen now
     pub offset: (f64, f64),
 }
+// }}}
 
+// impl Hits {{{
 impl Hits {
     fn shifted(&self, r: Rect) -> Rect {
         Rect {
@@ -134,7 +145,9 @@ impl Hits {
             .map(|(m, strip, arrow)| (*m, self.shifted(*strip), self.shifted(*arrow)))
     }
 }
+// }}}
 
+// Frame supporting types {{{
 /// Text that is drawn on top of the layers, since what it looks like depends on the pointer
 pub struct Label {
     pub mark: Mark,
@@ -161,7 +174,9 @@ struct Geometry {
     start: (f64, f64),
     end: (f64, f64),
 }
+// }}}
 
+// fn path_round {{{
 fn path_round(ctx: &Pen, r: Rect, radius: f64) {
     let radius = radius.min(r.w / 2.0).min(r.h / 2.0);
     ctx.begin_path();
@@ -176,7 +191,9 @@ fn path_round(ctx: &Pen, r: Rect, radius: f64) {
     ctx.quadratic_curve_to(r.x, r.y, r.x + radius, r.y);
     ctx.close_path();
 }
+// }}}
 
+// fn path_diamond {{{
 fn path_diamond(ctx: &Pen, cx: f64, cy: f64, r: f64) {
     ctx.begin_path();
     ctx.move_to(cx, cy - r);
@@ -185,7 +202,9 @@ fn path_diamond(ctx: &Pen, cx: f64, cy: f64, r: f64) {
     ctx.line_to(cx - r, cy);
     ctx.close_path();
 }
+// }}}
 
+// helpers {{{
 fn text(ctx: &Pen, colour: &str, font: &str, words: &str, x: f64, y: f64) {
     ctx.set_fill_style_str(colour);
     ctx.set_font(font);
@@ -197,7 +216,9 @@ fn clip_rect(ctx: &Pen, r: Rect) {
     ctx.rect(r.x, r.y, r.w, r.h);
     ctx.clip();
 }
+// }}}
 
+// Frame supporting types {{{
 /// The border an item gets for what it is to the item under the pointer or for being found
 /// What is outlined besides the item under the pointer
 struct Marked {
@@ -208,7 +229,9 @@ struct Marked {
     /// The ends of the chain from the selected item to the one under the pointer
     chain: Vec<Mark>,
 }
+// }}}
 
+// impl Marked {{{
 impl Marked {
     fn of(frame: &Frame) -> Self {
         let linked = |role: Role| frame.links.iter().filter(move |l| l.role == role);
@@ -243,7 +266,9 @@ impl Marked {
         }
     }
 }
+// }}}
 
+// fn border {{{
 fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(String, f64)> {
     match frame.flash {
         Some((flashed, alpha, rgb)) if flashed == mark => {
@@ -267,13 +292,17 @@ fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(S
         None
     }
 }
+// }}}
 
+// fn mark_of {{{
 fn mark_of(anchor: Anchor) -> Mark {
     match anchor {
         Anchor::Start(node) | Anchor::End(node) => node,
     }
 }
+// }}}
 
+// fn visible {{{
 /// Whether an item is on the layer being drawn, with room for the names that run past its end
 fn visible(frame: &Frame, p: &Placed) -> bool {
     let vp = frame.viewport;
@@ -289,7 +318,9 @@ fn visible(frame: &Frame, p: &Placed) -> bool {
     let (from, to) = (vp.x(offset(p.span.0)), vp.x(offset(p.span.1)));
     to + reach > 0.0 && from < frame.width + 40.0
 }
+// }}}
 
+// fn paint_back {{{
 /// The layer behind the items: the colour, today, the lines between days and the boxes of groups.
 /// It looks the same whatever the pointer does, so it is drawn once and reused.
 pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
@@ -335,7 +366,9 @@ pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
         }
     }
 }
+// }}}
 
+// fn paint_nodes {{{
 /// The layer of the items themselves, again the same whatever the pointer does
 pub fn paint_nodes(ctx: &Pen, frame: &Frame, found: &mut Found) {
     let start = frame.scene.origin;
@@ -352,13 +385,17 @@ pub fn paint_nodes(ctx: &Pen, frame: &Frame, found: &mut Found) {
         }
     }
 }
+// }}}
 
+// Frame supporting types {{{
 /// The shape an item is drawn in, to outline it again when something marks it
 enum Shape {
     Round(Rect, f64),
     Diamond(f64, f64, f64),
 }
+// }}}
 
+// impl Shape {{{
 impl Shape {
     fn of(frame: &Frame, p: &Placed) -> Self {
         let start = frame.scene.origin;
@@ -404,7 +441,9 @@ impl Shape {
         x + w > -4.0 && x < width + 4.0 && y + h > -4.0 && y < height + 4.0
     }
 }
+// }}}
 
+// fn paint_marks {{{
 /// What the pointer, the selection and a flash do to the items: their outlines, and the colour of
 /// the names that are drawn over the layers. `by` is how far the layers are from where they were drawn.
 pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
@@ -462,7 +501,9 @@ pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
     ctx.restore();
     ctx.set_text_baseline("alphabetic");
 }
+// }}}
 
+// fn paint_notes {{{
 /// The panel about the item under the pointer and the note on a warning, over everything
 pub fn paint_notes(ctx: &Pen, frame: &Frame) {
     if !frame.info.is_empty() {
@@ -472,7 +513,9 @@ pub fn paint_notes(ctx: &Pen, frame: &Frame) {
         paint_tip(ctx, lines, pointer, frame.width, frame.height);
     }
 }
+// }}}
 
+// fn paint_header {{{
 pub fn paint_header(ctx: &Pen, frame: &Frame) {
     let start = frame.scene.origin;
     let vp = frame.viewport;
@@ -527,7 +570,9 @@ pub fn paint_header(ctx: &Pen, frame: &Frame) {
     ctx.line_to(frame.width, HEADER_HEIGHT);
     ctx.stroke();
 }
+// }}}
 
+// fn paint_month {{{
 /// The name of a month, at the left of the month and held at the left of the chart while the month
 /// is partly off it, until the end of the month pushes it out
 fn paint_month(ctx: &Pen, frame: &Frame, start: NaiveDate, month: NaiveDate) {
@@ -545,7 +590,9 @@ fn paint_month(ctx: &Pen, frame: &Frame, start: NaiveDate, month: NaiveDate) {
         text(ctx, "#888", "13px sans-serif", &label, x, 15.0);
     }
 }
+// }}}
 
+// fn paint_group {{{
 fn paint_group(
     ctx: &Pen,
     frame: &Frame,
@@ -599,7 +646,9 @@ fn paint_group(
     });
     found.hits.headers.push((p.mark, strip, arrow));
 }
+// }}}
 
+// fn group_box {{{
 /// The box a group is drawn in, a little wider than its bar and as tall as its lanes
 fn group_box(frame: &Frame, p: &Placed) -> Rect {
     let start = frame.scene.origin;
@@ -616,7 +665,9 @@ fn group_box(frame: &Frame, p: &Placed) -> Rect {
         h: ROW_HEIGHT * p.lanes as f64 - 2.0 * inset,
     }
 }
+// }}}
 
+// fn locate {{{
 /// Where a line meets an item, and the box of a group
 fn locate(frame: &Frame, mark: Mark) -> Option<(Geometry, Option<Rect>)> {
     let p = frame.scene.placed(mark)?;
@@ -638,7 +689,9 @@ fn locate(frame: &Frame, mark: Mark) -> Option<(Geometry, Option<Rect>)> {
     };
     Some((geometry, None))
 }
+// }}}
 
+// fn paint_links {{{
 pub fn paint_links(ctx: &Pen, frame: &Frame) {
     ctx.set_line_width(1.5);
     let mut diamonds: Vec<(Mark, (f64, f64), &str)> = Vec::new();
@@ -704,13 +757,17 @@ pub fn paint_links(ctx: &Pen, frame: &Frame) {
     }
     ctx.set_line_width(1.0);
 }
+// }}}
 
+// fn faded {{{
 /// `#rrggbb` with no opacity, to fade a gradient out without going through black
 fn faded(hex: &str) -> String {
     let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0);
     format!("rgba({},{},{},0)", channel(1), channel(3), channel(5))
 }
+// }}}
 
+// fn stroke_border {{{
 fn stroke_border(ctx: &Pen, outline: Option<(String, f64)>) {
     if let Some((colour, width)) = outline {
         ctx.set_stroke_style_str(&colour);
@@ -719,12 +776,16 @@ fn stroke_border(ctx: &Pen, outline: Option<(String, f64)>) {
         ctx.set_line_width(1.0);
     }
 }
+// }}}
 
+// fn leaf_wash {{{
 /// The blue wash on the right of something nothing depends on, kept inside the path `shape` draws
 fn leaf_wash(ctx: &Pen, rect: Rect, shape: impl Fn(&Pen)) {
     edge_wash(ctx, rect, ("30,136,229", 0.65), false, shape);
 }
+// }}}
 
+// fn edge_wash {{{
 /// A colour (as `r,g,b` and opacity) fading in over the last 28 pixels of the right edge of
 /// `rect`, or the first of the left, kept inside the path `shape` draws
 fn edge_wash(ctx: &Pen, rect: Rect, (rgb, alpha): (&str, f64), left: bool, shape: impl Fn(&Pen)) {
@@ -742,7 +803,9 @@ fn edge_wash(ctx: &Pen, rect: Rect, (rgb, alpha): (&str, f64), left: bool, shape
     ctx.set_fill_style_canvas_gradient(&gradient);
     ctx.fill();
 }
+// }}}
 
+// fn paint_bar {{{
 fn paint_bar(
     ctx: &Pen,
     frame: &Frame,
@@ -810,7 +873,9 @@ fn paint_bar(
         );
     }
 }
+// }}}
 
+// fn paint_buffer {{{
 /// A buffer is a dotted line between two dotted end bars, with its days written on it
 fn paint_buffer(
     ctx: &Pen,
@@ -865,7 +930,9 @@ fn paint_buffer(
     stroke_border(ctx, border(frame, p.mark, p.target, marked));
     hits.items.push((p.mark, rect));
 }
+// }}}
 
+// fn paint_violation {{{
 fn paint_violation(ctx: &Pen, mark: Mark, x: f64, y: f64, hits: &mut Hits) {
     ctx.set_text_align("center");
     ctx.set_text_baseline("middle");
@@ -882,7 +949,9 @@ fn paint_violation(ctx: &Pen, mark: Mark, x: f64, y: f64, hits: &mut Hits) {
         },
     ));
 }
+// }}}
 
+// fn paint_milestone {{{
 fn paint_milestone(
     ctx: &Pen,
     frame: &Frame,
@@ -930,7 +999,9 @@ fn paint_milestone(
         paint_violation(ctx, p.mark, cx + r + 10.0, cy, &mut found.hits);
     }
 }
+// }}}
 
+// fn paint_panel {{{
 /// The panel at the bottom left that says what the item under the pointer is
 fn paint_panel(ctx: &Pen, lines: &[String], height: f64) {
     let (pad, margin, title, body) = (10.0, 8.0, 20.0, 15.0);
@@ -992,7 +1063,9 @@ fn paint_panel(ctx: &Pen, lines: &[String], height: f64) {
     }
     ctx.set_text_baseline("alphabetic");
 }
+// }}}
 
+// fn paint_tip {{{
 /// A small note by the pointer for something that has gone wrong
 fn paint_tip(ctx: &Pen, lines: &[String], (mx, my): (f64, f64), width: f64, height: f64) {
     let (pad, line_h) = (7.0, 17.0);
@@ -1030,7 +1103,9 @@ fn paint_tip(ctx: &Pen, lines: &[String], (mx, my): (f64, f64), width: f64, heig
     }
     ctx.set_text_baseline("alphabetic");
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1059,3 +1134,4 @@ mod tests {
         );
     }
 }
+// }}}

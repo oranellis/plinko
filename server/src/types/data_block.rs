@@ -17,19 +17,24 @@ pub struct DataBlocks {
     blocks: HashMap<Uuid, DataBlock>,
 }
 
+// impl DataBlocks {{{
 impl DataBlocks {
     pub fn blocks(&self) -> &HashMap<Uuid, DataBlock> {
         &self.blocks
     }
 }
+// }}}
 
+// DataBlocks supporting types {{{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DataBlock {
     id: Uuid,
     title: String,
     content: BlockContent,
 }
+// }}}
 
+// impl DataBlock {{{
 impl DataBlock {
     pub fn id(&self) -> &Uuid {
         &self.id
@@ -78,7 +83,9 @@ impl Entity<DataBlocks> for DataBlock {
         &mut blocks.blocks
     }
 }
+// }}}
 
+// DataBlocks supporting types {{{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum BlockContent {
     TodoList(Vec<TodoItem>),
@@ -119,3 +126,4 @@ pub struct DataBlockPatch {
     pub title: Option<String>,
     pub content: Option<BlockContent>,
 }
+// }}}

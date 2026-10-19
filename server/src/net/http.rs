@@ -2,6 +2,7 @@
 //! the browser sends it with the WebSocket as well. Anything that changes state or opens the
 //! socket must come from the page's own origin.
 
+// modules {{{
 use std::{path::PathBuf, sync::Arc};
 
 use axum::{
@@ -26,9 +27,12 @@ use crate::{
     protocol::{ClientMessage, Profile},
     store::{Store, auth::SESSION_LIFETIME},
 };
+// }}}
 
+// constants {{{
 const COOKIE: &str = "plinko_session";
 const MIN_PASSWORD_LENGTH: usize = 8;
+// }}}
 
 #[derive(Clone)]
 struct AppState {
@@ -37,6 +41,7 @@ struct AppState {
     secure_cookies: bool,
 }
 
+// fn router {{{
 /// The routes, serving the client from `files` if given
 pub fn router(handle: Handle, files: Option<PathBuf>, secure_cookies: bool) -> Router {
     let state = AppState {
@@ -58,6 +63,7 @@ pub fn router(handle: Handle, files: Option<PathBuf>, secure_cookies: bool) -> R
         None => app,
     }
 }
+// }}}
 
 // helpers {{{
 fn same_origin(headers: &HeaderMap) -> bool {
@@ -103,12 +109,15 @@ async fn blocking<T: Send + 'static>(
 }
 // }}}
 
+// AppState supporting types {{{
 #[derive(Deserialize)]
 struct Login {
     email: String,
     password: String,
 }
+// }}}
 
+// fn login {{{
 async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -135,7 +144,9 @@ async fn login(
         None => StatusCode::UNAUTHORIZED.into_response(),
     }
 }
+// }}}
 
+// fn logout {{{
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if !same_origin(&headers) {
         return StatusCode::FORBIDDEN.into_response();
@@ -145,7 +156,9 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     }
     ([session_cookie(&state, "", 0)], StatusCode::NO_CONTENT).into_response()
 }
+// }}}
 
+// fn me {{{
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(user) = user_of(&state, &headers).await else {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -155,7 +168,9 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
         None => StatusCode::UNAUTHORIZED.into_response(),
     }
 }
+// }}}
 
+// AppState supporting types {{{
 #[derive(Deserialize)]
 struct ChangePassword {
     /// Whose password, the caller's own if left out
@@ -164,7 +179,9 @@ struct ChangePassword {
     current: Option<String>,
     new: String,
 }
+// }}}
 
+// fn password {{{
 /// Anyone may change their own password given the current one, an admin may set anyone's
 async fn password(
     State(state): State<AppState>,
@@ -213,7 +230,9 @@ async fn password(
         None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
+// }}}
 
+// fn socket {{{
 async fn socket(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -227,7 +246,9 @@ async fn socket(
     };
     upgrade.on_upgrade(move |socket| serve(state.handle, user, socket))
 }
+// }}}
 
+// fn serve {{{
 /// Sends a client what the actor says and gives the actor what the client asks for
 async fn serve(handle: Handle, user: Uuid, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
@@ -267,3 +288,4 @@ async fn serve(handle: Handle, user: Uuid, socket: WebSocket) {
     let _ = handle.commands.send(Command::Unsubscribe(subscriber));
     sending.abort();
 }
+// }}}

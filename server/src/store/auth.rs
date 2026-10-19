@@ -1,6 +1,7 @@
 //! Logins: password hashes and sessions. They are kept apart from the tenant, so no secret is in
 //! an update, a snapshot or anything sent to a client.
 
+// modules {{{
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use argon2::{
@@ -15,10 +16,14 @@ use crate::{
     store::Store,
     types::error::{PlinkoError, PlinkoResult},
 };
+// }}}
 
+// constants {{{
 /// How long a session lasts after it is made
 pub const SESSION_LIFETIME: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+// }}}
 
+// helpers {{{
 fn now() -> i64 {
     let since = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -30,6 +35,7 @@ fn now() -> i64 {
 fn token_hash(token: &str) -> Vec<u8> {
     Sha256::digest(token.as_bytes()).to_vec()
 }
+// }}}
 
 // impl Store {{{
 impl Store {

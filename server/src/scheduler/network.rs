@@ -101,6 +101,7 @@ impl<'a> Network<'a> {
 }
 // }}}
 
+// fn duration {{{
 fn duration(plan: &Plan, v: &Vertex) -> i64 {
     match v {
         Vertex::Node(PlanNode::Task(id)) => i64::from(plan.tasks()[id].duration()),
@@ -108,7 +109,9 @@ fn duration(plan: &Plan, v: &Vertex) -> i64 {
         _ => 0,
     }
 }
+// }}}
 
+// fn topological {{{
 /// Kahn's algorithm taking the lowest id first, so the order does not depend on map order
 fn topological(
     vertices: &[Vertex],
@@ -137,3 +140,4 @@ fn topological(
     }
     order
 }
+// }}}

@@ -1,10 +1,13 @@
+// modules {{{
 use leptos::{prelude::*, task::spawn_local};
 
 use crate::{
     api,
     ui::{Field, Text, use_sync},
 };
+// }}}
 
+// fn Login {{{
 #[component]
 pub fn Login() -> impl IntoView {
     let sync = use_sync();
@@ -46,3 +49,4 @@ pub fn Login() -> impl IntoView {
         </main>
     }
 }
+// }}}

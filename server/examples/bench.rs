@@ -1,6 +1,7 @@
 //! Times a full schedule of a busy tenant: `cargo run --release --example bench [plans] [tasks]`.
 //! The login of the saved tenant is root@localhost with the password password123.
 
+// modules {{{
 use std::{collections::HashMap, time::Instant};
 
 use chrono::{DateTime, NaiveDate};
@@ -27,19 +28,25 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
 /// Ids that are the same every run, so runs can be compared
 struct Ids(u128);
 
+// impl Ids {{{
 impl Ids {
     fn next(&mut self) -> Uuid {
         self.0 += 1;
         Uuid::from_u128(self.0)
     }
 }
+// }}}
 
+// Ids supporting types {{{
 struct Random(u64);
+// }}}
 
+// impl Random {{{
 impl Random {
     fn below(&mut self, n: u64) -> u64 {
         self.0 = self
@@ -49,7 +56,9 @@ impl Random {
         (self.0 >> 33) % n
     }
 }
+// }}}
 
+// fn apply {{{
 fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
     let time = DateTime::from_timestamp(978307200, 0).unwrap();
     tenant
@@ -60,7 +69,9 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
         })
         .unwrap();
 }
+// }}}
 
+// fn main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
         .skip(1)
@@ -245,3 +256,4 @@ fn main() {
     let bytes = plinko::codec::encode(&state).unwrap();
     println!("schedule on the wire: {} KiB", bytes.len() / 1024);
 }
+// }}}

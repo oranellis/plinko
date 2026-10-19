@@ -35,6 +35,7 @@ pub struct NewPlan {
     pub name: String,
 }
 
+// NewPlan supporting types {{{
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
     id: ShortId,
@@ -379,3 +380,4 @@ pub struct PlanSchedulerDataPatch {
     )]
     pub default_start: Option<Option<PlanNode>>,
 }
+// }}}

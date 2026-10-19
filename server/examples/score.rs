@@ -3,6 +3,7 @@
 //! date. A reference schedule without the dates is made first and each date is set on or after where
 //! the reference started the task, so a schedule that meets them all always exists. Lower is better.
 
+// modules {{{
 use std::{collections::HashMap, time::Instant};
 
 use chrono::{DateTime, Days, NaiveDate};
@@ -29,9 +30,11 @@ use plinko::{
     },
 };
 use uuid::Uuid;
+// }}}
 
 struct Random(u64);
 
+// impl Random {{{
 impl Random {
     fn below(&mut self, n: u64) -> u64 {
         self.0 = self
@@ -41,7 +44,9 @@ impl Random {
         (self.0 >> 33) % n
     }
 }
+// }}}
 
+// fn apply {{{
 fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
     let time = DateTime::from_timestamp(978307200, 0).unwrap();
     tenant
@@ -52,7 +57,9 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
         })
         .unwrap();
 }
+// }}}
 
+// Random supporting types {{{
 /// What a made up tenant holds: the tasks of each plan in order, to put dates on
 struct Made {
     tenant: Tenant,
@@ -61,7 +68,9 @@ struct Made {
     /// The four tags of each plan, a person is in the tag that is their position modulo four
     tags: Vec<Vec<Uuid>>,
 }
+// }}}
 
+// fn make {{{
 /// A tenant of busy people with `plans` plans of about `total` tasks between them in layers,
 /// each task waiting on one to three of the previous two layers, and a milestone now and then
 /// that gathers several. `dates` says what hard date each task gets, if any.
@@ -249,7 +258,9 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
         tags: all_tags,
     }
 }
+// }}}
 
+// fn export {{{
 /// Writes the plans and how they were scheduled as JSON for comparing with an exact solver
 fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, path: &str) {
     let person = |u: &Uuid| world.people.iter().position(|p| p == u).unwrap();
@@ -317,7 +328,9 @@ fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, p
     );
     std::fs::write(path, json).unwrap();
 }
+// }}}
 
+// fn main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
         .skip(1)
@@ -399,3 +412,4 @@ fn main() {
     println!("plan delay in all   {:.1}", delay / n);
     println!("seconds to schedule {:.2}", seconds / n);
 }
+// }}}

@@ -2,6 +2,7 @@
 //! left and a row of days runs across, each task showing the hours it takes you that day as a bar, and the
 //! row at the top showing the hours you have each day and how many of them are booked.
 
+// modules {{{
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 use leptos::{html, prelude::*};
 use plinko::{
@@ -21,7 +22,9 @@ use crate::{
     plan::{ItemPane, blank_click},
     ui::use_sync,
 };
+// }}}
 
+// constants {{{
 /// How wide a day is and the column of names, which scrolling is worked out from
 const DAY_WIDTH: f64 = 36.0;
 /// How wide the column of names starts, and the least and most it can be dragged to
@@ -41,7 +44,9 @@ const AHEAD: u64 = 4;
 /// the room around the two names in it (padding and the gap between them)
 const TASK_SHARE: f64 = 0.65;
 const NAME_ROOM: f64 = 22.0 + 10.0 + 6.0;
+// }}}
 
+// fn text_width {{{
 /// How wide `text` is drawn in `font`, measured on a canvas that is not shown
 fn text_width(font: &str, text: &str) -> f64 {
     thread_local! {
@@ -59,7 +64,9 @@ fn text_width(font: &str, text: &str) -> f64 {
         })
     })
 }
+// }}}
 
+// fn task_column {{{
 /// How wide the task names get out of a name cell `room` wide: 65% to start with, then the line
 /// between the names moves to where one side has all the width its longest name needs
 fn task_column(room: f64, longest_task: f64, longest_plan: f64) -> f64 {
@@ -74,7 +81,9 @@ fn task_column(room: f64, longest_task: f64, longest_plan: f64) -> f64 {
     }
     task.clamp(0.0, room)
 }
+// }}}
 
+// constants {{{
 /// The hours a day holds, which the pies and bars are drawn against
 const FULL_DAY: u8 = 8;
 /// How tall a full day's bar is
@@ -85,11 +94,15 @@ const COLOURS: [&str; 10] = [
     "#4a90d9", "#7ed321", "#f5a623", "#d0021b", "#9b59b6", "#1abc9c", "#e67e22", "#2ecc71",
     "#e74c3c", "#3498db",
 ];
+// }}}
 
+// fn colour_of {{{
 fn colour_of(task: Uuid) -> &'static str {
     COLOURS[(task.as_u128() % COLOURS.len() as u128) as usize]
 }
+// }}}
 
+// fn HourPie {{{
 /// A day as a pie of eight slices, one to an hour, with the hours booked filled in. A day with
 /// nothing booked has no pie. The slices are green when the hours booked are all the hours the
 /// person has, orange while there are still hours left, and red when they are overbooked.
@@ -119,7 +132,9 @@ fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoV
         </svg>
     }
 }
+// }}}
 
+// fn slice {{{
 /// The path of slice `i` of eight, which starts at the top and goes round clockwise
 fn slice(i: u8) -> String {
     let (centre, radius) = (13.0_f64, 11.0_f64);
@@ -131,7 +146,9 @@ fn slice(i: u8) -> String {
     let ((x0, y0), (x1, y1)) = (at(f64::from(i)), at(f64::from(i) + 1.0));
     format!("M{centre} {centre} L{x0:.2} {y0:.2} A{radius} {radius} 0 0 1 {x1:.2} {y1:.2} Z")
 }
+// }}}
 
+// fn Allocations {{{
 #[component]
 pub fn Allocations(
     /// Whose, yours when left out
@@ -445,7 +462,9 @@ pub fn Allocations(
         </div>
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,3 +495,4 @@ mod tests {
         assert!(slice(2).contains("L24.00 13.00"));
     }
 }
+// }}}

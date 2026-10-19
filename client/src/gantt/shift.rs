@@ -2,12 +2,15 @@
 //! a dot on each edge to drag a dependency to another item, one in the middle to move it in or
 //! out of a group, and a grip inside the right edge of tasks and buffers to change how long they run.
 
+// modules {{{
 use crate::gantt::pen::Pen;
 use leptos::prelude::Callback;
 use plinko::types::dependency::PlanNode;
 
 use crate::gantt::{arrange::Kind, layout::Rect, links::Link};
+// }}}
 
+// constants {{{
 /// How close the pointer has to be to an item for its handles to show
 pub const REACH: f64 = 22.0;
 /// The colours of a dependency dragged from the left edge (what comes before) and the right
@@ -17,7 +20,9 @@ const AFTER: &str = "#07fcd7";
 const LIGHT: &str = "#c4c4c9";
 const LIT: &str = "#ececf0";
 const DARK: &str = "#3a3a3e";
+// }}}
 
+// fn reach {{{
 /// How far from a handle's middle it can be taken: half its width and half its height, a good
 /// deal more than what is drawn
 fn reach(handle: Handle) -> (f64, f64) {
@@ -27,13 +32,18 @@ fn reach(handle: Handle) -> (f64, f64) {
         Handle::Link { .. } => (12.0, 12.0),
     }
 }
+// }}}
 
+// fn direction {{{
 fn direction(right: bool) -> &'static str {
     if right { AFTER } else { BEFORE }
 }
+// }}}
+// constants {{{
 /// How near the edge of the chart a drag starts scrolling it
 pub const EDGE: f64 = 36.0;
 const COLOUR: &str = "#1e88e5";
+// }}}
 
 /// What dragging an item's handle does
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -46,6 +56,7 @@ pub enum Handle {
     Resize,
 }
 
+// Handle supporting types {{{
 /// A handle being dragged, and what it was grabbed from
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Drag {
@@ -89,7 +100,9 @@ pub struct Grips {
     rect: Rect,
     pub list: Vec<(Handle, (f64, f64))>,
 }
+// }}}
 
+// impl Grips {{{
 impl Grips {
     pub fn of(kind: Kind, rect: Rect) -> Self {
         let middle = rect.y + rect.h / 2.0;
@@ -120,7 +133,9 @@ impl Grips {
             .or_else(|| (!self.list.is_empty() && self.rect.contains(x, y)).then_some(Handle::Move))
     }
 }
+// }}}
 
+// fn near {{{
 /// Whether a point is near enough to a rectangle for its handles to show
 pub fn near(rect: Rect, x: f64, y: f64) -> bool {
     Rect {
@@ -131,7 +146,9 @@ pub fn near(rect: Rect, x: f64, y: f64) -> bool {
     }
     .contains(x, y)
 }
+// }}}
 
+// fn resized {{{
 /// The change in days and the new duration for dragging the end to the day offset `day`, snapped
 /// to the whole day under it. A duration is never under a day.
 pub fn resized(day: f64, last_day: i64, duration: u32) -> (i32, u32) {
@@ -139,7 +156,9 @@ pub fn resized(day: f64, last_day: i64, duration: u32) -> (i32, u32) {
     let new = wanted.clamp(1, i64::from(u32::MAX)) as u32;
     (new as i32 - duration as i32, new)
 }
+// }}}
 
+// fn resize_label {{{
 /// How a resize reads above the bar: `+2 (6d)`
 pub fn resize_label(delta: i32, duration: u32) -> String {
     if delta == 0 {
@@ -148,7 +167,9 @@ pub fn resize_label(delta: i32, duration: u32) -> String {
         format!("{delta:+} ({duration}d)")
     }
 }
+// }}}
 
+// Handle supporting types {{{
 /// What is drawn on top of the chart for the handles and the drag in progress
 pub struct Overlay {
     pub handles: Grips,
@@ -178,7 +199,9 @@ pub enum DragView {
         width: f64,
     },
 }
+// }}}
 
+// fn paint {{{
 pub fn paint(ctx: &Pen, overlay: &Overlay) {
     ctx.save();
     let dragging = overlay.drag.is_some();
@@ -254,7 +277,9 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
     }
     ctx.restore();
 }
+// }}}
 
+// fn leave_outline {{{
 /// The dashed outline left where an item was while a ghost of it is dragged
 fn leave_outline(ctx: &Pen, r: Rect) {
     ctx.set_stroke_style_str(COLOUR);
@@ -263,7 +288,9 @@ fn leave_outline(ctx: &Pen, r: Rect) {
     ctx.stroke_rect(r.x, r.y, r.w, r.h);
     let _ = ctx.set_line_dash(&js_sys::Array::new());
 }
+// }}}
 
+// fn ghost {{{
 /// A see-through copy of an item
 fn ghost(ctx: &Pen, r: Rect, name: &str) {
     ctx.set_fill_style_str("rgba(30,136,229,0.45)");
@@ -284,7 +311,9 @@ fn ghost(ctx: &Pen, r: Rect, name: &str) {
         ctx.restore();
     }
 }
+// }}}
 
+// fn grip {{{
 /// The move handle: three dark lines
 fn grip(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.set_stroke_style_str(if lit { LIT } else { DARK });
@@ -297,7 +326,9 @@ fn grip(ctx: &Pen, x: f64, y: f64, lit: bool) {
     }
     ctx.stroke();
 }
+// }}}
 
+// fn slot {{{
 /// The duration handle: one dark vertical line
 fn slot(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.set_stroke_style_str(if lit { LIT } else { DARK });
@@ -308,7 +339,9 @@ fn slot(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.line_to(x, y + 7.0);
     ctx.stroke();
 }
+// }}}
 
+// helpers {{{
 fn dot(ctx: &Pen, (x, y): (f64, f64), colour: &str) {
     ctx.set_fill_style_str(colour);
     ctx.begin_path();
@@ -323,7 +356,9 @@ fn highlight(ctx: &Pen, over: Option<Rect>, colour: &str) {
         ctx.stroke_rect(r.x - 2.0, r.y - 2.0, r.w + 4.0, r.h + 4.0);
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -380,3 +415,4 @@ mod tests {
         assert!(!near(rect(), 40.0, 60.0));
     }
 }
+// }}}
