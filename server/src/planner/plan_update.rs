@@ -13,6 +13,7 @@ use crate::{
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
+        plan_delay::{NewPlanDelay, PlanDelayPatch},
         tag::{NewTag, TagPatch},
         target::{NewTarget, TargetPatch},
         task::{NewTask, TaskPatch},
@@ -29,6 +30,7 @@ pub enum PlanUpdate {
     TaskGroup(Crud<NewTaskGroup, TaskGroupPatch>),
     Milestone(Crud<NewMilestone, MilestonePatch>),
     PlanBuffer(Crud<NewPlanBuffer, PlanBufferPatch>),
+    PlanDelay(Crud<NewPlanDelay, PlanDelayPatch>),
     User(Crud<NewPlanUser, PlanUserDataPatch>),
     UserGroup(Crud<NewPlanUserGroup, PlanUserGroupPatch>),
     Tag(Crud<NewTag, TagPatch>),
@@ -85,6 +87,13 @@ impl PlanUpdate {
                 set_start_day: None,
                 duration: None,
             })),
+            PlanNode::PlanDelay(id) => PlanUpdate::PlanDelay(Crud::Update(PlanDelayPatch {
+                id,
+                name: None,
+                parent,
+                dependencies,
+                duration: None,
+            })),
             PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Update(TaskGroupPatch {
                 id,
                 name: None,
@@ -100,6 +109,7 @@ impl PlanUpdate {
             PlanNode::Task(id) => PlanUpdate::Task(Crud::Remove(id)),
             PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Remove(id)),
             PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Remove(id)),
+            PlanNode::PlanDelay(id) => PlanUpdate::PlanDelay(Crud::Remove(id)),
             PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Remove(id)),
         }
     }
@@ -120,6 +130,11 @@ impl PlanUpdate {
             {
                 Some(PlanNode::PlanBuffer(p.id))
             }
+            PlanUpdate::PlanDelay(Crud::Update(p))
+                if p.dependencies.is_some() || p.parent.is_some() =>
+            {
+                Some(PlanNode::PlanDelay(p.id))
+            }
             PlanUpdate::TaskGroup(Crud::Update(p))
                 if p.dependencies.is_some() || p.parent.is_some() =>
             {
@@ -137,6 +152,7 @@ impl PlanUpdate {
             PlanUpdate::TaskGroup(update) => update.assign_id(),
             PlanUpdate::Milestone(update) => update.assign_id(),
             PlanUpdate::PlanBuffer(update) => update.assign_id(),
+            PlanUpdate::PlanDelay(update) => update.assign_id(),
             PlanUpdate::Tag(update) => update.assign_id(),
             PlanUpdate::Target(update) => update.assign_id(),
             PlanUpdate::Affinity(update) => update.assign_id(),

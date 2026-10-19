@@ -86,6 +86,7 @@ pub fn ItemEditor(
                 PlanNode::Task(id) => view! { <TaskForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
                 PlanNode::Milestone(id) => view! { <MilestoneForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
                 PlanNode::PlanBuffer(id) => view! { <BufferForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
+                PlanNode::PlanDelay(_) => ().into_any(),
                 PlanNode::TaskGroup(id) => view! { <GroupForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
             }}
         </div>

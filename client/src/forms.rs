@@ -19,6 +19,7 @@ pub fn node_value(node: DependencyNode) -> String {
         DependencyNode::Node(PlanNode::Task(id)) => format!("task:{id}"),
         DependencyNode::Node(PlanNode::Milestone(id)) => format!("milestone:{id}"),
         DependencyNode::Node(PlanNode::PlanBuffer(id)) => format!("buffer:{id}"),
+        DependencyNode::Node(PlanNode::PlanDelay(id)) => format!("delay:{id}"),
         DependencyNode::Node(PlanNode::TaskGroup(id)) => format!("group:{id}"),
     }
 }
@@ -33,6 +34,7 @@ pub fn parse_node(text: &str) -> Option<DependencyNode> {
         "task" => PlanNode::Task(id),
         "milestone" => PlanNode::Milestone(id),
         "buffer" => PlanNode::PlanBuffer(id),
+        "delay" => PlanNode::PlanDelay(id),
         "group" => PlanNode::TaskGroup(id),
         _ => return None,
     };

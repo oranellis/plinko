@@ -13,6 +13,7 @@ use crate::{
         milestone::{Milestone, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
+        plan_delay::{NewPlanDelay, PlanDelay, PlanDelayPatch},
         tag::{NewTag, Tag, TagPatch},
         target::{NewTarget, Target, TargetPatch},
         task::{Assignee, NewTask, Task, TaskPatch, Worker},
@@ -104,6 +105,13 @@ plan_item!(
     NewPlanBuffer,
     PlanBufferPatch,
     plan_buffers
+);
+plan_item!(
+    PlanDelay,
+    PlanDelay,
+    NewPlanDelay,
+    PlanDelayPatch,
+    plan_delays
 );
 plan_item!(
     TaskGroup,

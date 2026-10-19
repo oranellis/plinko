@@ -9,7 +9,7 @@ use crate::planner::graph::Vertex;
 use crate::types::{
     common::{DateRange, TimeConstraint},
     dependency::PlanNode,
-    milestone, plan_buffer,
+    milestone, plan_buffer, plan_delay,
     short_id::ShortId,
     task::{self, Assignee},
     task_group,
@@ -121,6 +121,7 @@ pub struct PlanVolatileState {
     pub task_groups: HashMap<Uuid, task_group::VolatileState>,
     pub milestones: HashMap<Uuid, milestone::VolatileState>,
     pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
+    pub plan_delays: HashMap<Uuid, plan_delay::VolatileState>,
     pub unscheduled: HashMap<PlanNode, UnscheduledReason>,
     /// Forecast of each of the plan's targets
     pub targets: HashMap<Uuid, TargetForecast>,
@@ -200,7 +201,13 @@ impl PlanVolatileState {
         let groups = self.task_groups.values().map(|g| g.date_range.end());
         let buffers = self.plan_buffers.values().map(|b| b.date_range.end());
         let milestones = self.milestones.values().map(|m| m.end());
-        tasks.chain(groups).chain(buffers).chain(milestones).max()
+        let delays = self.plan_delays.values().map(|d| d.date_range.end());
+        tasks
+            .chain(groups)
+            .chain(buffers)
+            .chain(delays)
+            .chain(milestones)
+            .max()
     }
 }
 // }}}

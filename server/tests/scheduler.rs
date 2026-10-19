@@ -26,6 +26,7 @@ use plinko::{
         milestone::{DerivedStatus, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
+        plan_delay::{NewPlanDelay, PlanDelayPatch},
         short_id::ShortId,
         tag::NewTag,
         target::NewTarget,
@@ -248,6 +249,26 @@ impl World {
             duration: None,
         };
         self.plan_update(PlanUpdate::PlanBuffer(Crud::Update(patch)));
+        id
+    }
+
+    fn delay(&mut self, duration: u32, on: &[Dep]) -> Uuid {
+        let id = self.id();
+        let new = NewPlanDelay {
+            id,
+            name: None,
+            parent: Parent::Plan,
+            duration,
+        };
+        self.plan_update(PlanUpdate::PlanDelay(Crud::Add(new)));
+        let patch = PlanDelayPatch {
+            id,
+            name: None,
+            parent: None,
+            dependencies: Some(deps(on)),
+            duration: None,
+        };
+        self.plan_update(PlanUpdate::PlanDelay(Crud::Update(patch)));
         id
     }
 
@@ -892,6 +913,32 @@ fn buffers_hold_back_what_follows_and_shrink_for_hard_dates() {
     assert_eq!(span(&state, pinned), (d(4), d(5)));
     assert!(state.constraint_violations.is_empty());
     assert_eq!(span(&state, next), (d(4), d(5)));
+}
+// }}}
+
+// delays_hold_back_what_follows_by_calendar_days {{{
+#[test]
+fn delays_hold_back_what_follows_by_calendar_days() {
+    let mut world = World::new();
+    let first = world.task(1, &[], &[start()]);
+    let delay = world.delay(3, &[after(node(first))]);
+    let next = world.task(1, &[], &[after(PlanNode::PlanDelay(delay))]);
+    let state = world.solve();
+    assert_eq!(state.plan_delays[&delay].date_range.start(), d(2));
+    assert_eq!(state.plan_delays[&delay].date_range.end(), d(5));
+    assert_eq!(span(&state, next), (d(5), d(6)));
+
+    // a longer wait pushes the task back with it, to the next working day
+    world.plan_update(PlanUpdate::PlanDelay(Crud::Update(PlanDelayPatch {
+        id: delay,
+        name: Some(Some("Cure".into())),
+        parent: None,
+        dependencies: None,
+        duration: Some(5),
+    })));
+    let state = world.solve();
+    assert_eq!(state.plan_delays[&delay].date_range.end(), d(7));
+    assert_eq!(span(&state, next), (d(8), d(9)));
 }
 // }}}
 

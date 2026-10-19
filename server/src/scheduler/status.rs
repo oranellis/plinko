@@ -60,6 +60,10 @@ impl Derive<'_> {
                 let b = &plan.plan_buffers()[&id];
                 (b.dependencies(), b.parent())
             }
+            PlanNode::PlanDelay(id) => {
+                let d = &plan.plan_delays()[&id];
+                (d.dependencies(), d.parent())
+            }
             PlanNode::TaskGroup(id) => {
                 let g = &plan.task_groups()[&id];
                 (g.dependencies(), g.parent())
@@ -77,11 +81,13 @@ impl Derive<'_> {
             .plan_buffers()
             .values()
             .filter(|b| b.parent() == parent);
+        let delays = plan.plan_delays().values().filter(|d| d.parent() == parent);
         let groups = plan.task_groups().values().filter(|g| g.parent() == parent);
         tasks
             .map(|t| PlanNode::Task(*t.id()))
             .chain(milestones.map(|m| PlanNode::Milestone(*m.id())))
             .chain(buffers.map(|b| PlanNode::PlanBuffer(*b.id())))
+            .chain(delays.map(|d| PlanNode::PlanDelay(*d.id())))
             .chain(groups.map(|g| PlanNode::TaskGroup(*g.id())))
             .collect()
     }
@@ -126,7 +132,9 @@ impl Derive<'_> {
                 self.plan.tasks()[&id].persistent_state().status,
                 Status::Completed | Status::Dropped
             ),
-            PlanNode::Milestone(_) | PlanNode::PlanBuffer(_) => self.all_done(&deps, parent),
+            PlanNode::Milestone(_) | PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => {
+                self.all_done(&deps, parent)
+            }
             PlanNode::TaskGroup(id) => {
                 self.all_done(&deps, parent)
                     && self.members(id).into_iter().all(|m| self.is_done(m))
@@ -149,7 +157,7 @@ impl Derive<'_> {
                 self.plan.tasks()[&id].persistent_state().status == Status::InProgress
             }
             PlanNode::Milestone(_) => false,
-            PlanNode::PlanBuffer(_) => self.any_active(&deps, parent),
+            PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => self.any_active(&deps, parent),
             PlanNode::TaskGroup(id) => {
                 self.any_active(&deps, parent)
                     || self.members(id).into_iter().any(|m| self.is_active(m))

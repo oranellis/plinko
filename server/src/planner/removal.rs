@@ -17,6 +17,7 @@ use crate::{
         milestone::Milestone,
         parent::Parent,
         plan_buffer::PlanBuffer,
+        plan_delay::PlanDelay,
         task::Task,
         task_group::TaskGroup,
     },
@@ -38,6 +39,7 @@ pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>
         PlanNode::Task(id) => placed::<Task>(plan, id),
         PlanNode::Milestone(id) => placed::<Milestone>(plan, id),
         PlanNode::PlanBuffer(id) => placed::<PlanBuffer>(plan, id),
+        PlanNode::PlanDelay(id) => placed::<PlanDelay>(plan, id),
         PlanNode::TaskGroup(id) => placed::<TaskGroup>(plan, id),
     }
 }
@@ -47,6 +49,7 @@ pub(super) fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
         graph::nodes::<Task>(plan),
         graph::nodes::<Milestone>(plan),
         graph::nodes::<PlanBuffer>(plan),
+        graph::nodes::<PlanDelay>(plan),
         graph::nodes::<TaskGroup>(plan),
     ]
     .concat();

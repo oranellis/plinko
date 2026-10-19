@@ -58,6 +58,7 @@ pub enum PlanNode {
     Task(Uuid),
     Milestone(Uuid),
     PlanBuffer(Uuid),
+    PlanDelay(Uuid),
     TaskGroup(Uuid),
 }
 // }}}
@@ -69,6 +70,7 @@ impl PlanNode {
             PlanNode::Task(id)
             | PlanNode::Milestone(id)
             | PlanNode::PlanBuffer(id)
+            | PlanNode::PlanDelay(id)
             | PlanNode::TaskGroup(id) => id,
         }
     }

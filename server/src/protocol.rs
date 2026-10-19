@@ -87,6 +87,7 @@ impl Created {
                 PlanUpdate::Milestone(Crud::Add(new)) => Some(Created::Item(new.id)),
                 PlanUpdate::TaskGroup(Crud::Add(new)) => Some(Created::Item(new.id)),
                 PlanUpdate::PlanBuffer(Crud::Add(new)) => Some(Created::Item(new.id)),
+                PlanUpdate::PlanDelay(Crud::Add(new)) => Some(Created::Item(new.id)),
                 _ => None,
             },
             _ => None,

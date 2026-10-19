@@ -128,12 +128,21 @@ impl Change {
                     self.nodes(plan, [PlanNode::PlanBuffer(p.id)]);
                 }
             }
+            PlanUpdate::PlanDelay(Crud::Add(new)) => {
+                self.nodes(plan, [PlanNode::PlanDelay(new.id)]);
+            }
+            PlanUpdate::PlanDelay(Crud::Update(p)) => {
+                if p.parent.is_some() || p.dependencies.is_some() || p.duration.is_some() {
+                    self.nodes(plan, [PlanNode::PlanDelay(p.id)]);
+                }
+            }
             // what was removed leaves its hours, and what depended on it was rewired by updates
             // that noted their own nodes
             PlanUpdate::Task(Crud::Remove(_))
             | PlanUpdate::Milestone(Crud::Remove(_))
             | PlanUpdate::TaskGroup(Crud::Remove(_))
-            | PlanUpdate::PlanBuffer(Crud::Remove(_)) => {
+            | PlanUpdate::PlanBuffer(Crud::Remove(_))
+            | PlanUpdate::PlanDelay(Crud::Remove(_)) => {
                 self.nodes(plan, []);
             }
             // words and notes are not scheduled

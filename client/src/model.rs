@@ -83,6 +83,10 @@ pub fn node_name(plan: &Plan, node: PlanNode) -> String {
             .plan_buffers()
             .get(&id)
             .map(|b| format!("Buffer {}d", b.duration())),
+        PlanNode::PlanDelay(id) => plan.plan_delays().get(&id).map(|d| {
+            d.name()
+                .map_or_else(|| format!("Delay {}d", d.duration()), str::to_string)
+        }),
     }
     .unwrap_or_else(|| "Missing".to_string())
 }
@@ -93,6 +97,7 @@ pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
         PlanNode::Milestone(id) => plan.milestones().get(&id).map(|m| m.parent()),
         PlanNode::TaskGroup(id) => plan.task_groups().get(&id).map(|g| g.parent()),
         PlanNode::PlanBuffer(id) => plan.plan_buffers().get(&id).map(|b| b.parent()),
+        PlanNode::PlanDelay(id) => plan.plan_delays().get(&id).map(|d| d.parent()),
     }
     .unwrap_or(Parent::Plan)
 }
@@ -125,6 +130,10 @@ pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<Dependency> {
             .plan_buffers()
             .get(&id)
             .map(|b| b.dependencies().clone()),
+        PlanNode::PlanDelay(id) => plan
+            .plan_delays()
+            .get(&id)
+            .map(|d| d.dependencies().clone()),
     }
     .unwrap_or_default()
 }
@@ -138,10 +147,12 @@ pub fn nodes(plan: &Plan) -> Vec<PlanNode> {
         .plan_buffers()
         .keys()
         .map(|id| PlanNode::PlanBuffer(*id));
+    let delays = plan.plan_delays().keys().map(|id| PlanNode::PlanDelay(*id));
     tasks
         .chain(milestones)
         .chain(groups)
         .chain(buffers)
+        .chain(delays)
         .collect()
 }
 // }}}
@@ -166,6 +177,10 @@ pub fn span_of(
             .plan_buffers
             .get(&id)
             .map(|b| (b.date_range.start(), b.date_range.end())),
+        PlanNode::PlanDelay(id) => state
+            .plan_delays
+            .get(&id)
+            .map(|d| (d.date_range.start(), d.date_range.end())),
     }
 }
 // }}}

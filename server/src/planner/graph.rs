@@ -10,6 +10,7 @@ use crate::{
         milestone::Milestone,
         parent::Parent,
         plan_buffer::PlanBuffer,
+        plan_delay::PlanDelay,
         task::Task,
         task_group::TaskGroup,
     },
@@ -34,6 +35,7 @@ impl Vertex {
             Vertex::Node(PlanNode::Milestone(id)) => (2, *id),
             Vertex::Node(PlanNode::PlanBuffer(id)) => (3, *id),
             Vertex::Node(PlanNode::TaskGroup(id)) => (4, *id),
+            Vertex::Node(PlanNode::PlanDelay(id)) => (5, *id),
         }
     }
 }
@@ -73,6 +75,7 @@ impl<'a> Graph<'a> {
         collect_members::<Task>(plan, &mut members);
         collect_members::<Milestone>(plan, &mut members);
         collect_members::<PlanBuffer>(plan, &mut members);
+        collect_members::<PlanDelay>(plan, &mut members);
         collect_members::<TaskGroup>(plan, &mut members);
         Self { plan, members }
     }
@@ -94,6 +97,7 @@ impl<'a> Graph<'a> {
             nodes::<Task>(plan),
             nodes::<Milestone>(plan),
             nodes::<PlanBuffer>(plan),
+            nodes::<PlanDelay>(plan),
             nodes::<TaskGroup>(plan),
         ]
         .concat()
@@ -122,6 +126,7 @@ impl<'a> Graph<'a> {
             Vertex::Node(PlanNode::Task(id)) => self.item_edges::<Task>(id),
             Vertex::Node(PlanNode::Milestone(id)) => self.item_edges::<Milestone>(id),
             Vertex::Node(PlanNode::PlanBuffer(id)) => self.item_edges::<PlanBuffer>(id),
+            Vertex::Node(PlanNode::PlanDelay(id)) => self.item_edges::<PlanDelay>(id),
         }
     }
 
@@ -263,6 +268,9 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
             }
             Vertex::Node(node @ PlanNode::PlanBuffer(id)) => {
                 (node, dependencies::<PlanBuffer>(plan, id))
+            }
+            Vertex::Node(node @ PlanNode::PlanDelay(id)) => {
+                (node, dependencies::<PlanDelay>(plan, id))
             }
             Vertex::Node(PlanNode::TaskGroup(_)) => continue,
         };

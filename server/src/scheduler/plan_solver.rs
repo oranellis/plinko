@@ -25,7 +25,7 @@ use crate::{
         common::{DateRange, TimeConstraint},
         dependency::{Dependency, PlanNode},
         milestone::{self, DerivedStatus},
-        plan_buffer,
+        plan_buffer, plan_delay,
         task::{self, Assignee, ScheduleMode, Status, Task, Worker},
         task_group,
         workload::Workload,
@@ -450,6 +450,7 @@ impl<'a> PlanSolver<'a> {
                     .place(date()?, &self.calendar, self.limits.get(id).copied())
                     .ok_or(Reason::NoCapacity)?
             }
+            Vertex::Node(PlanNode::PlanDelay(id)) => self.plan.plan_delays()[id].place(date()?),
             Vertex::Node(PlanNode::TaskGroup(id)) => {
                 let start = self.placed.get(&Vertex::GroupStart(*id));
                 let start = start.ok_or(Reason::DependsOnUnscheduled)?.range.start();
@@ -1146,6 +1147,10 @@ impl<'a> PlanSolver<'a> {
                     let days = u64::from(*self.plan.plan_buffers()[id].duration());
                     return Some((from, from + Days::new(days)));
                 }
+                Vertex::Node(PlanNode::PlanDelay(id)) => {
+                    let days = u64::from(*self.plan.plan_delays()[id].duration());
+                    return Some((from, from + Days::new(days)));
+                }
                 _ => return None,
             };
             let days = task.duration() as usize;
@@ -1241,6 +1246,10 @@ impl<'a> PlanSolver<'a> {
                 PlanNode::PlanBuffer(id) => {
                     out.plan_buffers
                         .insert(*id, plan_buffer::VolatileState { date_range });
+                }
+                PlanNode::PlanDelay(id) => {
+                    out.plan_delays
+                        .insert(*id, plan_delay::VolatileState { date_range });
                 }
                 PlanNode::TaskGroup(id) => {
                     out.task_groups

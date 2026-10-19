@@ -106,6 +106,7 @@ fn duration(plan: &Plan, v: &Vertex) -> i64 {
     match v {
         Vertex::Node(PlanNode::Task(id)) => i64::from(plan.tasks()[id].duration()),
         Vertex::Node(PlanNode::PlanBuffer(id)) => i64::from(*plan.plan_buffers()[id].duration()),
+        Vertex::Node(PlanNode::PlanDelay(id)) => i64::from(*plan.plan_delays()[id].duration()),
         _ => 0,
     }
 }

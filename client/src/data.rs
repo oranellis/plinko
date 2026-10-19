@@ -71,7 +71,7 @@ fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
             let g = plan.task_groups().get(&id)?;
             (g.description(), g.data().blocks())
         }
-        PlanNode::PlanBuffer(_) => return None,
+        PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => return None,
     };
     let mut blocks: Vec<DataBlock> = blocks.values().cloned().collect();
     blocks.sort_by_key(|b| {
@@ -85,9 +85,9 @@ fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
 // }}}
 
 // has_data {{{
-/// Whether an item can hold data, which buffers cannot
+/// Whether an item can hold data, which buffers and delays cannot
 pub fn has_data(node: PlanNode) -> bool {
-    !matches!(node, PlanNode::PlanBuffer(_))
+    !matches!(node, PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_))
 }
 // }}}
 

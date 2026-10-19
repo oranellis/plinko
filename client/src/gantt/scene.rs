@@ -77,7 +77,7 @@ fn kind_of(node: PlanNode) -> Kind {
     match node {
         PlanNode::Task(_) => Kind::Task,
         PlanNode::Milestone(_) => Kind::Milestone,
-        PlanNode::PlanBuffer(_) => Kind::Buffer,
+        PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => Kind::Buffer,
         PlanNode::TaskGroup(_) => Kind::Group,
     }
 }

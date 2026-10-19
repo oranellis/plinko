@@ -292,6 +292,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         PlanNode::Task(id) => p.tasks().get(&id)?.parent(),
                         PlanNode::Milestone(id) => p.milestones().get(&id)?.parent(),
                         PlanNode::PlanBuffer(id) => p.plan_buffers().get(&id)?.parent(),
+                        PlanNode::PlanDelay(id) => p.plan_delays().get(&id)?.parent(),
                         PlanNode::TaskGroup(_) => unreachable!("a group is handled above"),
                     })
                 }),
@@ -644,6 +645,7 @@ pub fn ItemPane(
         PlanNode::Task(_) => "Edit Task",
         PlanNode::Milestone(_) => "Edit Milestone",
         PlanNode::PlanBuffer(_) => "Edit Buffer",
+        PlanNode::PlanDelay(_) => "Edit Delay",
         PlanNode::TaskGroup(_) => "Edit Task Group",
     };
     let saved = Callback::new(move |()| {
@@ -728,7 +730,7 @@ fn SearchWindow(
                     let glyph = match node {
                         PlanNode::Task(_) => "▬",
                         PlanNode::Milestone(_) => "◇",
-                        PlanNode::PlanBuffer(_) => "▭",
+                        PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => "▭",
                         PlanNode::TaskGroup(_) => "▢",
                     };
                     view! {

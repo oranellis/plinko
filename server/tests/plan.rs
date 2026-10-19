@@ -7,6 +7,7 @@ use plinko::{
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
+        plan_delay::NewPlanDelay,
         short_id::ShortId,
         tag::NewTag,
         task::{NewTask, TaskPatch},
@@ -137,6 +138,27 @@ fn add_plan_buffer_to_plan() {
     plan.apply_update(PlanUpdate::PlanBuffer(Crud::Add(buffer)))
         .expect("should not error");
     assert_eq!(*plan.plan_buffers()[&buffer_id].duration(), 5);
+}
+// }}}
+
+// add_plan_delay_to_plan {{{
+#[test]
+fn add_plan_delay_to_plan() {
+    let mut plan = new_plan();
+    let delay = NewPlanDelay {
+        id: Uuid::now_v7(),
+        name: Some("Cure".into()),
+        parent: Parent::Plan,
+        duration: 5,
+    };
+    let delay_id = delay.id;
+    plan.apply_update(PlanUpdate::PlanDelay(Crud::Add(delay)))
+        .expect("should not error");
+    assert_eq!(*plan.plan_delays()[&delay_id].duration(), 5);
+    assert_eq!(plan.plan_delays()[&delay_id].name(), Some("Cure"));
+    plan.apply_update(PlanUpdate::PlanDelay(Crud::Remove(delay_id)))
+        .expect("nothing depends on it");
+    assert!(plan.plan_delays().is_empty());
 }
 // }}}
 

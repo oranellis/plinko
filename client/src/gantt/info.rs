@@ -116,6 +116,17 @@ pub fn info(
                 ));
             }
         }
+        PlanNode::PlanDelay(id) => {
+            lines.push("Delay".to_string());
+            if let Some(d) = state.and_then(|s| s.plan_delays.get(&id)) {
+                let range = (d.date_range.start(), d.date_range.end());
+                lines.push(format!(
+                    "From {} to {}",
+                    format::day(range.0),
+                    format::day(last_day(range))
+                ));
+            }
+        }
         PlanNode::TaskGroup(id) => {
             lines.push("Task group".to_string());
             if let Some(g) = state.and_then(|s| s.task_groups.get(&id)) {
