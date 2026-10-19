@@ -24,7 +24,7 @@ use crate::{
 enum Page {
     Home,
     Plans,
-    Plan(plinko::types::short_id::ShortId),
+    Plan(plinko::common::short_id::ShortId),
     Allocations(Option<uuid::Uuid>),
     People,
     Preferences,
@@ -191,7 +191,7 @@ fn account_names(sync: crate::sync::Sync) -> (Signal<String>, Signal<String>) {
 // }}}
 
 // open_plan {{{
-pub fn open_plan(plan: plinko::types::short_id::ShortId) {
+pub fn open_plan(plan: plinko::common::short_id::ShortId) {
     navigate(Route::Plan(plan, crate::nav::PlanTab::Gantt, None));
 }
 // }}}

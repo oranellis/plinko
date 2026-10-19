@@ -2,7 +2,7 @@
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 
-use crate::types::error::{PlinkoError, PlinkoResult};
+use crate::common::error::{PlinkoError, PlinkoResult};
 // }}}
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

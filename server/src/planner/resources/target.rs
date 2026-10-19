@@ -3,9 +3,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match,
-    traits::patch::Patchable,
-    types::{dependency::PlanNode, error::PlinkoResult},
+    common::error::PlinkoResult, helpers::functions::check_id_match,
+    planner::items::dependency::PlanNode, traits::patch::Patchable,
 };
 // }}}
 

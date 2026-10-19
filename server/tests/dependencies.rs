@@ -2,18 +2,16 @@
 use std::collections::HashMap;
 
 use plinko::{
-    planner::{plan::*, plan_update::PlanUpdate},
-    types::{
-        crud::Crud,
+    availability::workload::Workload,
+    common::{crud::Crud, error::PlinkoResult, short_id::ShortId},
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
-        error::PlinkoResult,
         parent::Parent,
-        short_id::ShortId,
-        tag::NewTag,
         task::{NewTask, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroupPatch},
-        workload::Workload,
     },
+    planner::resources::tag::NewTag,
+    planner::{plan::*, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 // }}}
@@ -429,15 +427,14 @@ fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
 mod moving {
     use plinko::planner::plan_update::PlanUpdate;
     use plinko::{
-        planner::plan::*,
-        types::{
-            crud::Crud,
+        common::{crud::Crud, short_id::ShortId},
+        planner::items::{
             dependency::{Dependency, DependencyNode, PlanNode},
             parent::Parent,
-            short_id::ShortId,
             task::NewTask,
             task_group::NewTaskGroup,
         },
+        planner::plan::*,
     };
     use uuid::Uuid;
 

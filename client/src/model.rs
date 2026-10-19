@@ -6,14 +6,14 @@ use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
-    planner::plan::Plan,
-    scheduler::state::{PlanVolatileState, UnscheduledReason},
-    types::{
+    planner::items::{
         dependency::{Dependency, PlanNode},
         milestone::DerivedStatus,
         parent::Parent,
         task::Status,
     },
+    planner::plan::Plan,
+    scheduler::state::{PlanVolatileState, UnscheduledReason},
 };
 use uuid::Uuid;
 // }}}
@@ -105,7 +105,7 @@ pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
 /// The group a node is directly in, found in the plan as the client holds it
 pub fn parent_of_in(
     sync: crate::sync::Sync,
-    plan: plinko::types::short_id::ShortId,
+    plan: plinko::common::short_id::ShortId,
     node: PlanNode,
 ) -> Option<Uuid> {
     sync.tenant.with_untracked(|t| {
@@ -302,15 +302,13 @@ fn ends_group(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) ->
 #[cfg(test)]
 mod tests {
     use plinko::{
-        planner::{plan::NewPlan, plan_update::PlanUpdate},
-        scheduler::state::{PlanVolatileState, UnscheduledReason},
-        types::{
-            common::DateRange,
-            crud::Crud,
-            short_id::ShortId,
+        common::{crud::Crud, dates::DateRange, short_id::ShortId},
+        planner::items::{
             task::{self, NewTask},
             task_group::NewTaskGroup,
         },
+        planner::{plan::NewPlan, plan_update::PlanUpdate},
+        scheduler::state::{PlanVolatileState, UnscheduledReason},
     };
 
     use super::*;

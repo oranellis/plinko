@@ -6,8 +6,8 @@
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 use leptos::{html, prelude::*};
 use plinko::{
+    common::short_id::ShortId, planner::items::dependency::PlanNode,
     scheduler::state::PlanVolatileState,
-    types::{dependency::PlanNode, short_id::ShortId},
 };
 use uuid::Uuid;
 use wasm_bindgen::JsCast;

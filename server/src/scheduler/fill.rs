@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 
-use crate::types::{
-    task::{Assignee, ScheduleMode},
-    workload::Workload,
+use crate::{
+    availability::workload::Workload,
+    planner::items::task::{Assignee, ScheduleMode},
 };
 // }}}
 

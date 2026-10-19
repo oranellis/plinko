@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
-use crate::{traits::patch::Patchable, types::error::PlinkoResult};
+use crate::{common::error::PlinkoResult, traits::patch::Patchable};
 // }}}
 
 /// A tenant user's place in a plan, with the plan's tags they hold

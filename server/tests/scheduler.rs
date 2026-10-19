@@ -3,37 +3,37 @@ use std::collections::HashMap;
 
 use chrono::{DateTime, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
     availability::{
         rule::{NewRule, RuleKind, WeeklySchedule},
         rule_set::RuleSetUpdate,
     },
     codec,
+    common::{crud::Crud, dates::TimeConstraint, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    scheduler::{
-        Refreshed, Tracker, prepare, solve_tenant,
-        state::{Baseline, PlanVolatileState, UnscheduledReason},
-    },
-    types::{
-        affinity::NewAffinity,
-        common::TimeConstraint,
-        crud::Crud,
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
         milestone::{DerivedStatus, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         plan_delay::{NewPlanDelay, PlanDelayPatch},
-        short_id::ShortId,
-        tag::NewTag,
-        target::NewTarget,
         task::{Assignee, NewTask, PersistentState, ScheduleMode, Status, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroupPatch},
+    },
+    planner::resources::{
+        affinity::NewAffinity,
+        tag::NewTag,
+        target::NewTarget,
         user::{NewPlanUser, PlanUserDataPatch},
-        workload::Workload,
+    },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
+    scheduler::{
+        Refreshed, Tracker, prepare, solve_tenant,
+        state::{Baseline, PlanVolatileState, UnscheduledReason},
     },
 };
 use uuid::Uuid;
@@ -744,7 +744,7 @@ fn tags_and_groups_pick_whoever_finishes_first() {
     };
     world.apply(TenantUpdateType::UserGroup(Crud::Add(new)));
     world.plan_update(PlanUpdate::UserGroup(Crud::Add(
-        plinko::types::user::NewPlanUserGroup { id: group },
+        plinko::planner::resources::user::NewPlanUserGroup { id: group },
     )));
     let by_group = world.task(1, &[(Worker::UserGroup(group), 8)], &[start()]);
     let state = world.solve();

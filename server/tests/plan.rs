@@ -1,19 +1,16 @@
 // modules {{{
 use plinko::{
-    planner::{plan::*, plan_update::PlanUpdate},
-    types::{
-        crud::Crud,
-        error::PlinkoError,
+    common::{crud::Crud, error::PlinkoError, short_id::ShortId},
+    planner::items::{
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
         plan_delay::NewPlanDelay,
-        short_id::ShortId,
-        tag::NewTag,
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
-        user::NewPlanUser,
     },
+    planner::resources::{tag::NewTag, user::NewPlanUser},
+    planner::{plan::*, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 // }}}

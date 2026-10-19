@@ -4,13 +4,13 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    planner::plan::Plan,
-    types::{
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
         milestone::DerivedStatus,
         parent::Parent,
         task::Status,
     },
+    planner::plan::Plan,
 };
 // }}}
 

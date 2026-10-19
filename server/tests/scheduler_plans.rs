@@ -1,28 +1,25 @@
 // modules {{{
 use chrono::{DateTime, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
+    common::{crud::Crud, dates::TimeConstraint, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
+    planner::items::{
+        dependency::{Dependency, DependencyNode, PlanNode},
+        milestone::NewMilestone,
+        parent::Parent,
+        task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
+    },
+    planner::resources::{target::NewTarget, user::NewPlanUser},
     planner::{
         plan::{NewPlan, PlanSchedulerDataPatch},
         plan_update::PlanUpdate,
     },
     scheduler::{prepare, solve_tenant, state::TenantVolatileState},
-    types::{
-        common::TimeConstraint,
-        crud::Crud,
-        dependency::{Dependency, DependencyNode, PlanNode},
-        milestone::NewMilestone,
-        parent::Parent,
-        short_id::ShortId,
-        target::NewTarget,
-        task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
-        user::NewPlanUser,
-        workload::Workload,
-    },
 };
 use uuid::Uuid;
 // }}}
@@ -102,13 +99,13 @@ impl Plans {
     /// A tag in the plan held by the people
     fn tag(&mut self, plan: ShortId, holders: &[Uuid]) -> Uuid {
         let id = Uuid::now_v7();
-        let new = plinko::types::tag::NewTag {
+        let new = plinko::planner::resources::tag::NewTag {
             id,
             name: "Tag".to_string(),
         };
         self.update(plan, PlanUpdate::Tag(Crud::Add(new)));
         for user in holders {
-            let patch = plinko::types::user::PlanUserDataPatch {
+            let patch = plinko::planner::resources::user::PlanUserDataPatch {
                 id: *user,
                 tags: Some([id].into()),
             };
@@ -173,7 +170,7 @@ impl Plans {
             parent: Parent::Plan,
         };
         self.update(plan, PlanUpdate::Milestone(Crud::Add(new)));
-        let patch = plinko::types::milestone::MilestonePatch {
+        let patch = plinko::planner::items::milestone::MilestonePatch {
             id,
             name: None,
             parent: None,
@@ -348,7 +345,7 @@ fn target_priority_counts_beside_plan_priority() {
     let made = [chain(&mut plans, &[1]), chain(&mut plans, &[1])];
     let plan = made[1].0;
     let target = *plans.tenant.plans()[&plan].targets().keys().next().unwrap();
-    let patch = plinko::types::target::TargetPatch {
+    let patch = plinko::planner::resources::target::TargetPatch {
         id: target,
         node: None,
         priority: Some(3),
@@ -451,7 +448,7 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
                     });
                 }
                 if random.below(4) == 0 {
-                    let relaxed = Some(plinko::types::task::ScheduleMode::Relaxed);
+                    let relaxed = Some(plinko::planner::items::task::ScheduleMode::Relaxed);
                     plans.patch(plan, task, |p| p.mode = relaxed);
                 }
                 made.push((plan, task, after, fixed));

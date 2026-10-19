@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
+    common::error::PlinkoResult,
     helpers::functions::check_id_match,
     traits::{entity::Entity, patch::Patchable},
-    types::error::PlinkoResult,
 };
 // }}}
 

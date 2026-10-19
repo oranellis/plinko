@@ -6,16 +6,15 @@ use std::collections::HashSet;
 
 use leptos::prelude::*;
 use plinko::{
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::tenant_update::{PlanTenantUpdate, TenantUpdateType},
-    planner::{plan::PlanSchedulerDataPatch, plan_update::PlanUpdate},
-    types::{
+    planner::resources::{
         affinity::NewAffinity,
-        crud::Crud,
-        short_id::ShortId,
         tag::NewTag,
         target::{NewTarget, TargetPatch},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch},
     },
+    planner::{plan::PlanSchedulerDataPatch, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 

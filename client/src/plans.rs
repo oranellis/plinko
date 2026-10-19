@@ -4,10 +4,10 @@
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
+    common::short_id::ShortId,
     multitenancy::tenant_update::{PlanTenantUpdate, TenantUpdateType},
     planner::plan::NewPlan,
     protocol::Created,
-    types::short_id::ShortId,
 };
 
 use crate::{

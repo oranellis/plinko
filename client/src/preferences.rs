@@ -3,8 +3,8 @@
 // modules {{{
 use leptos::{prelude::*, task::spawn_local};
 use plinko::{
+    common::crud::Crud,
     multitenancy::{tenant_update::TenantUpdateType, user::TenantLoginUserPatch},
-    types::crud::Crud,
 };
 
 use crate::{

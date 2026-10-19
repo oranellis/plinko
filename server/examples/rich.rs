@@ -14,32 +14,32 @@ use std::{
 
 use chrono::{DateTime, Days, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
     availability::{
         rule::{NewRule, RuleKind, WeeklySchedule},
         rule_set::RuleSetUpdate,
     },
+    common::{crud::Crud, dates::TimeConstraint, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
         user_group::NewTenantUserGroup,
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    scheduler,
-    types::{
-        affinity::NewAffinity,
-        common::TimeConstraint,
-        crud::Crud,
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
-        short_id::ShortId,
+        task::{Assignee, NewTask, TaskPatch, Worker},
+    },
+    planner::resources::{
+        affinity::NewAffinity,
         tag::NewTag,
         target::NewTarget,
-        task::{Assignee, NewTask, TaskPatch, Worker},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch},
-        workload::Workload,
     },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
+    scheduler,
 };
 use uuid::Uuid;
 // }}}

@@ -1,5 +1,5 @@
 // modules {{{
-use crate::types::error::{PlinkoError, PlinkoResult};
+use crate::common::error::{PlinkoError, PlinkoResult};
 use serde::{Deserialize, Serialize};
 // }}}
 

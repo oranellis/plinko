@@ -1,7 +1,7 @@
 // modules{{{
 use std::fmt::Debug;
 
-use crate::types::workload::Workload;
+use crate::availability::workload::Workload;
 // }}}
 
 /// What a rule set decides for each day: hours of availability, or whether a day is allowed

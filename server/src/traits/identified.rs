@@ -7,16 +7,18 @@ use crate::{
         user::{NewTenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
-    types::{
-        affinity::{AffinityPatch, NewAffinity},
-        data_block::{DataBlockPatch, NewDataBlock},
+    planner::items::{
         milestone::{MilestonePatch, NewMilestone},
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         plan_delay::{NewPlanDelay, PlanDelayPatch},
-        tag::{NewTag, TagPatch},
-        target::{NewTarget, TargetPatch},
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
+    },
+    planner::resources::{
+        affinity::{AffinityPatch, NewAffinity},
+        data_block::{DataBlockPatch, NewDataBlock},
+        tag::{NewTag, TagPatch},
+        target::{NewTarget, TargetPatch},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
     },
 };

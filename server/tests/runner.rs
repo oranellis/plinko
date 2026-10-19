@@ -1,21 +1,20 @@
 // modules {{{
 use chrono::{DateTime, NaiveDate, Utc};
 use plinko::{
+    availability::workload::Workload,
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    types::{
-        crud::Crud,
+    planner::items::{
         dependency::{Dependency, DependencyNode},
         parent::Parent,
-        short_id::ShortId,
         task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
-        user::NewPlanUser,
-        workload::Workload,
     },
+    planner::resources::user::NewPlanUser,
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 // }}}

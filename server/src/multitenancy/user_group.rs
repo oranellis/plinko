@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
+    common::error::PlinkoResult, helpers::functions::check_id_match, traits::patch::Patchable,
 };
 // }}}
 

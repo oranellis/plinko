@@ -5,10 +5,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    availability::day_value::DayValue,
-    helpers::functions::check_id_match,
-    traits::patch::Patchable,
-    types::{error::PlinkoResult, workload::Workload},
+    availability::day_value::DayValue, availability::workload::Workload,
+    common::error::PlinkoResult, helpers::functions::check_id_match, traits::patch::Patchable,
 };
 // }}}
 

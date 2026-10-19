@@ -12,6 +12,7 @@ use gloo_net::websocket::{Message, futures::WebSocket};
 use leptos::{prelude::*, task::spawn_local};
 use plinko::{
     codec,
+    common::short_id::ShortId,
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdateType},
@@ -20,7 +21,6 @@ use plinko::{
     planner::plan_update::PlanUpdate,
     protocol::{ClientMessage, Created, Profile, ServerMessage},
     scheduler::state::TenantVolatileState,
-    types::short_id::ShortId,
 };
 // }}}
 

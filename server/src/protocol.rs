@@ -6,13 +6,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
     },
     planner::plan_update::PlanUpdate,
     scheduler::state::TenantVolatileState,
-    types::{crud::Crud, short_id::ShortId},
 };
 // }}}
 

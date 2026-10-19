@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 use leptos::{html, prelude::*};
 use plinko::{
+    availability::workload::Workload,
     availability::{
         day_value::DayValue,
         rule::{
@@ -16,7 +17,7 @@ use plinko::{
         },
         rule_set::{RuleSet, RuleSetUpdate},
     },
-    types::{crud::Crud, workload::Workload},
+    common::crud::Crud,
 };
 use uuid::Uuid;
 

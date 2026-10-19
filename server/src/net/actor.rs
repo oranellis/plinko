@@ -9,6 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::{
+    common::short_id::ShortId,
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
@@ -18,7 +19,6 @@ use crate::{
     protocol::{Created, Profile, ServerMessage},
     scheduler::state::TenantVolatileState,
     store::Store,
-    types::short_id::ShortId,
 };
 // }}}
 
@@ -111,7 +111,7 @@ struct Actor {
 
 // start {{{
 /// Starts the actor for a tenant that has been saved in the store
-pub fn start(store: Arc<Store>) -> crate::types::error::PlinkoResult<Handle> {
+pub fn start(store: Arc<Store>) -> crate::common::error::PlinkoResult<Handle> {
     let (tenant, seq) = store.load()?;
     let (scheduler_copy, _) = store.load()?;
     let (commands, receiver) = mpsc::unbounded_channel();

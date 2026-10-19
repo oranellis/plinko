@@ -5,12 +5,13 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdateType},
     },
+    planner::items::dependency::PlanNode,
     planner::plan_update::PlanUpdate,
-    types::{crud::Crud, dependency::PlanNode, short_id::ShortId},
 };
 // }}}
 

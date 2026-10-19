@@ -4,12 +4,12 @@
 // modules {{{
 use plinko::{
     multitenancy::tenant::Tenant,
-    planner::plan::Plan,
-    scheduler::state::PlanVolatileState,
-    types::{
+    planner::items::{
         dependency::PlanNode,
         task::{Status, Worker},
     },
+    planner::plan::Plan,
+    scheduler::state::PlanVolatileState,
 };
 
 use crate::{format, forms, gantt::arrange::Mark, model::node_name};

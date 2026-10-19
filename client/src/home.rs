@@ -3,7 +3,7 @@
 // modules {{{
 use chrono::{Days, NaiveDate};
 use leptos::prelude::*;
-use plinko::types::task::Status;
+use plinko::planner::items::task::Status;
 
 use crate::{
     format,

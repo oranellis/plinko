@@ -7,12 +7,12 @@ use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
 use plinko::{
     availability::day_value::DayValue,
-    planner::plan::Plan,
-    scheduler::state::PlanVolatileState,
-    types::{
+    planner::items::{
         dependency::{DependencyNode, PlanNode},
         parent::Parent,
     },
+    planner::plan::Plan,
+    scheduler::state::PlanVolatileState,
 };
 use uuid::Uuid;
 
@@ -227,15 +227,13 @@ impl Context<'_> {
 #[cfg(test)]
 mod tests {
     use plinko::{
-        planner::{plan::NewPlan, plan_update::PlanUpdate},
-        scheduler::state::UnscheduledReason,
-        types::{
-            common::DateRange,
-            crud::Crud,
+        common::{crud::Crud, dates::DateRange, short_id::ShortId},
+        planner::items::{
             dependency::Dependency,
-            short_id::ShortId,
             task::{self, NewTask, TaskPatch},
         },
+        planner::{plan::NewPlan, plan_update::PlanUpdate},
+        scheduler::state::UnscheduledReason,
     };
 
     use super::*;

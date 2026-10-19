@@ -4,11 +4,11 @@ use std::collections::{HashMap, hash_map::Entry};
 use uuid::Uuid;
 
 use crate::{
-    traits::{identified::Identified, patch::Patchable},
-    types::{
+    common::{
         crud::Crud,
         error::{PlinkoError, PlinkoResult},
     },
+    traits::{identified::Identified, patch::Patchable},
 };
 // }}}
 

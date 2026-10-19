@@ -1,9 +1,9 @@
 // modules {{{
 use chrono::NaiveDate;
 use plinko::{
+    common::short_id::ShortId,
     multitenancy::tenant::Tenant,
     scheduler::ledger::{Claim, Ledger, MAX_FILL_DAYS, Run},
-    types::short_id::ShortId,
 };
 // }}}
 

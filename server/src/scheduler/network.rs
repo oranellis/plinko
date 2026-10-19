@@ -2,11 +2,11 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::{
+    planner::items::dependency::PlanNode,
     planner::{
         graph::{Edge, Graph, Vertex},
         plan::Plan,
     },
-    types::dependency::PlanNode,
 };
 // }}}
 

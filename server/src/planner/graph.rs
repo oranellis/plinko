@@ -4,8 +4,7 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::{
-    planner::{plan::Plan, plan_entity::PlanItem},
-    types::{
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
         milestone::Milestone,
         parent::Parent,
@@ -14,6 +13,7 @@ use crate::{
         task::Task,
         task_group::TaskGroup,
     },
+    planner::{plan::Plan, plan_entity::PlanItem},
 };
 // }}}
 

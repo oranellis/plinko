@@ -6,9 +6,10 @@
 use leptos::prelude::*;
 use plinko::{
     availability::rule_set::{RuleSet, RuleSetUpdate},
+    availability::workload::Workload,
+    common::short_id::ShortId,
     multitenancy::tenant_update::TenantUpdateType,
     planner::plan_update::PlanUpdate,
-    types::{short_id::ShortId, workload::Workload},
 };
 use uuid::Uuid;
 

@@ -6,12 +6,9 @@ use std::collections::BTreeMap;
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
+    common::{crud::Crud, short_id::ShortId},
+    planner::items::task::{Assignee, PersistentState, Status, TaskPatch},
     planner::plan_update::PlanUpdate,
-    types::{
-        crud::Crud,
-        short_id::ShortId,
-        task::{Assignee, PersistentState, Status, TaskPatch},
-    },
 };
 use uuid::Uuid;
 

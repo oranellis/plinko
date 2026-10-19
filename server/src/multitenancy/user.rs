@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    availability::workload::Workload,
     availability::{calendar::Calendar, rule_set::RuleSet},
+    common::{error::PlinkoResult, short_id::ShortId},
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{error::PlinkoResult, short_id::ShortId, workload::Workload},
 };
 // }}}
 

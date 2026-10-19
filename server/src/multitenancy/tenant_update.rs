@@ -1,12 +1,13 @@
 // modules{{{
 use crate::{
     availability::rule_set::RuleSetUpdate,
+    availability::workload::Workload,
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         user::{NewTenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
     planner::{plan::NewPlan, plan_update::PlanUpdate},
-    types::{crud::Crud, short_id::ShortId, workload::Workload},
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};

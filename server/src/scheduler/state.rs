@@ -6,14 +6,18 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::planner::graph::Vertex;
-use crate::types::{
-    common::{DateRange, TimeConstraint},
-    dependency::PlanNode,
-    milestone, plan_buffer, plan_delay,
-    short_id::ShortId,
-    task::{self, Assignee},
-    task_group,
-    workload::Workload,
+use crate::{
+    availability::workload::Workload,
+    common::{
+        dates::{DateRange, TimeConstraint},
+        short_id::ShortId,
+    },
+    planner::items::{
+        dependency::PlanNode,
+        milestone, plan_buffer, plan_delay,
+        task::{self, Assignee},
+        task_group,
+    },
 };
 // }}}
 

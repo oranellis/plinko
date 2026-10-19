@@ -7,25 +7,25 @@ use uuid::Uuid;
 
 use crate::{
     availability::calendar::Calendar,
+    availability::workload::Workload,
+    common::{
+        crud::Crud,
+        error::{PlinkoError, PlinkoResult},
+        short_id::ShortId,
+    },
     multitenancy::{
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{Role, TenantLoginUser, TenantUserVolatileState},
         user_group::TenantUserGroup,
     },
+    planner::items::task::{Assignee, Status},
+    planner::resources::user::NewPlanUser,
     planner::{plan::Plan, plan_update::PlanUpdate},
     scheduler::{
         self,
         state::{Baseline, TenantVolatileState},
     },
     traits::entity::Entity,
-    types::{
-        crud::Crud,
-        error::{PlinkoError, PlinkoResult},
-        short_id::ShortId,
-        task::{Assignee, Status},
-        user::NewPlanUser,
-        workload::Workload,
-    },
 };
 // }}}
 

@@ -5,7 +5,8 @@ use chrono::{Days, NaiveDate};
 use uuid::Uuid;
 
 use crate::{
-    availability::calendar::Calendar, multitenancy::tenant::Tenant, types::workload::Workload,
+    availability::calendar::Calendar, availability::workload::Workload,
+    multitenancy::tenant::Tenant,
 };
 // }}}
 

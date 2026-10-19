@@ -2,14 +2,14 @@
 
 // modules {{{
 use crate::{
+    planner::items::{
+        dependency::{Dependency, DependencyNode, PlanNode},
+        parent::Parent,
+    },
     planner::{
         plan::Plan,
         plan_update::PlanUpdate,
         removal::{all_nodes, placement},
-    },
-    types::{
-        dependency::{Dependency, DependencyNode, PlanNode},
-        parent::Parent,
     },
 };
 // }}}

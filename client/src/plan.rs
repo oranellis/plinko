@@ -5,20 +5,19 @@ use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
 use plinko::{
-    planner::plan_update::PlanUpdate,
-    protocol::Created,
-    scheduler::state::PlanVolatileState,
-    types::{
-        crud::Crud,
+    availability::workload::Workload,
+    common::{crud::Crud, short_id::ShortId},
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
-        short_id::ShortId,
         task::{NewTask, TaskPatch, Worker},
         task_group::NewTaskGroup,
-        workload::Workload,
     },
+    planner::plan_update::PlanUpdate,
+    protocol::Created,
+    scheduler::state::PlanVolatileState,
 };
 use uuid::Uuid;
 
@@ -324,7 +323,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     parent,
                 })),
                 |id, plan, sync, start, then| {
-                    let patch = plinko::types::milestone::MilestonePatch {
+                    let patch = plinko::planner::items::milestone::MilestonePatch {
                         id,
                         name: None,
                         parent: None,
@@ -342,7 +341,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     parent,
                 })),
                 |id, plan, sync, start, then| {
-                    let patch = plinko::types::task_group::TaskGroupPatch {
+                    let patch = plinko::planner::items::task_group::TaskGroupPatch {
                         id,
                         name: None,
                         dependencies: start.map(|d| vec![d]),
@@ -358,7 +357,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     duration: 3,
                 })),
                 |id, plan, sync, start, then| {
-                    let patch = plinko::types::plan_buffer::PlanBufferPatch {
+                    let patch = plinko::planner::items::plan_buffer::PlanBufferPatch {
                         id,
                         parent: None,
                         dependencies: start.map(|d| vec![d]),

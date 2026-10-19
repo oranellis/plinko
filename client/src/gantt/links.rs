@@ -5,12 +5,12 @@
 use std::collections::HashMap;
 
 use plinko::{
-    planner::plan::Plan,
-    scheduler::state::PlanVolatileState,
-    types::{
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
         parent::Parent,
     },
+    planner::plan::Plan,
+    scheduler::state::PlanVolatileState,
 };
 
 use crate::{gantt::arrange::Mark, model};
@@ -155,14 +155,13 @@ fn path(
 #[cfg(test)]
 mod tests {
     use plinko::{
-        planner::{plan::NewPlan, plan_update::PlanUpdate},
-        types::{
-            crud::Crud,
+        common::{crud::Crud, short_id::ShortId},
+        planner::items::{
             dependency::Dependency,
-            short_id::ShortId,
             task::{NewTask, TaskPatch},
             task_group::NewTaskGroup,
         },
+        planner::{plan::NewPlan, plan_update::PlanUpdate},
     };
     use uuid::Uuid;
 

@@ -17,7 +17,7 @@ use std::{collections::HashMap, time::Duration};
 
 use chrono::NaiveDate;
 use leptos::{html, prelude::*};
-use plinko::types::dependency::PlanNode;
+use plinko::planner::items::dependency::PlanNode;
 use wasm_bindgen::{JsCast, closure::Closure};
 use web_sys::{CanvasRenderingContext2d, PointerEvent, WheelEvent};
 

@@ -4,22 +4,24 @@ use uuid::Uuid;
 
 use crate::{
     availability::rule_set::RuleSetUpdate,
-    planner::plan::PlanSchedulerDataPatch,
-    types::{
-        affinity::{AffinityPatch, NewAffinity},
-        crud::Crud,
-        data_block::{DataBlockPatch, NewDataBlock},
+    availability::workload::Workload,
+    common::crud::Crud,
+    planner::items::{
         dependency::{Dependency, PlanNode},
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         plan_delay::{NewPlanDelay, PlanDelayPatch},
-        tag::{NewTag, TagPatch},
-        target::{NewTarget, TargetPatch},
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
+    },
+    planner::plan::PlanSchedulerDataPatch,
+    planner::resources::{
+        affinity::{AffinityPatch, NewAffinity},
+        data_block::{DataBlockPatch, NewDataBlock},
+        tag::{NewTag, TagPatch},
+        target::{NewTarget, TargetPatch},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
-        workload::Workload,
     },
 };
 // }}}

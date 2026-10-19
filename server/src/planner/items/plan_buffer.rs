@@ -6,12 +6,11 @@ use uuid::Uuid;
 
 use crate::{
     availability::calendar::Calendar,
+    availability::workload::Workload,
+    common::{dates::DateRange, error::PlinkoResult},
     helpers::functions::check_id_match,
+    planner::items::{dependency::Dependency, parent::Parent},
     traits::patch::Patchable,
-    types::{
-        common::DateRange, dependency::Dependency, error::PlinkoResult, parent::Parent,
-        workload::Workload,
-    },
 };
 // }}}
 

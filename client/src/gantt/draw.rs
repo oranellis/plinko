@@ -6,7 +6,7 @@
 // modules {{{
 use crate::gantt::pen::Pen;
 use chrono::{Datelike, NaiveDate, Weekday};
-use plinko::types::dependency::PlanNode;
+use plinko::planner::items::dependency::PlanNode;
 
 use crate::{
     format,

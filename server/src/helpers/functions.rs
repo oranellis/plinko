@@ -1,7 +1,7 @@
 // modules{{{
 use std::fmt::Display;
 
-use crate::types::error::{PlinkoError, PlinkoResult};
+use crate::common::error::{PlinkoError, PlinkoResult};
 // }}}
 
 pub fn check_id_match<T>(id1: T, id2: T) -> PlinkoResult<()>

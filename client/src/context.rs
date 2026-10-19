@@ -3,11 +3,9 @@
 // modules {{{
 use leptos::prelude::*;
 use plinko::{
+    common::{crud::Crud, short_id::ShortId},
+    planner::items::{dependency::PlanNode, plan_buffer::PlanBufferPatch, task::Status},
     planner::plan_update::PlanUpdate,
-    types::{
-        crud::Crud, dependency::PlanNode, plan_buffer::PlanBufferPatch, short_id::ShortId,
-        task::Status,
-    },
 };
 use uuid::Uuid;
 

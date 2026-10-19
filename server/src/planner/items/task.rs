@@ -5,16 +5,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match,
-    traits::patch::Patchable,
-    types::{
-        common::{DateRange, TimeConstraint},
-        data_block::DataBlocks,
-        dependency::Dependency,
+    availability::workload::Workload,
+    common::{
+        dates::{DateRange, TimeConstraint},
         error::{PlinkoError, PlinkoResult},
-        parent::Parent,
-        workload::Workload,
     },
+    helpers::functions::check_id_match,
+    planner::items::{dependency::Dependency, parent::Parent},
+    planner::resources::data_block::DataBlocks,
+    traits::patch::Patchable,
 };
 // }}}
 

@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::{
     availability::rule_set::{RuleSet, RuleSetUpdate},
+    common::error::PlinkoResult,
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::error::PlinkoResult,
 };
 // }}}
 

@@ -11,16 +11,17 @@ use futures_util::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use plinko::{
     codec,
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role, TenantLoginUser},
     },
     net::{actor, http},
+    planner::resources::user::NewPlanUser,
     planner::{plan::NewPlan, plan_update::PlanUpdate},
     protocol::{ClientMessage, ServerMessage},
     store::Store,
-    types::{crud::Crud, short_id::ShortId, user::NewPlanUser},
 };
 use tokio_tungstenite::tungstenite::{self, client::IntoClientRequest};
 use tower::ServiceExt;

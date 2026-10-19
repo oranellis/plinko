@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use uuid::Uuid;
 
-use crate::types::short_id::ShortId;
+use crate::common::short_id::ShortId;
 // }}}
 
 #[derive(Debug)]

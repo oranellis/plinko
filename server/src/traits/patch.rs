@@ -1,5 +1,5 @@
 // modules{{{
-use crate::types::error::PlinkoResult;
+use crate::common::error::PlinkoResult;
 // }}}
 
 pub trait Patchable<P> {

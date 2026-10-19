@@ -8,25 +8,29 @@ use uuid::Uuid;
 
 use crate::{
     availability::rule_set::RuleSet,
-    planner::{graph, plan_entity::PlanItem, plan_update::PlanUpdate},
-    traits::{entity::Entity, patch::Patchable},
-    types::{
-        affinity::Affinity,
-        data_block::DataBlock,
-        dependency::{DependencyNode, PlanNode},
+    availability::workload::Workload,
+    common::{
         error::{PlinkoError, PlinkoResult},
+        short_id::ShortId,
+    },
+    planner::items::{
+        dependency::{DependencyNode, PlanNode},
         milestone::Milestone,
         parent::Parent,
         plan_buffer::PlanBuffer,
         plan_delay::PlanDelay,
-        short_id::ShortId,
-        tag::Tag,
-        target::Target,
         task::{Assignee, Task, Worker},
         task_group::TaskGroup,
-        user::{PlanUserData, PlanUserGroupData},
-        workload::Workload,
     },
+    planner::resources::{
+        affinity::Affinity,
+        data_block::DataBlock,
+        tag::Tag,
+        target::Target,
+        user::{PlanUserData, PlanUserGroupData},
+    },
+    planner::{graph, plan_entity::PlanItem, plan_update::PlanUpdate},
+    traits::{entity::Entity, patch::Patchable},
 };
 // }}}
 

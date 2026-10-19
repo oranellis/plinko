@@ -13,8 +13,8 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{
+    common::error::{PlinkoError, PlinkoResult},
     store::Store,
-    types::error::{PlinkoError, PlinkoResult},
 };
 // }}}
 

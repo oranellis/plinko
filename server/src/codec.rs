@@ -5,7 +5,7 @@
 // modules {{{
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::types::error::{PlinkoError, PlinkoResult};
+use crate::common::error::{PlinkoError, PlinkoResult};
 // }}}
 
 // functions {{{
@@ -27,11 +27,10 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::types::{
-        crud::Crud,
-        short_id::ShortId,
-        task::{TaskPatch, Worker},
-        workload::Workload,
+    use crate::{
+        availability::workload::Workload,
+        common::{crud::Crud, short_id::ShortId},
+        planner::items::task::{TaskPatch, Worker},
     };
 
     fn patch() -> TaskPatch {

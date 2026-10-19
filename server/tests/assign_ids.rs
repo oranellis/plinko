@@ -1,32 +1,29 @@
 // modules {{{
 use chrono::NaiveDate;
 use plinko::{
+    availability::workload::Workload,
     availability::{
         rule::{NewRule, RuleKind},
         rule_set::RuleSetUpdate,
     },
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant_update::{PlanTenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
         user_group::NewTenantUserGroup,
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    types::{
+    planner::items::{
+        dependency::PlanNode, milestone::NewMilestone, parent::Parent, plan_buffer::NewPlanBuffer,
+        task::NewTask, task_group::NewTaskGroup,
+    },
+    planner::resources::{
         affinity::NewAffinity,
-        crud::Crud,
         data_block::{BlockContent, NewDataBlock},
-        dependency::PlanNode,
-        milestone::NewMilestone,
-        parent::Parent,
-        plan_buffer::NewPlanBuffer,
-        short_id::ShortId,
         tag::NewTag,
         target::NewTarget,
-        task::NewTask,
-        task_group::NewTaskGroup,
         user::{NewPlanUser, NewPlanUserGroup},
-        workload::Workload,
     },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 // }}}

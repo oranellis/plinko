@@ -4,16 +4,14 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
+    common::error::{PlinkoError, PlinkoResult},
     multitenancy::{
         tenant::Tenant,
         user::{NewTenantLoginUser, TenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroup, TenantUserGroupPatch},
     },
+    planner::items::task::Assignee,
     traits::entity::Entity,
-    types::{
-        error::{PlinkoError, PlinkoResult},
-        task::Assignee,
-    },
 };
 // }}}
 

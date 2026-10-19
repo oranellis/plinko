@@ -14,13 +14,13 @@ use std::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
+    common::short_id::ShortId,
     multitenancy::{tenant::Tenant, tenant_update::TenantUpdate},
     net::actor::Command,
     scheduler::{
         self, Refreshed, Tracker,
         state::{Baseline, TenantVolatileState},
     },
-    types::short_id::ShortId,
 };
 
 use std::collections::HashMap;

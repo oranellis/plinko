@@ -3,26 +3,26 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use plinko::{
+    availability::workload::Workload,
     availability::{
         rule::{NewRule, RuleKind, WeeklySchedule},
         rule_set::RuleSetUpdate,
     },
-    planner::{plan::*, plan_update::PlanUpdate},
-    types::{
-        affinity::{AffinityPatch, NewAffinity},
-        crud::Crud,
-        data_block::{BlockContent, DataBlockPatch, NewDataBlock, TodoItem},
+    common::{crud::Crud, error::PlinkoResult, short_id::ShortId},
+    planner::items::{
         dependency::PlanNode,
-        error::PlinkoResult,
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
-        short_id::ShortId,
-        target::{NewTarget, TargetPatch},
         task::{Assignee, NewTask, TaskPatch, Worker},
         task_group::NewTaskGroup,
-        workload::Workload,
     },
+    planner::resources::{
+        affinity::{AffinityPatch, NewAffinity},
+        data_block::{BlockContent, DataBlockPatch, NewDataBlock, TodoItem},
+        target::{NewTarget, TargetPatch},
+    },
+    planner::{plan::*, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 // }}}
@@ -363,7 +363,7 @@ fn a_new_affinity_allows_every_day() {
 // plan_users_hold_tags_by_id {{{
 #[test]
 fn plan_users_hold_tags_by_id() {
-    use plinko::types::{
+    use plinko::planner::resources::{
         tag::NewTag,
         user::{NewPlanUser, PlanUserDataPatch},
     };

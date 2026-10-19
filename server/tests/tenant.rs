@@ -3,31 +3,28 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
     availability::{
         rule::{NewRule, RuleKind},
         rule_set::RuleSetUpdate,
     },
+    common::{crud::Crud, dates::DateRange, error::PlinkoResult, short_id::ShortId},
     multitenancy::{
         tenant::*,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role, TenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
+    planner::items::{
+        parent::Parent,
+        task::{self, Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
+    },
+    planner::resources::user::{NewPlanUser, NewPlanUserGroup},
     planner::{
         plan::{NewPlan, Plan},
         plan_update::PlanUpdate,
     },
     scheduler::state::{PlanVolatileState, TenantVolatileState},
-    types::{
-        common::DateRange,
-        crud::Crud,
-        error::PlinkoResult,
-        parent::Parent,
-        short_id::ShortId,
-        task::{self, Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
-        user::{NewPlanUser, NewPlanUserGroup},
-        workload::Workload,
-    },
 };
 use uuid::Uuid;
 // }}}

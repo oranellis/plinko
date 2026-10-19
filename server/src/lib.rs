@@ -1,5 +1,6 @@
 pub mod availability;
 pub mod codec;
+pub mod common;
 pub mod helpers;
 pub mod multitenancy;
 #[cfg(feature = "server")]
@@ -10,4 +11,3 @@ pub mod scheduler;
 #[cfg(feature = "server")]
 pub mod store;
 pub mod traits;
-pub mod types;

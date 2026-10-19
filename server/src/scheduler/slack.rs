@@ -4,9 +4,8 @@ use std::collections::{HashMap, HashSet};
 use chrono::{Days, NaiveDate};
 
 use crate::{
-    planner::graph::Vertex,
+    common::dates::DateRange, planner::graph::Vertex, planner::items::dependency::PlanNode,
     scheduler::network::Network,
-    types::{common::DateRange, dependency::PlanNode},
 };
 // }}}
 

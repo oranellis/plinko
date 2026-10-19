@@ -3,11 +3,13 @@
 
 // modules {{{
 use chrono::NaiveDate;
-use plinko::types::{
-    common::TimeConstraint,
-    dependency::{DependencyNode, PlanNode},
-    parent::Parent,
-    task::{Status, Worker},
+use plinko::{
+    common::dates::TimeConstraint,
+    planner::items::{
+        dependency::{DependencyNode, PlanNode},
+        parent::Parent,
+        task::{Status, Worker},
+    },
 };
 use uuid::Uuid;
 // }}}

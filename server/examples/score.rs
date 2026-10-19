@@ -8,26 +8,26 @@ use std::{collections::HashMap, time::Instant};
 
 use chrono::{DateTime, Days, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
+    common::{crud::Crud, dates::TimeConstraint, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    scheduler,
-    types::{
-        common::TimeConstraint,
-        crud::Crud,
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
-        short_id::ShortId,
+        task::{NewTask, TaskPatch, Worker},
+    },
+    planner::resources::{
         tag::NewTag,
         target::NewTarget,
-        task::{NewTask, TaskPatch, Worker},
         user::{NewPlanUser, PlanUserDataPatch},
-        workload::Workload,
     },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
+    scheduler,
 };
 use uuid::Uuid;
 // }}}

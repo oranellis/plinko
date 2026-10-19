@@ -5,7 +5,7 @@
 // modules {{{
 use crate::gantt::pen::Pen;
 use leptos::prelude::Callback;
-use plinko::types::dependency::PlanNode;
+use plinko::planner::items::dependency::PlanNode;
 
 use crate::gantt::{arrange::Kind, layout::Rect, links::Link};
 // }}}

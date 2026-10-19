@@ -3,7 +3,7 @@
 
 // modules {{{
 use leptos::prelude::*;
-use plinko::types::short_id::ShortId;
+use plinko::common::short_id::ShortId;
 use uuid::Uuid;
 use wasm_bindgen::{JsCast, closure::Closure};
 // }}}

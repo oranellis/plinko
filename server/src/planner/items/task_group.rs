@@ -4,12 +4,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    common::{dates::DateRange, error::PlinkoResult},
     helpers::functions::check_id_match,
+    planner::items::{dependency::Dependency, parent::Parent},
+    planner::resources::data_block::DataBlocks,
     traits::patch::Patchable,
-    types::{
-        common::DateRange, data_block::DataBlocks, dependency::Dependency, error::PlinkoResult,
-        parent::Parent,
-    },
 };
 // }}}
 

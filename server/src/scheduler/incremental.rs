@@ -7,8 +7,10 @@ use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
 
 use crate::{
+    common::{dates::TimeConstraint, short_id::ShortId},
     multitenancy::tenant::Tenant,
     planner::graph::Vertex,
+    planner::items::dependency::PlanNode,
     scheduler::{
         Fixes, combined,
         impact::{Change, PlanChange},
@@ -18,7 +20,6 @@ use crate::{
         plan_solver::PlanSolver,
         state::TenantVolatileState,
     },
-    types::{common::TimeConstraint, dependency::PlanNode, short_id::ShortId},
 };
 // }}}
 

@@ -7,18 +7,17 @@ use std::{
 use uuid::Uuid;
 
 use crate::{
+    common::{dates::TimeConstraint, short_id::ShortId},
     multitenancy::tenant::Tenant,
+    planner::items::{
+        dependency::PlanNode,
+        task::{Assignee, Status, Worker},
+    },
     scheduler::{
         combined,
         ledger::Ledger,
         plan_solver::{PlanSolver, eligible},
         state::{Baseline, PlanVolatileState},
-    },
-    types::{
-        common::TimeConstraint,
-        dependency::PlanNode,
-        short_id::ShortId,
-        task::{Assignee, Status, Worker},
     },
 };
 // }}}

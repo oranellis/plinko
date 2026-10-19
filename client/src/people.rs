@@ -5,13 +5,13 @@ use std::collections::HashSet;
 
 use leptos::{prelude::*, task::spawn_local};
 use plinko::{
+    common::crud::Crud,
     multitenancy::{
         tenant_update::TenantUpdateType,
         user::{NewTenantLoginUser, Role, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
     protocol::Created,
-    types::crud::Crud,
 };
 use uuid::Uuid;
 

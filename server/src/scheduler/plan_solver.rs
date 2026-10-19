@@ -6,8 +6,17 @@ use chrono::{Datelike, Days, NaiveDate};
 use uuid::Uuid;
 
 use crate::{
+    availability::workload::Workload,
     availability::{calendar::Calendar, rule_set::RuleSet},
+    common::dates::{DateRange, TimeConstraint},
     multitenancy::tenant::Tenant,
+    planner::items::{
+        dependency::{Dependency, PlanNode},
+        milestone::{self, DerivedStatus},
+        plan_buffer, plan_delay,
+        task::{self, Assignee, ScheduleMode, Status, Task, Worker},
+        task_group,
+    },
     planner::{graph::Vertex, plan::Plan},
     scheduler::PlanRepairs,
     scheduler::{
@@ -20,15 +29,6 @@ use crate::{
             UnscheduledReason,
         },
         status::milestone_statuses,
-    },
-    types::{
-        common::{DateRange, TimeConstraint},
-        dependency::{Dependency, PlanNode},
-        milestone::{self, DerivedStatus},
-        plan_buffer, plan_delay,
-        task::{self, Assignee, ScheduleMode, Status, Task, Worker},
-        task_group,
-        workload::Workload,
     },
 };
 // }}}
@@ -1407,8 +1407,9 @@ fn buffer_limits(plan: &Plan) -> HashMap<Uuid, NaiveDate> {
             continue;
         };
         for dep in dependencies {
-            if let crate::types::dependency::DependencyNode::Node(PlanNode::PlanBuffer(id)) =
-                dep.node
+            if let crate::planner::items::dependency::DependencyNode::Node(PlanNode::PlanBuffer(
+                id,
+            )) = dep.node
             {
                 let limit = date - chrono::Duration::days(i64::from(dep.lag))
                     + chrono::Duration::days(extra);

@@ -5,15 +5,12 @@
 // modules {{{
 use leptos::prelude::*;
 use plinko::{
-    planner::{plan::Plan, plan_update::PlanUpdate},
-    types::{
-        crud::Crud,
-        data_block::{
-            BlockContent, Budget, DataBlock, DataBlockPatch, Link, NewDataBlock, TodoItem,
-        },
-        dependency::PlanNode,
-        short_id::ShortId,
+    common::{crud::Crud, short_id::ShortId},
+    planner::items::dependency::PlanNode,
+    planner::resources::data_block::{
+        BlockContent, Budget, DataBlock, DataBlockPatch, Link, NewDataBlock, TodoItem,
     },
+    planner::{plan::Plan, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 

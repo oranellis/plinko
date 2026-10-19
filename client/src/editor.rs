@@ -7,18 +7,17 @@ use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
-    planner::{plan::Plan, plan_update::PlanUpdate},
-    types::{
-        crud::Crud,
+    availability::workload::Workload,
+    common::{crud::Crud, short_id::ShortId},
+    planner::items::{
         dependency::{Dependency, DependencyNode, PlanNode},
         milestone::MilestonePatch,
         parent::Parent,
         plan_buffer::PlanBufferPatch,
-        short_id::ShortId,
         task::{Assignee, PersistentState, ScheduleMode, Status, Task, TaskPatch, Worker},
         task_group::TaskGroupPatch,
-        workload::Workload,
     },
+    planner::{plan::Plan, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 

@@ -117,7 +117,7 @@ fn session_cookie(state: &AppState, token: &str, lifetime: u64) -> (HeaderName, 
 /// Runs the store call off the async threads, since hashing a password takes a while
 async fn blocking<T: Send + 'static>(
     store: &Arc<Store>,
-    call: impl FnOnce(&Store) -> crate::types::error::PlinkoResult<T> + Send + 'static,
+    call: impl FnOnce(&Store) -> crate::common::error::PlinkoResult<T> + Send + 'static,
 ) -> Option<T> {
     let store = store.clone();
     tokio::task::spawn_blocking(move || call(&store).ok())

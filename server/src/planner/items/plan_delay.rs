@@ -5,9 +5,10 @@ use uuid::Uuid;
 
 use crate::helpers::double_option;
 use crate::{
+    common::{dates::DateRange, error::PlinkoResult},
     helpers::functions::check_id_match,
+    planner::items::{dependency::Dependency, parent::Parent},
     traits::patch::Patchable,
-    types::{common::DateRange, dependency::Dependency, error::PlinkoResult, parent::Parent},
 };
 // }}}
 

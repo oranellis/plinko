@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn a_milestone_between_two_tasks_does_not_delay_the_second() {
-        use crate::types::milestone::{DerivedStatus, VolatileState};
+        use crate::planner::items::milestone::{DerivedStatus, VolatileState};
         let d = |day| NaiveDate::from_ymd_opt(2024, 1, day).unwrap();
         let link = Dependency {
             node: DependencyNode::ParentStart,

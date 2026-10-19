@@ -4,25 +4,27 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    planner::plan::Plan,
-    traits::entity::Entity,
-    types::{
-        affinity::{Affinity, AffinityPatch, NewAffinity},
+    common::error::{PlinkoError, PlinkoResult},
+    planner::items::{
         dependency::{Dependency, PlanNode},
-        error::{PlinkoError, PlinkoResult},
         milestone::{Milestone, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
         plan_delay::{NewPlanDelay, PlanDelay, PlanDelayPatch},
-        tag::{NewTag, Tag, TagPatch},
-        target::{NewTarget, Target, TargetPatch},
         task::{Assignee, NewTask, Task, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroup, TaskGroupPatch},
+    },
+    planner::plan::Plan,
+    planner::resources::{
+        affinity::{Affinity, AffinityPatch, NewAffinity},
+        tag::{NewTag, Tag, TagPatch},
+        target::{NewTarget, Target, TargetPatch},
         user::{
             NewPlanUser, NewPlanUserGroup, PlanUserData, PlanUserDataPatch, PlanUserGroupData,
             PlanUserGroupPatch,
         },
     },
+    traits::entity::Entity,
 };
 // }}}
 

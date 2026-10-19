@@ -14,8 +14,8 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::{
     codec,
+    common::error::{PlinkoError, PlinkoResult},
     multitenancy::{tenant::Tenant, tenant_update::TenantUpdate},
-    types::error::{PlinkoError, PlinkoResult},
 };
 // }}}
 

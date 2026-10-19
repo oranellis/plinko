@@ -13,11 +13,11 @@ use crate::{
             DEFAULT_RULE, EPOCH, MAX_NAME, NewRule, RULE_START_RANGE, Rule, RuleKind, RulePatch,
         },
     },
-    traits::entity::Entity,
-    types::{
+    common::{
         crud::Crud,
         error::{PlinkoError, PlinkoResult},
     },
+    traits::entity::Entity,
 };
 // }}}
 
@@ -142,7 +142,7 @@ mod tests {
     use super::*;
     use crate::{
         availability::rule::{DayOverride, Every, Unit, WeeklySchedule},
-        types::workload::Workload,
+        availability::workload::Workload,
     };
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {

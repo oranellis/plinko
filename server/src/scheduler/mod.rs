@@ -4,13 +4,13 @@ use std::{borrow::Cow, cmp::Reverse, collections::HashMap};
 use chrono::{Days, NaiveDate};
 
 use crate::{
+    common::short_id::ShortId,
     multitenancy::{tenant::Tenant, tenant_update::TenantUpdate},
     scheduler::{
         ledger::{Ledger, MAX_FILL_DAYS},
         plan_solver::PlanSolver,
         state::{Baseline, TenantVolatileState},
     },
-    types::short_id::ShortId,
 };
 // }}}
 
@@ -134,7 +134,7 @@ impl Tracker {
         &mut self,
         tenant: &mut Tenant,
         update: TenantUpdate,
-    ) -> crate::types::error::PlinkoResult<()> {
+    ) -> crate::common::error::PlinkoResult<()> {
         let last = self
             .last
             .get_or_insert_with(|| (tenant.schedule().cloned(), tenant.baselines().clone()));

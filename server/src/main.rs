@@ -8,13 +8,13 @@
 use std::{path::PathBuf, sync::Arc};
 
 use plinko::{
+    common::short_id::ShortId,
     multitenancy::{
         tenant::Tenant,
         user::{Role, TenantLoginUser},
     },
     net::{actor, http},
     store::{self, Store},
-    types::short_id::ShortId,
 };
 // }}}
 

@@ -6,7 +6,7 @@
 
 // modules {{{
 use chrono::NaiveDate;
-use plinko::types::dependency::PlanNode;
+use plinko::planner::items::dependency::PlanNode;
 use uuid::Uuid;
 
 use crate::model::Look;
