@@ -103,6 +103,7 @@ impl Patchable<PlanBufferPatch> for PlanBuffer {
 }
 // }}}
 
+// PlanBuffer supporting types {{{
 /// Written by the scheduler for every buffer it could schedule, see `PlanBuffer::place`
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
@@ -129,7 +130,9 @@ pub struct PlanBufferPatch {
     pub set_start_day: Option<Option<NaiveDate>>,
     pub duration: Option<u32>,
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,3 +227,4 @@ mod tests {
         assert_eq!(set_outside.place(d(2024, 1, 3), &calendar(), None), None);
     }
 }
+// }}}
