@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::DerivedStatus,
         parent::Parent,
         task::Status,
@@ -102,9 +102,9 @@ impl Derive<'_> {
     }
 
     fn all_done(&mut self, deps: &[Dependency], parent: Parent) -> bool {
-        deps.iter().all(|d| match d.node {
-            DependencyNode::Node(n) => self.is_done(n),
-            DependencyNode::ParentStart => match self.parent_start(parent) {
+        deps.iter().all(|d| match *d {
+            Dependency::Node(n) => self.is_done(n),
+            Dependency::ParentStart => match self.parent_start(parent) {
                 Some((own, grandparent)) => self.all_done(&own, grandparent),
                 None => true,
             },
@@ -112,9 +112,9 @@ impl Derive<'_> {
     }
 
     fn any_active(&mut self, deps: &[Dependency], parent: Parent) -> bool {
-        deps.iter().any(|d| match d.node {
-            DependencyNode::Node(n) => self.is_active(n),
-            DependencyNode::ParentStart => match self.parent_start(parent) {
+        deps.iter().any(|d| match *d {
+            Dependency::Node(n) => self.is_active(n),
+            Dependency::ParentStart => match self.parent_start(parent) {
                 Some((own, grandparent)) => self.any_active(&own, grandparent),
                 None => false,
             },

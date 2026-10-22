@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::Milestone,
         parent::Parent,
         plan_buffer::PlanBuffer,
@@ -156,10 +156,10 @@ fn collect_members<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<Pla
 
 /// `ParentStart` is the enclosing group's start, or today (`None`) at top level
 fn resolve(dep: &Dependency, parent: Parent) -> Option<Vertex> {
-    match (dep.node, parent) {
-        (DependencyNode::Node(n), _) => Some(n.into()),
-        (DependencyNode::ParentStart, Parent::Node(group)) => Some(Vertex::GroupStart(group)),
-        (DependencyNode::ParentStart, Parent::Plan) => None,
+    match (*dep, parent) {
+        (Dependency::Node(n), _) => Some(n.into()),
+        (Dependency::ParentStart, Parent::Node(group)) => Some(Vertex::GroupStart(group)),
+        (Dependency::ParentStart, Parent::Plan) => None,
     }
 }
 // }}}
@@ -277,7 +277,7 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
                     j != *i && other.from != edge.from && reach.leads(source, edge.from)
                 })
             })
-            .map(|(_, (dep, _))| dep.clone())
+            .map(|(_, (dep, _))| *dep)
             .collect();
         if kept.len() < deps.len() {
             changed.push((item, kept));

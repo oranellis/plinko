@@ -10,7 +10,7 @@ use plinko::{
     availability::workload::Workload,
     common::{crud::Crud, short_id::ShortId},
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::MilestonePatch,
         parent::Parent,
         plan_buffer::PlanBufferPatch,
@@ -175,7 +175,7 @@ fn depends_options(plan: ShortId, except: PlanNode, with_start: bool) -> Signal<
                 .filter(|n| *n != except)
                 .map(|n| {
                     let tone = if targets.contains(&n) { "target" } else { "" };
-                    let value = forms::node_value(DependencyNode::Node(n));
+                    let value = forms::node_value(Dependency::Node(n));
                     Choice::new(value, node_name(p, n), tone)
                 })
                 .collect();
@@ -204,11 +204,11 @@ fn DependencyList(
             empty=empty
             add="Add"
             count=Signal::derive(move || deps.with(Vec::len))
-            on_add=Callback::new(move |()| deps.update(|d| d.push(fresh.clone())))
+            on_add=Callback::new(move |()| deps.update(|d| d.push(fresh)))
         >
             <For each=move || 0..deps.with(Vec::len) key=|i| *i children=move |i| {
                 let node = Signal::derive(move || {
-                    deps.with(|d| d.get(i).map(|d| forms::node_value(d.node)).unwrap_or_default())
+                    deps.with(|d| d.get(i).map(|d| forms::node_value(*d)).unwrap_or_default())
                 });
                 view! {
                     <div class="row">
@@ -218,7 +218,7 @@ fn DependencyList(
                             placeholder=placeholder.clone()
                             on_change=Callback::new(move |v: String| {
                                 if let Some(node) = forms::parse_node(&v) {
-                                    deps.update(|d| if let Some(d) = d.get_mut(i) { d.node = node });
+                                    deps.update(|d| if let Some(d) = d.get_mut(i) { *d = node });
                                 }
                             })
                         />
@@ -256,7 +256,7 @@ fn Dependents(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> i
             placeholder="Select dependent…"
             choices=depends_options(plan, me, false)
             deps=deps
-            fresh=Dependency { node: DependencyNode::Node(me) }
+            fresh=Dependency::Node(me)
         />
     }
 }
@@ -265,20 +265,8 @@ fn Dependents(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> i
 fn dependents_of(plan: &Plan, me: PlanNode) -> Vec<Dependency> {
     let mut found: Vec<(String, Dependency)> = model::nodes(plan)
         .into_iter()
-        .filter(|n| {
-            *n != me
-                && model::dependencies(plan, *n)
-                    .iter()
-                    .any(|d| d.node == DependencyNode::Node(me))
-        })
-        .map(|n| {
-            (
-                node_name(plan, n),
-                Dependency {
-                    node: DependencyNode::Node(n),
-                },
-            )
-        })
+        .filter(|n| *n != me && model::dependencies(plan, *n).contains(&Dependency::Node(me)))
+        .map(|n| (node_name(plan, n), Dependency::Node(n)))
         .collect();
     found.sort_by(|a, b| a.0.cmp(&b.0));
     found.into_iter().map(|(_, d)| d).collect()
@@ -298,8 +286,8 @@ fn apply_dependents(
 ) {
     let wanted = |deps: &[Dependency]| -> HashSet<PlanNode> {
         deps.iter()
-            .filter_map(|d| match d.node {
-                DependencyNode::Node(n) if n != me => Some(n),
+            .filter_map(|d| match *d {
+                Dependency::Node(n) if n != me => Some(n),
                 _ => None,
             })
             .collect()
@@ -310,10 +298,10 @@ fn apply_dependents(
             .tenant
             .with_untracked(|t| Some(model::dependencies(t.as_ref()?.plans().get(&plan)?, other)))
             .unwrap_or_default();
-        let mine = DependencyNode::Node(me);
-        deps.retain(|d| d.node != mine || new.contains(&other));
-        if new.contains(&other) && !deps.iter().any(|d| d.node == mine) {
-            deps.push(Dependency { node: mine });
+        let mine = Dependency::Node(me);
+        deps.retain(|d| *d != mine || new.contains(&other));
+        if new.contains(&other) && !deps.contains(&mine) {
+            deps.push(mine);
         }
         set_dependencies(sync, plan, other, deps);
     }

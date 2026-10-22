@@ -8,7 +8,7 @@ use plinko::{
     availability::workload::Workload,
     common::{crud::Crud, short_id::ShortId},
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
@@ -375,9 +375,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 .scheduler_data()
                 .default_start()
                 .filter(|_| parent == Parent::Plan)?;
-            Some(Dependency {
-                node: DependencyNode::Node(node),
-            })
+            Some(Dependency::Node(node))
         });
         let current = tab.get_untracked();
         sync.plan_then(plan, update, move |created| {

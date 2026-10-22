@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use plinko::{
     common::{crud::Crud, short_id::ShortId},
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         parent::Parent,
         plan_buffer::PlanBufferPatch,
         task::{PersistentState, Status, TaskPatch},
@@ -23,8 +23,8 @@ use crate::{
 // }}}
 
 // helpers {{{
-fn on(node: PlanNode) -> DependencyNode {
-    DependencyNode::Node(node)
+fn on(node: PlanNode) -> Dependency {
+    Dependency::Node(node)
 }
 
 /// The days a task really started and ended, for one whose end is recorded
@@ -39,14 +39,14 @@ fn ended(state: PersistentState) -> Option<(NaiveDate, NaiveDate)> {
 
 fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
     let mut deps = deps;
-    if !deps.iter().any(|d| d.node == on(node)) {
-        deps.push(Dependency { node: on(node) });
+    if !deps.iter().any(|d| *d == on(node)) {
+        deps.push(on(node));
     }
     deps
 }
 
 fn without_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
-    deps.into_iter().filter(|d| d.node != on(node)).collect()
+    deps.into_iter().filter(|d| *d != on(node)).collect()
 }
 
 /// What a resize changes: the days a task is to run, or for one that is done or on hold the day
@@ -116,7 +116,7 @@ pub fn editing(plan: ShortId) -> Editing {
         send(read(&|p| {
             let (waiting, before) = if model::dependencies(p, selected)
                 .iter()
-                .any(|d| d.node == on(other))
+                .any(|d| *d == on(other))
             {
                 (selected, other)
             } else {

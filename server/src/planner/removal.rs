@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     common::crud::Crud,
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::Milestone,
         parent::Parent,
         plan_buffer::PlanBuffer,
@@ -87,9 +87,9 @@ impl Plan {
             };
             let moved = own
                 .into_iter()
-                .flat_map(|d| match d.node {
-                    DependencyNode::ParentStart => start.clone(),
-                    DependencyNode::Node(_) => vec![d],
+                .flat_map(|d| match d {
+                    Dependency::ParentStart => start.clone(),
+                    Dependency::Node(_) => vec![d],
                 })
                 .collect();
             updates.push(PlanUpdate::rewire(
@@ -100,28 +100,23 @@ impl Plan {
         }
 
         // what waited on it waits on what it stood for
-        let mine = DependencyNode::Node(node);
+        let mine = Dependency::Node(node);
         for other in nodes.iter().filter(|n| **n != node) {
             let (other_parent, own) = placement(self, *other);
-            if !own.iter().any(|d| d.node == mine) {
+            if !own.contains(&mine) {
                 continue;
             }
             let replaced: Vec<Dependency> = own
                 .into_iter()
                 .flat_map(|d| {
-                    if d.node != mine {
+                    if d != mine {
                         return vec![d];
                     }
                     if !members.is_empty() {
-                        return members
-                            .iter()
-                            .map(|m| Dependency {
-                                node: DependencyNode::Node(*m),
-                            })
-                            .collect();
+                        return members.iter().map(|m| Dependency::Node(*m)).collect();
                     }
                     deps.iter()
-                        .filter(|s| s.node != DependencyNode::ParentStart || other_parent == parent)
+                        .filter(|s| **s != Dependency::ParentStart || other_parent == parent)
                         .cloned()
                         .collect()
                 })

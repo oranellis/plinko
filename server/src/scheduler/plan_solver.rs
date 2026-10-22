@@ -1393,9 +1393,8 @@ fn buffer_limits(plan: &Plan) -> HashMap<Uuid, NaiveDate> {
             continue;
         };
         for dep in dependencies {
-            if let crate::planner::items::dependency::DependencyNode::Node(PlanNode::PlanBuffer(
-                id,
-            )) = dep.node
+            if let crate::planner::items::dependency::Dependency::Node(PlanNode::PlanBuffer(id)) =
+                *dep
             {
                 let limit = date + chrono::Duration::days(extra);
                 let slot = limits.entry(id).or_insert(limit);

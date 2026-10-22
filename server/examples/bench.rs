@@ -14,7 +14,7 @@ use plinko::{
         user::{NewTenantLoginUser, Role},
     },
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         task::{NewTask, TaskPatch, Worker},
@@ -151,22 +151,16 @@ fn main() {
             send(&mut tenant, PlanUpdate::Task(Crud::Add(new)));
             let mut on: Vec<Dependency> = Vec::new();
             if tasks.is_empty() || random.below(10) == 0 {
-                on.push(Dependency {
-                    node: DependencyNode::ParentStart,
-                });
+                on.push(Dependency::ParentStart);
             }
             for _ in 0..random.below(3) {
                 if let Some(t) = tasks.get(tasks.len().saturating_sub(1 + random.below(8) as usize))
                 {
-                    on.push(Dependency {
-                        node: DependencyNode::Node(PlanNode::Task(*t)),
-                    });
+                    on.push(Dependency::Node(PlanNode::Task(*t)));
                 }
             }
             if on.is_empty() {
-                on.push(Dependency {
-                    node: DependencyNode::ParentStart,
-                });
+                on.push(Dependency::ParentStart);
             }
             let worker = match random.below(3) {
                 0 => Worker::Tag(tags[random.below(4) as usize]),
@@ -200,9 +194,11 @@ fn main() {
             parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-        let after = tasks.iter().rev().take(5).map(|t| Dependency {
-            node: DependencyNode::Node(PlanNode::Task(*t)),
-        });
+        let after = tasks
+            .iter()
+            .rev()
+            .take(5)
+            .map(|t| Dependency::Node(PlanNode::Task(*t)));
         let patch = MilestonePatch {
             id: end,
             name: None,

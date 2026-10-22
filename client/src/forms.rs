@@ -6,7 +6,7 @@ use chrono::NaiveDate;
 use plinko::{
     common::dates::TimeConstraint,
     planner::items::{
-        dependency::{DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         parent::Parent,
         task::{Status, Worker},
     },
@@ -15,20 +15,20 @@ use uuid::Uuid;
 // }}}
 
 // helpers {{{
-pub fn node_value(node: DependencyNode) -> String {
+pub fn node_value(node: Dependency) -> String {
     match node {
-        DependencyNode::ParentStart => "start".to_string(),
-        DependencyNode::Node(PlanNode::Task(id)) => format!("task:{id}"),
-        DependencyNode::Node(PlanNode::Milestone(id)) => format!("milestone:{id}"),
-        DependencyNode::Node(PlanNode::PlanBuffer(id)) => format!("buffer:{id}"),
-        DependencyNode::Node(PlanNode::PlanDelay(id)) => format!("delay:{id}"),
-        DependencyNode::Node(PlanNode::TaskGroup(id)) => format!("group:{id}"),
+        Dependency::ParentStart => "start".to_string(),
+        Dependency::Node(PlanNode::Task(id)) => format!("task:{id}"),
+        Dependency::Node(PlanNode::Milestone(id)) => format!("milestone:{id}"),
+        Dependency::Node(PlanNode::PlanBuffer(id)) => format!("buffer:{id}"),
+        Dependency::Node(PlanNode::PlanDelay(id)) => format!("delay:{id}"),
+        Dependency::Node(PlanNode::TaskGroup(id)) => format!("group:{id}"),
     }
 }
 
-pub fn parse_node(text: &str) -> Option<DependencyNode> {
+pub fn parse_node(text: &str) -> Option<Dependency> {
     if text == "start" {
-        return Some(DependencyNode::ParentStart);
+        return Some(Dependency::ParentStart);
     }
     let (kind, id) = text.split_once(':')?;
     let id = Uuid::parse_str(id).ok()?;
@@ -40,7 +40,7 @@ pub fn parse_node(text: &str) -> Option<DependencyNode> {
         "group" => PlanNode::TaskGroup(id),
         _ => return None,
     };
-    Some(DependencyNode::Node(node))
+    Some(Dependency::Node(node))
 }
 
 pub fn worker_value(worker: Worker) -> String {
@@ -137,11 +137,11 @@ mod tests {
     #[test]
     fn what_a_select_picks_is_read_back() {
         for node in [
-            DependencyNode::ParentStart,
-            DependencyNode::Node(PlanNode::Task(id())),
-            DependencyNode::Node(PlanNode::Milestone(id())),
-            DependencyNode::Node(PlanNode::PlanBuffer(id())),
-            DependencyNode::Node(PlanNode::TaskGroup(id())),
+            Dependency::ParentStart,
+            Dependency::Node(PlanNode::Task(id())),
+            Dependency::Node(PlanNode::Milestone(id())),
+            Dependency::Node(PlanNode::PlanBuffer(id())),
+            Dependency::Node(PlanNode::TaskGroup(id())),
         ] {
             assert_eq!(parse_node(&node_value(node)), Some(node));
         }

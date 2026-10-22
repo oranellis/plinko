@@ -16,7 +16,7 @@ use plinko::{
         user::{NewTenantLoginUser, Role},
     },
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::{DerivedStatus, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
@@ -54,18 +54,18 @@ fn h(hours: u8) -> Workload {
     Workload::new_const(hours)
 }
 
-type Dep = DependencyNode;
+type Dep = Dependency;
 
 fn start() -> Dep {
-    DependencyNode::ParentStart
+    Dependency::ParentStart
 }
 
 fn after(node: PlanNode) -> Dep {
-    DependencyNode::Node(node)
+    Dependency::Node(node)
 }
 
 fn deps(deps: &[Dep]) -> Vec<Dependency> {
-    deps.iter().map(|&node| Dependency { node }).collect()
+    deps.to_vec()
 }
 
 // World {{{

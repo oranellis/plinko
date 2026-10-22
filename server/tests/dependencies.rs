@@ -5,7 +5,7 @@ use plinko::{
     availability::workload::Workload,
     common::{crud::Crud, error::PlinkoResult, short_id::ShortId},
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         parent::Parent,
         task::{NewTask, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroupPatch},
@@ -47,8 +47,8 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
     id
 }
 
-fn depend(nodes: &[DependencyNode]) -> Vec<Dependency> {
-    nodes.iter().map(|&node| Dependency { node }).collect()
+fn depend(nodes: &[Dependency]) -> Vec<Dependency> {
+    nodes.to_vec()
 }
 
 fn task_patch(id: Uuid) -> TaskPatch {
@@ -67,7 +67,7 @@ fn task_patch(id: Uuid) -> TaskPatch {
     }
 }
 
-fn set_task_deps(plan: &mut Plan, id: Uuid, nodes: &[DependencyNode]) -> PlinkoResult<()> {
+fn set_task_deps(plan: &mut Plan, id: Uuid, nodes: &[Dependency]) -> PlinkoResult<()> {
     let patch = TaskPatch {
         dependencies: Some(depend(nodes)),
         ..task_patch(id)
@@ -83,12 +83,12 @@ fn set_task_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> PlinkoResult<()
     plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
 }
 
-fn task_node(id: Uuid) -> DependencyNode {
-    DependencyNode::Node(PlanNode::Task(id))
+fn task_node(id: Uuid) -> Dependency {
+    Dependency::Node(PlanNode::Task(id))
 }
 
-fn group_node(id: Uuid) -> DependencyNode {
-    DependencyNode::Node(PlanNode::TaskGroup(id))
+fn group_node(id: Uuid) -> Dependency {
+    Dependency::Node(PlanNode::TaskGroup(id))
 }
 
 fn remove_task(plan: &mut Plan, id: Uuid) -> PlinkoResult<()> {
@@ -121,7 +121,7 @@ fn dependency_cycles_are_rejected_and_rolled_back() {
     assert!(set_task_deps(&mut plan, a, &[task_node(c)]).is_err());
     assert!(set_task_deps(&mut plan, a, &[task_node(a)]).is_err());
     assert!(plan.tasks()[&a].dependencies().is_empty());
-    set_task_deps(&mut plan, a, &[DependencyNode::ParentStart]).unwrap();
+    set_task_deps(&mut plan, a, &[Dependency::ParentStart]).unwrap();
 }
 // }}}
 
@@ -161,7 +161,7 @@ fn members_anchor_to_group_start() {
     let mut plan = new_plan();
     let group = add_group(&mut plan, Parent::Plan);
     let member = add_task(&mut plan, Parent::Node(group));
-    set_task_deps(&mut plan, member, &[DependencyNode::ParentStart]).unwrap();
+    set_task_deps(&mut plan, member, &[Dependency::ParentStart]).unwrap();
 
     // the group start cannot wait on a member that anchors to it
     let patch = TaskGroupPatch {
@@ -221,10 +221,6 @@ fn allocated_tags_must_exist_and_cannot_be_removed() {
 // }}}
 
 // simplification {{{
-fn waits_on(node: DependencyNode) -> Dependency {
-    Dependency { node }
-}
-
 /// Sets the dependencies, then applies what simplifying leaves to do, returning the update's items
 fn set_and_simplify(plan: &mut Plan, id: Uuid, deps: Vec<Dependency>) -> Vec<PlanNode> {
     let patch = TaskPatch {
@@ -255,13 +251,13 @@ fn a_dependency_a_chain_implies_is_dropped() {
         add_task(&mut plan, Parent::Plan),
         add_task(&mut plan, Parent::Plan),
     );
-    let on = |id| DependencyNode::Node(PlanNode::Task(id));
+    let on = |id| Dependency::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
-    set_and_simplify(&mut plan, b, vec![waits_on(on(a))]);
+    set_and_simplify(&mut plan, b, vec![on(a)]);
     // a to c is implied by a to b to c
-    let changed = set_and_simplify(&mut plan, c, vec![waits_on(on(a)), waits_on(on(b))]);
+    let changed = set_and_simplify(&mut plan, c, vec![on(a), on(b)]);
     assert_eq!(changed, [PlanNode::Task(c)]);
-    assert_eq!(task_deps(&plan, c), [waits_on(on(b))]);
+    assert_eq!(task_deps(&plan, c), [on(b)]);
 }
 
 #[test]
@@ -269,13 +265,13 @@ fn a_new_link_makes_dependents_redundant_too() {
     let mut plan = new_plan();
     let ids: Vec<Uuid> = (0..3).map(|_| add_task(&mut plan, Parent::Plan)).collect();
     let (a, b, c) = (ids[0], ids[1], ids[2]);
-    let on = |id| DependencyNode::Node(PlanNode::Task(id));
+    let on = |id| Dependency::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
-    set_and_simplify(&mut plan, c, vec![waits_on(on(a)), waits_on(on(b))]);
+    set_and_simplify(&mut plan, c, vec![on(a), on(b)]);
     assert_eq!(task_deps(&plan, c).len(), 2);
     // b now waits on a, so c waiting on a as well says nothing new
-    set_and_simplify(&mut plan, b, vec![waits_on(on(a))]);
-    assert_eq!(task_deps(&plan, c), [waits_on(on(b))]);
+    set_and_simplify(&mut plan, b, vec![on(a)]);
+    assert_eq!(task_deps(&plan, c), [on(b)]);
 }
 
 #[test]
@@ -285,18 +281,14 @@ fn the_start_of_the_parent_is_dropped_when_another_dependency_leads_there() {
         add_task(&mut plan, Parent::Plan),
         add_task(&mut plan, Parent::Plan),
     );
-    let on = |id| DependencyNode::Node(PlanNode::Task(id));
+    let on = |id| Dependency::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
-    set_and_simplify(&mut plan, b, vec![Dependency::default(), waits_on(on(a))]);
-    assert_eq!(task_deps(&plan, b), [waits_on(on(a))]);
+    set_and_simplify(&mut plan, b, vec![Dependency::default(), on(a)]);
+    assert_eq!(task_deps(&plan, b), [on(a)]);
     // an item with no dependencies begins at the start, so it leads there too
     let loose = add_task(&mut plan, Parent::Plan);
-    set_and_simplify(
-        &mut plan,
-        b,
-        vec![Dependency::default(), waits_on(on(loose))],
-    );
-    assert_eq!(task_deps(&plan, b), [waits_on(on(loose))]);
+    set_and_simplify(&mut plan, b, vec![Dependency::default(), on(loose)]);
+    assert_eq!(task_deps(&plan, b), [on(loose)]);
 }
 // }}}
 
@@ -325,10 +317,8 @@ fn removing_an_item_joins_what_was_before_to_what_was_after() {
     let mut plan = new_plan();
     let ids: Vec<Uuid> = (0..4).map(|_| add_task(&mut plan, Parent::Plan)).collect();
     let (a, b, c, d) = (ids[0], ids[1], ids[2], ids[3]);
-    let on = |id| Dependency {
-        node: task_node(id),
-    };
-    set_task_deps(&mut plan, a, &[DependencyNode::ParentStart]).unwrap();
+    let on = task_node;
+    set_task_deps(&mut plan, a, &[Dependency::ParentStart]).unwrap();
     plan.apply_update(PlanUpdate::set_dependencies(PlanNode::Task(b), vec![on(a)]))
         .unwrap();
     plan.apply_update(PlanUpdate::set_dependencies(PlanNode::Task(c), vec![on(b)]))
@@ -345,20 +335,18 @@ fn removing_an_item_joins_what_was_before_to_what_was_after() {
 fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
     let mut plan = new_plan();
     let before = add_task(&mut plan, Parent::Plan);
-    set_task_deps(&mut plan, before, &[DependencyNode::ParentStart]).unwrap();
+    set_task_deps(&mut plan, before, &[Dependency::ParentStart]).unwrap();
     let group = add_group(&mut plan, Parent::Plan);
     plan.apply_update(PlanUpdate::set_dependencies(
         PlanNode::TaskGroup(group),
-        vec![Dependency {
-            node: task_node(before),
-        }],
+        vec![task_node(before)],
     ))
     .unwrap();
     let (m1, m2) = (
         add_task(&mut plan, Parent::Node(group)),
         add_task(&mut plan, Parent::Node(group)),
     );
-    set_task_deps(&mut plan, m1, &[DependencyNode::ParentStart]).unwrap();
+    set_task_deps(&mut plan, m1, &[Dependency::ParentStart]).unwrap();
     set_task_deps(&mut plan, m2, &[task_node(m1)]).unwrap();
     let after = add_task(&mut plan, Parent::Plan);
     set_task_deps(&mut plan, after, &[group_node(group)]).unwrap();
@@ -367,23 +355,9 @@ fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
     assert!(plan.task_groups().is_empty());
     assert_eq!(plan.tasks()[&m1].parent(), Parent::Plan);
     // the start of the group was the end of the first task
-    assert_eq!(
-        plan.tasks()[&m1].dependencies(),
-        &[Dependency {
-            node: task_node(before),
-        }]
-    );
-    assert_eq!(
-        plan.tasks()[&m2].dependencies(),
-        &[Dependency {
-            node: task_node(m1),
-        }]
-    );
-    let mut waits: Vec<_> = plan.tasks()[&after]
-        .dependencies()
-        .iter()
-        .map(|d| d.node)
-        .collect();
+    assert_eq!(plan.tasks()[&m1].dependencies(), &[task_node(before)]);
+    assert_eq!(plan.tasks()[&m2].dependencies(), &[task_node(m1)]);
+    let mut waits: Vec<_> = plan.tasks()[&after].dependencies().to_vec();
     waits.sort_by_key(|n| format!("{n:?}"));
     let mut members = vec![task_node(m1), task_node(m2)];
     members.sort_by_key(|n| format!("{n:?}"));
@@ -397,7 +371,7 @@ mod moving {
     use plinko::{
         common::{crud::Crud, short_id::ShortId},
         planner::items::{
-            dependency::{Dependency, DependencyNode, PlanNode},
+            dependency::{Dependency, PlanNode},
             parent::Parent,
             task::NewTask,
             task_group::NewTaskGroup,
@@ -425,9 +399,7 @@ mod moving {
     }
 
     fn on(id: Uuid) -> Dependency {
-        Dependency {
-            node: DependencyNode::Node(PlanNode::Task(id)),
-        }
+        Dependency::Node(PlanNode::Task(id))
     }
 
     fn apply(plan: &mut Plan, updates: Vec<PlanUpdate>) {
@@ -457,16 +429,13 @@ mod moving {
 
         let into = plan.moving(PlanNode::Task(x), Parent::Node(group)).unwrap();
         apply(&mut plan, into);
-        let group_node = DependencyNode::Node(PlanNode::TaskGroup(group));
+        let group_node = Dependency::Node(PlanNode::TaskGroup(group));
         assert_eq!(plan.task_groups()[&group].dependencies(), &vec![on(before)]);
         assert_eq!(
             plan.tasks()[&x].dependencies(),
             &vec![Dependency::default()]
         );
-        assert_eq!(
-            plan.tasks()[&after].dependencies(),
-            &vec![Dependency { node: group_node }]
-        );
+        assert_eq!(plan.tasks()[&after].dependencies(), &vec![group_node]);
 
         let out = plan.moving(PlanNode::Task(x), Parent::Plan).unwrap();
         apply(&mut plan, out);

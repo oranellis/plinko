@@ -3,7 +3,7 @@
 // modules {{{
 use crate::{
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         parent::Parent,
     },
     planner::{
@@ -49,9 +49,9 @@ impl Plan {
             let (_, outer) = placement(self, PlanNode::TaskGroup(id));
             deps = Dependency::merged(
                 deps.into_iter()
-                    .flat_map(|d| match d.node {
-                        DependencyNode::ParentStart => outer.clone(),
-                        DependencyNode::Node(_) => vec![d],
+                    .flat_map(|d| match d {
+                        Dependency::ParentStart => outer.clone(),
+                        Dependency::Node(_) => vec![d],
                     })
                     .collect(),
             );
@@ -61,31 +61,29 @@ impl Plan {
         }
         if let Parent::Node(id) = to {
             let group = PlanNode::TaskGroup(id);
-            let (lifted, inside): (Vec<_>, Vec<_>) = deps.into_iter().partition(|d| match d.node {
-                DependencyNode::ParentStart => false,
-                DependencyNode::Node(n) => !self.is_within(n, group),
+            let (lifted, inside): (Vec<_>, Vec<_>) = deps.into_iter().partition(|d| match *d {
+                Dependency::ParentStart => false,
+                Dependency::Node(n) => !self.is_within(n, group),
             });
             let (_, own) = placement(self, group);
             let mut group_deps = Dependency::merged([own, lifted].concat());
             // waiting on the parent's start is implied once there is something else to wait on
             if group_deps.len() > 1 {
-                group_deps.retain(|d| d.node != DependencyNode::ParentStart);
+                group_deps.retain(|d| *d != Dependency::ParentStart);
             }
             updates.push(PlanUpdate::set_dependencies(group, group_deps));
             deps = [vec![Dependency::default()], inside].concat();
-            let mine = DependencyNode::Node(node);
-            let ends = Dependency {
-                node: DependencyNode::Node(group),
-            };
+            let mine = Dependency::Node(node);
+            let ends = Dependency::Node(group);
             for other in all_nodes(self)
                 .into_iter()
                 .filter(|n| *n != node && !self.is_within(*n, group))
             {
                 let (_, theirs) = placement(self, other);
-                if theirs.iter().any(|d| d.node == mine) {
+                if theirs.contains(&mine) {
                     let swapped = theirs
                         .into_iter()
-                        .map(|d| if d.node == mine { ends.clone() } else { d })
+                        .map(|d| if d == mine { ends } else { d })
                         .collect();
                     updates.push(PlanUpdate::rewire(
                         other,

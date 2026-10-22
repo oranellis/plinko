@@ -8,7 +8,7 @@ use chrono::NaiveDate;
 use plinko::{
     availability::day_value::DayValue,
     planner::items::{
-        dependency::{DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         parent::Parent,
     },
     planner::plan::Plan,
@@ -94,7 +94,7 @@ pub fn build(
     let mut depended: HashSet<PlanNode> = HashSet::new();
     for node in &nodes {
         for dep in model::dependencies(plan, *node) {
-            if let DependencyNode::Node(before) = dep.node {
+            if let Dependency::Node(before) = dep {
                 depended.insert(before);
             }
         }
@@ -185,7 +185,7 @@ impl Context<'_> {
                     rooted: model::parent_of(self.plan, node) == Parent::Plan
                         && model::dependencies(self.plan, node)
                             .iter()
-                            .all(|d| d.node == DependencyNode::ParentStart),
+                            .all(|d| *d == Dependency::ParentStart),
                     pinned: matches!(node, PlanNode::PlanBuffer(id)
                         if self.plan.plan_buffers().get(&id).is_some_and(|b| b.set_start_day().is_some())),
                     target: self.targets.contains(&node),
@@ -276,9 +276,7 @@ mod tests {
             mode: None,
             duration: None,
             time_constraint: None,
-            dependencies: Some(vec![Dependency {
-                node: DependencyNode::Node(PlanNode::Task(ids[0])),
-            }]),
+            dependencies: Some(vec![Dependency::Node(PlanNode::Task(ids[0]))]),
             allocations: None,
             affinities: None,
             actual_workers: None,

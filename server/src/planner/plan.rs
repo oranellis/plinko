@@ -14,7 +14,7 @@ use crate::{
         short_id::ShortId,
     },
     planner::items::{
-        dependency::{DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::Milestone,
         parent::Parent,
         plan_buffer::PlanBuffer,
@@ -192,7 +192,7 @@ impl Plan {
             .ok_or(PlinkoError::ItemDoesNotExist(id))?;
         self.validate_parent(id, item.parent())?;
         for dep in item.dependencies() {
-            if let DependencyNode::Node(node) = &dep.node {
+            if let Dependency::Node(node) = dep {
                 self.ensure_node_exists(node)?;
             }
         }
@@ -215,10 +215,10 @@ impl Plan {
     }
 
     fn node_depended_on<T: PlanItem>(&self, node: PlanNode) -> bool {
-        let target = DependencyNode::Node(node);
+        let target = Dependency::Node(node);
         T::entities(self)
             .values()
-            .any(|i| i.dependencies().iter().any(|d| d.node == target))
+            .any(|i| i.dependencies().contains(&target))
     }
 
     fn has_members<T: PlanItem>(&self, group: Uuid) -> bool {

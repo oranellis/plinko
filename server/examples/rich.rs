@@ -27,7 +27,7 @@ use plinko::{
         user_group::NewTenantUserGroup,
     },
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         task::{Assignee, NewTask, TaskPatch, Worker},
@@ -316,10 +316,8 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
             } else {
                 for _ in 0..1 + random.below(3) {
                     let pick = pool[random.below(pool.len() as u64) as usize];
-                    if !on.iter().any(|d| d.node == DependencyNode::Node(pick)) {
-                        on.push(Dependency {
-                            node: DependencyNode::Node(pick),
-                        });
+                    if !on.contains(&Dependency::Node(pick)) {
+                        on.push(Dependency::Node(pick));
                     }
                 }
             }
@@ -373,8 +371,8 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
             send(&mut tenant, PlanUpdate::Task(Crud::Update(patch)));
             let deps = on
                 .iter()
-                .filter_map(|d| match d.node {
-                    DependencyNode::Node(PlanNode::Task(t) | PlanNode::Milestone(t)) => Some(t),
+                .filter_map(|d| match *d {
+                    Dependency::Node(PlanNode::Task(t) | PlanNode::Milestone(t)) => Some(t),
                     _ => None,
                 })
                 .collect();
@@ -401,9 +399,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
                     .iter()
                     .rev()
                     .take(4)
-                    .map(|n| Dependency {
-                        node: DependencyNode::Node(*n),
-                    })
+                    .map(|n| Dependency::Node(*n))
                     .collect();
                 let patch = MilestonePatch {
                     id: milestone,
@@ -429,9 +425,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
             .iter()
             .rev()
             .take(6)
-            .map(|n| Dependency {
-                node: DependencyNode::Node(*n),
-            })
+            .map(|n| Dependency::Node(*n))
             .collect();
         let patch = MilestonePatch {
             id: end,
@@ -467,8 +461,8 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
 // node_ids {{{
 fn node_ids(deps: &[Dependency]) -> Vec<Uuid> {
     deps.iter()
-        .filter_map(|d| match d.node {
-            DependencyNode::Node(PlanNode::Task(t) | PlanNode::Milestone(t)) => Some(t),
+        .filter_map(|d| match *d {
+            Dependency::Node(PlanNode::Task(t) | PlanNode::Milestone(t)) => Some(t),
             _ => None,
         })
         .collect()
@@ -724,25 +718,18 @@ fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
                 let mut on: Vec<Dependency> = t
                     .deps
                     .iter()
-                    .map(|d| Dependency {
-                        node: DependencyNode::Node(PlanNode::Task(*d)),
-                    })
+                    .map(|d| Dependency::Node(PlanNode::Task(*d)))
                     .collect();
                 let earlier = world.tasks.iter().position(|o| o.id == t.id).unwrap();
                 if earlier == 0 {
                     continue;
                 }
                 let other = &world.tasks[random.below(earlier as u64) as usize];
-                if other.plan != t.plan
-                    || on
-                        .iter()
-                        .any(|d| d.node == DependencyNode::Node(PlanNode::Task(other.id)))
+                if other.plan != t.plan || on.contains(&Dependency::Node(PlanNode::Task(other.id)))
                 {
                     continue;
                 }
-                on.push(Dependency {
-                    node: DependencyNode::Node(PlanNode::Task(other.id)),
-                });
+                on.push(Dependency::Node(PlanNode::Task(other.id)));
                 patch.dependencies = Some(on);
             }
         }

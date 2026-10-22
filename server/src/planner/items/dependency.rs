@@ -5,9 +5,13 @@ use std::hash::Hash;
 use uuid::Uuid;
 // }}}
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Dependency {
-    pub node: DependencyNode,
+/// What an item waits for, the end of another node or the start of its group
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Dependency {
+    /// The start of the enclosing task group, or today for top level items
+    #[default]
+    ParentStart,
+    Node(PlanNode),
 }
 
 // impl Dependency {{{
@@ -16,7 +20,7 @@ impl Dependency {
     pub fn merged(deps: Vec<Dependency>) -> Vec<Dependency> {
         let mut out: Vec<Dependency> = Vec::new();
         for dep in deps {
-            if !out.iter().any(|d| d.node == dep.node) {
+            if !out.contains(&dep) {
                 out.push(dep);
             }
         }
@@ -26,14 +30,6 @@ impl Dependency {
 // }}}
 
 // Dependency supporting types {{{
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum DependencyNode {
-    /// The start of the enclosing task group, or today for top level items
-    #[default]
-    ParentStart,
-    Node(PlanNode),
-}
-
 /// A schedulable node. A task group is a single node that ends when all of its members end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlanNode {
@@ -66,9 +62,7 @@ mod tests {
 
     #[test]
     fn a_repeated_node_is_kept_once() {
-        let on = |id| Dependency {
-            node: DependencyNode::Node(PlanNode::Task(id)),
-        };
+        let on = |id| Dependency::Node(PlanNode::Task(id));
         let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
         assert_eq!(
             Dependency::merged(vec![on(a), on(b), on(a)]),

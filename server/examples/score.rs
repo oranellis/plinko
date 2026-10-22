@@ -16,7 +16,7 @@ use plinko::{
         user::{NewTenantLoginUser, Role},
     },
     planner::items::{
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dependency::{Dependency, PlanNode},
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         task::{NewTask, TaskPatch, Worker},
@@ -169,10 +169,8 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
             } else {
                 for _ in 0..1 + random.below(3) {
                     let pick = pool[random.below(pool.len() as u64) as usize];
-                    if !on.iter().any(|d| d.node == DependencyNode::Node(pick)) {
-                        on.push(Dependency {
-                            node: DependencyNode::Node(pick),
-                        });
+                    if !on.contains(&Dependency::Node(pick)) {
+                        on.push(Dependency::Node(pick));
                     }
                 }
             }
@@ -205,9 +203,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                     parent: Parent::Plan,
                 };
                 send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-                let gather = nodes.iter().rev().take(4).map(|n| Dependency {
-                    node: DependencyNode::Node(*n),
-                });
+                let gather = nodes.iter().rev().take(4).map(|n| Dependency::Node(*n));
                 let patch = MilestonePatch {
                     id: milestone,
                     name: None,
@@ -227,9 +223,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
             parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-        let after = nodes.iter().rev().take(6).map(|n| Dependency {
-            node: DependencyNode::Node(*n),
-        });
+        let after = nodes.iter().rev().take(6).map(|n| Dependency::Node(*n));
         let patch = MilestonePatch {
             id: end,
             name: None,
@@ -274,8 +268,8 @@ fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, p
         let deps = |list: &[Dependency]| {
             let nodes: Vec<String> = list
                 .iter()
-                .filter_map(|d| match &d.node {
-                    DependencyNode::Node(n) => Some(node(n)),
+                .filter_map(|d| match d {
+                    Dependency::Node(n) => Some(node(n)),
                     _ => None,
                 })
                 .collect();
