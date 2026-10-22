@@ -278,7 +278,6 @@ mod tests {
             time_constraint: None,
             dependencies: Some(vec![Dependency {
                 node: DependencyNode::Node(PlanNode::Task(ids[0])),
-                lag: 0,
             }]),
             allocations: None,
             affinities: None,

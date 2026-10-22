@@ -50,13 +50,7 @@ impl Plan {
             deps = Dependency::merged(
                 deps.into_iter()
                     .flat_map(|d| match d.node {
-                        DependencyNode::ParentStart => outer
-                            .iter()
-                            .map(|o| Dependency {
-                                node: o.node,
-                                lag: o.lag + d.lag,
-                            })
-                            .collect(),
+                        DependencyNode::ParentStart => outer.clone(),
                         DependencyNode::Node(_) => vec![d],
                     })
                     .collect(),
@@ -75,14 +69,13 @@ impl Plan {
             let mut group_deps = Dependency::merged([own, lifted].concat());
             // waiting on the parent's start is implied once there is something else to wait on
             if group_deps.len() > 1 {
-                group_deps.retain(|d| d.node != DependencyNode::ParentStart || d.lag != 0);
+                group_deps.retain(|d| d.node != DependencyNode::ParentStart);
             }
             updates.push(PlanUpdate::set_dependencies(group, group_deps));
             deps = [vec![Dependency::default()], inside].concat();
             let mine = DependencyNode::Node(node);
             let ends = Dependency {
                 node: DependencyNode::Node(group),
-                lag: 0,
             };
             for other in all_nodes(self)
                 .into_iter()
@@ -92,13 +85,7 @@ impl Plan {
                 if theirs.iter().any(|d| d.node == mine) {
                     let swapped = theirs
                         .into_iter()
-                        .map(|d| {
-                            if d.node == mine {
-                                Dependency { lag: d.lag, ..ends }
-                            } else {
-                                d
-                            }
-                        })
+                        .map(|d| if d.node == mine { ends.clone() } else { d })
                         .collect();
                     updates.push(PlanUpdate::rewire(
                         other,

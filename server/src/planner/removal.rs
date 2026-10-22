@@ -61,7 +61,7 @@ pub(super) fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
 // impl Plan {{{
 impl Plan {
     /// The updates that remove `node` and leave the rest of the plan connected, the last of them
-    /// removes it. Whatever depended on it depends on what it depended on, with the lags added.
+    /// removes it. Whatever depended on it depends on what it depended on.
     /// For a group the members move up into its parent, taking its dependencies as their start,
     /// and what depended on the group depends on each member.
     pub fn removal(&self, node: PlanNode) -> Vec<PlanUpdate> {
@@ -88,13 +88,7 @@ impl Plan {
             let moved = own
                 .into_iter()
                 .flat_map(|d| match d.node {
-                    DependencyNode::ParentStart => start
-                        .iter()
-                        .map(|s| Dependency {
-                            node: s.node,
-                            lag: s.lag + d.lag,
-                        })
-                        .collect(),
+                    DependencyNode::ParentStart => start.clone(),
                     DependencyNode::Node(_) => vec![d],
                 })
                 .collect();
@@ -123,16 +117,12 @@ impl Plan {
                             .iter()
                             .map(|m| Dependency {
                                 node: DependencyNode::Node(*m),
-                                lag: d.lag,
                             })
                             .collect();
                     }
                     deps.iter()
                         .filter(|s| s.node != DependencyNode::ParentStart || other_parent == parent)
-                        .map(|s| Dependency {
-                            node: s.node,
-                            lag: s.lag + d.lag,
-                        })
+                        .cloned()
                         .collect()
                 })
                 .collect();

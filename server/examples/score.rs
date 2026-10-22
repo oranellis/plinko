@@ -172,7 +172,6 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                     if !on.iter().any(|d| d.node == DependencyNode::Node(pick)) {
                         on.push(Dependency {
                             node: DependencyNode::Node(pick),
-                            lag: 0,
                         });
                     }
                 }
@@ -208,7 +207,6 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
                 let gather = nodes.iter().rev().take(4).map(|n| Dependency {
                     node: DependencyNode::Node(*n),
-                    lag: 0,
                 });
                 let patch = MilestonePatch {
                     id: milestone,
@@ -231,7 +229,6 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
         let after = nodes.iter().rev().take(6).map(|n| Dependency {
             node: DependencyNode::Node(*n),
-            lag: 0,
         });
         let patch = MilestonePatch {
             id: end,

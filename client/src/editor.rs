@@ -2,7 +2,7 @@
 //! changed, so two people editing different fields of an item do not undo each other.
 
 // modules {{{
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use chrono::NaiveDate;
 use leptos::prelude::*;
@@ -187,7 +187,7 @@ fn depends_options(plan: ShortId, except: PlanNode, with_start: bool) -> Signal<
     })
 }
 
-/// What an item waits for, or what waits for it, each with a lag in days
+/// What an item waits for, or what waits for it
 #[component]
 fn DependencyList(
     #[prop(into)] label: String,
@@ -210,7 +210,6 @@ fn DependencyList(
                 let node = Signal::derive(move || {
                     deps.with(|d| d.get(i).map(|d| forms::node_value(d.node)).unwrap_or_default())
                 });
-                let lag = Signal::derive(move || deps.with(|d| d.get(i).map_or(0, |d| i64::from(d.lag))));
                 view! {
                     <div class="row">
                         <Picker
@@ -223,14 +222,6 @@ fn DependencyList(
                                 }
                             })
                         />
-                        <Number
-                            value=lag
-                            on_input=Callback::new(move |n: i64| {
-                                let n = n.clamp(-3650, 3650) as i32;
-                                deps.update(|d| if let Some(d) = d.get_mut(i) { d.lag = n });
-                            })
-                        />
-                        <span class="small" title="Lag days, positive to delay and negative to start early">"lag"</span>
                         <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
                             deps.update(|d| { if i < d.len() { d.remove(i); } });
                         }>"✕"</button>
@@ -265,7 +256,7 @@ fn Dependents(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> i
             placeholder="Select dependent…"
             choices=depends_options(plan, me, false)
             deps=deps
-            fresh=Dependency { node: DependencyNode::Node(me), lag: 0 }
+            fresh=Dependency { node: DependencyNode::Node(me) }
         />
     }
 }
@@ -274,19 +265,17 @@ fn Dependents(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> i
 fn dependents_of(plan: &Plan, me: PlanNode) -> Vec<Dependency> {
     let mut found: Vec<(String, Dependency)> = model::nodes(plan)
         .into_iter()
-        .filter(|n| *n != me)
-        .flat_map(|n| {
-            model::dependencies(plan, n)
-                .into_iter()
-                .filter(|d| d.node == DependencyNode::Node(me))
-                .map(move |d| (n, d.lag))
+        .filter(|n| {
+            *n != me
+                && model::dependencies(plan, *n)
+                    .iter()
+                    .any(|d| d.node == DependencyNode::Node(me))
         })
-        .map(|(n, lag)| {
+        .map(|n| {
             (
                 node_name(plan, n),
                 Dependency {
                     node: DependencyNode::Node(n),
-                    lag,
                 },
             )
         })
@@ -307,34 +296,24 @@ fn apply_dependents(
     old: &[Dependency],
     new: &[Dependency],
 ) {
-    let wanted = |deps: &[Dependency]| -> HashMap<PlanNode, i32> {
+    let wanted = |deps: &[Dependency]| -> HashSet<PlanNode> {
         deps.iter()
             .filter_map(|d| match d.node {
-                DependencyNode::Node(n) if n != me => Some((n, d.lag)),
+                DependencyNode::Node(n) if n != me => Some(n),
                 _ => None,
             })
             .collect()
     };
     let (old, new) = (wanted(old), wanted(new));
-    let affected: HashSet<PlanNode> = old.keys().chain(new.keys()).copied().collect();
-    for other in affected {
-        if old.get(&other) == new.get(&other) {
-            continue;
-        }
+    for other in old.symmetric_difference(&new).copied() {
         let mut deps = sync
             .tenant
             .with_untracked(|t| Some(model::dependencies(t.as_ref()?.plans().get(&plan)?, other)))
             .unwrap_or_default();
         let mine = DependencyNode::Node(me);
-        deps.retain(|d| d.node != mine || new.contains_key(&other));
-        if let Some(lag) = new.get(&other) {
-            match deps.iter_mut().find(|d| d.node == mine) {
-                Some(d) => d.lag = *lag,
-                None => deps.push(Dependency {
-                    node: mine,
-                    lag: *lag,
-                }),
-            }
+        deps.retain(|d| d.node != mine || new.contains(&other));
+        if new.contains(&other) && !deps.iter().any(|d| d.node == mine) {
+            deps.push(Dependency { node: mine });
         }
         set_dependencies(sync, plan, other, deps);
     }

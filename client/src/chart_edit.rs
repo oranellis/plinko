@@ -40,10 +40,7 @@ fn ended(state: PersistentState) -> Option<(NaiveDate, NaiveDate)> {
 fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
     let mut deps = deps;
     if !deps.iter().any(|d| d.node == on(node)) {
-        deps.push(Dependency {
-            node: on(node),
-            lag: 0,
-        });
+        deps.push(Dependency { node: on(node) });
     }
     deps
 }

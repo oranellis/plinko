@@ -153,7 +153,6 @@ fn main() {
             if tasks.is_empty() || random.below(10) == 0 {
                 on.push(Dependency {
                     node: DependencyNode::ParentStart,
-                    lag: 0,
                 });
             }
             for _ in 0..random.below(3) {
@@ -161,14 +160,12 @@ fn main() {
                 {
                     on.push(Dependency {
                         node: DependencyNode::Node(PlanNode::Task(*t)),
-                        lag: 0,
                     });
                 }
             }
             if on.is_empty() {
                 on.push(Dependency {
                     node: DependencyNode::ParentStart,
-                    lag: 0,
                 });
             }
             let worker = match random.below(3) {
@@ -205,7 +202,6 @@ fn main() {
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
         let after = tasks.iter().rev().take(5).map(|t| Dependency {
             node: DependencyNode::Node(PlanNode::Task(*t)),
-            lag: 0,
         });
         let patch = MilestonePatch {
             id: end,

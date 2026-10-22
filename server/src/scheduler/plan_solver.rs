@@ -11,7 +11,7 @@ use crate::{
     common::dates::{DateRange, TimeConstraint},
     multitenancy::tenant::Tenant,
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         milestone::{self, DerivedStatus},
         plan_buffer, plan_delay,
         task::{self, Assignee, ScheduleMode, Status, Task, Worker},
@@ -398,22 +398,12 @@ impl<'a> PlanSolver<'a> {
         let milestone = matches!(v, Vertex::Node(PlanNode::Milestone(_)));
         let happened = matches!(v, Vertex::Node(PlanNode::Milestone(id))
             if self.statuses[id] == DerivedStatus::Completed);
-        let dates = self.net.deps(v).iter().filter_map(|e| {
-            let dep = Dependency {
-                lag: e.lag,
-                ..Default::default()
-            };
-            match e.from {
-                None if happened => None,
-                None => Some(dep.start_after(self.today)),
-                Some(g @ Vertex::GroupStart(_)) => {
-                    Some(dep.start_after(self.placed.get(&g)?.range.start()))
-                }
-                Some(Vertex::Node(n)) if milestone => {
-                    self.end_of(n).map(|e| dep.milestone_date_after(e))
-                }
-                Some(Vertex::Node(n)) => self.end_of(n).map(|e| dep.start_after(e)),
-            }
+        let dates = self.net.deps(v).iter().filter_map(|e| match e.from {
+            None if happened => None,
+            None => Some(self.today),
+            Some(g @ Vertex::GroupStart(_)) => Some(self.placed.get(&g)?.range.start()),
+            Some(Vertex::Node(n)) if milestone => self.end_of(n).map(|e| e - Days::new(1)),
+            Some(Vertex::Node(n)) => self.end_of(n),
         });
         let latest = dates.max();
         if happened {
@@ -884,14 +874,10 @@ impl<'a> PlanSolver<'a> {
         let group = matches!(v, Vertex::Node(PlanNode::TaskGroup(_)));
         let dates = self.net.deps(v).iter().filter_map(|e| {
             let from_end = end(&e.from?)?;
-            let dep = Dependency {
-                lag: e.lag,
-                ..Default::default()
-            };
-            Some(match (group, milestone) {
-                (true, _) => from_end,
-                (_, true) => dep.milestone_date_after(from_end),
-                _ => dep.start_after(from_end),
+            Some(if milestone {
+                from_end - Days::new(1)
+            } else {
+                from_end
             })
         });
         let slip = match dates.max() {
@@ -1411,8 +1397,7 @@ fn buffer_limits(plan: &Plan) -> HashMap<Uuid, NaiveDate> {
                 id,
             )) = dep.node
             {
-                let limit = date - chrono::Duration::days(i64::from(dep.lag))
-                    + chrono::Duration::days(extra);
+                let limit = date + chrono::Duration::days(extra);
                 let slot = limits.entry(id).or_insert(limit);
                 *slot = (*slot).min(limit);
             }

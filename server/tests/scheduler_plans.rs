@@ -133,7 +133,7 @@ impl Plans {
             nodes => nodes.iter().map(|n| DependencyNode::Node(*n)).collect(),
         }
         .into_iter()
-        .map(|node| Dependency { node, lag: 0 })
+        .map(|node| Dependency { node })
         .collect();
         let who = [(worker, Workload::new_const(8))];
         self.patch(plan, task, |p| {
@@ -177,7 +177,6 @@ impl Plans {
             time_constraint: None,
             dependencies: Some(vec![Dependency {
                 node: DependencyNode::Node(after),
-                lag: 0,
             }]),
             persistent_state: None,
         };

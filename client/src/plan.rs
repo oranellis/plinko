@@ -377,7 +377,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 .filter(|_| parent == Parent::Plan)?;
             Some(Dependency {
                 node: DependencyNode::Node(node),
-                lag: 0,
             })
         });
         let current = tab.get_untracked();

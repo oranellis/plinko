@@ -28,11 +28,11 @@ impl<'a> Network<'a> {
         let vertices = graph.vertices();
         let deps: HashMap<Vertex, Vec<Edge>> =
             vertices.iter().map(|v| (*v, graph.edges(*v))).collect();
-        let mut dependents: HashMap<Vertex, Vec<(Vertex, i32)>> = HashMap::new();
+        let mut dependents: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
         for (v, edges) in &deps {
             for e in edges {
                 if let Some(from) = e.from {
-                    dependents.entry(from).or_default().push((*v, e.lag));
+                    dependents.entry(from).or_default().push(*v);
                 }
             }
         }
@@ -40,20 +40,16 @@ impl<'a> Network<'a> {
         let mut remaining: HashMap<Vertex, i64> = HashMap::new();
         for v in order.iter().rev() {
             let after = dependents.get(v).into_iter().flatten();
-            let longest = after.map(|(w, lag)| i64::from(*lag).max(0) + remaining[w]);
+            let longest = after.map(|w| remaining[w]);
             let own = duration(plan, v);
             remaining.insert(*v, own + longest.max().unwrap_or(0));
         }
-        let after = dependents
-            .into_iter()
-            .map(|(v, list)| (v, list.into_iter().map(|(w, _)| w).collect()))
-            .collect();
         Self {
             graph,
             deps,
             order,
             remaining,
-            after,
+            after: dependents,
         }
     }
 
@@ -115,7 +111,7 @@ fn duration(plan: &Plan, v: &Vertex) -> i64 {
 fn topological(
     vertices: &[Vertex],
     deps: &HashMap<Vertex, Vec<Edge>>,
-    dependents: &HashMap<Vertex, Vec<(Vertex, i32)>>,
+    dependents: &HashMap<Vertex, Vec<Vertex>>,
 ) -> Vec<Vertex> {
     let mut waiting: HashMap<Vertex, usize> = vertices
         .iter()
@@ -129,7 +125,7 @@ fn topological(
     let mut order = Vec::with_capacity(vertices.len());
     while let Some((_, v)) = ready.pop_first() {
         order.push(v);
-        for (w, _) in dependents.get(&v).into_iter().flatten() {
+        for w in dependents.get(&v).into_iter().flatten() {
             let n = waiting.get_mut(w).expect("every vertex is counted");
             *n -= 1;
             if *n == 0 {

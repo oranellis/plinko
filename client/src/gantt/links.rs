@@ -182,7 +182,7 @@ mod tests {
             mode: None,
             duration: None,
             time_constraint: None,
-            dependencies: Some(on.iter().map(|n| Dependency { node: *n, lag: 0 }).collect()),
+            dependencies: Some(on.iter().map(|n| Dependency { node: *n }).collect()),
             allocations: None,
             affinities: None,
             actual_workers: None,

@@ -148,7 +148,7 @@ pub struct MilestonePatch {
 // impl VolatileState {{{
 impl VolatileState {
     /// The exclusive end of the one day the milestone lands on, so dependents treat it like any
-    /// other node (see `Dependency::start_after`)
+    /// other node
     pub fn end(&self) -> NaiveDate {
         self.date + chrono::Days::new(1)
     }

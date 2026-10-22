@@ -54,24 +54,18 @@ fn h(hours: u8) -> Workload {
     Workload::new_const(hours)
 }
 
-type Dep = (DependencyNode, i32);
+type Dep = DependencyNode;
 
 fn start() -> Dep {
-    (DependencyNode::ParentStart, 0)
+    DependencyNode::ParentStart
 }
 
 fn after(node: PlanNode) -> Dep {
-    (DependencyNode::Node(node), 0)
-}
-
-fn lagged(node: PlanNode, lag: i32) -> Dep {
-    (DependencyNode::Node(node), lag)
+    DependencyNode::Node(node)
 }
 
 fn deps(deps: &[Dep]) -> Vec<Dependency> {
-    deps.iter()
-        .map(|&(node, lag)| Dependency { node, lag })
-        .collect()
+    deps.iter().map(|&node| Dependency { node }).collect()
 }
 
 // World {{{
@@ -253,11 +247,15 @@ impl World {
     }
 
     fn delay(&mut self, duration: u32, on: &[Dep]) -> Uuid {
+        self.delay_in(Parent::Plan, duration, on)
+    }
+
+    fn delay_in(&mut self, parent: Parent, duration: u32, on: &[Dep]) -> Uuid {
         let id = self.id();
         let new = NewPlanDelay {
             id,
             name: None,
-            parent: Parent::Plan,
+            parent,
             duration,
         };
         self.plan_update(PlanUpdate::PlanDelay(Crud::Add(new)));
@@ -629,18 +627,6 @@ fn dropped_tasks_are_transparent_and_on_hold_tasks_end_when_held() {
 }
 // }}}
 
-// negative_lag_starts_before_the_end_of_a_dependency {{{
-#[test]
-fn negative_lag_starts_before_the_end_of_a_dependency() {
-    let mut world = World::new();
-    let alice = world.user();
-    let first = world.task(3, &[(user(alice), 8)], &[start()]);
-    let early = world.task(1, &[], &[lagged(node(first), -2)]);
-    let state = world.solve();
-    assert_eq!(span(&state, early), (d(2), d(3)));
-}
-// }}}
-
 // time_constraints_hold_or_are_reported_violated {{{
 #[test]
 fn time_constraints_hold_or_are_reported_violated() {
@@ -851,19 +837,21 @@ fn groups_cover_their_members_and_start_them_together() {
     let alice = world.user();
     let group = world.group(&[start()]);
     let parent = Parent::Node(group);
+    let wait = world.delay_in(parent, 2, &[start()]);
     let one = world.task_in(
         parent,
         2,
         &[(user(alice), 8)],
-        &[(DependencyNode::ParentStart, 2)],
+        &[after(PlanNode::PlanDelay(wait))],
     );
     let two = world.task_in(parent, 1, &[(user(alice), 8)], &[after(node(one))]);
     let outside = world.task(1, &[], &[after(PlanNode::TaskGroup(group))]);
     let state = world.solve();
-    // members may start two days after the group's own start, which is the Sunday
+    // members may start a two day delay after the group's own start, which is the Sunday
     assert_eq!(span(&state, one), (d(2), d(4)));
     assert_eq!(span(&state, two), (d(4), d(5)));
-    assert_eq!(state.task_groups[&group].date_range.start(), d(2));
+    // the group begins with the delay and ends with its last member
+    assert_eq!(state.task_groups[&group].date_range.start(), today());
     assert_eq!(state.task_groups[&group].date_range.end(), d(5));
     assert_eq!(span(&state, outside), (d(5), d(6)));
 }

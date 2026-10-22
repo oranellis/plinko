@@ -72,7 +72,7 @@ Everything is read from `Tenant` and its plans.
 - `DateRange` end is exclusive: a task's range ends the day after its last working day. A
   zero-length range has `start == end`.
 - Allocations are 0–8 hours per day (`Workload`). Durations are in days.
-- Dependency `lag` is calendar days of the plan calendar, negative for lead.
+- A dependency carries no time. A wait is a delay item: calendar days from where its dependencies end, with no workload and no time constraint (`PlanDelay::place`).
 - Time constraint dates are the start of the task or milestone (`TimeConstraint::apply(earliest)`).
 - Unstarted tasks cannot start before tomorrow (Plinko 1; **Assumed**). Milestones may land on
   today. A milestone whose derived status is complete may land in the past (it already happened).
@@ -82,11 +82,11 @@ Everything is read from `Tenant` and its plans.
   derived-complete milestone with nothing but `ParentStart` has no day of its own and lands today.
 - Every node has an exclusive end, the day after its last day. A milestone occupies the one day it
   lands on (`milestone::VolatileState::end()`). A task, group or buffer starts at a dependency's
-  end plus lag (`Dependency::start_after`), so a task after a milestone starts the day after it.
+  end, so a task after a milestone starts the day after it.
   A milestone lands on the last day of everything it depends on, tasks, groups, buffers and other
-  milestones alike, plus lag (`Dependency::milestone_date_after`): milestones are zero time events
+  milestones alike, less a day for the exclusive end: milestones are zero time events
   at the trailing edge of their real work, and share a day with milestones they depend on.
-  `ParentStart` is a date, not a node, so `start_after` applies to it for milestones as well.
+  `ParentStart` is a date, not a node, so the same applies to it for milestones.
   So task, milestone, task starts the second task the day after the first finishes, exactly as
   task, task does: the milestone is a zero cost marker on the last day of the first task's work.
 - Dropped predecessors are transparent: they add no duration and hold no capacity, so dependents
@@ -205,7 +205,7 @@ fixes history so past hours do not move when availability or other plans change.
 had started on `set_start_day`, so it shrinks when `start` is later and grows when earlier, never
 below zero length. A task or milestone that cannot move later (Fixed or Latest constraint, date `X`)
 and depends on a buffer shrinks the buffer to fit, set or unset: the buffer ends no later than
-`limit = X - lag` for a task (`X - lag + 1` for a milestone), the smallest limit over such
+`limit = X` for a task (`X + 1` for a milestone), the smallest limit over such
 dependents, so its end becomes `max(start, min(natural end, limit))` (**Assumed**). Only when the
 buffer is already zero length and `start` is past the limit is the constraint violated. That is
 the `limit` argument of `PlanBuffer::place`.
@@ -214,7 +214,7 @@ the `limit` argument of `PlanBuffer::place`.
 
 After an update that changes an item's dependencies or group, the server follows it with updates
 that drop what other dependencies already imply: `a -> c` goes when `a -> b -> c` exists and the
-chain's lags add up to at least its lag (today, a group's start and a group's end count
+chain leads there (today, a group's start and a group's end count
 as links). Both the update and the follow-ups are logged, so replays do not recompute it
 (`Plan::simplifications`).
 
@@ -235,7 +235,7 @@ last one.
 ### Removing items
 
 `Plan::removal` gives the updates that remove an item without breaking chains: whatever depended
-on it depends on what it depended on (lags added). A removed group moves its members to the
+on it depends on what it depended on. A removed group moves its members to the
 group's parent, with the group's dependencies as the start they had, and whatever depended on the
 group depends on each member. Targets on the item go too.
 
@@ -487,7 +487,7 @@ Port Plinko 1's scheduler scenarios, then add:
 - In-progress claims capacity before a longer not-started chain, and its range reaches today.
 - A target milestone lands after all its predecessors.
 - A dropped middle task is transparent; an on-hold task ends at its hold date, not complete.
-- Negative lag starts a dependent before its predecessor ends.
+- A delay holds back what follows it by calendar days.
 - Fixed and Latest constraints, violations, and the recheck against the real start.
 - A milestone lands on a non-working day when a dependency finishes on one, and a task after it
   starts on the first day anyone works.

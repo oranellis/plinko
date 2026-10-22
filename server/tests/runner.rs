@@ -94,7 +94,6 @@ fn updates_are_staged_applied_and_scheduled() {
         duration: Some(2),
         dependencies: Some(vec![Dependency {
             node: DependencyNode::ParentStart,
-            lag: 0,
         }]),
         allocations: Some([(Worker::User(bob), Workload::new_const(8))].into()),
         ..patch(task)

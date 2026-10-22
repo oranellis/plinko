@@ -319,7 +319,6 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
                     if !on.iter().any(|d| d.node == DependencyNode::Node(pick)) {
                         on.push(Dependency {
                             node: DependencyNode::Node(pick),
-                            lag: 0,
                         });
                     }
                 }
@@ -404,7 +403,6 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
                     .take(4)
                     .map(|n| Dependency {
                         node: DependencyNode::Node(*n),
-                        lag: 0,
                     })
                     .collect();
                 let patch = MilestonePatch {
@@ -433,7 +431,6 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
             .take(6)
             .map(|n| Dependency {
                 node: DependencyNode::Node(*n),
-                lag: 0,
             })
             .collect();
         let patch = MilestonePatch {
@@ -729,7 +726,6 @@ fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
                     .iter()
                     .map(|d| Dependency {
                         node: DependencyNode::Node(PlanNode::Task(*d)),
-                        lag: 0,
                     })
                     .collect();
                 let earlier = world.tasks.iter().position(|o| o.id == t.id).unwrap();
@@ -746,7 +742,6 @@ fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
                 }
                 on.push(Dependency {
                     node: DependencyNode::Node(PlanNode::Task(other.id)),
-                    lag: 0,
                 });
                 patch.dependencies = Some(on);
             }

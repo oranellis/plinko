@@ -52,7 +52,6 @@ impl From<PlanNode> for Vertex {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Edge {
     pub from: Option<Vertex>,
-    pub lag: i32,
 }
 
 pub(crate) struct Graph<'a> {
@@ -60,11 +59,11 @@ pub(crate) struct Graph<'a> {
     members: HashMap<Uuid, Vec<PlanNode>>,
 }
 
-/// How much lag the longest chain of dependencies from `from` back to `to` (today when
-/// `None`) adds up to, with the results kept for the next question about the same `to`
-struct Chains<'a, 'p> {
+/// Whether a chain of dependencies leads from `from` back to `to` (today when `None`), with the
+/// answers kept for the next question about the same `to`
+struct Reach<'a, 'p> {
     graph: &'a Graph<'p>,
-    longest: HashMap<(Vertex, Option<Vertex>), Option<i64>>,
+    known: HashMap<(Vertex, Option<Vertex>), bool>,
 }
 // }}}
 
@@ -117,10 +116,7 @@ impl<'a> Graph<'a> {
                 let members = self.members.get(&id).into_iter().flatten();
                 let from = members.map(|n| Vertex::Node(*n));
                 from.chain([Vertex::GroupStart(id)])
-                    .map(|v| Edge {
-                        from: Some(v),
-                        lag: 0,
-                    })
+                    .map(|v| Edge { from: Some(v) })
                     .collect()
             }
             Vertex::Node(PlanNode::Task(id)) => self.item_edges::<Task>(id),
@@ -145,7 +141,6 @@ impl<'a> Graph<'a> {
             .iter()
             .map(|d| Edge {
                 from: resolve(d, parent),
-                lag: d.lag,
             })
             .collect()
     }
@@ -204,34 +199,29 @@ pub(crate) fn nodes<T: PlanItem>(plan: &Plan) -> Vec<PlanNode> {
 }
 // }}}
 
-// impl Chains {{{
-impl Chains<'_, '_> {
-    fn lag(&mut self, from: Vertex, to: Option<Vertex>) -> Option<i64> {
-        if let Some(known) = self.longest.get(&(from, to)) {
+// impl Reach {{{
+impl Reach<'_, '_> {
+    fn leads(&mut self, from: Vertex, to: Option<Vertex>) -> bool {
+        if let Some(known) = self.known.get(&(from, to)) {
             return *known;
         }
         // a cycle would loop for ever, and is not a chain
-        self.longest.insert((from, to), None);
-        let mut best = None;
-        for edge in self.graph.edges(from) {
-            let lag = i64::from(edge.lag);
-            let through = if edge.from == to {
-                Some(lag)
-            } else {
-                edge.from.and_then(|u| self.lag(u, to)).map(|l| l + lag)
-            };
-            best = best.max(through);
-        }
-        self.longest.insert((from, to), best);
-        best
+        self.known.insert((from, to), false);
+        let leads = self
+            .graph
+            .edges(from)
+            .into_iter()
+            .any(|edge| edge.from == to || edge.from.is_some_and(|u| self.leads(u, to)));
+        self.known.insert((from, to), leads);
+        leads
     }
 }
 // }}}
 
 // simplified {{{
 /// The dependencies the items touching `touched` can do without: those another dependency of the
-/// same item already implies. A chain a to b to c makes a direct a to c redundant when the chain's
-/// lags add up to at least its lag. Gives each changed item with the dependencies to keep, in order.
+/// same item already implies. A chain a to b to c makes a direct a to c redundant. Gives each changed item with the
+/// dependencies to keep, in order.
 pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependency>)> {
     let graph = Graph::new(plan);
     let vertices = graph.vertices();
@@ -252,9 +242,9 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
             pending.extend(waiting.get(&v).into_iter().flatten());
         }
     }
-    let mut chains = Chains {
+    let mut reach = Reach {
         graph: &graph,
-        longest: HashMap::new(),
+        known: HashMap::new(),
     };
     let mut changed = Vec::new();
     for v in vertices.into_iter().filter(|v| affected.contains(v)) {
@@ -284,11 +274,7 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
                     let Some(source) = other.from else {
                         return false;
                     };
-                    j != *i
-                        && other.from != edge.from
-                        && chains
-                            .lag(source, edge.from)
-                            .is_some_and(|l| i64::from(other.lag) + l >= i64::from(edge.lag))
+                    j != *i && other.from != edge.from && reach.leads(source, edge.from)
                 })
             })
             .map(|(_, (dep, _))| dep.clone())

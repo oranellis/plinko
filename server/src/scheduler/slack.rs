@@ -14,8 +14,8 @@ use crate::{
 enum Link {
     /// The end of a group is the end of its last member
     Member,
-    /// A start no sooner than `lag` days after the end, a milestone one day sooner
-    Lag { lag: i32, milestone: bool },
+    /// A start no sooner than the end, a milestone one day sooner
+    After { milestone: bool },
 }
 
 // late_ends {{{
@@ -37,8 +37,7 @@ pub fn late_ends(
             let link = match (v, from) {
                 (Vertex::Node(PlanNode::TaskGroup(_)), Vertex::GroupStart(_)) => continue,
                 (Vertex::Node(PlanNode::TaskGroup(_)), _) => Link::Member,
-                _ => Link::Lag {
-                    lag: edge.lag,
+                _ => Link::After {
                     milestone: matches!(v, Vertex::Node(PlanNode::Milestone(_))),
                 },
             };
@@ -46,10 +45,7 @@ pub fn late_ends(
         }
     }
     for (first, second) in resource {
-        let link = Link::Lag {
-            lag: 0,
-            milestone: false,
-        };
+        let link = Link::After { milestone: false };
         before.entry(*second).or_default().push((*first, link));
     }
     // everything after a vertex must be done before it can be, so count what follows
@@ -68,11 +64,10 @@ pub fn late_ends(
             if let Some(end) = late.get(&v).copied() {
                 let limit = match link {
                     Link::Member => end,
-                    Link::Lag { lag, milestone } => {
+                    Link::After { milestone } => {
                         let length = (range.end() - range.start()).num_days();
                         let start = end - Days::new(length.unsigned_abs());
-                        let allowed = start - chrono::Duration::days(i64::from(*lag));
-                        allowed + chrono::Duration::days(i64::from(*milestone))
+                        start + chrono::Duration::days(i64::from(*milestone))
                     }
                 };
                 let slot = late.entry(*from).or_insert(limit);
@@ -96,7 +91,7 @@ pub type Span<'a> = dyn Fn(&Vertex, NaiveDate) -> Option<(NaiveDate, NaiveDate)>
 /// The earliest each vertex can start however free people are, taking the lengths in `placed`,
 /// the ends of what has happened and the dates in `floor` as they are. A start in `exact` is
 /// kept (work that has started or is done), the rest start no sooner than their `floor`, the
-/// ends of what they depend on and the lag after them. `span` gives where a vertex would start
+/// ends of what they depend on. `span` gives where a vertex would start
 /// and end if it could start on a day, or `None` if it takes no time.
 pub fn early_starts(
     span: &Span,
@@ -132,8 +127,7 @@ pub fn early_starts(
                 }
                 continue;
             }
-            let after = ends[&from] + chrono::Duration::days(i64::from(edge.lag));
-            let after = after - chrono::Duration::days(i64::from(milestone));
+            let after = ends[&from] - chrono::Duration::days(i64::from(milestone));
             start = start.max(Some(after));
         }
         if is_group {

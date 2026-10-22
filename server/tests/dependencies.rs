@@ -48,10 +48,7 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
 }
 
 fn depend(nodes: &[DependencyNode]) -> Vec<Dependency> {
-    nodes
-        .iter()
-        .map(|&node| Dependency { node, lag: 0 })
-        .collect()
+    nodes.iter().map(|&node| Dependency { node }).collect()
 }
 
 fn task_patch(id: Uuid) -> TaskPatch {
@@ -224,8 +221,8 @@ fn allocated_tags_must_exist_and_cannot_be_removed() {
 // }}}
 
 // simplification {{{
-fn lagged(node: DependencyNode, lag: i32) -> Dependency {
-    Dependency { node, lag }
+fn waits_on(node: DependencyNode) -> Dependency {
+    Dependency { node }
 }
 
 /// Sets the dependencies, then applies what simplifying leaves to do, returning the update's items
@@ -260,11 +257,11 @@ fn a_dependency_a_chain_implies_is_dropped() {
     );
     let on = |id| DependencyNode::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
-    set_and_simplify(&mut plan, b, vec![lagged(on(a), 0)]);
+    set_and_simplify(&mut plan, b, vec![waits_on(on(a))]);
     // a to c is implied by a to b to c
-    let changed = set_and_simplify(&mut plan, c, vec![lagged(on(a), 0), lagged(on(b), 0)]);
+    let changed = set_and_simplify(&mut plan, c, vec![waits_on(on(a)), waits_on(on(b))]);
     assert_eq!(changed, [PlanNode::Task(c)]);
-    assert_eq!(task_deps(&plan, c), [lagged(on(b), 0)]);
+    assert_eq!(task_deps(&plan, c), [waits_on(on(b))]);
 }
 
 #[test]
@@ -274,27 +271,11 @@ fn a_new_link_makes_dependents_redundant_too() {
     let (a, b, c) = (ids[0], ids[1], ids[2]);
     let on = |id| DependencyNode::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
-    set_and_simplify(&mut plan, c, vec![lagged(on(a), 0), lagged(on(b), 0)]);
+    set_and_simplify(&mut plan, c, vec![waits_on(on(a)), waits_on(on(b))]);
     assert_eq!(task_deps(&plan, c).len(), 2);
     // b now waits on a, so c waiting on a as well says nothing new
-    set_and_simplify(&mut plan, b, vec![lagged(on(a), 0)]);
-    assert_eq!(task_deps(&plan, c), [lagged(on(b), 0)]);
-}
-
-#[test]
-fn a_longer_lag_than_the_chain_gives_is_kept() {
-    let mut plan = new_plan();
-    let ids: Vec<Uuid> = (0..3).map(|_| add_task(&mut plan, Parent::Plan)).collect();
-    let (a, b, c) = (ids[0], ids[1], ids[2]);
-    let on = |id| DependencyNode::Node(PlanNode::Task(id));
-    set_and_simplify(&mut plan, a, vec![Dependency::default()]);
-    set_and_simplify(&mut plan, b, vec![lagged(on(a), 2)]);
-    // ten days after a is later than two days after a and then b
-    set_and_simplify(&mut plan, c, vec![lagged(on(a), 10), lagged(on(b), 0)]);
-    assert_eq!(task_deps(&plan, c).len(), 2);
-    // while three days after a is not
-    set_and_simplify(&mut plan, c, vec![lagged(on(a), 1), lagged(on(b), 0)]);
-    assert_eq!(task_deps(&plan, c), [lagged(on(b), 0)]);
+    set_and_simplify(&mut plan, b, vec![waits_on(on(a))]);
+    assert_eq!(task_deps(&plan, c), [waits_on(on(b))]);
 }
 
 #[test]
@@ -306,16 +287,16 @@ fn the_start_of_the_parent_is_dropped_when_another_dependency_leads_there() {
     );
     let on = |id| DependencyNode::Node(PlanNode::Task(id));
     set_and_simplify(&mut plan, a, vec![Dependency::default()]);
-    set_and_simplify(&mut plan, b, vec![Dependency::default(), lagged(on(a), 0)]);
-    assert_eq!(task_deps(&plan, b), [lagged(on(a), 0)]);
+    set_and_simplify(&mut plan, b, vec![Dependency::default(), waits_on(on(a))]);
+    assert_eq!(task_deps(&plan, b), [waits_on(on(a))]);
     // an item with no dependencies begins at the start, so it leads there too
     let loose = add_task(&mut plan, Parent::Plan);
     set_and_simplify(
         &mut plan,
         b,
-        vec![Dependency::default(), lagged(on(loose), 0)],
+        vec![Dependency::default(), waits_on(on(loose))],
     );
-    assert_eq!(task_deps(&plan, b), [lagged(on(loose), 0)]);
+    assert_eq!(task_deps(&plan, b), [waits_on(on(loose))]);
 }
 // }}}
 
@@ -344,30 +325,20 @@ fn removing_an_item_joins_what_was_before_to_what_was_after() {
     let mut plan = new_plan();
     let ids: Vec<Uuid> = (0..4).map(|_| add_task(&mut plan, Parent::Plan)).collect();
     let (a, b, c, d) = (ids[0], ids[1], ids[2], ids[3]);
-    let lagged = |id, lag| Dependency {
+    let on = |id| Dependency {
         node: task_node(id),
-        lag,
     };
     set_task_deps(&mut plan, a, &[DependencyNode::ParentStart]).unwrap();
-    plan.apply_update(PlanUpdate::set_dependencies(
-        PlanNode::Task(b),
-        vec![lagged(a, 2)],
-    ))
-    .unwrap();
-    plan.apply_update(PlanUpdate::set_dependencies(
-        PlanNode::Task(c),
-        vec![lagged(b, 3)],
-    ))
-    .unwrap();
-    plan.apply_update(PlanUpdate::set_dependencies(
-        PlanNode::Task(d),
-        vec![lagged(b, 0)],
-    ))
-    .unwrap();
+    plan.apply_update(PlanUpdate::set_dependencies(PlanNode::Task(b), vec![on(a)]))
+        .unwrap();
+    plan.apply_update(PlanUpdate::set_dependencies(PlanNode::Task(c), vec![on(b)]))
+        .unwrap();
+    plan.apply_update(PlanUpdate::set_dependencies(PlanNode::Task(d), vec![on(b)]))
+        .unwrap();
     remove_through(&mut plan, PlanNode::Task(b));
     assert!(!plan.tasks().contains_key(&b));
-    assert_eq!(plan.tasks()[&c].dependencies(), &[lagged(a, 5)]);
-    assert_eq!(plan.tasks()[&d].dependencies(), &[lagged(a, 2)]);
+    assert_eq!(plan.tasks()[&c].dependencies(), &[on(a)]);
+    assert_eq!(plan.tasks()[&d].dependencies(), &[on(a)]);
 }
 
 #[test]
@@ -380,7 +351,6 @@ fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
         PlanNode::TaskGroup(group),
         vec![Dependency {
             node: task_node(before),
-            lag: 1,
         }],
     ))
     .unwrap();
@@ -396,19 +366,17 @@ fn removing_a_group_moves_its_members_up_and_what_waited_on_it_waits_on_them() {
     remove_through(&mut plan, PlanNode::TaskGroup(group));
     assert!(plan.task_groups().is_empty());
     assert_eq!(plan.tasks()[&m1].parent(), Parent::Plan);
-    // the start of the group was one day after the first task
+    // the start of the group was the end of the first task
     assert_eq!(
         plan.tasks()[&m1].dependencies(),
         &[Dependency {
             node: task_node(before),
-            lag: 1
         }]
     );
     assert_eq!(
         plan.tasks()[&m2].dependencies(),
         &[Dependency {
             node: task_node(m1),
-            lag: 0
         }]
     );
     let mut waits: Vec<_> = plan.tasks()[&after]
@@ -459,7 +427,6 @@ mod moving {
     fn on(id: Uuid) -> Dependency {
         Dependency {
             node: DependencyNode::Node(PlanNode::Task(id)),
-            lag: 0,
         }
     }
 
@@ -498,10 +465,7 @@ mod moving {
         );
         assert_eq!(
             plan.tasks()[&after].dependencies(),
-            &vec![Dependency {
-                node: group_node,
-                lag: 0
-            }]
+            &vec![Dependency { node: group_node }]
         );
 
         let out = plan.moving(PlanNode::Task(x), Parent::Plan).unwrap();
