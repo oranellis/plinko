@@ -35,7 +35,7 @@ mod tests {
 
     fn patch() -> TaskPatch {
         TaskPatch {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             name: None,
             parent: None,
             mode: None,
@@ -44,7 +44,7 @@ mod tests {
             dependencies: None,
             allocations: Some(HashMap::from([
                 (Worker::Placeholder, Workload::new_const(4)),
-                (Worker::Tag(Uuid::now_v7()), Workload::new_const(8)),
+                (Worker::Tag(Uuid::new_v4()), Workload::new_const(8)),
             ])),
             affinities: None,
             actual_workers: None,
@@ -68,7 +68,7 @@ mod tests {
     fn clearing_a_field_is_not_the_same_as_leaving_it() {
         use crate::availability::rule::RulePatch;
         let patch = |stop_day| RulePatch::<Workload> {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             start_day: None,
             stop_day,
             kind: None,

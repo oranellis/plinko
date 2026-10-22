@@ -122,7 +122,7 @@ mod tests {
 
     fn delay(duration: u32) -> PlanDelay {
         PlanDelay::from(NewPlanDelay {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             name: None,
             parent: Parent::Plan,
             duration,

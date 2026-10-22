@@ -192,18 +192,18 @@ mod tests {
 
     #[test]
     fn capacity_comes_from_the_calendar_and_is_zero_outside_it() {
-        let user = Uuid::now_v7();
+        let user = Uuid::new_v4();
         let ledger = ledger(user);
         assert_eq!(ledger.free(&user, d(1)), 8);
         assert_eq!(ledger.free(&user, d(6)), 0, "Saturday");
         assert_eq!(ledger.free(&user, d(15)), 0, "after the window");
         assert_eq!(ledger.free(&user, NaiveDate::MIN), 0, "before the window");
-        assert_eq!(ledger.free(&Uuid::now_v7(), d(1)), 0, "unknown person");
+        assert_eq!(ledger.free(&Uuid::new_v4(), d(1)), 0, "unknown person");
     }
 
     #[test]
     fn claims_take_hours_and_releases_return_them() {
-        let user = Uuid::now_v7();
+        let user = Uuid::new_v4();
         let mut ledger = ledger(user);
         let run = Run(vec![claim(user, 1, 5), claim(user, 2, 8)]);
         assert!(ledger.claim(&run));
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn a_failed_run_takes_nothing() {
-        let user = Uuid::now_v7();
+        let user = Uuid::new_v4();
         let mut ledger = ledger(user);
         let before = ledger.clone();
         // the second claim fits alone, the third overdraws the first day, or hits a weekend
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn past_days_are_ignored_and_zero_hour_claims_always_fit() {
-        let user = Uuid::now_v7();
+        let user = Uuid::new_v4();
         let mut ledger = ledger(user);
         let before = ledger.clone();
         let run = Run(vec![
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn releases_never_exceed_capacity() {
-        let user = Uuid::now_v7();
+        let user = Uuid::new_v4();
         let mut ledger = ledger(user);
         ledger.release(&Run(vec![claim(user, 1, 8)]));
         assert_eq!(ledger.free(&user, d(1)), 8);
@@ -258,13 +258,13 @@ mod tests {
 
     #[test]
     fn load_is_booked_over_available_between_first_and_last_booked_day() {
-        let user = Uuid::now_v7();
+        let user = Uuid::new_v4();
         let mut ledger = ledger(user);
         assert_eq!(ledger.load(&user), 0.0);
         // Friday 4h and Monday 8h: 12 of the 16 hours across the two working days
         assert!(ledger.claim(&Run(vec![claim(user, 5, 4), claim(user, 8, 8)])));
         assert_eq!(ledger.load(&user), 0.75);
-        assert_eq!(ledger.load(&Uuid::now_v7()), 0.0);
+        assert_eq!(ledger.load(&Uuid::new_v4()), 0.0);
     }
 }
 // }}}

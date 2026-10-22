@@ -25,7 +25,7 @@ fn new_plan() -> Plan {
 }
 
 fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTask {
         id,
         name: "Task".to_string(),
@@ -36,7 +36,7 @@ fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
 }
 
 fn add_group(plan: &mut Plan, parent: Parent) -> Uuid {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTaskGroup {
         id,
         name: "Group".to_string(),
@@ -104,7 +104,7 @@ fn remove_task(plan: &mut Plan, id: Uuid) -> PlinkoResult<()> {
 fn dependency_on_missing_node_is_rejected() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
-    let missing = task_node(Uuid::now_v7());
+    let missing = task_node(Uuid::new_v4());
     assert!(set_task_deps(&mut plan, task, &[missing]).is_err());
     assert!(plan.tasks()[&task].dependencies().is_empty());
 }
@@ -198,7 +198,7 @@ fn referenced_items_cannot_be_removed() {
 fn allocated_tags_must_exist_and_cannot_be_removed() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
-    let tag = Uuid::now_v7();
+    let tag = Uuid::new_v4();
     let allocate = |plan: &mut Plan, workers: HashMap<Worker, Workload>| {
         let patch = TaskPatch {
             allocations: Some(workers),
@@ -446,7 +446,7 @@ mod moving {
     }
 
     fn task(plan: &mut Plan) -> Uuid {
-        let id = Uuid::now_v7();
+        let id = Uuid::new_v4();
         let new = NewTask {
             id,
             name: "T".to_string(),
@@ -473,7 +473,7 @@ mod moving {
     fn into_and_out_of_a_group_carry_the_dependencies() {
         let mut plan = plan();
         let (before, x, after) = (task(&mut plan), task(&mut plan), task(&mut plan));
-        let group = Uuid::now_v7();
+        let group = Uuid::new_v4();
         let new = NewTaskGroup {
             id: group,
             name: "G".to_string(),
@@ -513,7 +513,7 @@ mod moving {
     #[test]
     fn a_group_cannot_move_into_itself() {
         let mut plan = plan();
-        let group = Uuid::now_v7();
+        let group = Uuid::new_v4();
         let new = NewTaskGroup {
             id: group,
             name: "G".to_string(),

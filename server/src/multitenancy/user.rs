@@ -42,7 +42,7 @@ impl From<NewTenantLoginUser> for TenantLoginUser {
 impl TenantLoginUser {
     pub fn new(name: String, email: String, role: Role) -> Self {
         Self {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             name,
             email,
             role,

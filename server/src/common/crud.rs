@@ -19,7 +19,7 @@ impl<N: Identified, P> Crud<N, P> {
     /// existing items, so they are left alone.
     pub fn assign_id(&mut self) {
         if let Crud::Add(new) = self {
-            new.set_id(Uuid::now_v7());
+            new.set_id(Uuid::new_v4());
         }
     }
 }

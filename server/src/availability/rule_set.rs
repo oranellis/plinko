@@ -159,7 +159,7 @@ mod tests {
         stop_day: Option<NaiveDate>,
         kind: RuleKind<Workload>,
     ) -> PlinkoResult<Uuid> {
-        let id = Uuid::now_v7();
+        let id = Uuid::new_v4();
         let new = NewRule {
             name: String::new(),
             stop_day,
@@ -516,7 +516,7 @@ mod tests {
             let new = NewRule {
                 name,
                 stop_day: None,
-                id: Uuid::now_v7(),
+                id: Uuid::new_v4(),
                 start_day: d(2024, 1, 8),
                 kind: over(1, 2, None),
             };
@@ -535,7 +535,7 @@ mod tests {
         let new = NewRule {
             name: String::new(),
             stop_day: None,
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             start_day: d(2024, 1, 3),
             kind: RuleKind::Override(DayOverride {
                 days: 2,

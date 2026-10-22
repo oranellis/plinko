@@ -43,7 +43,7 @@ impl Plans {
         let mut plans = Self {
             tenant,
             root,
-            shared: Uuid::now_v7(),
+            shared: Uuid::new_v4(),
         };
         let new = NewTenantLoginUser {
             id: plans.shared,
@@ -84,7 +84,7 @@ impl Plans {
 
     /// A new person in the tenant and the plan
     fn person(&mut self, plan: ShortId) -> Uuid {
-        let id = Uuid::now_v7();
+        let id = Uuid::new_v4();
         let new = NewTenantLoginUser {
             id,
             name: "Person".to_string(),
@@ -98,7 +98,7 @@ impl Plans {
 
     /// A tag in the plan held by the people
     fn tag(&mut self, plan: ShortId, holders: &[Uuid]) -> Uuid {
-        let id = Uuid::now_v7();
+        let id = Uuid::new_v4();
         let new = plinko::planner::resources::tag::NewTag {
             id,
             name: "Tag".to_string(),
@@ -121,7 +121,7 @@ impl Plans {
     }
 
     fn task_for(&mut self, plan: ShortId, days: u32, worker: Worker, after: &[PlanNode]) -> Uuid {
-        let task = Uuid::now_v7();
+        let task = Uuid::new_v4();
         let new = NewTask {
             id: task,
             name: "Task".to_string(),
@@ -163,7 +163,7 @@ impl Plans {
     }
 
     fn milestone(&mut self, plan: ShortId, after: PlanNode) -> PlanNode {
-        let id = Uuid::now_v7();
+        let id = Uuid::new_v4();
         let new = NewMilestone {
             id,
             name: "Milestone".to_string(),
@@ -187,7 +187,7 @@ impl Plans {
 
     fn target(&mut self, plan: ShortId, node: PlanNode) {
         let new = NewTarget {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             node,
             priority: 0,
         };
@@ -282,7 +282,7 @@ fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
 
     // changing a plan only drops its own
     let new = NewTask {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "More".to_string(),
         parent: Parent::Plan,
     };
@@ -521,7 +521,7 @@ fn someone_much_less_booked_is_worth_finishing_a_day_later() {
     let rule = plinko::availability::rule::NewRule {
         name: String::new(),
         stop_day: None,
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         start_day: day(2000, 1, 3),
         kind: plinko::availability::rule::RuleKind::Weekly(
             plinko::availability::rule::WeeklySchedule::new(

@@ -42,7 +42,7 @@ fn setup() -> Setup {
         tenant,
         root,
         plan: ShortId::new(),
-        task: Uuid::now_v7(),
+        task: Uuid::new_v4(),
     };
     let new = NewPlan {
         id: setup.plan,

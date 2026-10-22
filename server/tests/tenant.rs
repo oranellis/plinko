@@ -49,7 +49,7 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) -> Pli
 }
 
 fn add_user(tenant: &mut Tenant, actor: Uuid, role: Role) -> Uuid {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTenantLoginUser {
         id,
         name: "User".to_string(),
@@ -66,7 +66,7 @@ fn add_group(
     parent: Option<Uuid>,
     users: &[Uuid],
 ) -> PlinkoResult<Uuid> {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTenantUserGroup {
         id,
         name: "Group".to_string(),
@@ -98,7 +98,7 @@ fn plan_update(
 
 fn add_task(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> PlinkoResult<()> {
     let task = NewTask {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Task".to_string(),
         parent: Parent::Plan,
     };
@@ -167,7 +167,7 @@ fn missing_plan_update_errors() {
 #[test]
 fn unknown_actor_is_forbidden() {
     let (mut tenant, _) = new_tenant();
-    assert!(add_plan(&mut tenant, Uuid::now_v7()).is_err());
+    assert!(add_plan(&mut tenant, Uuid::new_v4()).is_err());
 }
 // }}}
 
@@ -190,7 +190,7 @@ fn members_only_edit_their_own_plans() {
     add_task(&mut tenant, bob, plan).unwrap();
 
     // only users that exist in the tenant can be added to a plan
-    let ghost = NewPlanUser { id: Uuid::now_v7() };
+    let ghost = NewPlanUser { id: Uuid::new_v4() };
     let ghost = PlanUpdate::User(Crud::Add(ghost));
     assert!(plan_update(&mut tenant, alice, plan, ghost).is_err());
 }
@@ -202,7 +202,7 @@ fn only_admins_manage_users_and_groups() {
     let (mut tenant, root) = new_tenant();
     let alice = add_user(&mut tenant, root, Role::Member);
     let new = NewTenantLoginUser {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Bob".to_string(),
         email: "bob@example.com".to_string(),
         role: Role::Member,
@@ -248,8 +248,8 @@ fn user_groups_nest_and_include_subgroup_members() {
     };
     let loops = TenantUpdateType::UserGroup(Crud::Update(loops));
     assert!(apply(&mut tenant, root, loops).is_err());
-    assert!(add_group(&mut tenant, root, Some(Uuid::now_v7()), &[]).is_err());
-    assert!(add_group(&mut tenant, root, None, &[Uuid::now_v7()]).is_err());
+    assert!(add_group(&mut tenant, root, Some(Uuid::new_v4()), &[]).is_err());
+    assert!(add_group(&mut tenant, root, None, &[Uuid::new_v4()]).is_err());
     assert_eq!(tenant.user_groups().len(), 2);
 
     // groups with subgroups or users that are in them cannot be removed
@@ -286,7 +286,7 @@ fn holiday(day: NaiveDate) -> RuleSetUpdate<Workload> {
     let new = NewRule {
         name: String::new(),
         stop_day: Some(day + chrono::Days::new(1)),
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         start_day: day,
         kind: RuleKind::Holiday,
     };
@@ -313,7 +313,7 @@ fn availability_is_edited_by_the_user_or_an_admin() {
     apply(&mut tenant, root, availability(alice, holiday(day))).unwrap();
     assert_eq!(tenant.users()[&alice].availability().rules().len(), 3);
 
-    let missing = availability(Uuid::now_v7(), holiday(day));
+    let missing = availability(Uuid::new_v4(), holiday(day));
     assert!(apply(&mut tenant, root, missing).is_err());
 }
 // }}}
@@ -439,7 +439,7 @@ fn the_last_admin_cannot_be_demoted_or_removed() {
 
 // helpers {{{
 fn add_task_for_placeholder(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> Uuid {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTask {
         id,
         name: "Task".to_string(),
@@ -555,7 +555,7 @@ fn recorded_people_must_exist_and_cannot_be_removed() {
             }),
         )
     };
-    let ghost = record(Assignee::User(Uuid::now_v7()));
+    let ghost = record(Assignee::User(Uuid::new_v4()));
     assert!(apply(&mut tenant, root, ghost).is_err());
 
     apply(&mut tenant, root, record(Assignee::User(bob))).unwrap();

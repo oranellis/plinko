@@ -1284,7 +1284,7 @@ fn changes_to_people_or_the_clock_schedule_everything_again() {
             RuleSetUpdate::Rule(Crud::Add(NewRule {
                 name: String::new(),
                 stop_day: None,
-                id: Uuid::now_v7(),
+                id: Uuid::new_v4(),
                 start_day: NaiveDate::from_ymd_opt(2000, 1, 3).unwrap(),
                 kind: RuleKind::Weekly(WeeklySchedule::new([h(4); 7])),
             })),

@@ -212,7 +212,7 @@ mod tests {
     }
 
     fn person() -> Assignee {
-        Assignee::User(Uuid::now_v7())
+        Assignee::User(Uuid::new_v4())
     }
 
     fn slot(who: Assignee, h: u8) -> Slot {

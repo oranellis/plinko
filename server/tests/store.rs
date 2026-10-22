@@ -105,7 +105,7 @@ fn refused_updates_are_not_saved() {
         root,
         TenantUpdateType::SetToday(day(2)),
     );
-    let refused = tenant.stage(time(), Uuid::now_v7(), TenantUpdateType::SetToday(day(9)));
+    let refused = tenant.stage(time(), Uuid::new_v4(), TenantUpdateType::SetToday(day(9)));
     assert!(store.commit(&mut tenant, seq, refused).is_err());
     assert_eq!(store.since(0).unwrap().len(), 1);
     assert_eq!(tenant.today(), day(2));
@@ -130,7 +130,7 @@ fn snapshots_are_taken_as_the_log_grows() {
 #[test]
 fn passwords_are_checked_and_sessions_come_and_go() {
     let (store, _, _) = setup();
-    let user = Uuid::now_v7();
+    let user = Uuid::new_v4();
     assert!(
         !store.check_password(user, "anything").unwrap(),
         "no password set"

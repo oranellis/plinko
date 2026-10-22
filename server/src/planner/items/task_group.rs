@@ -148,7 +148,7 @@ mod tests {
 
     fn group() -> TaskGroup {
         TaskGroup {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             name: "Group".to_string(),
             dependencies: Vec::new(),
             parent: Parent::Plan,

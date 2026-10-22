@@ -16,7 +16,7 @@ Items marked **Assumed** were not explicitly confirmed and are collected at the 
 
 - The scheduler is a pure function of tenant state. The same updates always produce the same dates.
   Memory layout and `HashMap` order do not matter, so results must not depend on iteration order.
-  Break every tie by id (v7 ids order by creation).
+  Break every tie by id (ids are random, so ties break arbitrarily but the same way every time).
 - It writes volatile state only (derived, never saved, never part of an update). `Tenant` clears the
   stored schedule on every successful update, and the runner calls `solve_tenant` then
   `Tenant::store_schedule`. Persistent state is what users record about how a plan evolves

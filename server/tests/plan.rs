@@ -38,7 +38,7 @@ fn add_task_to_plan() {
         name: "My Plan".to_owned(),
     });
     let task = NewTask {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Task Name".to_string(),
         parent: Parent::Plan,
     };
@@ -58,7 +58,7 @@ fn add_milestone_to_plan() {
         name: "My Plan".to_owned(),
     });
     let milestone = NewMilestone {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Milestone Name".to_string(),
         parent: Parent::Plan,
     };
@@ -77,7 +77,7 @@ fn add_user_to_plan() {
         id,
         name: "My Plan".to_owned(),
     });
-    let user_id = Uuid::now_v7(); // Fake Uuid, would normally match Tenant user Uuid
+    let user_id = Uuid::new_v4(); // Fake Uuid, would normally match Tenant user Uuid
     let update = PlanUpdate::User(Crud::Add(NewPlanUser { id: user_id }));
     plan.apply_update(update).expect("should not error");
     assert!(plan.users().contains_key(&user_id));
@@ -93,7 +93,7 @@ fn add_tag_to_plan() {
         name: "My Plan".to_owned(),
     });
     let tag = NewTag {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "John Doe".to_string(),
     };
     let tag_id = tag.id;
@@ -108,7 +108,7 @@ fn add_tag_to_plan() {
 fn add_task_group_to_plan() {
     let mut plan = new_plan();
     let group = NewTaskGroup {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Group".to_string(),
         parent: Parent::Plan,
     };
@@ -127,7 +127,7 @@ fn add_task_group_to_plan() {
 fn add_plan_buffer_to_plan() {
     let mut plan = new_plan();
     let buffer = NewPlanBuffer {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         parent: Parent::Plan,
         duration: 5,
     };
@@ -143,7 +143,7 @@ fn add_plan_buffer_to_plan() {
 fn add_plan_delay_to_plan() {
     let mut plan = new_plan();
     let delay = NewPlanDelay {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: Some("Cure".into()),
         parent: Parent::Plan,
         duration: 5,
@@ -168,7 +168,7 @@ fn new_plan() -> Plan {
 }
 
 fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTaskGroup {
         id,
         name: "Group".to_string(),
@@ -200,7 +200,7 @@ fn group_parents_reject_cycles_and_missing_groups() {
 
     assert!(set_group_parent(&mut plan, outer, Parent::Node(leaf)).is_err());
     assert!(set_group_parent(&mut plan, inner, Parent::Node(inner)).is_err());
-    assert!(add_group(&mut plan, Parent::Node(Uuid::now_v7())).is_err());
+    assert!(add_group(&mut plan, Parent::Node(Uuid::new_v4())).is_err());
 
     // moving is a single parent change
     set_group_parent(&mut plan, leaf, Parent::Node(outer)).unwrap();
@@ -217,7 +217,7 @@ fn tasks_move_between_groups_and_block_group_removal() {
         add_group(&mut plan, Parent::Plan).unwrap(),
     );
     let task = NewTask {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Task".to_string(),
         parent: Parent::Node(a),
     };

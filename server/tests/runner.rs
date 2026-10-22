@@ -134,7 +134,7 @@ fn updates_are_staged_applied_and_scheduled() {
 
     // a refused update changes nothing and keeps the schedule
     let before = tenant.schedule().unwrap().clone();
-    let refused = tenant.stage(time(), Uuid::now_v7(), TenantUpdateType::SetToday(day(9)));
+    let refused = tenant.stage(time(), Uuid::new_v4(), TenantUpdateType::SetToday(day(9)));
     assert!(tenant.apply_and_schedule(refused).is_err());
     assert_eq!(tenant.today(), day(1));
     assert_eq!(tenant.schedule(), Some(&before));

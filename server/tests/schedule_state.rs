@@ -55,9 +55,9 @@ fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {
 // user_schedules_are_derived_from_assignments_across_plans {{{
 #[test]
 fn user_schedules_are_derived_from_assignments_across_plans() {
-    let (alice, bob) = (Uuid::now_v7(), Uuid::now_v7());
+    let (alice, bob) = (Uuid::new_v4(), Uuid::new_v4());
     let (plan_a, plan_b) = (ShortId::new(), ShortId::new());
-    let (task_a, task_b) = (Uuid::now_v7(), Uuid::now_v7());
+    let (task_a, task_b) = (Uuid::new_v4(), Uuid::new_v4());
     let monday = d(2024, 1, 1);
 
     let mut in_a = PlanVolatileState::default();
@@ -131,7 +131,7 @@ fn milestones_have_a_time_constraint() {
         id: ShortId::new(),
         name: "Plan".to_string(),
     });
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewMilestone {
         id,
         name: "Launch".to_string(),

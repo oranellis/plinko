@@ -670,7 +670,7 @@ mod tests {
         let mut set = RuleSet::<Workload>::default();
         let mut ids = Vec::new();
         for (day, kind) in rules {
-            let id = Uuid::now_v7();
+            let id = Uuid::new_v4();
             let new = NewRule {
                 name: String::new(),
                 id,
