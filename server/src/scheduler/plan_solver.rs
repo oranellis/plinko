@@ -636,7 +636,7 @@ impl<'a> PlanSolver<'a> {
         // a task with no one to work it still takes its duration of the plan's working days
         let stand_in = [Slot {
             who: Assignee::Placeholder,
-            hours: Workload::new(1).expect("one hour"),
+            hours: Workload::new_const(1),
         }];
         let filled = fill(
             &avail,

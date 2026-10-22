@@ -449,7 +449,7 @@ fn add_task_for_placeholder(tenant: &mut Tenant, actor: Uuid, plan: ShortId) -> 
     let patch = task_patch(id, |p| {
         p.allocations = Some(HashMap::from([(
             Worker::Placeholder,
-            Workload::new(4).unwrap(),
+            Workload::new_const(4),
         )]));
     });
     plan_update(tenant, actor, plan, PlanUpdate::Task(Crud::Update(patch))).unwrap();

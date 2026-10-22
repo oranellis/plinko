@@ -174,7 +174,7 @@ mod tests {
     fn over(days: u32, hours: u8, every: Option<(u32, Unit)>) -> RuleKind<Workload> {
         RuleKind::Override(DayOverride {
             days,
-            value: Workload::new(hours).unwrap(),
+            value: Workload::new_const(hours),
             every: every.map(|(n, unit)| Every {
                 n,
                 unit,
@@ -309,7 +309,7 @@ mod tests {
         };
         let kind = RuleKind::Override(DayOverride {
             days: 1,
-            value: Workload::new(1).unwrap(),
+            value: Workload::new_const(1),
             every: Some(every),
         });
         add(&mut set, start, None, kind).unwrap();
@@ -500,7 +500,7 @@ mod tests {
         assert_eq!(
             set.calendar(d(2024, 1, 15), d(2024, 1, 23))
                 .on(d(2024, 1, 23)),
-            Some(Workload::new(8).unwrap())
+            Some(Workload::new_const(8))
         );
         // not on a day that already has a weekly change, whichever comes second
         assert!(add(&mut set, d(2024, 1, 8), None, RuleKind::ResetWeekly).is_err());

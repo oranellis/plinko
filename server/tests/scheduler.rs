@@ -51,7 +51,7 @@ fn today() -> NaiveDate {
 }
 
 fn h(hours: u8) -> Workload {
-    Workload::new(hours).unwrap()
+    Workload::new_const(hours)
 }
 
 type Dep = (DependencyNode, i32);

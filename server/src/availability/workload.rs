@@ -19,8 +19,17 @@ impl Workload {
         }
     }
 
-    pub fn get(&self) -> u8 {
+    pub const fn new_const(value: u8) -> Workload {
+        assert!(Self::is_valid(value), "invalid workload");
+        Self { value }
+    }
+
+    pub const fn get(&self) -> u8 {
         self.value
+    }
+
+    const fn is_valid(value: u8) -> bool {
+        value <= 8
     }
 }
 

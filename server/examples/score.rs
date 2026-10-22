@@ -181,7 +181,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 0 => Worker::Tag(tags[random.below(4) as usize]),
                 _ => Worker::User(people[random.below(12) as usize]),
             };
-            let hours = Workload::new([4, 8][random.below(2) as usize]).unwrap();
+            let hours = Workload::new_const([4, 8][random.below(2) as usize]);
             let patch = TaskPatch {
                 id: task,
                 name: None,

@@ -136,7 +136,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
                 12..30 => [8, 8, 8, 8, 4],
                 _ => [8; 5],
             };
-            let hours = |h: u8| Workload::new(h).unwrap();
+            let hours = |h: u8| Workload::new_const(h);
             let kind = RuleKind::Weekly(WeeklySchedule::new([
                 hours(week[0]),
                 hours(week[1]),
@@ -350,7 +350,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
             let affinity = (random.below(100) < 12).then(|| random.below(3) as usize);
             let days = 1 + random.below(6) as u32;
             let allowed = affinity.map_or([true; 5], |a| masks[a]);
-            let mut allocations = HashMap::from([(worker, Workload::new(hours).unwrap())]);
+            let mut allocations = HashMap::from([(worker, Workload::new_const(hours))]);
             let mut recorded = HashMap::new();
             if let Some(person) = pins.get(&task) {
                 recorded.insert(worker, Assignee::User(people[*person]));
@@ -719,7 +719,7 @@ fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
             1 => {
                 patch.allocations = Some(HashMap::from([(
                     t.worker,
-                    Workload::new([4, 8][random.below(2) as usize]).unwrap(),
+                    Workload::new_const([4, 8][random.below(2) as usize]),
                 )]))
             }
             _ => {

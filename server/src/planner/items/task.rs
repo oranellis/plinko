@@ -270,7 +270,7 @@ mod tests {
     use super::*;
 
     fn hours(h: u8) -> Workload {
-        Workload::new(h).unwrap()
+        Workload::new_const(h)
     }
 
     #[test]

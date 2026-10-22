@@ -33,7 +33,7 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
 }
 
 fn hours(h: u8) -> Workload {
-    Workload::new(h).unwrap()
+    Workload::new_const(h)
 }
 
 fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {

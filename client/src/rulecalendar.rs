@@ -687,7 +687,7 @@ mod tests {
 
     #[test]
     fn rules_are_named_by_their_kind_unless_given_a_name() {
-        let hours = Workload::new(4).unwrap();
+        let hours = Workload::new_const(4);
         let once = DayOverride {
             days: 3,
             value: hours,
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn a_day_lists_latest_first_with_only_the_latest_weekly_change_and_the_default_last() {
         let week = |h| RuleKind::Weekly(WeeklySchedule::from_hours([h; 7]).unwrap());
-        let hours = Workload::new(4).unwrap();
+        let hours = Workload::new_const(4);
         let once = RuleKind::Override(DayOverride {
             days: 30,
             value: hours,

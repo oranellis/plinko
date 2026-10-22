@@ -96,7 +96,7 @@ fn updates_are_staged_applied_and_scheduled() {
             node: DependencyNode::ParentStart,
             lag: 0,
         }]),
-        allocations: Some([(Worker::User(bob), Workload::new(8).unwrap())].into()),
+        allocations: Some([(Worker::User(bob), Workload::new_const(8))].into()),
         ..patch(task)
     };
     send(&mut tenant, in_plan(PlanUpdate::Task(Crud::Update(setup)))).unwrap();

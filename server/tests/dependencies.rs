@@ -206,7 +206,7 @@ fn allocated_tags_must_exist_and_cannot_be_removed() {
         };
         plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
     };
-    let tagged = HashMap::from([(Worker::Tag(tag), Workload::new(1).unwrap())]);
+    let tagged = HashMap::from([(Worker::Tag(tag), Workload::new_const(1))]);
     assert!(allocate(&mut plan, tagged.clone()).is_err());
 
     let new = NewTag {

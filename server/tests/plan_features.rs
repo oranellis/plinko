@@ -77,7 +77,7 @@ fn patch_task(plan: &mut Plan, patch: TaskPatch) -> PlinkoResult<()> {
 fn allocations_are_hours_per_day_and_may_use_placeholders() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
-    let workers = HashMap::from([(Worker::Placeholder, Workload::new(4).unwrap())]);
+    let workers = HashMap::from([(Worker::Placeholder, Workload::new_const(4))]);
     let patch = TaskPatch {
         allocations: Some(workers),
         ..task_patch(task)
@@ -414,10 +414,7 @@ fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
     let allocate = |plan: &mut Plan, slots: &[Worker]| {
-        let allocations = slots
-            .iter()
-            .map(|w| (*w, Workload::new(4).unwrap()))
-            .collect();
+        let allocations = slots.iter().map(|w| (*w, Workload::new_const(4))).collect();
         let patch = TaskPatch {
             allocations: Some(allocations),
             ..task_patch(task)

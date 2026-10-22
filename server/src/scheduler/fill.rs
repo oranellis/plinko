@@ -186,7 +186,7 @@ mod tests {
     }
 
     fn hours(h: u8) -> Workload {
-        Workload::new(h).unwrap()
+        Workload::new_const(h)
     }
 
     /// Everyone works 8 hours on weekdays, January 2024 starts on a Monday. `taken` are hours

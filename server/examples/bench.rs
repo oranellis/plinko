@@ -175,7 +175,7 @@ fn main() {
                 0 => Worker::Tag(tags[random.below(4) as usize]),
                 _ => Worker::User(people[random.below(20) as usize]),
             };
-            let hours = Workload::new([4, 8][random.below(2) as usize]).unwrap();
+            let hours = Workload::new_const([4, 8][random.below(2) as usize]);
             let constraint = (i % 40 == 39).then(|| {
                 let date = today + chrono::Days::new(30 + random.below(60));
                 TimeConstraint::Latest(date)

@@ -135,7 +135,7 @@ impl Plans {
         .into_iter()
         .map(|node| Dependency { node, lag: 0 })
         .collect();
-        let who = [(worker, Workload::new(8).unwrap())];
+        let who = [(worker, Workload::new_const(8))];
         self.patch(plan, task, |p| {
             p.duration = Some(days);
             p.dependencies = Some(after);
@@ -525,7 +525,7 @@ fn someone_much_less_booked_is_worth_finishing_a_day_later() {
         start_day: day(2000, 1, 3),
         kind: plinko::availability::rule::RuleKind::Weekly(
             plinko::availability::rule::WeeklySchedule::new(
-                [0, 8, 8, 8, 8, 0, 0].map(|h| Workload::new(h).unwrap()),
+                [0, 8, 8, 8, 8, 0, 0].map(Workload::new_const),
             ),
         ),
     };

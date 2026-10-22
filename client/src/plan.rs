@@ -310,7 +310,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     let me = sync.me.get_untracked().map(|m| Worker::User(m.id));
                     let patch = TaskPatch {
                         dependencies: start.map(|d| vec![d]),
-                        allocations: me.zip(Workload::new(4).ok()).map(|w| HashMap::from([w])),
+                        allocations: me.map(|who| HashMap::from([(who, Workload::new_const(4))])),
                         ..task_patch(id)
                     };
                     sync.plan_then(plan, PlanUpdate::Task(Crud::Update(patch)), then);

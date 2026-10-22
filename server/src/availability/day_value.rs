@@ -20,7 +20,7 @@ impl DayValue for Workload {
     }
 
     fn default_week() -> [Self; 7] {
-        [8, 8, 8, 8, 8, 0, 0].map(|h| Workload::new(h).expect("default hours are valid"))
+        [8, 8, 8, 8, 8, 0, 0].map(Workload::new_const)
     }
 }
 

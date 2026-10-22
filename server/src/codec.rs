@@ -43,8 +43,8 @@ mod tests {
             time_constraint: None,
             dependencies: None,
             allocations: Some(HashMap::from([
-                (Worker::Placeholder, Workload::new(4).unwrap()),
-                (Worker::Tag(Uuid::now_v7()), Workload::new(8).unwrap()),
+                (Worker::Placeholder, Workload::new_const(4)),
+                (Worker::Tag(Uuid::now_v7()), Workload::new_const(8)),
             ])),
             affinities: None,
             actual_workers: None,
