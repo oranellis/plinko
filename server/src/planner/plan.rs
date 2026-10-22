@@ -129,6 +129,11 @@ impl Plan {
         &self.default_availability
     }
 
+    /// Gives the plan's placeholders these rules, as a new plan starts from the tenant's default
+    pub(crate) fn set_default_availability(&mut self, rules: RuleSet<Workload>) {
+        self.default_availability = rules;
+    }
+
     pub fn scheduler_data(&self) -> &PlanSchedulerData {
         &self.scheduler_data
     }

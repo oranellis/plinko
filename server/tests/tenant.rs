@@ -318,6 +318,58 @@ fn availability_is_edited_by_the_user_or_an_admin() {
 }
 // }}}
 
+// new_users_and_plans_start_from_the_default_schedule {{{
+#[test]
+fn new_users_and_plans_start_from_the_default_schedule() {
+    let (mut tenant, root) = new_tenant();
+    let member = add_user(&mut tenant, root, Role::Member);
+    let day = NaiveDate::from_ymd_opt(2024, 1, 3).unwrap(); // a Wednesday
+    let default = |update| TenantUpdateType::DefaultSchedule(update);
+
+    assert!(apply(&mut tenant, member, default(holiday(day))).is_err());
+    apply(&mut tenant, root, default(holiday(day))).unwrap();
+    assert_eq!(tenant.default_schedule().value_on(day).get(), 0);
+    assert_eq!(
+        tenant.visible_to(&member).default_schedule(),
+        tenant.default_schedule()
+    );
+
+    // those there already keep what they had, what is added afterwards starts from the default
+    assert_eq!(
+        tenant.users()[&member].availability().value_on(day).get(),
+        8
+    );
+    let newcomer = add_user(&mut tenant, root, Role::Member);
+    assert_eq!(
+        tenant.users()[&newcomer].availability(),
+        tenant.default_schedule()
+    );
+    let plan = add_plan(&mut tenant, member).unwrap();
+    assert_eq!(
+        tenant.plans()[&plan].default_availability(),
+        tenant.default_schedule()
+    );
+
+    // and changing the default later does not reach back
+    let later = NaiveDate::from_ymd_opt(2024, 1, 4).unwrap();
+    apply(&mut tenant, root, default(holiday(later))).unwrap();
+    assert_eq!(
+        tenant.users()[&newcomer]
+            .availability()
+            .value_on(later)
+            .get(),
+        8
+    );
+    assert_eq!(
+        tenant.plans()[&plan]
+            .default_availability()
+            .value_on(later)
+            .get(),
+        8
+    );
+}
+// }}}
+
 // plan_default_availability_is_set_through_plan_updates {{{
 #[test]
 fn plan_default_availability_is_set_through_plan_updates() {

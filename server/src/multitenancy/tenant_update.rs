@@ -31,6 +31,8 @@ pub enum TenantUpdateType {
     UserGroup(Crud<NewTenantUserGroup, TenantUserGroupPatch>),
     /// Change one user's availability, which only they or an admin may do
     Availability(Uuid, RuleSetUpdate<Workload>),
+    /// Change the availability new users and new plans start with, which only an admin may do
+    DefaultSchedule(RuleSetUpdate<Workload>),
     /// Moves the tenant's clock, which only admins (the server runner) may do
     SetToday(NaiveDate),
     /// Stars a plan for the person making the update, or takes the star off
@@ -55,7 +57,8 @@ impl TenantUpdateType {
         match self {
             TenantUpdateType::User(update) => update.assign_id(),
             TenantUpdateType::UserGroup(update) => update.assign_id(),
-            TenantUpdateType::Availability(_, update) => update.assign_ids(),
+            TenantUpdateType::Availability(_, update)
+            | TenantUpdateType::DefaultSchedule(update) => update.assign_ids(),
             TenantUpdateType::SetToday(_) | TenantUpdateType::Favourite(..) => {}
             TenantUpdateType::Plan(update) => update.assign_ids(),
         }

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    availability::{calendar::Calendar, workload::Workload},
+    availability::{calendar::Calendar, rule_set::RuleSet, workload::Workload},
     common::{
         crud::Crud,
         error::{PlinkoError, PlinkoResult},
@@ -50,6 +50,7 @@ pub struct Tenant {
     #[serde(skip)]
     baselines: HashMap<ShortId, Baseline>,
     pub(super) plans: HashMap<ShortId, Plan>,
+    pub(super) default_schedule: RuleSet<Workload>,
 }
 
 // impl Tenant{{{
@@ -88,6 +89,7 @@ impl Tenant {
             schedule: None,
             baselines: HashMap::new(),
             plans: HashMap::new(),
+            default_schedule: RuleSet::default(),
         }
     }
 
@@ -101,6 +103,11 @@ impl Tenant {
 
     pub fn today(&self) -> NaiveDate {
         self.today
+    }
+
+    /// The availability a new user and a new plan start with
+    pub fn default_schedule(&self) -> &RuleSet<Workload> {
+        &self.default_schedule
     }
 
     pub fn users(&self) -> &HashMap<Uuid, TenantLoginUser> {
@@ -191,11 +198,15 @@ impl Tenant {
                     !matches!(&update, Crud::Remove(id) if *id == u.actor),
                     u.actor,
                 )?;
-                let removed = match &update {
-                    Crud::Remove(id) => Some(*id),
-                    _ => None,
+                let (added, removed) = match &update {
+                    Crud::Add(new) => (Some(new.id), None),
+                    Crud::Remove(id) => (None, Some(*id)),
+                    Crud::Update(_) => (None, None),
                 };
                 TenantLoginUser::apply_crud(self, update)?;
+                if let Some(user) = added.and_then(|id| self.users.get_mut(&id)) {
+                    user.availability = self.default_schedule.clone();
+                }
                 removed.map(|id| self.volatile.remove(&id));
                 Ok(())
             }
@@ -212,6 +223,10 @@ impl Tenant {
                     .apply_update(update)?;
                 self.volatile.remove(&user);
                 Ok(())
+            }
+            TenantUpdateType::DefaultSchedule(update) => {
+                allow(is_admin, u.actor)?;
+                self.default_schedule.apply_update(update)
             }
             TenantUpdateType::Favourite(plan, starred) => {
                 self.authorize_plan(u.actor, is_admin, &plan)?;
@@ -245,6 +260,7 @@ impl Tenant {
         match update {
             PlanTenantUpdate::Add(new) => {
                 let mut plan = Plan::from(new);
+                plan.set_default_availability(self.default_schedule.clone());
                 plan.apply_update(PlanUpdate::User(Crud::Add(NewPlanUser { id: actor })))?;
                 self.insert_plan(plan)
             }
@@ -363,6 +379,7 @@ impl Tenant {
                 .filter(|(id, _)| visible.contains(id))
                 .map(|(id, plan)| (*id, plan.clone()))
                 .collect(),
+            default_schedule: self.default_schedule.clone(),
         }
     }
 

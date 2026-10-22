@@ -1,6 +1,7 @@
-//! Editing when people work: the rules for a person, or for the placeholders of a plan, and the
-//! days an affinity allows. The rules are the ones the scheduler uses, so the calendar shown is
-//! what it will schedule against. Both a full page and a window over the current page.
+//! Editing when people work: the rules for a person, for the placeholders of a plan, or the ones
+//! new users and plans start with, and the days an affinity allows. The rules are the ones the
+//! scheduler uses, so the calendar shown is what it will schedule against. Both a full page and a
+//! window over the current page.
 
 // modules {{{
 use leptos::prelude::*;
@@ -35,12 +36,14 @@ fn hours_of(
             match of {
                 Of::User(id) => t.users().get(&id).map(|u| u.availability().clone()),
                 Of::Plan(id) => t.plans().get(&id).map(|p| p.default_availability().clone()),
+                Of::Default => Some(t.default_schedule().clone()),
             }
         })
     });
     let send = Callback::new(move |update: RuleSetUpdate<Workload>| match of {
         Of::User(id) => sync.send(TenantUpdateType::Availability(id, update)),
         Of::Plan(id) => sync.plan(id, PlanUpdate::Availability(update)),
+        Of::Default => sync.send(TenantUpdateType::DefaultSchedule(update)),
     });
     (rules.into(), send)
 }
@@ -58,6 +61,7 @@ fn title_of(of: Of) -> Signal<String> {
                     Of::Plan(id) => {
                         format!("Default Availability of {}", t.plans().get(&id)?.name())
                     }
+                    Of::Default => "Default Hours of New Users and Plans".to_string(),
                 })
             })
             .unwrap_or_default()
@@ -76,6 +80,7 @@ pub fn Availability(of: Of) -> impl IntoView {
         Of::User(id) if Some(id) == me => None,
         Of::User(_) => Some(Route::People),
         Of::Plan(id) => Some(Route::Plan(id, PlanTab::Settings, None)),
+        Of::Default => Some(Route::People),
     };
     view! {
         <div class="calpage">

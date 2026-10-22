@@ -93,12 +93,14 @@ pub fn People() -> impl IntoView {
     let editing = RwSignal::new(None::<Option<Uuid>>);
     let editing_group = RwSignal::new(None::<Option<Uuid>>);
     let hours = RwSignal::new(None::<Uuid>);
+    let default_hours = RwSignal::new(false);
     view! {
         <div class="people">
             <div class="bar"><h1>"People"</h1></div>
             <section>
                 <div class="bar">
                     <h2>"Users"</h2>
+                    <button type="button" on:click=move |_| default_hours.set(true)>"Default Hours"</button>
                     <button type="button" class="primary" on:click=move |_| editing.set(Some(None))>"New User"</button>
                 </div>
                 <ul class="items">
@@ -153,6 +155,9 @@ pub fn People() -> impl IntoView {
         {move || hours.get().map(|user| view! {
             <AvailabilityWindow of=Availability::User(user) on_close=Callback::new(move |()| hours.set(None)) />
         })}
+        <Show when=move || default_hours.get()>
+            <AvailabilityWindow of=Availability::Default on_close=Callback::new(move |()| default_hours.set(false)) />
+        </Show>
         {move || editing.get().map(|which| view! {
             <PersonForm which=which people=people on_close=Callback::new(move |_| editing.set(None)) />
         })}

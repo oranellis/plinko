@@ -36,7 +36,7 @@ Everything is read from `Tenant` and its plans.
 - **People:** `TenantLoginUser.availability` (a `RuleSet<Workload>`), read as calendars. Use
   `Tenant::refresh_calendars(from, until)` then `Tenant::calendar(user)`. `until` is the scheduling
   horizon, `from` the earliest day any plan needs.
-- **Placeholder availability:** `Plan.default_availability` through `Tenant::plan_calendar(plan)`.
+- **Placeholder availability:** `Plan.default_availability` through `Tenant::plan_calendar(plan)`. A new user and a new plan start with a copy of `Tenant::default_schedule` (admin edited, `TenantUpdateType::DefaultSchedule`), and later changes to it do not reach back.
   It is also the "plan calendar" for working-day arithmetic on that plan (task durations with no
   workers, buffers, group placeholders).
 - **Groups:** `Tenant::group_members(group)` (a group and all subgroups) for `Worker::UserGroup`.

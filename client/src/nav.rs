@@ -45,7 +45,7 @@ pub enum Route {
     UserAllocations(Uuid),
     People,
     Preferences,
-    /// Availability of a user, or the plan default of a plan
+    /// Availability of a user, the plan default of a plan, or the default of the tenant
     Availability(Availability),
 }
 
@@ -53,6 +53,8 @@ pub enum Route {
 pub enum Availability {
     User(Uuid),
     Plan(ShortId),
+    /// What new users and new plans start with
+    Default,
 }
 
 /// A task to show when the chart of its plan opens, asked for from another page
@@ -76,6 +78,7 @@ impl Route {
             Route::Preferences => "#/preferences".to_string(),
             Route::Availability(Availability::User(user)) => format!("#/availability/user/{user}"),
             Route::Availability(Availability::Plan(plan)) => format!("#/availability/plan/{plan}"),
+            Route::Availability(Availability::Default) => "#/availability/default".to_string(),
         }
     }
 
@@ -106,6 +109,7 @@ impl Route {
                 Ok(plan) => Route::Availability(Availability::Plan(plan)),
                 Err(_) => Route::Home,
             },
+            ["availability", "default"] => Route::Availability(Availability::Default),
             _ => Route::Home,
         }
     }
@@ -156,6 +160,7 @@ mod tests {
             Route::Preferences,
             Route::Availability(Availability::User(item)),
             Route::Availability(Availability::Plan(plan)),
+            Route::Availability(Availability::Default),
         ] {
             assert_eq!(Route::parse(&route.path()), route);
         }

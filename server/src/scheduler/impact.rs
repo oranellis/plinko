@@ -67,6 +67,8 @@ impl Change {
             TenantUpdateType::UserGroup(Crud::Add(_)) => {}
             TenantUpdateType::UserGroup(_) => self.everything = true,
             TenantUpdateType::Availability(..) => self.everything = true,
+            // only what is created afterwards starts from it
+            TenantUpdateType::DefaultSchedule(_) => {}
             TenantUpdateType::SetToday(day) => self.everything |= *day != tenant.today(),
             TenantUpdateType::Favourite(..) => {}
             TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => self.whole(new.id),
