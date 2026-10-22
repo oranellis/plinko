@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    availability::calendar::Calendar,
-    availability::workload::Workload,
+    availability::{calendar::Calendar, workload::Workload},
     common::{
         crud::Crud,
         error::{PlinkoError, PlinkoResult},
@@ -18,9 +17,12 @@ use crate::{
         user::{Role, TenantLoginUser, TenantUserVolatileState},
         user_group::TenantUserGroup,
     },
-    planner::items::task::{Assignee, Status},
-    planner::resources::user::NewPlanUser,
-    planner::{plan::Plan, plan_update::PlanUpdate},
+    planner::{
+        items::task::{Assignee, Status},
+        plan::Plan,
+        plan_update::PlanUpdate,
+        resources::user::NewPlanUser,
+    },
     scheduler::{
         self,
         state::{Baseline, TenantVolatileState},
