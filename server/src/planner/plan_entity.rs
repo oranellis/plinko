@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::{
     common::error::{PlinkoError, PlinkoResult},
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::{Dependency, PlanNode, PlanNodeType},
         milestone::{Milestone, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
@@ -28,11 +28,17 @@ use crate::{
 };
 // }}}
 
-/// A schedulable entity with a parent and dependencies, and so a place in the dependency graph
-pub trait PlanItem: Entity<Plan> {
-    fn node(id: Uuid) -> PlanNode;
+/// What every node of a plan says about itself, which `Plan::node` gives for any id
+pub trait NodeData {
+    fn id(&self) -> Uuid;
     fn parent(&self) -> Parent;
     fn dependencies(&self) -> &[Dependency];
+    fn node_type(&self) -> PlanNodeType;
+}
+
+/// A schedulable entity with a parent and dependencies, and so a place in the dependency graph
+pub trait PlanItem: Entity<Plan> + NodeData {
+    fn node(id: Uuid) -> PlanNode;
     fn workers(&self) -> Vec<Worker> {
         Vec::new()
     }
@@ -67,15 +73,24 @@ macro_rules! plan_item {
             }
         }
 
-        impl PlanItem for $ty {
-            fn node(id: Uuid) -> PlanNode {
-                PlanNode::$node(id)
+        impl NodeData for $ty {
+            fn id(&self) -> Uuid {
+                *$ty::id(self)
             }
             fn parent(&self) -> Parent {
                 $ty::parent(self)
             }
             fn dependencies(&self) -> &[Dependency] {
                 $ty::dependencies(self)
+            }
+            fn node_type(&self) -> PlanNodeType {
+                PlanNodeType::$node
+            }
+        }
+
+        impl PlanItem for $ty {
+            fn node(id: Uuid) -> PlanNode {
+                PlanNode::$node(id)
             }
             $(fn workers(&self) -> Vec<Worker> {
                 $workers(self)
@@ -215,6 +230,23 @@ impl Entity<Plan> for Target {
     }
     fn validate(plan: &Plan, id: Uuid) -> PlinkoResult<()> {
         plan.ensure_node_exists(&plan.targets[&id].node())
+    }
+}
+// }}}
+
+// impl Plan {{{
+impl Plan {
+    /// The node with the id, of whichever kind it is
+    pub fn node(&self, id: &Uuid) -> Option<&dyn NodeData> {
+        let node: Option<&dyn NodeData> = self
+            .tasks
+            .get(id)
+            .map(|n| n as &dyn NodeData)
+            .or_else(|| self.task_groups.get(id).map(|n| n as &dyn NodeData))
+            .or_else(|| self.milestones.get(id).map(|n| n as &dyn NodeData))
+            .or_else(|| self.plan_buffers.get(id).map(|n| n as &dyn NodeData))
+            .or_else(|| self.plan_delays.get(id).map(|n| n as &dyn NodeData));
+        node
     }
 }
 // }}}

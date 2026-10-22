@@ -2,6 +2,7 @@
 use plinko::{
     common::{crud::Crud, error::PlinkoError, short_id::ShortId},
     planner::items::{
+        dependency::PlanNodeType,
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
@@ -156,6 +157,63 @@ fn add_plan_delay_to_plan() {
     plan.apply_update(PlanUpdate::PlanDelay(Crud::Remove(delay_id)))
         .expect("nothing depends on it");
     assert!(plan.plan_delays().is_empty());
+}
+// }}}
+
+// nodes_are_found_by_id_whatever_their_kind {{{
+#[test]
+fn nodes_are_found_by_id_whatever_their_kind() {
+    let mut plan = new_plan();
+    let ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
+    let group = ids[4];
+    let updates = [
+        PlanUpdate::TaskGroup(Crud::Add(NewTaskGroup {
+            id: group,
+            name: "Group".to_string(),
+            parent: Parent::Plan,
+        })),
+        PlanUpdate::Task(Crud::Add(NewTask {
+            id: ids[0],
+            name: "Task".to_string(),
+            parent: Parent::Node(group),
+        })),
+        PlanUpdate::Milestone(Crud::Add(NewMilestone {
+            id: ids[1],
+            name: "Milestone".to_string(),
+            parent: Parent::Plan,
+        })),
+        PlanUpdate::PlanBuffer(Crud::Add(NewPlanBuffer {
+            id: ids[2],
+            parent: Parent::Plan,
+            duration: 2,
+        })),
+        PlanUpdate::PlanDelay(Crud::Add(NewPlanDelay {
+            id: ids[3],
+            name: None,
+            parent: Parent::Plan,
+            duration: 2,
+        })),
+    ];
+    for update in updates {
+        plan.apply_update(update).unwrap();
+    }
+
+    let kinds = [
+        PlanNodeType::Task,
+        PlanNodeType::Milestone,
+        PlanNodeType::PlanBuffer,
+        PlanNodeType::PlanDelay,
+        PlanNodeType::TaskGroup,
+    ];
+    for (id, kind) in ids.iter().zip(kinds) {
+        let node = plan.node(id).expect("every added item is found");
+        assert_eq!(node.id(), *id);
+        assert_eq!(node.node_type(), kind);
+        assert!(node.dependencies().is_empty());
+    }
+    assert_eq!(plan.node(&ids[0]).unwrap().parent(), Parent::Node(group));
+    assert_eq!(plan.node(&ids[1]).unwrap().parent(), Parent::Plan);
+    assert!(plan.node(&Uuid::new_v4()).is_none());
 }
 // }}}
 

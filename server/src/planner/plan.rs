@@ -348,6 +348,20 @@ impl Plan {
             }
         }
     }
+
+    pub fn get_node_dependencies(&self, node: &Uuid) -> PlinkoResult<&[Dependency]> {
+        let node = self
+            .node(node)
+            .ok_or(PlinkoError::ItemDoesNotExist(*node))?;
+        Ok(node.dependencies())
+    }
+
+    pub fn get_node_parent(&self, node: &Uuid) -> PlinkoResult<Parent> {
+        let node = self
+            .node(node)
+            .ok_or(PlinkoError::ItemDoesNotExist(*node))?;
+        Ok(node.parent())
+    }
 }
 // }}}
 

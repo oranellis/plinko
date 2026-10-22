@@ -39,6 +39,16 @@ pub enum PlanNode {
     PlanDelay(Uuid),
     TaskGroup(Uuid),
 }
+
+/// The kind of a node, without which one it is
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PlanNodeType {
+    Task,
+    Milestone,
+    PlanBuffer,
+    PlanDelay,
+    TaskGroup,
+}
 // }}}
 
 // impl PlanNode {{{
@@ -50,6 +60,16 @@ impl PlanNode {
             | PlanNode::PlanBuffer(id)
             | PlanNode::PlanDelay(id)
             | PlanNode::TaskGroup(id) => id,
+        }
+    }
+
+    pub fn node_type(&self) -> PlanNodeType {
+        match self {
+            PlanNode::Task(_) => PlanNodeType::Task,
+            PlanNode::Milestone(_) => PlanNodeType::Milestone,
+            PlanNode::PlanBuffer(_) => PlanNodeType::PlanBuffer,
+            PlanNode::PlanDelay(_) => PlanNodeType::PlanDelay,
+            PlanNode::TaskGroup(_) => PlanNodeType::TaskGroup,
         }
     }
 }
