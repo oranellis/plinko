@@ -29,7 +29,7 @@ use crate::{
 // }}}
 
 /// What every node of a plan says about itself, which `Plan::node` gives for any id
-pub trait NodeData {
+pub trait AbstractPlanNode {
     fn id(&self) -> Uuid;
     fn parent(&self) -> Parent;
     fn dependencies(&self) -> &[Dependency];
@@ -37,7 +37,7 @@ pub trait NodeData {
 }
 
 /// A schedulable entity with a parent and dependencies, and so a place in the dependency graph
-pub trait PlanItem: Entity<Plan> + NodeData {
+pub trait PlanItem: Entity<Plan> + AbstractPlanNode {
     fn node(id: Uuid) -> PlanNode;
     fn workers(&self) -> Vec<Worker> {
         Vec::new()
@@ -73,7 +73,7 @@ macro_rules! plan_item {
             }
         }
 
-        impl NodeData for $ty {
+        impl AbstractPlanNode for $ty {
             fn id(&self) -> Uuid {
                 *$ty::id(self)
             }
@@ -237,15 +237,19 @@ impl Entity<Plan> for Target {
 // impl Plan {{{
 impl Plan {
     /// The node with the id, of whichever kind it is
-    pub fn node(&self, id: &Uuid) -> Option<&dyn NodeData> {
-        let node: Option<&dyn NodeData> = self
+    pub fn node(&self, id: &Uuid) -> Option<&dyn AbstractPlanNode> {
+        let node: Option<&dyn AbstractPlanNode> = self
             .tasks
             .get(id)
-            .map(|n| n as &dyn NodeData)
-            .or_else(|| self.task_groups.get(id).map(|n| n as &dyn NodeData))
-            .or_else(|| self.milestones.get(id).map(|n| n as &dyn NodeData))
-            .or_else(|| self.plan_buffers.get(id).map(|n| n as &dyn NodeData))
-            .or_else(|| self.plan_delays.get(id).map(|n| n as &dyn NodeData));
+            .map(|n| n as &dyn AbstractPlanNode)
+            .or_else(|| self.task_groups.get(id).map(|n| n as &dyn AbstractPlanNode))
+            .or_else(|| self.milestones.get(id).map(|n| n as &dyn AbstractPlanNode))
+            .or_else(|| {
+                self.plan_buffers
+                    .get(id)
+                    .map(|n| n as &dyn AbstractPlanNode)
+            })
+            .or_else(|| self.plan_delays.get(id).map(|n| n as &dyn AbstractPlanNode));
         node
     }
 }

@@ -75,6 +75,20 @@ impl PlanNode {
 }
 // }}}
 
+// impl PlanNodeType {{{
+impl PlanNodeType {
+    pub fn node(self, id: Uuid) -> PlanNode {
+        match self {
+            PlanNodeType::Task => PlanNode::Task(id),
+            PlanNodeType::Milestone => PlanNode::Milestone(id),
+            PlanNodeType::PlanBuffer => PlanNode::PlanBuffer(id),
+            PlanNodeType::PlanDelay => PlanNode::PlanDelay(id),
+            PlanNodeType::TaskGroup => PlanNode::TaskGroup(id),
+        }
+    }
+}
+// }}}
+
 // tests {{{
 #[cfg(test)]
 mod tests {
