@@ -24,9 +24,10 @@ const DARK: &str = "#3a3a3e";
 /// The colour of the day an item is held to
 const PIN: &str = "#c8e63c";
 const PIN_BAND: &str = "rgba(200,230,60,0.13)";
+const PIN_GONE: &str = "rgba(200,230,60,0)";
 /// How far along each edge the mark of an item that is held to a day goes, and how round the
 /// corner of an item is
-const TAG: f64 = 13.0;
+const TAG: f64 = 18.0;
 const CORNER: f64 = 6.0;
 /// The panel and the lines of the bars of buttons on the page
 const PANEL: &str = "#181818";
@@ -469,9 +470,14 @@ pub fn paint_tag(ctx: &Pen, rect: Rect, end: bool) {
         true => (rect.x + rect.w, -1.0),
         false => (rect.x, 1.0),
     };
-    ctx.set_stroke_style_str(PIN);
+    // strongest in the corner, and gone by the ends of it
+    let fade = ctx.create_linear_gradient(x, rect.y, x + into * TAG * 0.5, rect.y + TAG * 0.5);
+    let _ = fade.add_color_stop(0.0, PIN);
+    let _ = fade.add_color_stop(0.35, PIN);
+    let _ = fade.add_color_stop(1.0, PIN_GONE);
+    ctx.set_stroke_style_canvas_gradient(&fade);
     ctx.set_line_width(3.0);
-    ctx.set_line_cap("round");
+    ctx.set_line_cap("butt");
     ctx.begin_path();
     ctx.move_to(x, rect.y + TAG.min(rect.h / 2.0));
     let _ = ctx.arc_to(x, rect.y, x + into * CORNER, rect.y, CORNER);

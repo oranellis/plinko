@@ -213,7 +213,8 @@ pub fn remove_item(sync: Sync, plan: ShortId, node: PlanNode) {
 // }}}
 
 // WorkersWindow {{{
-/// Who works on the task of the draft and for how long a day, and the days it can be worked on
+/// Who works on the task of the draft and for how long a day, and the days it can be worked on:
+/// a card at the right of the chart for as long as the task is created or edited
 #[component]
 pub fn WorkersWindow(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let start = draft.get_untracked();
@@ -240,7 +241,7 @@ pub fn WorkersWindow(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl Into
         }
     });
     view! {
-        <div class="workerwin" on:click=|ev| ev.stop_propagation()>
+        <div class="workerwin fadein" on:click=|ev| ev.stop_propagation()>
             <Workers plan=plan allocations=allocations />
             <Affinities plan=plan chosen=affinities />
         </div>

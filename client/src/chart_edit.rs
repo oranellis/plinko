@@ -422,7 +422,7 @@ pub fn staging(
                     .pin()
                     .map_or(if end { Held::Latest } else { Held::Earliest }, |p| p.held);
                 d.hold(Some(Pin { day, held, end }));
-                d.day_set = true;
+                d.chosen = d.pin();
                 d.pick = d.pick.filter(|p| *p != Pick::Day);
                 Ok(())
             });
@@ -433,6 +433,8 @@ pub fn staging(
             stage(&|_, d| {
                 if let Some(pin) = d.pin() {
                     d.hold(Some(Pin { held, ..pin }));
+                    // how a chosen day is held is remembered with it
+                    d.chosen = d.chosen.map(|chosen| Pin { held, ..chosen });
                 }
                 Ok(())
             });

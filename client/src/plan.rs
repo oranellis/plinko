@@ -16,7 +16,8 @@ use crate::{
     context::{ContextBar, InfoPanel},
     data::DataWindow,
     draft::{Draft, Pick},
-    editor, format,
+    editor::{self, WorkersWindow},
+    format,
     gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene},
     guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
@@ -284,6 +285,19 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         selected.set(None);
         leave.run(());
     });
+    guard.watch_clicks();
+    on_enter(
+        move || open_node_exists.try_get_untracked().unwrap_or(false),
+        on_save,
+    );
+    // the task being created or edited, which has a card for who works on it
+    let staffed = Memo::new(move |_| {
+        draft.with(|d| {
+            d.as_ref()
+                .map(|d| d.node)
+                .filter(|n| matches!(n, PlanNode::Task(_)))
+        })
+    });
     // escape is the same as clicking off the item: it asks first when something is unsaved
     crate::escape::on_escape(
         move || open_node_exists.get(),
@@ -499,6 +513,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                             />
                         })
                     }}
+                    // made again for each task, as it starts from what the task has
+                    {move || {
+                        let task = staffed.get().filter(|_| tab.get() == PlanTab::Gantt);
+                        task.map(|_| view! { <WorkersWindow plan=plan draft=draft /> })
+                    }}
                     <Show when=move || tab.get() == PlanTab::Gantt>
                         <InfoPanel
                             plan=plan
@@ -604,16 +623,51 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
 // }}}
 
 // helpers {{{
+/// Enter saves what is being edited, from anywhere it is not something else: typed into a box,
+/// or pressed on a button, or with a window open
+fn on_enter(active: impl Fn() -> bool + 'static, save: Callback<()>) {
+    use wasm_bindgen::{JsCast, closure::Closure};
+    let on_key =
+        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+            if ev.key() != "Enter" || ev.default_prevented() || !active() {
+                return;
+            }
+            let target = ev
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+            let taken = target.is_some_and(|t| {
+                t.closest("input, textarea, select, button, a, .modal")
+                    .ok()
+                    .flatten()
+                    .is_some()
+            });
+            let window_open = web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.query_selector(".modal").ok().flatten())
+                .is_some();
+            if !taken && !window_open {
+                ev.prevent_default();
+                save.run(());
+            }
+        });
+    if let Some(window) = web_sys::window() {
+        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
+    }
+    on_key.forget();
+}
+
 /// Whether a click landed on nothing in particular, rather than on something that does its own thing
 pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
     use wasm_bindgen::JsCast;
     ev.target()
         .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
         .is_some_and(|t| {
-            t.closest("button, a, input, select, canvas, .name, .contextbar, .infopanel")
-                .ok()
-                .flatten()
-                .is_none()
+            t.closest(
+                "button, a, input, select, canvas, .name, .contextbar, .infopanel, .workerwin",
+            )
+            .ok()
+            .flatten()
+            .is_none()
         })
 }
 // }}}

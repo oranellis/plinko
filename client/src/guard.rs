@@ -2,8 +2,17 @@
 
 // modules {{{
 use leptos::prelude::*;
+use wasm_bindgen::{JsCast, closure::Closure};
 
-use crate::ui::Modal;
+use crate::{
+    icons::{Icon, IconKind},
+    ui::Modal,
+};
+// }}}
+
+// constants {{{
+/// Where what is being edited is, and the question about it: clicks in there are part of the edit
+const EDITING: &str = ".contextbar, .infopanel, .workerwin, .modal";
 // }}}
 
 #[derive(Clone, Copy)]
@@ -13,6 +22,8 @@ pub struct Guard {
     open: RwSignal<bool>,
     /// What to do once the person has said what to do about the changes
     asking: RwSignal<Option<Callback<()>>>,
+    /// What was clicked when they were asked, to click again once they have said
+    clicked: StoredValue<Option<web_sys::HtmlElement>, LocalStorage>,
 }
 
 // impl Guard {{{
@@ -22,6 +33,7 @@ impl Guard {
             dirty: RwSignal::new(false),
             open: RwSignal::new(false),
             asking: RwSignal::new(None),
+            clicked: StoredValue::new_local(None),
         }
     }
 
@@ -54,6 +66,42 @@ impl Guard {
         }
     }
 
+    /// From here on a click on a link or a button outside what is being edited asks first when
+    /// there are unsaved changes, and is made again once they are saved or dropped
+    pub fn watch_clicks(self) {
+        let on_click =
+            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |ev: web_sys::MouseEvent| {
+                if !self.dirty.try_get_untracked().unwrap_or(false) {
+                    return;
+                }
+                let target = ev
+                    .target()
+                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+                let control = target.and_then(|t| {
+                    let editing = t.closest(EDITING).ok().flatten().is_some();
+                    t.closest("a, button").ok().flatten().filter(|_| !editing)
+                });
+                let Some(control) = control.and_then(|c| c.dyn_into::<web_sys::HtmlElement>().ok())
+                else {
+                    return;
+                };
+                ev.prevent_default();
+                ev.stop_propagation();
+                self.clicked.set_value(Some(control));
+                self.asking.set(Some(Callback::new(move |()| {
+                    if let Some(control) = self.clicked.try_update_value(Option::take).flatten() {
+                        control.click();
+                    }
+                })));
+            });
+        // before anything the click is on hears of it
+        if let Some(document) = web_sys::window().and_then(|w| w.document()) {
+            let heard = on_click.as_ref().unchecked_ref();
+            let _ = document.add_event_listener_with_callback_and_bool("click", heard, true);
+        }
+        on_click.forget();
+    }
+
     pub fn clean(&self) {
         self.dirty.try_set(false);
     }
@@ -76,15 +124,25 @@ pub fn ConfirmLeave(guard: Guard, on_save: Callback<()>) -> impl IntoView {
         guard.clean();
         then.run(());
     };
+    let stay = Callback::new(move |()| guard.asking.set(None));
+    let choice = move |label: &'static str,
+                       class: &'static str,
+                       kind: IconKind,
+                       on: Callback<()>| {
+        view! {
+            <button type="button" class=format!("ctx {class}") title=label aria-label=label on:click=move |_| on.run(())>
+                <Icon kind=kind size=40 />
+            </button>
+        }
+    };
     view! {
         <Show when=move || guard.asking.with(Option::is_some)>
-            <Modal title="Unsaved changes" on_close=Callback::new(move |()| guard.asking.set(None))>
-                <p>"Do you want to save the changes you made?"</p>
-                <div class="actions">
-                    <span class="grow"></span>
-                    <button type="button" on:click=move |_| guard.asking.set(None)>"Keep editing"</button>
-                    <button type="button" class="danger" on:click=move |_| leave(false)>"Discard"</button>
-                    <button type="button" class="primary" on:click=move |_| leave(true)>"Save"</button>
+            // a click off it is to go on editing
+            <Modal title="Unsaved Changes" on_close=stay>
+                <div class="choices">
+                    {choice("Keep editing", "", IconKind::Pencil, stay)}
+                    {choice("Save and close", "save", IconKind::Tick, Callback::new(move |()| leave(true)))}
+                    {choice("Discard changes", "cancel", IconKind::Close, Callback::new(move |()| leave(false)))}
                 </div>
             </Modal>
         </Show>

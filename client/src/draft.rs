@@ -48,8 +48,9 @@ pub struct Draft {
     pub name: String,
     /// The date it is held to, of which a milestone has no end to choose
     pub constraint: NodeConstraint,
-    /// The day it is held to was chosen, and is not just where the schedule had it
-    pub day_set: bool,
+    /// The day it was last held to by choice, and how: the one it had in the plan, or the one
+    /// it has been moved to since. It is what holding it again goes back to.
+    pub chosen: Option<Pin>,
     /// Who a task asks for and for how many hours a day
     pub allocations: Vec<(Worker, u8)>,
     /// The affinities of a task
@@ -128,7 +129,10 @@ impl Draft {
             new: false,
             name,
             constraint,
-            day_set: constraint != NodeConstraint::default(),
+            chosen: Pin::of(
+                constraint.constraint,
+                constraint.end == NodeEnd::End || matches!(node, PlanNode::Milestone(_)),
+            ),
             allocations,
             affinities: task.map(|t| t.affinities().clone()).unwrap_or_default(),
             parent: model::parent_of(plan, node),
@@ -159,7 +163,7 @@ impl Draft {
             new: true,
             name: name.to_string(),
             constraint: NodeConstraint::default(),
-            day_set: false,
+            chosen: None,
             allocations: Vec::new(),
             affinities: HashSet::new(),
             parent,
@@ -259,7 +263,8 @@ impl Draft {
 
     /// Goes round what of the item is held to a day: nothing, its first day, then its last. A
     /// milestone is one day, held or not. `first` and `last` are the days it is scheduled on,
-    /// which is where the day is until one is chosen: after that only the end changes.
+    /// which is where the day is until one is chosen: after that it is that day, held as it
+    /// was, and only the end changes.
     pub fn hold_next(&mut self, first: NaiveDate, last: NaiveDate) {
         let (start, end) = (
             Pin {
@@ -273,19 +278,31 @@ impl Draft {
                 end: true,
             },
         );
-        self.hold(match (self.pin(), self.node) {
-            (None, PlanNode::Milestone(_)) => Some(end),
-            (None, _) => Some(start),
-            (Some(pin), _) if !pin.end && self.day_set => Some(Pin { end: true, ..pin }),
-            (Some(pin), _) if !pin.end => Some(end),
-            (Some(_), _) => None,
+        let single = matches!(self.node, PlanNode::Milestone(_));
+        let (start, end) = match self.chosen {
+            Some(chosen) => (
+                Pin {
+                    end: false,
+                    ..chosen
+                },
+                Pin {
+                    end: true,
+                    ..chosen
+                },
+            ),
+            None => (start, end),
+        };
+        self.hold(match self.pin() {
+            None if single => Some(end),
+            None => Some(start),
+            Some(pin) if !pin.end => Some(end),
+            Some(_) => None,
         });
     }
 
     /// Holds it to a day, or to none, which leaves no day to pick
     pub fn hold(&mut self, pin: Option<Pin>) {
         if pin.is_none() {
-            self.day_set = false;
             self.pick = self.pick.filter(|p| *p != Pick::Day);
         }
         self.constraint = match pin {
