@@ -7,7 +7,11 @@ use std::collections::HashSet;
 use chrono::{Duration, NaiveDate};
 use leptos::prelude::*;
 use plinko::{
-    common::{crud::Crud, dates::NodeConstraint, short_id::ShortId},
+    common::{
+        crud::Crud,
+        dates::{NodeConstraint, NodeEnd},
+        short_id::ShortId,
+    },
     planner::items::{
         dependency::PlanNode,
         milestone::NewMilestone,
@@ -21,7 +25,7 @@ use plinko::{
 };
 use uuid::Uuid;
 
-use crate::{forms, model, sync::Sync};
+use crate::{forms, gantt::shift::Pin, model, sync::Sync};
 // }}}
 
 // constants {{{
@@ -233,6 +237,28 @@ impl Draft {
             plan.apply_update(update).map_err(loops)?;
         }
         Ok(())
+    }
+
+    /// The day it is held to. A milestone is a day, held by its end.
+    pub fn pin(&self) -> Option<Pin> {
+        let end =
+            self.constraint.end == NodeEnd::End || matches!(self.node, PlanNode::Milestone(_));
+        Pin::of(self.constraint.constraint, end)
+    }
+
+    /// Holds it to a day, or to none
+    pub fn hold(&mut self, pin: Option<Pin>) {
+        self.constraint = match pin {
+            Some(pin) => NodeConstraint {
+                constraint: pin.constraint(),
+                end: if pin.end {
+                    NodeEnd::End
+                } else {
+                    NodeEnd::Start
+                },
+            },
+            None => NodeConstraint::default(),
+        };
     }
 
     /// The days a task really ran once they are moved as the draft says, never ending before

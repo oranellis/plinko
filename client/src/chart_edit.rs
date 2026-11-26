@@ -18,7 +18,10 @@ use plinko::{
 use crate::{
     card,
     draft::{Draft, Pick},
-    gantt::{links, shift::Editing},
+    gantt::{
+        links,
+        shift::{Editing, Held, Pin},
+    },
     guard::Guard,
     model,
     ui::use_sync,
@@ -242,8 +245,14 @@ pub fn editing(plan: ShortId) -> Editing {
                 .unwrap_or_default()
         })
     });
+    let pin = Callback::new(move |node: PlanNode| {
+        sync.tenant
+            .with_untracked(|t| Draft::of(t.as_ref()?.plans().get(&plan)?, node)?.pin())
+    });
     Editing {
-        // only an item being edited has dots to click, see `staging`
+        pin,
+        // only an item being edited has flags to drag and dots to click, see `staging`
+        constrain: Callback::new(|_| ()),
         pick: Callback::new(|_| ()),
         dated,
         shift_dates,
@@ -372,7 +381,20 @@ pub fn staging(
             });
         }
     });
+    // a flag dropped on a day holds the item to it, in the way it was held or the flag's own
+    let constrain = Callback::new(move |(node, end, day): (PlanNode, bool, NaiveDate)| {
+        if ours(node) {
+            stage(&|_, d| {
+                let held = d
+                    .pin()
+                    .map_or(if end { Held::Latest } else { Held::Earliest }, |p| p.held);
+                d.hold(Some(Pin { day, held, end }));
+                Ok(())
+            });
+        }
+    });
     Editing {
+        constrain,
         pick,
         link,
         unlink,

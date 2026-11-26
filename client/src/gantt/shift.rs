@@ -4,8 +4,9 @@
 
 // modules {{{
 use crate::gantt::pen::Pen;
+use chrono::NaiveDate;
 use leptos::prelude::Callback;
-use plinko::planner::items::dependency::PlanNode;
+use plinko::{common::dates::TimeConstraint, planner::items::dependency::PlanNode};
 
 use crate::gantt::{arrange::Kind, layout::Rect, links::Link};
 // }}}
@@ -20,6 +21,8 @@ const AFTER: &str = "#07fcd7";
 const LIGHT: &str = "#c4c4c9";
 const LIT: &str = "#ececf0";
 const DARK: &str = "#3a3a3e";
+/// The colour of the day an item is held to
+const PIN: &str = "#ffb300";
 // }}}
 
 // helpers {{{
@@ -29,6 +32,7 @@ fn reach(handle: Handle) -> (f64, f64) {
     match handle {
         Handle::Move => (0.0, 0.0),
         Handle::Resize | Handle::Start => (9.0, 14.0),
+        Handle::Flag { .. } => (8.0, 8.0),
         Handle::Link { .. } => (12.0, 12.0),
     }
 }
@@ -54,6 +58,8 @@ pub enum Handle {
     Resize,
     /// Changes the day it really started
     Start,
+    /// Holds its first day to the day it is dropped on, or its last day for `end`
+    Flag { end: bool },
 }
 
 // Handle supporting types {{{
@@ -76,6 +82,36 @@ pub enum Drag {
         /// The day offset of the first day it ran
         first_day: i64,
     },
+    Flag {
+        node: PlanNode,
+        end: bool,
+    },
+}
+
+/// The day an item is held to: no earlier, no later or exactly, by its first day or its last
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pin {
+    pub day: NaiveDate,
+    pub held: Held,
+    pub end: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Held {
+    Earliest,
+    Latest,
+    Fixed,
+}
+
+/// A pin as it is drawn: the line it stands on, by the item's row, and the day's cell in the header
+#[derive(Clone, Copy, Debug)]
+pub struct PinView {
+    pub x: f64,
+    pub row: Rect,
+    pub cell: Rect,
+    pub held: Held,
+    /// For an item that is only looked at, not edited
+    pub faint: bool,
 }
 
 /// What the chart asks of the plan, which the page answers
@@ -91,6 +127,10 @@ pub struct Editing {
     pub dated: Callback<PlanNode, bool>,
     /// Moves the days the item really ran by `days`
     pub shift_dates: Callback<(PlanNode, i32)>,
+    /// The day the item is held to in the plan
+    pub pin: Callback<PlanNode, Option<Pin>>,
+    /// `(node, end, day)`: holds the first day of the item to a day, or its last for `end`
+    pub constrain: Callback<(PlanNode, bool, NaiveDate)>,
     /// Moves the day the item really started by `days`
     pub restart: Callback<(PlanNode, i32)>,
     /// Gives the item `days` more days, or fewer when negative
@@ -138,6 +178,8 @@ pub enum DragView {
         by: (f64, f64),
         name: String,
     },
+    /// The pin where it would be dropped
+    Flag(PinView),
     /// A ghost of the item where it would run, its outline left as it was
     Resize {
         label: String,
@@ -148,6 +190,26 @@ pub enum DragView {
 // }}}
 
 // impl Grips {{{
+impl Pin {
+    pub fn of(constraint: TimeConstraint, end: bool) -> Option<Self> {
+        let (day, held) = match constraint {
+            TimeConstraint::None => return None,
+            TimeConstraint::Earliest(day) => (day, Held::Earliest),
+            TimeConstraint::Latest(day) => (day, Held::Latest),
+            TimeConstraint::Fixed(day) => (day, Held::Fixed),
+        };
+        Some(Self { day, held, end })
+    }
+
+    pub fn constraint(&self) -> TimeConstraint {
+        match self.held {
+            Held::Earliest => TimeConstraint::Earliest(self.day),
+            Held::Latest => TimeConstraint::Latest(self.day),
+            Held::Fixed => TimeConstraint::Fixed(self.day),
+        }
+    }
+}
+
 impl Grips {
     /// `started` is for what has really started, which has a grip for that day in its left edge
     pub fn of(kind: Kind, rect: Rect, started: bool) -> Self {
@@ -232,6 +294,7 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
         ctx.begin_path();
         match handle {
             Handle::Resize | Handle::Start => slot(ctx, *x, *y, lit),
+            Handle::Flag { end } => flag(ctx, *x, *y, *end, lit),
             Handle::Move => grip(ctx, *x, *y, lit),
             Handle::Link { right } => {
                 // a dot is grey until it is taken, then it takes the colour of its direction
@@ -280,6 +343,7 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
                 name,
             );
         }
+        Some(DragView::Flag(pin)) => paint_pin(ctx, pin),
         Some(DragView::Resize {
             label,
             origin,
@@ -300,6 +364,62 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
 // }}}
 
 // helpers {{{
+/// A flag to drag onto a day: a pole with a pennant that points into the item
+fn flag(ctx: &Pen, x: f64, y: f64, end: bool, lit: bool) {
+    let out = if end { -8.0 } else { 8.0 };
+    ctx.set_stroke_style_str(if lit { PIN } else { LIGHT });
+    ctx.set_fill_style_str(if lit { PIN } else { DARK });
+    ctx.set_line_width(1.5);
+    ctx.begin_path();
+    ctx.move_to(x, y + 6.0);
+    ctx.line_to(x, y - 6.0);
+    ctx.line_to(x + out, y - 2.5);
+    ctx.line_to(x, y + 1.0);
+    ctx.fill();
+    ctx.stroke();
+}
+
+/// The day an item is held to: its cell in the header lit, a line down the item's row and
+/// arrows off the top of the line that say which way the item may still go. An earliest day
+/// points on from the line, a latest day back from it, and a fixed day has both point at it.
+pub fn paint_pin(ctx: &Pen, pin: &PinView) {
+    ctx.save();
+    ctx.set_global_alpha(if pin.faint { 0.45 } else { 1.0 });
+    ctx.set_fill_style_str("rgba(255,179,0,0.3)");
+    ctx.fill_rect(pin.cell.x, pin.cell.y, pin.cell.w, pin.cell.h);
+    ctx.set_stroke_style_str(PIN);
+    ctx.set_fill_style_str(PIN);
+    ctx.set_line_width(2.0);
+    ctx.set_line_cap("round");
+    let (x, top) = (pin.x, pin.row.y - 9.0);
+    ctx.begin_path();
+    ctx.move_to(x, top - 5.0);
+    ctx.line_to(x, pin.row.y + pin.row.h + 5.0);
+    ctx.stroke();
+    // an arrow from `from` to `to` along the top of the line
+    let arrow = |from: f64, to: f64| {
+        let back = if to > from { -5.0 } else { 5.0 };
+        ctx.begin_path();
+        ctx.move_to(x + from, top);
+        ctx.line_to(x + to, top);
+        ctx.stroke();
+        ctx.begin_path();
+        ctx.move_to(x + to, top);
+        ctx.line_to(x + to + back, top - 4.0);
+        ctx.line_to(x + to + back, top + 4.0);
+        ctx.fill();
+    };
+    match pin.held {
+        Held::Earliest => arrow(3.0, 17.0),
+        Held::Latest => arrow(-3.0, -17.0),
+        Held::Fixed => {
+            arrow(18.0, 4.0);
+            arrow(-18.0, -4.0);
+        }
+    }
+    ctx.restore();
+}
+
 /// Words above an item, centred on `x`
 fn said(ctx: &Pen, text: &str, x: f64, y: f64) {
     ctx.set_font("bold 13px sans-serif");

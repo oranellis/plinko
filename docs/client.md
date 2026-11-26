@@ -68,7 +68,7 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
 
 - The Gantt is one canvas in the style of Plinko 1 (`plinko1-ui.md`), on desktop and phones alike:
   packed lanes, group outlines, hover dependency lines, momentum drag, pinch and wheel zoom.
-- Items open in a pane beside the chart. A plan can also be shown as a list.
+- Items are created and edited on the chart, there is no pane. A plan can also be shown as a list, from which an item opens on the chart.
 - Home shows your tasks in progress and the next ones to start, with buttons to start or finish them,
   and your favourite plans. Allocations is a table with a row for each of your tasks across plans and the hours you work on
   each day, under a row of the hours you have; a task there opens its plan with the task selected. Availability opens your own calendar.
@@ -90,11 +90,11 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 
 ## Gantt selection
 
-Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane. While the pane is open the bar slides to the bottom middle of the chart, out of the way of the handles.
+Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane. While the item is edited the bar slides to the bottom middle of the chart, out of the way of the handles.
 
 ### Creating and editing
 
-What is set of an item's group, dependencies, dependents and days while it is created or edited is staged in a `Draft` (`draft.rs`) and reaches the plan only on save; a new item is not in the plan until then. Redundant links are dropped by the server on save. On the chart what is staged shows as the usual magenta and cyan outlines, a blue outline on its group, and changed days as `+2 (5d)` above the item.
+Everything set of an item while it is created or edited is staged in a `Draft` (`draft.rs`) and reaches the plan only on save; a new item is not in the plan until then. Redundant links are dropped by the server on save. On the chart what is staged shows as the usual magenta and cyan outlines, a blue outline on its group, and changed days as `+2 (5d)` above the item.
 
 A new item has a card over the bottom of the chart with its shape (`card.rs`):
 
@@ -104,7 +104,11 @@ A new item has a card over the bottom of the chart with its shape (`card.rs`):
 
 On touch nothing on the card drags, so the chart still pans: handles are tapped and days typed. A second click puts a lit handle out.
 
-An item in the plan has no card: while its pane is open its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). Clicking one of its dots, without dragging, leaves it in its colour: clicks on other items then link or unlink them until it is clicked again. The days a started task really ran are staged too, as how far each is moved, and show above it as `start -1  end +2`. Where its edges are moved to is a ghost over it, which is where its handles then are.
+An item in the plan has no card: while it is edited its bar is drawn without its name and its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). Clicking one of its dots, without dragging, leaves it in its colour: clicks on other items then link or unlink them until it is clicked again. The days a started task really ran are staged too, as how far each is moved, and show above it as `start -1  end +2`. Where its edges are moved to is a ghost over it, which is where its handles then are.
+
+Both have the same strip, in the card for a new item and faded into the docked bar for one in the plan (`context.rs`): the name, typed over where it stands (enter saves), then workers and affinities in a window for a task, the day it is held to, save, cancel and delete. Leaving with changes asks first (`guard.rs`).
+
+A task, group or milestone in the plan can be held to a day. While it is edited a flag stands over each of its edges: dropped on a day, the left one holds its first day and the right one its last (a milestone has one). The strip's pin button goes round no earlier, exactly, no later and not at all. The day's cell in the header is lit and a line stands on the item's row with arrows off its top: on from it for no earlier, back from it for no later, both at it for exactly. An item that is hovered or selected shows the same faintly.
 
 ### Shift editing
 

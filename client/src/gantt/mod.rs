@@ -27,7 +27,7 @@ use crate::gantt::{
     layout::{Bounds, DAY_WIDTH, Rect, Viewport},
     links::{Link, Role},
     scene::Scene,
-    shift::{Drag, DragView, Editing, Grips, Handle, Overlay},
+    shift::{Drag, DragView, Editing, Grips, Handle, Held, Overlay, Pin, PinView},
 };
 // }}}
 
@@ -53,6 +53,9 @@ pub struct Staged {
     pub days: Option<String>,
     /// The days its left and right edges are moved by, which a ghost of it shows
     pub edges: (i32, i32),
+    /// The day it is held to, and whether it can be held to one, which gives it flags to drag
+    pub pin: Option<Pin>,
+    pub pins: bool,
     /// The dot of the item that clicks on others answer to: the right one, or the left
     pub pick: Option<bool>,
 }
@@ -314,13 +317,68 @@ pub fn Gantt(
             ..r
         })
     };
-    // the handles of the item the pointer is near
+    // where a pin of an item is drawn
+    let pin_view = move |node: PlanNode, pin: Pin, faint: bool| -> Option<PinView> {
+        let row = staged_rect(node)?;
+        let vp = viewport.get_untracked().unwrap_or_default();
+        let day = scene.with_untracked(|s| (pin.day - s.origin).num_days()) as f64;
+        Some(PinView {
+            x: vp.x(day + if pin.end { 1.0 } else { 0.0 }),
+            row,
+            cell: Rect {
+                x: vp.x(day),
+                y: layout::MONTH_HEIGHT,
+                w: vp.day_width,
+                h: layout::HEADER_HEIGHT - layout::MONTH_HEIGHT,
+            },
+            held: pin.held,
+            faint,
+        })
+    };
+    // what is staged of the item being edited, if it is the one
+    let staged_of = move |node: PlanNode| {
+        staged.and_then(|s| s.with_untracked(|s| s.clone().filter(|s| s.item == Some(node))))
+    };
+    // the handles of the item the pointer is near, with flags for the day the one being edited
+    // is held to: on its pin, or over the edge they hold
     let handles_of = move |node: PlanNode| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
-        match (kind, staged_rect(node)) {
-            (Some(kind), Some(rect)) => Grips::of(kind, rect, editing.dated.run(node)),
-            _ => Grips::default(),
+        let (Some(kind), Some(rect)) = (kind, staged_rect(node)) else {
+            return Grips::default();
+        };
+        let mut grips = Grips::of(kind, rect, editing.dated.run(node));
+        if let Some(staged) = staged_of(node).filter(|s| s.pins) {
+            // a milestone is a day, held by its end
+            let ends: &[bool] = match kind {
+                arrange::Kind::Milestone => &[true],
+                _ => &[false, true],
+            };
+            for end in ends {
+                let home = rect.x + if *end { rect.w } else { 0.0 };
+                let on_pin = staged
+                    .pin
+                    .filter(|p| p.end == *end)
+                    .and_then(|p| pin_view(node, p, false));
+                let x = on_pin.map_or(home, |p| p.x);
+                grips
+                    .list
+                    .push((Handle::Flag { end: *end }, (x, rect.y - 9.0)));
+            }
         }
+        grips
+    };
+    // the pin a flag being dragged would leave on the day under the pointer, of the kind the
+    // item has, or for a first one not before the day for a start and not after it for an end
+    let flagged = move |node: PlanNode, end: bool, x: f64| -> Pin {
+        let offset = viewport
+            .get_untracked()
+            .unwrap_or_default()
+            .day_at(x)
+            .floor() as i64;
+        let day = scene.with_untracked(|s| s.origin + chrono::Duration::days(offset));
+        let was = staged_of(node).and_then(|s| s.pin);
+        let held = was.map_or(if end { Held::Latest } else { Held::Earliest }, |p| p.held);
+        Pin { day, held, end }
     };
 
     // what the lines and the panel say about what is under the pointer, which only changes with
@@ -374,6 +432,9 @@ pub fn Gantt(
         let at = pointer.get();
         let pointer_at = at;
         let (editing_shift, near, dragged) = (shift.get(), nearby.get(), drag.get());
+        // the item being edited keeps its handles, shift shows those of the item the pointer is near
+        let pinned = staged.as_ref().and_then(|s| s.item);
+        let gripped = near.filter(|_| editing_shift).or(pinned);
         let Some(canvas) = canvas.get() else {
             return;
         };
@@ -447,6 +508,7 @@ pub fn Gantt(
                     hover: hovered,
                     selected: picked,
                     staged: staged.as_ref(),
+                    nameless: gripped,
                     links: &linked,
                     flash: flashed,
                     info: if over_violation.is_some() { &[] } else { &info },
@@ -462,9 +524,24 @@ pub fn Gantt(
                 paint_notes(ctx, &frame);
             });
         });
-        // the item being edited keeps its handles, shift shows those of the item the pointer is near
-        let pinned = staged.as_ref().and_then(|s| s.item);
-        let gripped = near.filter(|_| editing_shift).or(pinned);
+        // the day what is looked at is held to, faintly, and that of the item being edited
+        if let Some(looked) = hovered.or(picked).filter(|n| Some(*n) != pinned) {
+            let pin = editing
+                .pin
+                .run(looked)
+                .and_then(|p| pin_view(looked, p, true));
+            if let Some(pin) = pin {
+                shift::paint_pin(ctx, &pin);
+            }
+        }
+        let flag_dragged = matches!(dragged, Some(Drag::Flag { .. }));
+        let held = staged
+            .as_ref()
+            .and_then(|s| s.pin)
+            .filter(|_| !flag_dragged);
+        if let Some(pin) = pinned.zip(held).and_then(|(n, p)| pin_view(n, p, false)) {
+            shift::paint_pin(ctx, &pin);
+        }
         if editing_shift || gripped.is_some() {
             let handles = gripped.map(handles_of).unwrap_or_default();
             let note = staged
@@ -545,6 +622,14 @@ pub fn Gantt(
                         },
                     }
                 }
+                Drag::Flag { node, end } => match pin_view(node, flagged(node, end, at.0), false) {
+                    Some(pin) => DragView::Flag(pin),
+                    None => DragView::Link {
+                        from: at,
+                        over: None,
+                        right: end,
+                    },
+                },
                 Drag::Start { node, first_day } => {
                     let vp = viewport.get_untracked().unwrap_or_default();
                     let by = f64::from(day_shift(viewport, at.0, first_day as f64)) * vp.day_width;
@@ -640,6 +725,7 @@ pub fn Gantt(
                 drag.set(Some(match handle {
                     Handle::Link { right } => Drag::Link { node, right },
                     Handle::Move => Drag::Move(node),
+                    Handle::Flag { end } => Drag::Flag { node, end },
                     Handle::Start => {
                         let first = scene.with_untracked(|s| {
                             s.placed(node).map(|p| (p.span.0 - s.origin).num_days())
@@ -814,6 +900,11 @@ pub fn Gantt(
                     } else if over != Some(node) {
                         editing.moved.run((node, over));
                     }
+                }
+                Drag::Flag { node, end } => {
+                    editing
+                        .constrain
+                        .run((node, end, flagged(node, end, x).day));
                 }
                 Drag::Start { node, first_day } => {
                     let by = day_shift(viewport, x, first_day as f64);

@@ -77,6 +77,8 @@ pub struct Frame<'a> {
     /// What an item being edited waits for and what waits for it, which are outlined in place of
     /// what the links say
     pub staged: Option<&'a super::Staged>,
+    /// A task whose bar is drawn without its name, to leave its handles clear
+    pub nameless: Option<Mark>,
     pub links: &'a [Link],
     /// Something to outline in red, and how strongly
     pub flash: Option<(Mark, f64, &'static str)>,
@@ -445,10 +447,16 @@ impl Shape {
 pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
     let marked = Marked::of(frame);
     let flashed = frame.flash.map(|f| f.0);
-    let mut marks: Vec<Mark> = [frame.hover, frame.selected, flashed, marked.holds]
-        .into_iter()
-        .flatten()
-        .collect();
+    let mut marks: Vec<Mark> = [
+        frame.hover,
+        frame.selected,
+        flashed,
+        marked.holds,
+        frame.nameless,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     for list in [&marked.chain, &marked.inside, &marked.before, &marked.after] {
         marks.extend(list.iter().copied());
     }
@@ -470,6 +478,15 @@ pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
             edge_wash(ctx, shape.bounds(), ("167,139,250", 0.85), true, |c| {
                 shape.trace(c)
             });
+        }
+        // the layer has the name on the bar, which the bar is drawn over again to be rid of
+        if frame.nameless == Some(mark) && p.kind == Kind::Task {
+            shape.trace(ctx);
+            ctx.set_fill_style_str(look_colour(p.look));
+            ctx.fill();
+            if p.leaf {
+                leaf_wash(ctx, shape.bounds(), |c| shape.trace(c));
+            }
         }
         shape.trace(ctx);
         stroke_border(ctx, border(frame, mark, p.target, &marked));
