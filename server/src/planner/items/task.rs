@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     availability::workload::Workload,
     common::{
-        dates::{DateRange, TimeConstraint},
+        dates::{DateRange, NodeConstraint},
         error::{PlinkoError, PlinkoResult},
     },
     helpers::functions::check_id_match,
@@ -24,7 +24,8 @@ pub struct Task {
     parent: Parent,
     /// Days of work, each with every worker's hours, in one run that other work does not break up
     duration: u32,
-    time_constraint: TimeConstraint,
+    /// A date for its first or its last day
+    time_constraint: NodeConstraint,
     dependencies: Vec<Dependency>,
     /// Hours per day each worker spends on the task for its duration
     allocations: HashMap<Worker, Workload>,
@@ -59,7 +60,7 @@ impl Task {
         self.duration
     }
 
-    pub fn time_constraint(&self) -> TimeConstraint {
+    pub fn time_constraint(&self) -> NodeConstraint {
         self.time_constraint
     }
 
@@ -107,7 +108,7 @@ impl From<NewTask> for Task {
             name: new.name,
             parent: new.parent,
             duration: 1,
-            time_constraint: TimeConstraint::None,
+            time_constraint: NodeConstraint::default(),
             dependencies: Vec::new(),
             allocations: HashMap::new(),
             affinities: HashSet::new(),
@@ -221,7 +222,7 @@ pub struct TaskPatch {
     pub name: Option<String>,
     pub parent: Option<Parent>,
     pub duration: Option<u32>,
-    pub time_constraint: Option<TimeConstraint>,
+    pub time_constraint: Option<NodeConstraint>,
     pub dependencies: Option<Vec<Dependency>>,
     pub allocations: Option<HashMap<Worker, Workload>>,
     pub affinities: Option<HashSet<Uuid>>,

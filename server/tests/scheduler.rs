@@ -9,7 +9,11 @@ use plinko::{
         rule_set::RuleSetUpdate,
     },
     codec,
-    common::{crud::Crud, dates::TimeConstraint, short_id::ShortId},
+    common::{
+        crud::Crud,
+        dates::{NodeConstraint, NodeEnd, TimeConstraint},
+        short_id::ShortId,
+    },
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
@@ -278,6 +282,7 @@ impl World {
         };
         self.plan_update(PlanUpdate::TaskGroup(Crud::Add(new)));
         let patch = TaskGroupPatch {
+            time_constraint: None,
             id,
             name: None,
             dependencies: Some(deps(on)),
@@ -403,7 +408,7 @@ fn strict_runs_restart_on_a_busy_day_but_not_across_weekends() {
     let alice = world.user();
     let holder = world.task(1, &[(user(alice), 4)], &[start()]);
     world.patch(holder, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(d(3)))
+        p.time_constraint = Some(TimeConstraint::Fixed(d(3)).into())
     });
     let run = world.task(3, &[(user(alice), 8)], &[start()]);
     let long = world.task(6, &[], &[start()]);
@@ -590,21 +595,21 @@ fn time_constraints_hold_or_are_reported_violated() {
     world.weekly_hours(bob, [8, 8, 8, 8, 8, 0, 0]);
     let fixed = world.task(1, &[(user(alice), 8)], &[start()]);
     world.patch(fixed, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(d(10)))
+        p.time_constraint = Some(TimeConstraint::Fixed(d(10)).into())
     });
     let first = world.task(3, &[(user(alice), 8)], &[start()]);
     let late = world.task(1, &[], &[after(node(first))]);
     world.patch(late, |p| {
-        p.time_constraint = Some(TimeConstraint::Latest(d(2)))
+        p.time_constraint = Some(TimeConstraint::Latest(d(2)).into())
     });
     // a Saturday that nobody works
     let weekend = world.task(1, &[(user(bob), 8)], &[start()]);
     world.patch(weekend, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(d(6)))
+        p.time_constraint = Some(TimeConstraint::Fixed(d(6)).into())
     });
     let early = world.task(1, &[], &[start()]);
     world.patch(early, |p| {
-        p.time_constraint = Some(TimeConstraint::Earliest(d(3)))
+        p.time_constraint = Some(TimeConstraint::Earliest(d(3)).into())
     });
     let state = world.solve();
     assert_eq!(span(&state, fixed), (d(10), d(11)));
@@ -624,7 +629,7 @@ fn hard_dated_chains_go_before_target_chains_before_the_rest() {
     let alice = world.user();
     let hard = world.task(1, &[(user(alice), 8)], &[start()]);
     world.patch(hard, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(d(3)))
+        p.time_constraint = Some(TimeConstraint::Fixed(d(3)).into())
     });
     let chain = world.task(3, &[(user(alice), 8)], &[start()]);
     let goal = world.milestone(&[after(node(chain))]);
@@ -665,7 +670,7 @@ fn tags_and_groups_pick_whoever_finishes_first() {
     let tag = world.tag(&[alice, bob]);
     let busy = world.task(2, &[(user(alice), 8)], &[start()]);
     world.patch(busy, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(d(1)))
+        p.time_constraint = Some(TimeConstraint::Fixed(d(1)).into())
     });
     let by_tag = world.task(1, &[(Worker::Tag(tag), 8)], &[start()]);
     let state = world.solve();
@@ -849,7 +854,7 @@ fn buffers_hold_back_what_follows_and_shrink_for_hard_dates() {
 
     let pinned = world.task(1, &[], &[after(PlanNode::PlanBuffer(buffer))]);
     world.patch(pinned, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(d(4)))
+        p.time_constraint = Some(TimeConstraint::Fixed(d(4)).into())
     });
     let state = world.solve();
     assert_eq!(state.plan_buffers[&buffer].date_range.end(), d(4));
@@ -942,7 +947,7 @@ fn a_snapshot_of_a_tenant_schedules_the_same() {
     let tag = world.tag(&[alice, bob]);
     let first = world.task(2, &[(Worker::Tag(tag), 4), (user(alice), 4)], &[start()]);
     world.patch(first, |p| {
-        p.time_constraint = Some(TimeConstraint::Latest(d(9)))
+        p.time_constraint = Some(TimeConstraint::Latest(d(9)).into())
     });
     let marker = world.milestone(&[after(node(first))]);
     let buffer = world.buffer(2, &[after(PlanNode::Milestone(marker))]);
@@ -994,7 +999,7 @@ fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_i
         .collect();
     // it starts on the 15th as the third of four, but may start no later than the 8th
     world.patch(tests[2], |p| {
-        p.time_constraint = Some(TimeConstraint::Latest(d(8)))
+        p.time_constraint = Some(TimeConstraint::Latest(d(8)).into())
     });
     let state = world.solve();
     assert!(
@@ -1019,12 +1024,96 @@ fn a_date_the_work_before_it_cannot_meet_is_not_counted_as_avoidable() {
     let b = world.task(5, &[(user(alice), 8)], &[after(node(a))]);
     let c = world.task(1, &[(user(alice), 8)], &[after(node(b))]);
     world.patch(c, |p| {
-        p.time_constraint = Some(TimeConstraint::Latest(d(5)))
+        p.time_constraint = Some(TimeConstraint::Latest(d(5)).into())
     });
     let state = world.solve();
     let violation = state.constraint_violations[&node(c)];
     // two weeks of work come first, so the day it starts is the first it could
     assert_eq!(violation.earliest, Some(violation.scheduled));
     assert_eq!(violation.avoidable(), 0);
+}
+// }}}
+
+// on_end {{{
+/// A constraint on the last day
+fn on_end(constraint: TimeConstraint) -> NodeConstraint {
+    NodeConstraint {
+        constraint,
+        end: NodeEnd::End,
+    }
+}
+
+fn constrain_group(world: &mut World, group: Uuid, constraint: NodeConstraint) {
+    world.plan_update(PlanUpdate::TaskGroup(Crud::Update(TaskGroupPatch {
+        id: group,
+        name: None,
+        dependencies: None,
+        parent: None,
+        time_constraint: Some(constraint),
+    })));
+}
+// }}}
+
+// a_date_can_be_for_the_last_day_of_a_task {{{
+#[test]
+fn a_date_can_be_for_the_last_day_of_a_task() {
+    let mut world = World::new();
+    let (alice, bob, carol) = (world.user(), world.user(), world.user());
+    let held = world.task(3, &[(user(alice), 8)], &[start()]);
+    world.patch(held, |p| {
+        p.time_constraint = Some(on_end(TimeConstraint::Earliest(d(10))))
+    });
+    let exact = world.task(2, &[(user(bob), 8)], &[start()]);
+    world.patch(exact, |p| {
+        p.time_constraint = Some(on_end(TimeConstraint::Fixed(d(5))))
+    });
+    let late = world.task(3, &[(user(carol), 8)], &[start()]);
+    world.patch(late, |p| {
+        p.time_constraint = Some(on_end(TimeConstraint::Latest(d(2))))
+    });
+    let state = world.solve();
+    // it starts as late as it must for its last day to be the 10th, a Wednesday
+    assert_eq!(only_days(&state, held, alice), [8, 9, 10]);
+    assert_eq!(only_days(&state, exact, bob), [4, 5]);
+    // three days from the 1st cannot end by the 2nd, which is said of its last day
+    assert_eq!(span(&state, late), (d(1), d(4)));
+    assert_eq!(state.constraint_violations.len(), 1);
+    let violation = state.constraint_violations[&node(late)];
+    assert_eq!((violation.end, violation.scheduled), (NodeEnd::End, d(3)));
+    assert_eq!(violation.avoidable(), 0);
+}
+// }}}
+
+// a_group_can_have_a_date_for_its_start_or_its_end {{{
+#[test]
+fn a_group_can_have_a_date_for_its_start_or_its_end() {
+    let mut world = World::new();
+    let alice = world.user();
+    let later = world.group(&[start()]);
+    constrain_group(&mut world, later, TimeConstraint::Earliest(d(10)).into());
+    let inside = world.task_in(Parent::Node(later), 1, &[(user(alice), 8)], &[start()]);
+    // the day is for the group, not for what else starts with the plan
+    let beside = world.task(1, &[(user(alice), 8)], &[start()]);
+
+    let held = world.group(&[start()]);
+    constrain_group(&mut world, held, on_end(TimeConstraint::Earliest(d(12))));
+    let first = world.task_in(Parent::Node(held), 1, &[], &[start()]);
+    let last = world.task_in(Parent::Node(held), 1, &[], &[after(node(first))]);
+
+    let tight = world.group(&[start()]);
+    constrain_group(&mut world, tight, on_end(TimeConstraint::Latest(d(1))));
+    let one = world.task_in(Parent::Node(tight), 1, &[], &[start()]);
+    world.task_in(Parent::Node(tight), 1, &[], &[after(node(one))]);
+
+    let state = world.solve();
+    assert_eq!(span(&state, inside), (d(10), d(11)));
+    assert_eq!(span(&state, beside), (d(1), d(2)));
+    // only its last member is held back, so the group really ends on the 12th
+    assert_eq!(span(&state, first), (d(1), d(2)));
+    assert_eq!(span(&state, last), (d(12), d(13)));
+    assert_eq!(state.task_groups[&held].date_range.end(), d(13));
+    let violation = state.constraint_violations[&PlanNode::TaskGroup(tight)];
+    assert_eq!((violation.end, violation.scheduled), (NodeEnd::End, d(2)));
+    assert_eq!(state.constraint_violations.len(), 1);
 }
 // }}}

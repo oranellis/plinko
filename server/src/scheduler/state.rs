@@ -7,7 +7,10 @@ use uuid::Uuid;
 
 use crate::{
     availability::workload::Workload,
-    common::{dates::TimeConstraint, short_id::ShortId},
+    common::{
+        dates::{NodeEnd, TimeConstraint},
+        short_id::ShortId,
+    },
     planner::items::{
         dependency::PlanNode,
         milestone, plan_buffer, plan_delay,
@@ -130,8 +133,10 @@ pub enum UnscheduledReason {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConstraintViolation {
     pub constraint: TimeConstraint,
+    /// Whether the constraint and `scheduled` are about the first or the last day of the item
+    pub end: NodeEnd,
     pub scheduled: NaiveDate,
-    /// The earliest it could start however free people are, if worked out. Starting later than
+    /// The earliest that day could be however free people are, if worked out. Being later than
     /// the date but no later than this is not something scheduling could have avoided.
     pub earliest: Option<NaiveDate>,
 }

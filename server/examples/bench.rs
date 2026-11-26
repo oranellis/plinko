@@ -176,7 +176,7 @@ fn main() {
                 name: None,
                 parent: None,
                 duration: Some(1 + random.below(4) as u32),
-                time_constraint: constraint,
+                time_constraint: constraint.map(Into::into),
                 dependencies: Some(on),
                 allocations: Some(HashMap::from([(worker, hours)])),
                 affinities: None,

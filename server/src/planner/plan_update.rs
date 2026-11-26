@@ -96,6 +96,7 @@ impl PlanUpdate {
                 duration: None,
             })),
             PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Update(TaskGroupPatch {
+                time_constraint: None,
                 id,
                 name: None,
                 dependencies,

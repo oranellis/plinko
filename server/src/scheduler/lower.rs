@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 use uuid::Uuid;
 
 use crate::{
-    common::dates::TimeConstraint,
+    common::dates::NodeEnd,
     multitenancy::tenant::Tenant,
     planner::{
         items::{
@@ -116,6 +116,11 @@ impl Lowering<'_> {
         for node in &nodes {
             self.wire(*node);
         }
+        for (id, group) in plan.task_groups() {
+            if let Some(date) = group.time_constraint().bounds_on(NodeEnd::End).0 {
+                self.end_not_before(*id, self.day(date).next());
+            }
+        }
         let ends = nodes.iter().filter(|n| !self.items[n].dropped);
         let mut all: Vec<VertexId> = ends.map(|n| self.ends[n]).collect();
         all.sort();
@@ -200,7 +205,19 @@ impl Lowering<'_> {
                 (Dependency::ParentStart, Parent::Plan) => self.net.root,
             });
         }
-        let start = self.join(after);
+        let mut start = self.join(after);
+        // a group that may not start before a day starts on a vertex of its own, as the day is
+        // not for whatever else waits on the same things
+        if let PlanNode::TaskGroup(id) = node {
+            let constraint = self.plan.task_groups()[&id].time_constraint();
+            if let Some(date) = constraint.bounds_on(NodeEnd::Start).0 {
+                start = self.net.add_vertex(Vertex {
+                    after: vec![start],
+                    earliest: Some(self.day(date)),
+                    ..Vertex::default()
+                });
+            }
+        }
         self.visiting.remove(&node);
         self.starts.insert(node, start);
         start
@@ -236,7 +253,7 @@ impl Lowering<'_> {
                 let days = *plan.plan_delays()[&id].duration();
                 Some(ArcKind::Work(Work::wait(days, self.table.full())))
             }
-            PlanNode::TaskGroup(id) => self.group(id, end),
+            PlanNode::TaskGroup(id) => self.group(id, start, end),
         };
         if let Some(kind) = work {
             lowered.arc = Some(self.net.add_arc(Arc {
@@ -255,13 +272,9 @@ impl Lowering<'_> {
     fn milestone(&mut self, milestone: &Milestone, start: VertexId, end: VertexId) {
         let happened = self.statuses[milestone.id()] == DerivedStatus::Completed;
         let now = (!happened || start == self.net.root).then_some(self.now());
-        let on = |date| self.day(date).next();
-        let (earliest, deadline) = match milestone.time_constraint() {
-            TimeConstraint::None => (None, None),
-            TimeConstraint::Earliest(date) => (Some(on(date)), None),
-            TimeConstraint::Latest(date) => (None, Some(on(date))),
-            TimeConstraint::Fixed(date) => (Some(on(date)), Some(on(date))),
-        };
+        let (earliest, latest) = milestone.time_constraint().bounds();
+        let on = |date: Option<NaiveDate>| date.map(|d| self.day(d).next());
+        let (earliest, deadline) = (on(earliest), on(latest));
         let vertex = self.net.vertex_mut(end);
         vertex.after = vec![start];
         vertex.earliest = now.max(earliest);
@@ -269,8 +282,16 @@ impl Lowering<'_> {
     }
 
     /// A group ends when its members do. With none it lasts `EMPTY_DAYS` calendar days, and with
-    /// only dropped ones it has nothing to end on, so it is unscheduled.
-    fn group(&mut self, id: Uuid, end: VertexId) -> Option<ArcKind> {
+    /// only dropped ones it has nothing to end on, so it is unscheduled. A latest date is a
+    /// hard date on the vertex it starts or ends at. An earliest start is on its start vertex
+    /// (see `start_of`), an earliest end is put on its last members once they exist.
+    fn group(&mut self, id: Uuid, start: VertexId, end: VertexId) -> Option<ArcKind> {
+        let constraint = self.plan.task_groups()[&id].time_constraint();
+        let by = constraint.bounds_on(NodeEnd::Start).1.map(|d| self.day(d));
+        let vertex = self.net.vertex_mut(start);
+        vertex.deadline = [vertex.deadline, by].into_iter().flatten().min();
+        let by = constraint.bounds_on(NodeEnd::End).1;
+        self.net.vertex_mut(end).deadline = by.map(|d| self.day(d).next());
         let members = self
             .items
             .iter()
@@ -286,6 +307,41 @@ impl Lowering<'_> {
         after.sort();
         self.net.vertex_mut(end).after = after;
         None
+    }
+
+    /// Keeps the last members of a group from ending before a day: the members nothing else in
+    /// the group depends on, and for a group among them its own last members
+    fn end_not_before(&mut self, group: Uuid, day: Day) {
+        let inside = |item: &Item| item.parent == Parent::Node(group) && !item.dropped;
+        let members: Vec<PlanNode> = self
+            .items
+            .iter()
+            .filter(|(_, item)| inside(item))
+            .map(|(node, _)| *node)
+            .collect();
+        let followed = |node: &PlanNode| {
+            let mut others = self.items.values().filter(|item| inside(item));
+            others.any(|item| item.dependencies.contains(&Dependency::Node(*node)))
+        };
+        let last: Vec<PlanNode> = members.into_iter().filter(|n| !followed(n)).collect();
+        for node in last {
+            let Some(lowered) = self.net.lowered.get(&(self.index, node)).copied() else {
+                continue;
+            };
+            match (node, lowered.arc) {
+                (PlanNode::TaskGroup(inner), None) => self.end_not_before(inner, day),
+                (PlanNode::Milestone(_), _) => {
+                    let vertex = self.net.vertex_mut(lowered.end);
+                    vertex.earliest = vertex.earliest.max(Some(day));
+                }
+                (_, Some(arc)) => {
+                    if let ArcKind::Work(work) = &mut self.net.arcs[arc.0 as usize].kind {
+                        work.floor_end = work.floor_end.max(Some(day));
+                    }
+                }
+                (_, None) => {}
+            }
+        }
     }
 
     fn buffer(&mut self, buffer: &PlanBuffer) -> Buffer {
@@ -313,18 +369,16 @@ impl Lowering<'_> {
     fn shrink_to(&self, buffer: PlanNode) -> Option<Day> {
         let depends =
             |dependencies: &[Dependency]| dependencies.contains(&Dependency::Node(buffer));
-        let hard = |constraint| match constraint {
-            TimeConstraint::Fixed(date) | TimeConstraint::Latest(date) => Some(self.day(date)),
-            _ => None,
-        };
         let tasks = self.plan.tasks().values();
         let tasks = tasks
             .filter(|t| depends(t.dependencies()))
-            .filter_map(|t| hard(t.time_constraint()));
+            .filter_map(|t| t.time_constraint().bounds_on(NodeEnd::Start).1)
+            .map(|date| self.day(date));
         let milestones = self.plan.milestones().values();
         let milestones = milestones
             .filter(|m| depends(m.dependencies()))
-            .filter_map(|m| hard(m.time_constraint()).map(Day::next));
+            .filter_map(|m| m.time_constraint().bounds().1)
+            .map(|date| self.day(date).next());
         tasks.chain(milestones).min()
     }
 
@@ -351,14 +405,14 @@ impl Lowering<'_> {
             },
         };
         if work.is_open() {
-            let (earliest, latest) = match task.time_constraint() {
-                TimeConstraint::None => (None, None),
-                TimeConstraint::Earliest(date) => (Some(date), None),
-                TimeConstraint::Latest(date) => (None, Some(date)),
-                TimeConstraint::Fixed(date) => (Some(date), Some(date)),
-            };
+            let constraint = task.time_constraint();
+            let (earliest, latest) = constraint.bounds_on(NodeEnd::Start);
             work.floor_start = Some(self.now()).max(earliest.map(|d| self.day(d)));
             work.latest_start = latest.map(|d| self.day(d));
+            // a date for its last day is the vertex after that day
+            let (earliest, latest) = constraint.bounds_on(NodeEnd::End);
+            work.floor_end = earliest.map(|d| self.day(d).next());
+            work.latest_end = latest.map(|d| self.day(d).next());
         }
         let done = matches!(work.progress, Progress::Done { .. });
         work.slots = match self.slots(task) {

@@ -8,7 +8,7 @@ use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
     availability::workload::Workload,
-    common::{crud::Crud, short_id::ShortId},
+    common::{crud::Crud, dates::NodeEnd, short_id::ShortId},
     planner::items::{
         dependency::{Dependency, PlanNode},
         milestone::MilestonePatch,
@@ -344,9 +344,25 @@ fn ParentPicker(plan: ShortId, me: PlanNode, parent: RwSignal<Parent>) -> impl I
     }
 }
 
-/// How the item is held to a date, and the date for the kinds that have one
+/// How the item is held to a date, and the date for the kinds that have one. With `end` the
+/// date can be for the first or the last day of the item.
 #[component]
-fn Constraint(kind: RwSignal<String>, day: RwSignal<NaiveDate>) -> impl IntoView {
+fn Constraint(
+    kind: RwSignal<String>,
+    day: RwSignal<NaiveDate>,
+    #[prop(optional)] end: Option<RwSignal<NodeEnd>>,
+) -> impl IntoView {
+    let which = end.map(|end| {
+        view! {
+            <Block label="Constraint Applies To">
+                <Segmented
+                    value=Signal::derive(move || forms::end_value(end.get()).to_string())
+                    options=options([("start", "First Day"), ("end", "Last Day")])
+                    on_change=Callback::new(move |v: String| end.set(forms::parse_end(&v)))
+                />
+            </Block>
+        }
+    });
     view! {
         <div class="cols">
             <Block label="Constraint Type">
@@ -374,6 +390,7 @@ fn Constraint(kind: RwSignal<String>, day: RwSignal<NaiveDate>) -> impl IntoView
                 />
             </Field>
         </div>
+        {which}
     }
 }
 
@@ -519,9 +536,11 @@ fn TaskForm(
     let node = PlanNode::Task(id);
     let name = RwSignal::new(task.name().to_string());
     let duration = RwSignal::new(i64::from(task.duration()));
-    let (constraint_kind, constraint_day) = forms::constraint_parts(task.time_constraint());
+    let constraint = task.time_constraint();
+    let (constraint_kind, constraint_day) = forms::constraint_parts(constraint.constraint);
     let kind = RwSignal::new(constraint_kind.to_string());
     let day = RwSignal::new(constraint_day.unwrap_or(today));
+    let end = RwSignal::new(constraint.end);
     let parent = RwSignal::new(task.parent());
     let deps = RwSignal::new(task.dependencies().clone());
     let mut asked: Vec<(Worker, u8)> = task
@@ -568,7 +587,11 @@ fn TaskForm(
             ),
             time_constraint: changed(
                 &old.time_constraint(),
-                forms::constraint_from(&kind.get_untracked(), day.get_untracked()),
+                forms::node_constraint(
+                    &kind.get_untracked(),
+                    day.get_untracked(),
+                    end.get_untracked(),
+                ),
             ),
             dependencies: changed(old.dependencies(), deps.get_untracked()),
             allocations: changed(old.allocations(), allocations),
@@ -617,7 +640,7 @@ fn TaskForm(
             <Field label="Duration (days)">
                 <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=1 max=3650 />
             </Field>
-            <Constraint kind=kind day=day />
+            <Constraint kind=kind day=day end=end />
             <div class="cols">
                 <Field label=Signal::derive(move || {
                     let missing = matches!(status.get(), Status::InProgress | Status::OnHold) && started.get().is_none();
@@ -842,7 +865,16 @@ fn GroupForm(
         return view! { <p>"This group has been removed."</p> }.into_any();
     };
     let node = PlanNode::TaskGroup(id);
+    let today = sync
+        .tenant
+        .with_untracked(|t| t.as_ref().map(|t| t.today()))
+        .unwrap_or_default();
     let name = RwSignal::new(group.name().to_string());
+    let constraint = group.time_constraint();
+    let (constraint_kind, constraint_day) = forms::constraint_parts(constraint.constraint);
+    let kind = RwSignal::new(constraint_kind.to_string());
+    let day = RwSignal::new(constraint_day.unwrap_or(today));
+    let end = RwSignal::new(constraint.end);
     let parent = RwSignal::new(group.parent());
     let deps = RwSignal::new(group.dependencies().clone());
     let original = StoredValue::new(group);
@@ -855,6 +887,14 @@ fn GroupForm(
             name: changed(&old.name().to_string(), name.get_untracked()),
             dependencies: changed(old.dependencies(), deps.get_untracked()),
             parent: changed(&old.parent(), parent.get_untracked()),
+            time_constraint: changed(
+                &old.time_constraint(),
+                forms::node_constraint(
+                    &kind.get_untracked(),
+                    day.get_untracked(),
+                    end.get_untracked(),
+                ),
+            ),
         };
         sync.plan(plan, PlanUpdate::TaskGroup(Crud::Update(patch)));
         apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
@@ -865,6 +905,7 @@ fn GroupForm(
             <Field label="Name">
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
             </Field>
+            <Constraint kind=kind day=day end=end />
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
             <Dependents plan=plan me=node deps=dependents />

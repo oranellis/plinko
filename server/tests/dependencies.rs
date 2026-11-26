@@ -136,6 +136,7 @@ fn group_end_waits_on_members() {
     assert!(set_task_deps(&mut plan, member, &[group_node(group)]).is_err());
     // the group can wait on outside items, which then cannot wait on it back
     let patch = TaskGroupPatch {
+        time_constraint: None,
         id: group,
         name: None,
         dependencies: Some(depend(&[task_node(outside)])),
@@ -164,6 +165,7 @@ fn members_anchor_to_group_start() {
 
     // the group start cannot wait on a member that anchors to it
     let patch = TaskGroupPatch {
+        time_constraint: None,
         id: group,
         name: None,
         dependencies: Some(depend(&[task_node(member)])),

@@ -4,7 +4,7 @@
 // modules {{{
 use chrono::NaiveDate;
 use plinko::{
-    common::dates::TimeConstraint,
+    common::dates::{NodeConstraint, NodeEnd, TimeConstraint},
     planner::items::{
         dependency::{Dependency, PlanNode},
         parent::Parent,
@@ -102,6 +102,28 @@ pub fn constraint_from(kind: &str, day: NaiveDate) -> TimeConstraint {
     }
 }
 
+/// The constraint a task or group form has, which is on the first day when there is none
+pub fn node_constraint(kind: &str, day: NaiveDate, end: NodeEnd) -> NodeConstraint {
+    match constraint_from(kind, day) {
+        TimeConstraint::None => NodeConstraint::default(),
+        constraint => NodeConstraint { constraint, end },
+    }
+}
+
+pub fn end_value(end: NodeEnd) -> &'static str {
+    match end {
+        NodeEnd::Start => "start",
+        NodeEnd::End => "end",
+    }
+}
+
+pub fn parse_end(value: &str) -> NodeEnd {
+    match value {
+        "end" => NodeEnd::End,
+        _ => NodeEnd::Start,
+    }
+}
+
 pub fn status_value(status: Status) -> &'static str {
     match status {
         Status::NotStarted => "not-started",
@@ -188,6 +210,18 @@ mod tests {
             let (kind, picked) = constraint_parts(constraint);
             assert_eq!(constraint_from(kind, picked.unwrap_or(day)), constraint);
         }
+    }
+
+    #[test]
+    fn a_form_with_no_constraint_forgets_which_day_it_was_for() {
+        let day = NaiveDate::from_ymd_opt(2024, 3, 4).unwrap();
+        let on_end = node_constraint("latest", day, parse_end(end_value(NodeEnd::End)));
+        assert_eq!(on_end.end, NodeEnd::End);
+        assert_eq!(on_end.constraint, TimeConstraint::Latest(day));
+        assert_eq!(
+            node_constraint("none", day, NodeEnd::End),
+            NodeConstraint::default()
+        );
     }
 }
 // }}}

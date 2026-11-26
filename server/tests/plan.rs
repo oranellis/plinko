@@ -238,6 +238,7 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
 
 fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), PlinkoError> {
     let patch = TaskGroupPatch {
+        time_constraint: None,
         id,
         name: None,
         dependencies: None,

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     availability::workload::Workload,
-    common::dates::{DateRange, TimeConstraint},
+    common::dates::{DateRange, NodeConstraint, NodeEnd, TimeConstraint},
     multitenancy::tenant::Tenant,
     planner::{
         items::{
@@ -114,12 +114,12 @@ impl Writer<'_> {
             let node = PlanNode::Task(*id);
             match self.task(node) {
                 Some(state) => {
-                    let start = state.date_range.start();
+                    let range = state.date_range;
                     out.tasks.insert(*id, state);
                     let task = &plan.tasks()[id];
                     let work = self.work(node).filter(|w| w.is_open());
                     if work.is_some() {
-                        self.violation(&mut out, node, task.time_constraint(), start);
+                        self.violation(&mut out, node, task.time_constraint(), range);
                     }
                 }
                 None => drop(out.unscheduled.insert(node, self.reason(node))),
@@ -136,8 +136,15 @@ impl Writer<'_> {
                         derived_status: statuses[id],
                         date,
                     };
+                    let range = DateRange::new(date, state.end());
                     out.milestones.insert(*id, state);
-                    self.violation(&mut out, node, item.time_constraint(), date);
+                    let constraint = NodeConstraint {
+                        constraint: item.time_constraint(),
+                        end: NodeEnd::End,
+                    };
+                    if let Some(range) = range {
+                        self.violation(&mut out, node, constraint, range);
+                    }
                 }
                 None => drop(out.unscheduled.insert(node, self.reason(node))),
             }
@@ -196,32 +203,43 @@ impl Writer<'_> {
         Some(state)
     }
 
-    /// Records a violation if a hard date is passed by the day the node is on
+    /// Records a violation if a hard date is passed by the day of the node it is about, the
+    /// first or the last of `range`
     fn violation(
         &self,
         out: &mut PlanVolatileState,
         node: PlanNode,
-        constraint: TimeConstraint,
-        scheduled: NaiveDate,
+        constraint: NodeConstraint,
+        range: DateRange,
     ) {
+        let NodeConstraint { constraint, end } = constraint;
         let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = constraint else {
             return;
+        };
+        let last = |day: NaiveDate| day.pred_opt().unwrap_or(day);
+        let scheduled = match end {
+            NodeEnd::Start => range.start(),
+            NodeEnd::End => last(range.end()).max(range.start()),
         };
         if scheduled <= date {
             return;
         }
         // the soonest it could have been with everyone free, by the same reading of its day
-        let soonest = match node {
-            PlanNode::Milestone(_) => {
+        let soonest = match (node, end) {
+            (PlanNode::Milestone(_), _) => {
                 let at = self
                     .lowered(node)
                     .and_then(|l| self.at(self.earliest, l.end));
                 at.map(|at| self.day_before(at))
             }
-            _ => self.placed(self.earliest, node).map(|p| self.date(p.start)),
+            (_, NodeEnd::Start) => self.placed(self.earliest, node).map(|p| self.date(p.start)),
+            (_, NodeEnd::End) => self
+                .placed(self.earliest, node)
+                .map(|p| self.day_before(p.end)),
         };
         let violation = ConstraintViolation {
             constraint,
+            end,
             scheduled,
             earliest: soonest,
         };
@@ -263,6 +281,8 @@ impl Writer<'_> {
                 Some(date_range) => {
                     let state = task_group::VolatileState { date_range };
                     out.task_groups.insert(id, state);
+                    let constraint = self.plan.task_groups()[&id].time_constraint();
+                    self.violation(out, node, constraint, date_range);
                 }
                 None => {
                     let start = self.lowered(node).and_then(|l| self.at(self.pass, l.start));

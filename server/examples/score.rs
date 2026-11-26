@@ -184,7 +184,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 name: None,
                 parent: None,
                 duration: Some(1 + random.below(6) as u32),
-                time_constraint: dates.get(&task).copied(),
+                time_constraint: dates.get(&task).copied().map(Into::into),
                 dependencies: Some(on),
                 allocations: Some(HashMap::from([(worker, hours)])),
                 affinities: None,
@@ -284,7 +284,7 @@ fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, p
                 }
                 _ => unreachable!(),
             };
-            let constraint = match t.time_constraint() {
+            let constraint = match t.time_constraint().constraint {
                 TimeConstraint::Fixed(d) => format!("[\"fixed\",\"{d}\"]"),
                 TimeConstraint::Latest(d) => format!("[\"latest\",\"{d}\"]"),
                 _ => "null".to_string(),

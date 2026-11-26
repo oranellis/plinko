@@ -341,6 +341,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 })),
                 |id, plan, sync, start, then| {
                     let patch = plinko::planner::items::task_group::TaskGroupPatch {
+                        time_constraint: None,
                         id,
                         name: None,
                         dependencies: start.map(|d| vec![d]),

@@ -342,7 +342,7 @@ fn chains_to_close_hard_dates_go_before_target_chains() {
     let mut plans = Plans::new();
     let (hard_plan, hard) = plans.plan(1);
     plans.patch(hard_plan, hard, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(day(2024, 1, 3)));
+        p.time_constraint = Some(TimeConstraint::Fixed(day(2024, 1, 3)).into());
     });
     let (long, long_chain) = chain(&mut plans, &[3]);
     let state = plans.solve();
@@ -408,7 +408,7 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
                     (random.below(4) == 0).then(|| day(2024, 1, 1 + random.below(10) as u32));
                 if let Some(date) = fixed {
                     plans.patch(plan, task, |p| {
-                        p.time_constraint = Some(TimeConstraint::Fixed(date))
+                        p.time_constraint = Some(TimeConstraint::Fixed(date).into())
                     });
                 }
                 made.push((plan, task, after, fixed));
@@ -439,7 +439,7 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
 // fixed {{{
 fn fixed(plans: &mut Plans, plan: ShortId, task: Uuid, date: NaiveDate) {
     plans.patch(plan, task, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(date))
+        p.time_constraint = Some(TimeConstraint::Fixed(date).into())
     });
 }
 // }}}

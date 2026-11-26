@@ -28,7 +28,7 @@ impl DateRange {
 // }}}
 
 // DateRange supporting types {{{
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimeConstraint {
     #[default]
     None,
@@ -37,28 +37,57 @@ pub enum TimeConstraint {
     Fixed(NaiveDate),
 }
 
-/// Where a start ends up under a time constraint
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ConstrainedStart {
-    pub start: NaiveDate,
-    /// The constraint asks for something its dependencies do not allow
-    pub violated: bool,
+/// Which end of a task or group a time constraint is about
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NodeEnd {
+    /// Its first day
+    #[default]
+    Start,
+    /// Its last day
+    End,
+}
+
+/// A time constraint on the first or the last day of a task or group. A milestone is a single
+/// day, so it has a plain `TimeConstraint`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeConstraint {
+    pub constraint: TimeConstraint,
+    pub end: NodeEnd,
 }
 // }}}
 
 // impl TimeConstraint {{{
 impl TimeConstraint {
-    /// The start a task or milestone gets when its dependencies allow `earliest`. The constraint
-    /// date is the item's start. A fixed or latest date that is already passed cannot be met, so
-    /// the item starts at `earliest` and the constraint is violated.
-    pub fn apply(self, earliest: NaiveDate) -> ConstrainedStart {
-        let (start, violated) = match self {
-            TimeConstraint::None => (earliest, false),
-            TimeConstraint::Earliest(date) => (earliest.max(date), false),
-            TimeConstraint::Latest(date) => (earliest, earliest > date),
-            TimeConstraint::Fixed(date) => (earliest.max(date), earliest > date),
-        };
-        ConstrainedStart { start, violated }
+    /// The day the constrained day may not be before, and the day it may not be after
+    pub fn bounds(self) -> (Option<NaiveDate>, Option<NaiveDate>) {
+        match self {
+            TimeConstraint::None => (None, None),
+            TimeConstraint::Earliest(date) => (Some(date), None),
+            TimeConstraint::Latest(date) => (None, Some(date)),
+            TimeConstraint::Fixed(date) => (Some(date), Some(date)),
+        }
+    }
+}
+// }}}
+
+// impl NodeConstraint {{{
+impl NodeConstraint {
+    /// The bounds if the constraint is about `end`, none otherwise
+    pub fn bounds_on(self, end: NodeEnd) -> (Option<NaiveDate>, Option<NaiveDate>) {
+        match self.end == end {
+            true => self.constraint.bounds(),
+            false => (None, None),
+        }
+    }
+}
+
+impl From<TimeConstraint> for NodeConstraint {
+    /// A constraint on the start
+    fn from(constraint: TimeConstraint) -> Self {
+        Self {
+            constraint,
+            end: NodeEnd::Start,
+        }
     }
 }
 // }}}
@@ -68,26 +97,24 @@ impl TimeConstraint {
 mod tests {
     use super::*;
 
-    fn d(day: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(2024, 1, day).unwrap()
-    }
-
-    fn applied(constraint: TimeConstraint, earliest: u32) -> (NaiveDate, bool) {
-        let result = constraint.apply(d(earliest));
-        (result.start, result.violated)
-    }
-
     #[test]
-    fn constraints_apply_to_the_start() {
-        use TimeConstraint::*;
-        assert_eq!(applied(None, 5), (d(5), false));
-        assert_eq!(applied(Earliest(d(8)), 5), (d(8), false));
-        assert_eq!(applied(Earliest(d(3)), 5), (d(5), false));
-        assert_eq!(applied(Latest(d(8)), 5), (d(5), false));
-        assert_eq!(applied(Latest(d(3)), 5), (d(5), true));
-        assert_eq!(applied(Fixed(d(8)), 5), (d(8), false));
-        assert_eq!(applied(Fixed(d(5)), 5), (d(5), false));
-        assert_eq!(applied(Fixed(d(3)), 5), (d(5), true));
+    fn bounds_are_given_for_the_end_a_constraint_is_about() {
+        let d = |day| NaiveDate::from_ymd_opt(2024, 1, day).unwrap();
+        assert_eq!(TimeConstraint::None.bounds(), (None, None));
+        assert_eq!(TimeConstraint::Earliest(d(3)).bounds(), (Some(d(3)), None));
+        assert_eq!(TimeConstraint::Latest(d(3)).bounds(), (None, Some(d(3))));
+        assert_eq!(
+            TimeConstraint::Fixed(d(3)).bounds(),
+            (Some(d(3)), Some(d(3)))
+        );
+        let on_end = NodeConstraint {
+            constraint: TimeConstraint::Latest(d(3)),
+            end: NodeEnd::End,
+        };
+        assert_eq!(on_end.bounds_on(NodeEnd::End), (None, Some(d(3))));
+        assert_eq!(on_end.bounds_on(NodeEnd::Start), (None, None));
+        let on_start: NodeConstraint = TimeConstraint::Fixed(d(3)).into();
+        assert_eq!(on_start.bounds_on(NodeEnd::Start), (Some(d(3)), Some(d(3))));
     }
 }
 // }}}

@@ -3,6 +3,7 @@
 
 // modules {{{
 use plinko::{
+    common::dates::NodeEnd,
     multitenancy::tenant::Tenant,
     planner::items::{
         dependency::PlanNode,
@@ -153,14 +154,20 @@ pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
         return Vec::new();
     };
     let (kind, date) = forms::constraint_parts(v.constraint);
+    // a milestone is one day, the rest have a first and a last
+    let day = match (mark, v.end) {
+        (PlanNode::Milestone(_), _) => "date",
+        (_, NodeEnd::Start) => "start date",
+        (_, NodeEnd::End) => "end date",
+    };
     let title = match kind {
-        "fixed" => "Fixed date violated",
-        "latest" => "Latest date exceeded",
-        _ => "Earliest date not met",
+        "fixed" => format!("Fixed {day} violated"),
+        "latest" => format!("Latest {day} exceeded"),
+        _ => format!("Earliest {day} not met"),
     };
     let required = date.map(format::iso).unwrap_or_default();
     let mut lines = vec![
-        title.to_string(),
+        title,
         format!("Required: {required}"),
         format!("Scheduled: {}", format::iso(v.scheduled)),
     ];
