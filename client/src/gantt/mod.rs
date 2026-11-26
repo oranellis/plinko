@@ -331,6 +331,7 @@ pub fn Gantt(
                 w: vp.day_width,
                 h: layout::HEADER_HEIGHT - layout::MONTH_HEIGHT,
             },
+            height: size.get_untracked().1,
             held: pin.held,
             faint,
         })

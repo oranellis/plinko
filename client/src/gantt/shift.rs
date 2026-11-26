@@ -23,6 +23,7 @@ const LIT: &str = "#ececf0";
 const DARK: &str = "#3a3a3e";
 /// The colour of the day an item is held to
 const PIN: &str = "#ffb300";
+const PIN_BAND: &str = "rgba(255,179,0,0.16)";
 // }}}
 
 // helpers {{{
@@ -103,12 +104,14 @@ pub enum Held {
     Fixed,
 }
 
-/// A pin as it is drawn: the line it stands on, by the item's row, and the day's cell in the header
+/// A pin as it is drawn: the edge of the day that is held, by the item's row, the day's cell in
+/// the header and how far down the chart goes
 #[derive(Clone, Copy, Debug)]
 pub struct PinView {
     pub x: f64,
     pub row: Rect,
     pub cell: Rect,
+    pub height: f64,
     pub held: Held,
     /// For an item that is only looked at, not edited
     pub faint: bool,
@@ -379,42 +382,41 @@ fn flag(ctx: &Pen, x: f64, y: f64, end: bool, lit: bool) {
     ctx.stroke();
 }
 
-/// The day an item is held to: its cell in the header lit, a line down the item's row and
-/// arrows off the top of the line that say which way the item may still go. An earliest day
-/// points on from the line, a latest day back from it, and a fixed day has both point at it.
+/// The day an item is held to: a band down the chart like the one for today, and by the item's
+/// row arrows that say which way it may still go. They are on the edge of the day that is held,
+/// marked by a tick: on from it for an earliest day, back from it for a latest, and both at it
+/// for a fixed one.
 pub fn paint_pin(ctx: &Pen, pin: &PinView) {
     ctx.save();
     ctx.set_global_alpha(if pin.faint { 0.45 } else { 1.0 });
-    ctx.set_fill_style_str("rgba(255,179,0,0.3)");
-    ctx.fill_rect(pin.cell.x, pin.cell.y, pin.cell.w, pin.cell.h);
+    ctx.set_fill_style_str(PIN_BAND);
+    ctx.fill_rect(pin.cell.x, pin.cell.y, pin.cell.w, pin.height - pin.cell.y);
     ctx.set_stroke_style_str(PIN);
-    ctx.set_fill_style_str(PIN);
-    ctx.set_line_width(2.0);
+    ctx.set_line_width(2.5);
     ctx.set_line_cap("round");
-    let (x, top) = (pin.x, pin.row.y - 9.0);
-    ctx.begin_path();
-    ctx.move_to(x, top - 5.0);
-    ctx.line_to(x, pin.row.y + pin.row.h + 5.0);
-    ctx.stroke();
-    // an arrow from `from` to `to` along the top of the line
+    ctx.set_line_join("round");
+    let (x, y) = (pin.x, pin.row.y - 9.0);
+    // an arrow from `from` to `to`, a line with an open head
     let arrow = |from: f64, to: f64| {
-        let back = if to > from { -5.0 } else { 5.0 };
+        let back = if to > from { -7.0 } else { 7.0 };
         ctx.begin_path();
-        ctx.move_to(x + from, top);
-        ctx.line_to(x + to, top);
+        ctx.move_to(x + from, y);
+        ctx.line_to(x + to, y);
+        ctx.move_to(x + to + back, y - 6.0);
+        ctx.line_to(x + to, y);
+        ctx.line_to(x + to + back, y + 6.0);
         ctx.stroke();
-        ctx.begin_path();
-        ctx.move_to(x + to, top);
-        ctx.line_to(x + to + back, top - 4.0);
-        ctx.line_to(x + to + back, top + 4.0);
-        ctx.fill();
     };
+    ctx.begin_path();
+    ctx.move_to(x, y - 7.0);
+    ctx.line_to(x, y + 7.0);
+    ctx.stroke();
     match pin.held {
-        Held::Earliest => arrow(3.0, 17.0),
-        Held::Latest => arrow(-3.0, -17.0),
+        Held::Earliest => arrow(6.0, 30.0),
+        Held::Latest => arrow(-6.0, -30.0),
         Held::Fixed => {
-            arrow(18.0, 4.0);
-            arrow(-18.0, -4.0);
+            arrow(30.0, 6.0);
+            arrow(-30.0, -6.0);
         }
     }
     ctx.restore();

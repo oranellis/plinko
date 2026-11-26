@@ -108,7 +108,7 @@ An item in the plan has no card: while it is edited its bar is drawn without its
 
 Both have the same strip, in the card for a new item and faded into the docked bar for one in the plan (`context.rs`): the name, typed over where it stands (enter saves), then workers and affinities in a window for a task, the day it is held to, save, cancel and delete. Leaving with changes asks first (`guard.rs`).
 
-A task, group or milestone in the plan can be held to a day. While it is edited a flag stands over each of its edges: dropped on a day, the left one holds its first day and the right one its last (a milestone has one). The strip's pin button goes round no earlier, exactly, no later and not at all. The day's cell in the header is lit and a line stands on the item's row with arrows off its top: on from it for no earlier, back from it for no later, both at it for exactly. An item that is hovered or selected shows the same faintly.
+A task, group or milestone in the plan can be held to a day. While it is edited a flag stands over each of its edges: dropped on a day, the left one holds its first day and the right one its last (a milestone has one). The strip's pin button goes round no earlier, exactly, no later and not at all. The day has a band down the chart like today's, and by the item's row arrows on the edge of the day that is held: on from it for no earlier, back from it for no later, both at it for exactly. An item that is hovered or selected shows the same faintly.
 
 ### Shift editing
 
