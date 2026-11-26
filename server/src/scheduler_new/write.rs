@@ -1,0 +1,319 @@
+// modules {{{
+use std::collections::HashMap;
+
+use chrono::NaiveDate;
+use uuid::Uuid;
+
+use crate::{
+    availability::workload::Workload,
+    common::dates::{DateRange, TimeConstraint},
+    multitenancy::tenant::Tenant,
+    planner::{
+        items::{
+            dependency::PlanNode,
+            milestone,
+            parent::Parent,
+            plan_buffer, plan_delay,
+            task::{self, Assignee},
+            task_group,
+        },
+        plan::Plan,
+        plan_entity::PlanItem,
+    },
+    scheduler::{
+        state::{
+            ConstraintViolation, PlanVolatileState, TargetForecast, TenantVolatileState,
+            UnscheduledReason,
+        },
+        status::milestone_statuses,
+    },
+    scheduler_new::{
+        arc::Work,
+        day::Day,
+        network::{Lowered, VertexId},
+        pass::{Context, Pass, Placed},
+        table::RowKey,
+    },
+};
+// }}}
+
+// write {{{
+/// The schedule a finished pass gives, as dates on the tenant's own nodes
+pub fn write(ctx: &Context, tenant: &Tenant, earliest: &Pass, pass: &Pass) -> TenantVolatileState {
+    let mut plans = HashMap::new();
+    for (index, info) in ctx.net.plans.iter().enumerate() {
+        let writer = Writer {
+            ctx,
+            plan: &tenant.plans()[&info.id],
+            index: index as u32,
+            earliest,
+            pass,
+        };
+        plans.insert(info.id, writer.plan());
+    }
+    let mut state = TenantVolatileState::from_plans(plans);
+    for (user, schedule) in &mut state.users {
+        if let Some(row) = ctx.table.row(&RowKey::User(*user)) {
+            schedule.bottleneck = pass.ledger.load(ctx.table, row);
+        }
+    }
+    state
+}
+// }}}
+
+/// One plan's part of a pass being written
+struct Writer<'a> {
+    ctx: &'a Context<'a>,
+    plan: &'a Plan,
+    index: u32,
+    earliest: &'a Pass,
+    pass: &'a Pass,
+}
+
+// impl Writer {{{
+impl Writer<'_> {
+    fn date(&self, day: Day) -> NaiveDate {
+        day.date(self.ctx.table.origin)
+    }
+
+    /// The day before a vertex, which is the day what ends on it is shown on
+    fn day_before(&self, day: Day) -> NaiveDate {
+        self.date(Day(day.0.saturating_sub(1)))
+    }
+
+    fn lowered(&self, node: PlanNode) -> Option<Lowered> {
+        self.ctx.net.lowered.get(&(self.index, node)).copied()
+    }
+
+    fn at(&self, pass: &Pass, v: VertexId) -> Option<Day> {
+        pass.time[v.0 as usize]
+    }
+
+    fn placed<'p>(&self, pass: &'p Pass, node: PlanNode) -> Option<&'p Placed> {
+        pass.placed[self.lowered(node)?.arc?.0 as usize].as_ref()
+    }
+
+    fn range(&self, placed: &Placed) -> Option<DateRange> {
+        DateRange::new(self.date(placed.start), self.date(placed.end))
+    }
+
+    /// Why a node with an arc has no place
+    fn reason(&self, node: PlanNode) -> UnscheduledReason {
+        let known = self.ctx.net.unscheduled.get(&(self.index, node)).copied();
+        let arc = self.lowered(node).and_then(|l| l.arc);
+        let failed = arc.and_then(|a| self.pass.failed[a.0 as usize]);
+        known
+            .or(failed)
+            .unwrap_or(UnscheduledReason::DependsOnUnscheduled)
+    }
+
+    fn plan(&self) -> PlanVolatileState {
+        let mut out = PlanVolatileState::default();
+        let plan = self.plan;
+        for id in plan.tasks().keys() {
+            let node = PlanNode::Task(*id);
+            match self.task(node) {
+                Some(state) => {
+                    let start = state.date_range.start();
+                    out.tasks.insert(*id, state);
+                    let task = &plan.tasks()[id];
+                    let work = self.work(node).filter(|w| w.is_open());
+                    if work.is_some() {
+                        self.violation(&mut out, node, task.time_constraint(), start);
+                    }
+                }
+                None => drop(out.unscheduled.insert(node, self.reason(node))),
+            }
+        }
+        let statuses = milestone_statuses(plan);
+        for (id, item) in plan.milestones() {
+            let node = PlanNode::Milestone(*id);
+            let at = self.lowered(node).and_then(|l| self.at(self.pass, l.end));
+            match at {
+                Some(at) => {
+                    let date = self.day_before(at);
+                    let state = milestone::VolatileState {
+                        derived_status: statuses[id],
+                        date,
+                    };
+                    out.milestones.insert(*id, state);
+                    self.violation(&mut out, node, item.time_constraint(), date);
+                }
+                None => drop(out.unscheduled.insert(node, self.reason(node))),
+            }
+        }
+        for id in plan.plan_buffers().keys() {
+            let node = PlanNode::PlanBuffer(*id);
+            match self.placed(self.pass, node).and_then(|p| self.range(p)) {
+                Some(date_range) => {
+                    let state = plan_buffer::VolatileState { date_range };
+                    out.plan_buffers.insert(*id, state);
+                }
+                None => drop(out.unscheduled.insert(node, self.reason(node))),
+            }
+        }
+        for id in plan.plan_delays().keys() {
+            let node = PlanNode::PlanDelay(*id);
+            match self.placed(self.pass, node).and_then(|p| self.range(p)) {
+                Some(date_range) => {
+                    let state = plan_delay::VolatileState { date_range };
+                    out.plan_delays.insert(*id, state);
+                }
+                None => drop(out.unscheduled.insert(node, self.reason(node))),
+            }
+        }
+        self.groups(&mut out);
+        self.forecasts(&mut out);
+        out
+    }
+
+    fn work(&self, node: PlanNode) -> Option<&Work> {
+        self.ctx.net.arc(self.lowered(node)?.arc?).work()
+    }
+
+    fn task(&self, node: PlanNode) -> Option<task::VolatileState> {
+        let (work, placed) = (self.work(node)?, self.placed(self.pass, node)?);
+        let mut state = task::VolatileState {
+            date_range: self.range(placed)?,
+            assignments: HashMap::new(),
+            workers: HashMap::new(),
+        };
+        for (slot, row) in work.slots.iter().zip(&placed.rows) {
+            let who = match self.ctx.table.key(*row) {
+                RowKey::User(user) => Assignee::User(user),
+                RowKey::Plan(_) | RowKey::Full => Assignee::Placeholder,
+            };
+            state.workers.insert(slot.worker, who);
+            if slot.hours == 0 {
+                continue;
+            }
+            let days = state.assignments.entry(who).or_default();
+            for day in &placed.days {
+                let hours = days.entry(self.date(*day)).or_insert(Workload::MIN);
+                *hours = Workload::new_const((hours.get() + slot.hours).min(8));
+            }
+        }
+        Some(state)
+    }
+
+    /// Records a violation if a hard date is passed by the day the node is on
+    fn violation(
+        &self,
+        out: &mut PlanVolatileState,
+        node: PlanNode,
+        constraint: TimeConstraint,
+        scheduled: NaiveDate,
+    ) {
+        let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = constraint else {
+            return;
+        };
+        if scheduled <= date {
+            return;
+        }
+        // the soonest it could have been with everyone free, by the same reading of its day
+        let soonest = match node {
+            PlanNode::Milestone(_) => {
+                let at = self
+                    .lowered(node)
+                    .and_then(|l| self.at(self.earliest, l.end));
+                at.map(|at| self.day_before(at))
+            }
+            _ => self.placed(self.earliest, node).map(|p| self.date(p.start)),
+        };
+        let violation = ConstraintViolation {
+            constraint,
+            scheduled,
+            earliest: soonest,
+        };
+        out.constraint_violations.insert(node, violation);
+    }
+
+    /// Groups cover their members, so they go once everything else has its range, the ones
+    /// inside others first
+    fn groups(&self, out: &mut PlanVolatileState) {
+        let mut members: HashMap<Uuid, Vec<PlanNode>> = HashMap::new();
+        collect::<task::Task>(self.plan, &mut members);
+        collect::<milestone::Milestone>(self.plan, &mut members);
+        collect::<plan_buffer::PlanBuffer>(self.plan, &mut members);
+        collect::<plan_delay::PlanDelay>(self.plan, &mut members);
+        collect::<task_group::TaskGroup>(self.plan, &mut members);
+        let mut left: Vec<Uuid> = self.plan.task_groups().keys().copied().collect();
+        left.sort();
+        while !left.is_empty() {
+            let inner = |id: &Uuid| {
+                let inside = members.get(id).into_iter().flatten();
+                let mut groups = inside.filter_map(|n| match n {
+                    PlanNode::TaskGroup(g) => Some(g),
+                    _ => None,
+                });
+                groups.all(|g| !left.contains(g))
+            };
+            let Some(id) = left.iter().copied().find(inner) else {
+                break;
+            };
+            left.retain(|g| *g != id);
+            let node = PlanNode::TaskGroup(id);
+            let inside = members.get(&id).map_or(&[][..], Vec::as_slice);
+            let ranges: Vec<DateRange> = inside.iter().filter_map(|n| range_of(out, n)).collect();
+            let empty = self.placed(self.pass, node).and_then(|p| self.range(p));
+            let first = ranges.iter().map(DateRange::start).min();
+            let last = ranges.iter().map(DateRange::end).max();
+            let covered = first.zip(last).and_then(|(a, b)| DateRange::new(a, b));
+            match empty.or(covered) {
+                Some(date_range) => {
+                    let state = task_group::VolatileState { date_range };
+                    out.task_groups.insert(id, state);
+                }
+                None => {
+                    let start = self.lowered(node).and_then(|l| self.at(self.pass, l.start));
+                    let reason = match start {
+                        Some(_) => UnscheduledReason::NoScheduledMembers,
+                        None => UnscheduledReason::DependsOnUnscheduled,
+                    };
+                    out.unscheduled.insert(node, reason);
+                }
+            }
+        }
+    }
+
+    /// When each target and the plan itself land, against the earliest they could
+    fn forecasts(&self, out: &mut PlanVolatileState) {
+        let info = &self.ctx.net.plans[self.index as usize];
+        let forecast = |v: VertexId| {
+            Some(TargetForecast {
+                forecast: self.day_before(self.at(self.pass, v)?),
+                baseline: self.day_before(self.at(self.earliest, v)?),
+            })
+        };
+        for target in &info.targets {
+            out.targets
+                .extend(forecast(target.vertex).map(|f| (target.id, f)));
+        }
+        out.plan_end = forecast(info.end);
+    }
+}
+// }}}
+
+// helpers {{{
+fn collect<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<PlanNode>>) {
+    for (id, item) in T::entities(plan) {
+        if let Parent::Node(group) = crate::planner::plan_entity::AbstractPlanNode::parent(item) {
+            members.entry(group).or_default().push(T::node(*id));
+        }
+    }
+}
+
+/// The days a scheduled node is shown over, a milestone as its one day
+fn range_of(out: &PlanVolatileState, node: &PlanNode) -> Option<DateRange> {
+    match node {
+        PlanNode::Task(id) => Some(out.tasks.get(id)?.date_range),
+        PlanNode::Milestone(id) => {
+            let milestone = out.milestones.get(id)?;
+            DateRange::new(milestone.date, milestone.end())
+        }
+        PlanNode::PlanBuffer(id) => Some(out.plan_buffers.get(id)?.date_range),
+        PlanNode::PlanDelay(id) => Some(out.plan_delays.get(id)?.date_range),
+        PlanNode::TaskGroup(id) => Some(out.task_groups.get(id)?.date_range),
+    }
+}
+// }}}
