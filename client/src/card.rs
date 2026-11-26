@@ -24,6 +24,8 @@ const CLICK: f64 = 5.0;
 
 /// How far the days handle is dragged for each day
 const DAY_STEP: f64 = 14.0;
+/// The most boxes shown for the days while they are dragged
+const MOST_BOXES: u32 = 30;
 
 /// The most days an item can be given
 const MOST_DAYS: i64 = 3650;
@@ -376,10 +378,18 @@ pub fn Card(
                                             <span>{move || format!("{}d", days().unwrap_or(0))}</span>
                                             <i></i>
                                         </button>
-                                        // while it is dragged, how far the days have moved
+                                        // while it is dragged, a box a day: the ones added lit, the ones taken away empty
                                         {move || held.get().filter(|h| h.grab == Grab::Days && h.dragged()).map(|h| {
-                                            let by = i64::from(days().unwrap_or(h.days)) - i64::from(h.days);
-                                            view! { <span class="draftcard-drag">{format!("\u{2039} {by:+} \u{203a}")}</span> }
+                                            let now = days().unwrap_or(h.days);
+                                            let boxes = (0..now.max(h.days).min(MOST_BOXES)).map(|i| {
+                                                let class = match (i < h.days, i < now) {
+                                                    (true, true) => "",
+                                                    (false, _) => "added",
+                                                    (true, false) => "taken",
+                                                };
+                                                view! { <i class=class></i> }
+                                            }).collect_view();
+                                            view! { <span class="draftcard-drag">{boxes}</span> }
                                         })}
                                     }
                                 >

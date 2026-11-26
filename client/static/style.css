@@ -489,7 +489,10 @@ button.ctx:disabled { opacity: 0.35; cursor: default; }
 .draftcard-daycount:hover, .draftcard-days.held .draftcard-daycount { background: var(--card); border-color: var(--accent); color: #fff; }
 .draftcard-daycount:hover i, .draftcard-days.held .draftcard-daycount i { background: var(--accent); }
 .draftcard-daybox { width: 78px; text-align: right; }
-.draftcard-drag { position: absolute; right: 0; bottom: calc(100% + 6px); padding: 1px 7px; background: var(--accent); border-radius: 9px; color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
+.draftcard-drag { position: absolute; right: 0; bottom: calc(100% + 7px); display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: 3px; width: 200px; pointer-events: none; }
+.draftcard-drag i { width: 10px; height: 10px; border-radius: 2px; background: #8a8a8a; border: 1.5px solid #8a8a8a; }
+.draftcard-drag i.added { background: var(--accent); border-color: var(--accent); }
+.draftcard-drag i.taken { background: none; border-style: dashed; }
 .draftcard-said { margin: 0; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .draftcard-line { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2000; }
 .draftcard-line line { stroke: #1e88e5; stroke-width: 2.5; stroke-dasharray: 6 4; stroke-linecap: round; }
