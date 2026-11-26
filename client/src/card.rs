@@ -125,6 +125,23 @@ fn new_name(node: PlanNode) -> &'static str {
 }
 // }}}
 
+// Hint {{{
+/// What a click will do while something of the draft is being picked, said at the bottom of the
+/// chart for as long as it is
+#[component]
+pub fn Hint(draft: RwSignal<Option<Draft>>) -> impl IntoView {
+    let said = move || {
+        draft.with(|d| d.as_ref()?.pick).map(|pick| match pick {
+            Pick::Before => "Click the items it waits for, or nothing to finish",
+            Pick::After => "Click the items that wait for it, or nothing to finish",
+            Pick::Group => "Click a group to put it in, or nothing for the top level",
+            Pick::Day => "Click the day to hold it to",
+        })
+    };
+    view! { {move || said().map(|said| view! { <p class="hint fadein">{said}</p> })} }
+}
+// }}}
+
 // Card {{{
 /// The shape of the page's draft with its handles. `probe` is how drops and `spot` how the item
 /// under a drag reach the chart.
@@ -281,15 +298,6 @@ pub fn Card(
             false => d.name,
         }
     };
-    // what a lit handle is waiting for
-    let said = move || {
-        draft.with(|d| d.as_ref()?.pick).map(|pick| match pick {
-            Pick::Before => "Click the items it waits for",
-            Pick::After => "Click the items that wait for it",
-            Pick::Group => "Click a group to put it in, or an empty part of the chart",
-            Pick::Day => "Click the day to hold it to",
-        })
-    };
     // the line from a handle being dragged to the pointer
     let line = move || {
         let h = held.get().filter(|h| h.dragged() && h.grab != Grab::Days)?;
@@ -406,7 +414,6 @@ pub fn Card(
                     </div>
                     {knob(Pick::After, "What waits for it: drag onto an item, or click and pick items")}
                 </div>
-                {move || said().map(|said| view! { <p class="draftcard-said">{said}</p> })}
             </div>
             {line}
     }
@@ -430,7 +437,8 @@ pub fn picked(plan: &Plan, draft: &mut Draft, node: Option<PlanNode>) -> Result<
             draft.pick = None;
         }
         (_, Some(other)) => draft.toggle(plan, pick, other)?,
-        (_, None) => {}
+        // a click on nothing is the end of picking
+        (_, None) => draft.pick = None,
     }
     Ok(true)
 }

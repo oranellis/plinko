@@ -466,10 +466,15 @@ button.ctx.held-end { box-shadow: inset -4px 0 0 #c8e63c; }
 .editswitch .st.save { --c: #43c463; }
 .editswitch .st.delete:hover { color: var(--c); background: color-mix(in srgb, var(--c) 18%, #181818); }
 /* who works on the task being created or edited: a card at the right of the chart, standing on
-   the middle of it so that it is clear of the bar at the bottom */
-.workerwin { position: absolute; right: 12px; top: calc(50% - 12px); translate: 0 -100%; z-index: 19; width: 380px; max-width: calc(100% - 24px); max-height: 45%; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
-/* what to do about unsaved changes: three buttons twice the size of the bar's */
-.choices { display: flex; justify-content: center; gap: 16px; padding: 8px 0; }
+   the middle of it so that it is clear of the bar at the bottom. It is put there without a
+   transform, which the lists that drop from its pickers would be placed against. */
+.workerwin { position: absolute; right: 12px; bottom: calc(50% + 12px); z-index: 19; width: 380px; max-width: calc(100% - 24px); max-height: 45%; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
+/* what to do about unsaved changes: three buttons twice the size of the bar's, in a window no
+   bigger than they need */
+.modal:has(.choices) { width: auto; }
+.modal:has(.choices) > header { padding: 10px 12px 8px; }
+.modal:has(.choices) .body { padding: 12px; }
+.choices { display: flex; justify-content: center; gap: 12px; }
 .choices button.ctx { width: 80px; height: 80px; border-radius: 14px; }
 .choices button.ctx.save:hover { border-color: #43c463; color: #43c463; }
 .choices button.ctx.cancel:hover { border-color: #e53935; color: #e53935; }
@@ -543,7 +548,8 @@ button.ctx:disabled { opacity: 0.35; cursor: default; }
 .draftcard-drag i { width: 10px; height: 10px; border-radius: 2px; background: #8a8a8a; border: 1.5px solid #8a8a8a; }
 .draftcard-drag i.added { background: var(--accent); border-color: var(--accent); }
 .draftcard-drag i.taken { background: none; border-style: dashed; }
-.draftcard-said { position: absolute; left: 50%; bottom: calc(100% + 2px); transform: translateX(-50%); margin: 0; padding: 3px 10px; background: var(--card); border-radius: 10px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+/* what a click will do while something is being picked, at the bottom of the chart */
+.hint { position: absolute; left: 50%; bottom: 96px; translate: -50% 0; z-index: 21; margin: 0; padding: 10px 20px; background: var(--accent); border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); color: #fff; font-size: 15px; font-weight: 600; white-space: nowrap; pointer-events: none; }
 .draftcard-line { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2000; }
 .draftcard-line line { stroke: #1e88e5; stroke-width: 2.5; stroke-dasharray: 6 4; stroke-linecap: round; }
 .draftcard-line line.before { stroke: #fc1ef1; }

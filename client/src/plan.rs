@@ -519,6 +519,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         task.map(|_| view! { <WorkersWindow plan=plan draft=draft /> })
                     }}
                     <Show when=move || tab.get() == PlanTab::Gantt>
+                        <card::Hint draft=draft />
                         <InfoPanel
                             plan=plan
                             draft=draft
