@@ -12,6 +12,7 @@ use crate::{
         day::Day,
         ledger::Ledger,
         network::{Network, VertexId},
+        objective::Late,
         table::{Ask, RowId, Table},
     },
 };
@@ -52,6 +53,9 @@ pub struct Rules<'a> {
     /// Keep the people these placements chose
     pub people: Option<&'a [Option<Placed>]>,
     pub overrides: Option<&'a Overrides>,
+    /// The latest each arc may start for hard dates, in place of the context's, for overrides
+    /// that make dates more pressing
+    pub hard: Option<&'a [i64]>,
     /// Nobody runs out of hours, which gives the earliest everything could be
     pub unlimited: bool,
 }
@@ -65,6 +69,9 @@ pub struct Overrides {
     pub people: HashMap<(ArcId, usize), RowId>,
     /// Arcs put on exactly these days, for a schedule that is already known
     pub starts: HashMap<ArcId, Day>,
+    /// Hard dates counted as this many days sooner when deciding what goes first, for dates
+    /// that were missed
+    pub sooner: HashMap<Late, i64>,
 }
 
 /// Where an arc was put
@@ -144,6 +151,7 @@ impl<'a> Context<'a> {
         let i = arc.0 as usize;
         let [hard, target, end] = self.latest.get(i).copied().unwrap_or([i64::MAX; 3]);
         let room = self.room.get(i).copied().unwrap_or(0);
+        let hard = rules.hard.map_or(hard, |hard| hard[i]);
         match rules.starts {
             Some(starts) => [starts[i], hard, target, end, room],
             None => [hard, target, end, room, 0],

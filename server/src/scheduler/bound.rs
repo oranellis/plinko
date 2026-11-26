@@ -1,8 +1,11 @@
 // modules {{{
+use std::collections::HashMap;
+
 use crate::scheduler::{
     arc::{ArcId, ArcKind},
     day::Day,
     network::VertexId,
+    objective::Late,
     pass::{Context, Pass, Rules},
 };
 // }}}
@@ -32,10 +35,6 @@ pub fn prioritise(ctx: &mut Context, earliest: &Pass) {
         let at = earliest.time[v.0 as usize]?;
         Some((v.0 as usize, i64::from(at.0) - priority))
     };
-    let mut hard = none();
-    for (i, vertex) in net.vertices.iter().enumerate() {
-        hard[i] = vertex.deadline.map_or(i64::MAX, |d| i64::from(d.0));
-    }
     let (mut targets, mut ends) = (none(), none());
     for plan in &net.plans {
         for target in &plan.targets {
@@ -47,9 +46,9 @@ pub fn prioritise(ctx: &mut Context, earliest: &Pass) {
             ends[i] = day;
         }
     }
-    let hard = latest(ctx, earliest, hard, true);
-    let targets = latest(ctx, earliest, targets, false);
-    let ends = latest(ctx, earliest, ends, false);
+    let hard = hard_starts(ctx, earliest, &HashMap::new());
+    let targets = latest(ctx, earliest, targets, None);
+    let ends = latest(ctx, earliest, ends, None);
     ctx.latest = (0..net.arcs.len())
         .map(|i| [hard[i], targets[i], ends[i]])
         .collect();
@@ -66,10 +65,31 @@ pub fn prioritise(ctx: &mut Context, earliest: &Pass) {
 }
 // }}}
 
+// hard_starts {{{
+/// The latest each arc may start for the hard dates it leads to, each counted `sooner` by the
+/// days given for it
+pub fn hard_starts(ctx: &Context, earliest: &Pass, sooner: &HashMap<Late, i64>) -> Vec<i64> {
+    let vertices = ctx.net.vertices.iter().enumerate();
+    let limit = vertices.map(|(i, vertex)| {
+        let shift = sooner.get(&Late::Vertex(VertexId(i as u32))).copied();
+        vertex
+            .deadline
+            .map_or(i64::MAX, |d| i64::from(d.0) - shift.unwrap_or(0))
+    });
+    latest(ctx, earliest, limit.collect(), Some(sooner))
+}
+// }}}
+
 // latest {{{
 /// The latest each arc may start so that no vertex passes the day `limit` gives it, working
-/// back with the spans of the earliest schedule. `dated` adds the hard dates arcs carry.
-fn latest(ctx: &Context, earliest: &Pass, mut limit: Vec<i64>, dated: bool) -> Vec<i64> {
+/// back with the spans of the earliest schedule. `dated` adds the hard dates arcs carry, less
+/// the days it gives for each.
+fn latest(
+    ctx: &Context,
+    earliest: &Pass,
+    mut limit: Vec<i64>,
+    dated: Option<&HashMap<Late, i64>>,
+) -> Vec<i64> {
     let net = ctx.net;
     let mut starts = vec![i64::MAX; net.arcs.len()];
     for v in net.order.iter().rev() {
@@ -89,7 +109,13 @@ fn latest(ctx: &Context, earliest: &Pass, mut limit: Vec<i64>, dated: bool) -> V
 }
 
 /// The latest an arc may start to end by `end`
-fn start_by(ctx: &Context, earliest: &Pass, id: ArcId, end: i64, dated: bool) -> i64 {
+fn start_by(
+    ctx: &Context,
+    earliest: &Pass,
+    id: ArcId,
+    end: i64,
+    dated: Option<&HashMap<Late, i64>>,
+) -> i64 {
     let Some(placed) = &earliest.placed[id.0 as usize] else {
         return i64::MAX;
     };
@@ -100,7 +126,11 @@ fn start_by(ctx: &Context, earliest: &Pass, id: ArcId, end: i64, dated: bool) ->
         ArcKind::Buffer(_) => return end - length,
         ArcKind::Work(work) => work,
     };
-    let own = |day: Option<Day>| day.filter(|_| dated).map_or(i64::MAX, |d| i64::from(d.0));
+    let shift = dated.and_then(|sooner| sooner.get(&Late::Arc(id))).copied();
+    let own = |day: Option<Day>| {
+        let day = day.filter(|_| dated.is_some());
+        day.map_or(i64::MAX, |d| i64::from(d.0) - shift.unwrap_or(0))
+    };
     let end = end.min(own(work.latest_end));
     if end == i64::MAX {
         return own(work.latest_start);

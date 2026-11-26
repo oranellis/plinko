@@ -42,43 +42,53 @@ pub struct Score {
 }
 // }}}
 
+// overdue {{{
+/// Days a vertex is past its hard date, or work that has not started is past the worse of the
+/// dates for its start and its end, 0 if none is missed
+pub fn overdue(ctx: &Context, pass: &Pass, late: Late) -> i64 {
+    let over = |at: Day, limit: Option<Day>| {
+        limit.map_or(0, |l| (i64::from(at.0) - i64::from(l.0)).max(0))
+    };
+    match late {
+        Late::Vertex(v) => {
+            let deadline = ctx.net.vertex(v).deadline;
+            pass.time[v.0 as usize].map_or(0, |at| over(at, deadline))
+        }
+        Late::Arc(id) => {
+            let work = ctx.net.arc(id).work().filter(|w| w.is_open());
+            let placed = pass.placed[id.0 as usize].as_ref();
+            work.zip(placed).map_or(0, |(work, placed)| {
+                let start = over(placed.start, work.latest_start);
+                start.max(over(placed.end, work.latest_end))
+            })
+        }
+    }
+}
+// }}}
+
 // score {{{
 /// Scores a finished pass against the earliest schedule
 pub fn score(ctx: &Context, earliest: &Pass, pass: &Pass) -> Score {
     let net = ctx.net;
     let mut objective = Objective::default();
     let (mut missed, mut goals): (Vec<Late>, Vec<(i64, Late)>) = (Vec::new(), Vec::new());
-    let over = |at: Day, limit: Option<Day>| {
-        limit.map_or(0, |l| (i64::from(at.0) - i64::from(l.0)).max(0))
-    };
     for id in net.arc_ids() {
         let i = id.0 as usize;
         let no_room = pass.failed[i] == Some(UnscheduledReason::NoCapacity);
         objective.unplaced += i64::from(no_room);
-        let (Some(work), Some(placed)) = (net.arc(id).work(), &pass.placed[i]) else {
-            continue;
-        };
-        if !work.is_open() {
-            continue;
-        }
-        objective.ends += i64::from(placed.end.0);
-        for days in [
-            over(placed.start, work.latest_start),
-            over(placed.end, work.latest_end),
-        ] {
-            if days > 0 {
-                objective.missed_days += days;
-                objective.missed += 1;
-                missed.push(Late::Arc(id));
-            }
+        let open = net.arc(id).work().is_some_and(|w| w.is_open());
+        if let Some(placed) = pass.placed[i].as_ref().filter(|_| open) {
+            objective.ends += i64::from(placed.end.0);
         }
     }
-    for (i, vertex) in net.vertices.iter().enumerate() {
-        let days = pass.time[i].map_or(0, |at| over(at, vertex.deadline));
+    let arcs = net.arc_ids().map(Late::Arc);
+    let vertices = (0..net.vertices.len() as u32).map(|i| Late::Vertex(VertexId(i)));
+    for late in arcs.chain(vertices) {
+        let days = overdue(ctx, pass, late);
         if days > 0 {
             objective.missed_days += days;
             objective.missed += 1;
-            missed.push(Late::Vertex(VertexId(i as u32)));
+            missed.push(late);
         }
     }
     for plan in &net.plans {

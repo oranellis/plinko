@@ -15,6 +15,7 @@ use crate::{
     scheduler::{
         arc::ArcId,
         network::Network,
+        objective::Late,
         pass::{Context, Overrides},
         state::TenantVolatileState,
         table::{RowKey, Table},
@@ -54,14 +55,16 @@ pub struct Solved {
 }
 
 // Solved supporting types {{{
-/// Contested choices that a search found better made the other way, by the ids of what they
-/// are about so they outlive the run
+/// What a search found better done differently, by the ids of what it is about so it outlives
+/// the run
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Hints {
     /// The first waits until the second is placed
     pub after: Vec<(Item, Item)>,
     /// The person a worker of a task resolves to
     pub people: Vec<(Item, Worker, Uuid)>,
+    /// The hard date of a node counts as this many days sooner when deciding what goes first
+    pub sooner: Vec<(Item, i64)>,
 }
 
 /// A node of a plan
@@ -150,6 +153,13 @@ fn overrides(net: &Network, table: &Table, hints: &Hints) -> Overrides {
             overrides.people.insert((arc, slot), row);
         }
     }
+    for (item, days) in &hints.sooner {
+        let plan = net.plans.iter().position(|p| p.id == item.0);
+        let lowered = plan.and_then(|p| net.lowered.get(&(p as u32, item.1)));
+        // the date of work is on its arc, any other is on the vertex the node ends at
+        let late = lowered.map(|l| l.arc.map_or(Late::Vertex(l.end), Late::Arc));
+        overrides.sooner.extend(late.map(|late| (late, *days)));
+    }
     overrides
 }
 
@@ -167,6 +177,24 @@ fn hints(net: &Network, table: &Table, overrides: &Overrides) -> Hints {
             hints.people.push((item_of(net, *arc), worker, user));
         }
     }
+    for (late, days) in &overrides.sooner {
+        let item = match late {
+            Late::Arc(arc) => Some(item_of(net, *arc)),
+            Late::Vertex(v) => {
+                let mut ending = net
+                    .lowered
+                    .iter()
+                    .filter(|(_, l)| l.end == *v && l.arc.is_none());
+                ending
+                    .next()
+                    .map(|((plan, node), _)| (net.plans[*plan as usize].id, *node))
+            }
+        };
+        hints.sooner.extend(item.map(|item| (item, *days)));
+    }
+    hints
+        .sooner
+        .sort_by_key(|(item, days)| (item.0, item.1.id(), *days));
     hints
         .after
         .sort_by_key(|(a, b)| (a.0, a.1.id(), b.0, b.1.id()));

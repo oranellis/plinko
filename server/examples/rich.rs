@@ -1,7 +1,9 @@
 //! Scores the scheduler on larger made up tenants with part time people, half days, task
 //! affinities, tags and user groups, and exports them for an exact solver:
 //! `cargo run --release --example rich [seeds] [plans] [tasks per plan] [people]`. `NODATES=1` leaves
-//! out the hard dates.
+//! out the hard dates. The hard dates come from the scheduler's own schedule without them, so two
+//! versions of the scheduler only solve the same thing with `DATES=dir`, which writes the dates
+//! of each tenant there the first time and reads them back after.
 //! `EXPORT=dir` writes each tenant and the scheduler's schedule as JSON, `VALIDATE=dir` reads
 //! `solution_<plans>_<seed>.json` (every task's start and person) and checks the scheduler
 //! accepts it exactly: every task is fixed on that day with that person and must land there.
@@ -621,6 +623,13 @@ fn main() {
         }
         if std::env::var("NODATES").is_ok() {
             dates.clear();
+        }
+        if let Ok(dir) = std::env::var("DATES") {
+            let path = format!("{dir}/dates_{}_{}_{}.json", opts.plans, opts.per_plan, seed);
+            match std::fs::read_to_string(&path) {
+                Ok(text) => dates = serde_json::from_str(&text).unwrap(),
+                Err(_) => std::fs::write(&path, serde_json::to_string(&dates).unwrap()).unwrap(),
+            }
         }
         let mut world = make(&opts, &dates, &HashMap::new());
         let started = Instant::now();

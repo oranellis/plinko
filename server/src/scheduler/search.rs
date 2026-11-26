@@ -6,9 +6,10 @@ use std::{
 
 use crate::scheduler::{
     arc::ArcId,
+    bound::hard_starts,
     justify::justify,
     network::VertexId,
-    objective::{Late, Score, score},
+    objective::{Late, Score, overdue, score},
     pass::{Context, Overrides, Pass, Rules},
     table::RowId,
 };
@@ -60,8 +61,9 @@ struct Trial {
 // }}}
 
 // search {{{
-/// The best schedule found by placing everything, then making contested choices the other way
-/// where that is better, starting from the overrides of the last search if they still help
+/// The best schedule found by placing everything, then in rounds trying contested choices the
+/// other way and missed hard dates as more pressing, keeping the best of a round if it is
+/// better. It starts from the overrides of the last search if they still help.
 pub fn search(ctx: &Context, earliest: &Pass, hints: Overrides) -> Found {
     let stop = Instant::now() + TIME_LIMIT;
     let contended = ctx.net.arc_ids().filter(|a| ctx.contended(*a)).count();
@@ -69,6 +71,7 @@ pub fn search(ctx: &Context, earliest: &Pass, hints: Overrides) -> Found {
     let plain = trial(ctx, earliest, Overrides::default(), None);
     let mut spent = plain.cost;
     let mut base = plain;
+    // what the last search found is only kept if it still gives something better
     if hints != Overrides::default() {
         let hinted = trial(ctx, earliest, hints, None);
         spent += hinted.cost;
@@ -78,25 +81,31 @@ pub fn search(ctx: &Context, earliest: &Pass, hints: Overrides) -> Found {
     }
     let mut tried: HashSet<Flip> = HashSet::new();
     while spent < budget && Instant::now() < stop {
+        // missed dates made more pressing is one thing to try, flips are the rest
+        let sooner = sooner(ctx, &base);
         let flips: Vec<Flip> = flips(ctx, &base)
             .into_iter()
             .filter(|flip| !tried.contains(flip))
-            .take(TRIED_TOGETHER)
+            .take(TRIED_TOGETHER - usize::from(sooner.is_some()))
             .collect();
-        if flips.is_empty() {
-            break;
-        }
         tried.extend(flips.iter().copied());
         let base_ref = &base;
+        let flipped = flips.into_iter().map(|flip| {
+            let overrides = with(base_ref.overrides.clone(), flip);
+            (overrides, Some((base_ref, flip)))
+        });
+        let moves: Vec<_> = sooner
+            .map(|o| (o, None))
+            .into_iter()
+            .chain(flipped)
+            .collect();
+        if moves.is_empty() {
+            break;
+        }
         let trials: Vec<Trial> = std::thread::scope(|scope| {
-            let running: Vec<_> = flips
-                .iter()
-                .map(|flip| {
-                    scope.spawn(move || {
-                        let overrides = with(base_ref.overrides.clone(), *flip);
-                        trial(ctx, earliest, overrides, Some((base_ref, *flip)))
-                    })
-                })
+            let running: Vec<_> = moves
+                .into_iter()
+                .map(|(overrides, from)| scope.spawn(move || trial(ctx, earliest, overrides, from)))
                 .collect();
             let joined = running.into_iter();
             joined
@@ -126,8 +135,11 @@ fn trial(
     overrides: Overrides,
     from: Option<(&Trial, Flip)>,
 ) -> Trial {
+    let pressing = !overrides.sooner.is_empty();
+    let hard = pressing.then(|| hard_starts(ctx, earliest, &overrides.sooner));
     let rules = Rules {
         overrides: Some(&overrides),
+        hard: hard.as_deref(),
         ..Rules::default()
     };
     let resumed = from.and_then(|(base, flip)| {
@@ -164,6 +176,18 @@ fn trial(
         score,
         cost,
     }
+}
+
+/// The overrides of a schedule with every hard date it misses counted sooner by the days it is
+/// missed by, on top of what it already is, so the work that leads to it goes earlier. `None`
+/// if it misses none.
+fn sooner(ctx: &Context, trial: &Trial) -> Option<Overrides> {
+    (trial.score.objective.missed > 0).then_some(())?;
+    let mut overrides = trial.overrides.clone();
+    for late in &trial.score.late {
+        *overrides.sooner.entry(*late).or_insert(0) += overdue(ctx, &trial.best, *late);
+    }
+    Some(overrides)
 }
 
 fn with(mut overrides: Overrides, flip: Flip) -> Overrides {
