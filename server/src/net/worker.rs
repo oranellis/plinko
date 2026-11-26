@@ -1,7 +1,8 @@
 //! Scheduling runs on its own thread with its own copy of the tenant, kept up to date with the
 //! same updates. Updates that arrive while it works are applied together before the next run, so
 //! a busy tenant is scheduled as often as it can be and no more. Every run schedules everything,
-//! starting from what the last one found.
+//! starting from what the last one found. What a run decides goes back to the actor to be saved,
+//! and a tenant whose last update already has a saved solution starts from that with no run.
 
 // modules {{{
 use std::sync::mpsc::{Receiver, Sender};
@@ -11,7 +12,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::{
     multitenancy::{tenant::Tenant, tenant_update::TenantUpdate},
     net::actor::Command,
-    scheduler,
+    scheduler::{self, solution::Solution},
 };
 // }}}
 
@@ -35,13 +36,38 @@ impl Scheduler {
 // }}}
 
 // start {{{
-pub fn start(mut tenant: Tenant, mut seq: u64, results: UnboundedSender<Command>) -> Scheduler {
+/// Starts scheduling `tenant`, which is as of update `seq`. `saved` is the last solution saved
+/// for it and the update that was for.
+pub fn start(
+    mut tenant: Tenant,
+    mut seq: u64,
+    saved: Option<(u64, Solution)>,
+    results: UnboundedSender<Command>,
+) -> Scheduler {
     let (sender, receiver): (Sender<Applied>, Receiver<Applied>) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
+        let mut saved = saved;
         loop {
-            scheduler::schedule(&mut tenant);
+            // nothing new is decided for a tenant that has not changed since its solution
+            let solution = match saved.take() {
+                Some((at, solution)) if at == seq => {
+                    scheduler::restore(&mut tenant, &solution);
+                    None
+                }
+                stale => {
+                    if let Some((_, solution)) = stale {
+                        tenant.store_hints(solution.hints);
+                    }
+                    Some(scheduler::schedule(&mut tenant))
+                }
+            };
             let schedule = tenant.schedule().cloned().unwrap_or_default();
-            if results.send(Command::Scheduled { seq, schedule }).is_err() {
+            let scheduled = Command::Scheduled {
+                seq,
+                schedule,
+                solution,
+            };
+            if results.send(scheduled).is_err() {
                 return;
             }
             let Ok(first) = receiver.recv() else {

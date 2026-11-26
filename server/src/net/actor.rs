@@ -17,7 +17,7 @@ use crate::{
     },
     net::worker::{self, Applied},
     protocol::{Created, Profile, ServerMessage},
-    scheduler::state::TenantVolatileState,
+    scheduler::{solution::Solution, state::TenantVolatileState},
     store::Store,
 };
 // }}}
@@ -45,10 +45,12 @@ pub enum Command {
     },
     /// Time to see whether the day has changed
     Tick,
-    /// From the scheduling thread
+    /// From the scheduling thread: the schedule as of update `seq`, and what was decided to
+    /// get it unless that is already saved
     Scheduled {
         seq: u64,
         schedule: TenantVolatileState,
+        solution: Option<Solution>,
     },
 }
 
@@ -114,8 +116,9 @@ struct Actor {
 pub fn start(store: Arc<Store>) -> crate::common::error::PlinkoResult<Handle> {
     let (tenant, seq) = store.load()?;
     let (scheduler_copy, _) = store.load()?;
+    let saved = store.schedule_at(seq)?;
     let (commands, receiver) = mpsc::unbounded_channel();
-    let scheduler = worker::start(scheduler_copy, seq, commands.clone());
+    let scheduler = worker::start(scheduler_copy, seq, saved, commands.clone());
     let actor = Actor {
         tenant,
         store: store.clone(),
@@ -175,7 +178,11 @@ impl Actor {
                     let _ = reply.send(profile);
                 }
                 Command::Tick => self.tick(),
-                Command::Scheduled { seq, schedule } => self.scheduled(seq, schedule),
+                Command::Scheduled {
+                    seq,
+                    schedule,
+                    solution,
+                } => self.scheduled(seq, schedule, solution),
             }
         }
     }
@@ -299,7 +306,10 @@ impl Actor {
         }
     }
 
-    fn scheduled(&mut self, seq: u64, schedule: TenantVolatileState) {
+    fn scheduled(&mut self, seq: u64, schedule: TenantVolatileState, solution: Option<Solution>) {
+        if let Some(Err(error)) = solution.map(|s| self.store.save_schedule(seq, &s)) {
+            eprintln!("the schedule of update {seq} was not saved: {error}");
+        }
         self.schedule = Some((seq, schedule));
         for connection in self.connections.values() {
             self.send_schedule(connection);
