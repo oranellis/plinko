@@ -19,7 +19,7 @@ use plinko::{
         plan::{NewPlan, PlanSchedulerDataPatch},
         plan_update::PlanUpdate,
     },
-    scheduler::{Hints, solve, state::TenantVolatileState},
+    scheduler::{Hints, expand, solve, state::TenantVolatileState},
 };
 use uuid::Uuid;
 // }}}
@@ -419,7 +419,12 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
                 plans.target(plan, end);
             }
         }
-        let state = plans.solve();
+        let solved = solve(&mut plans.tenant, &Hints::default());
+        // what was decided gives the same schedule back without searching
+        let expanded = expand(&mut plans.tenant, &solved.solution);
+        assert_eq!(expanded.state, solved.state);
+        assert_eq!(expanded.solution, solved.solution);
+        let state = solved.state;
         for schedule in state.users.values() {
             for day in schedule.assignments.keys() {
                 assert!(schedule.booked_on(*day) <= 8, "overbooked on {day}");

@@ -4,7 +4,7 @@
 //! and the best schedule is kept. See `docs/scheduler.md`.
 
 // modules {{{
-use chrono::{Days, NaiveDate};
+use chrono::Days;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -16,7 +16,8 @@ use crate::{
         arc::ArcId,
         network::Network,
         objective::Late,
-        pass::{Context, Overrides},
+        pass::{Context, Overrides, Pass, Rules},
+        solution::Solution,
         state::TenantVolatileState,
         table::{RowKey, Table},
     },
@@ -34,6 +35,7 @@ pub mod network;
 pub mod objective;
 pub mod pass;
 pub mod search;
+pub mod solution;
 pub mod state;
 pub mod status;
 pub mod table;
@@ -47,11 +49,11 @@ const HORIZON_FACTOR: u32 = 4;
 const HORIZON: (u32, u32) = (120, 3650);
 // }}}
 
-/// A schedule and the choices worth starting the next search from
+/// A schedule and what the search decided to get it
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Solved {
     pub state: TenantVolatileState,
-    pub hints: Hints,
+    pub solution: Solution,
 }
 
 // Solved supporting types {{{
@@ -74,18 +76,51 @@ pub type Item = (ShortId, PlanNode);
 // schedule {{{
 /// Schedules the tenant and keeps the result on it, for `Tenant::schedule`. The search starts
 /// from the hints the last schedule left.
-pub fn schedule(tenant: &mut Tenant) {
+pub fn schedule(tenant: &mut Tenant) -> Solution {
     let hints = tenant.hints().clone();
     let solved = solve(tenant, &hints);
     tenant.store_schedule(solved.state);
-    tenant.store_hints(solved.hints);
+    tenant.store_hints(solved.solution.hints.clone());
+    solved.solution
+}
+
+/// Puts the schedule a stored solution gives on the tenant, without searching
+pub fn restore(tenant: &mut Tenant, solution: &Solution) {
+    let solved = expand(tenant, solution);
+    tenant.store_schedule(solved.state);
+    tenant.store_hints(solved.solution.hints);
 }
 // }}}
 
 // solve {{{
-/// Schedules the tenant, starting from the hints of the last schedule. If work runs past the
-/// days looked at, more are looked at.
+/// Schedules the tenant, starting from the hints of the last schedule
 pub fn solve(tenant: &mut Tenant, hints: &Hints) -> Solved {
+    over(tenant, |ctx, earliest| {
+        let found = search::search(ctx, earliest, overrides(ctx.net, ctx.table, hints));
+        let hints = self::hints(ctx.net, ctx.table, &found.overrides);
+        (found.pass, hints)
+    })
+}
+
+/// The schedule a solution gives for the tenant it was found for. Every task is put where the
+/// solution has it and the rest follows, so nothing is searched for and the result is the same
+/// every time.
+pub fn expand(tenant: &mut Tenant, solution: &Solution) -> Solved {
+    over(tenant, |ctx, _| {
+        let overrides = solution.overrides(ctx.net, ctx.table);
+        let rules = Rules {
+            overrides: Some(&overrides),
+            ..Rules::default()
+        };
+        let mut pass = Pass::new(ctx, &rules);
+        pass.run(ctx, &rules, None);
+        (pass, solution.hints.clone())
+    })
+}
+
+/// Builds what a pass runs on and writes the schedule of the pass `place` gives. If work runs
+/// past the days looked at, more are looked at.
+fn over(tenant: &mut Tenant, place: impl Fn(&Context, &Pass) -> (Pass, Hints)) -> Solved {
     let today = tenant.today();
     let tasks = || tenant.plans().values().flat_map(|p| p.tasks().values());
     let history = tasks().filter_map(|t| t.persistent_state().actual_start_date);
@@ -97,32 +132,25 @@ pub fn solve(tenant: &mut Tenant, hints: &Hints) -> Solved {
     let work: u32 = tasks().map(|t| t.duration()).chain(waits).sum();
     let mut ahead = (work * HORIZON_FACTOR).clamp(HORIZON.0, HORIZON.1);
     loop {
-        let (solved, overflow) = solve_over(tenant, hints, origin, ahead);
-        if !overflow || ahead >= HORIZON.1 {
-            return solved;
+        let until = today + Days::new(u64::from(ahead));
+        tenant.refresh_calendars(origin, until);
+        let days = (until - origin).num_days() as usize + 1;
+        let mut table = Table::from_tenant(tenant, origin, days);
+        let net = lower::lower(tenant, &mut table);
+        let mut ctx = Context::new(&net, &table);
+        let earliest = bound::earliest(&ctx);
+        bound::prioritise(&mut ctx, &earliest);
+        let (pass, hints) = place(&ctx, &earliest);
+        // whether work ran out of days that more days could give it
+        if (pass.overflow || earliest.overflow) && ahead < HORIZON.1 {
+            ahead = (ahead * 2).min(HORIZON.1);
+            continue;
         }
-        ahead = (ahead * 2).min(HORIZON.1);
+        return Solved {
+            state: write::write(&ctx, tenant, &earliest, &pass),
+            solution: Solution::of(&ctx, &pass, hints),
+        };
     }
-}
-
-/// Schedules over the days from `origin` to `ahead` days past today, and says whether work ran
-/// out of days that more days could give it
-fn solve_over(tenant: &mut Tenant, hints: &Hints, origin: NaiveDate, ahead: u32) -> (Solved, bool) {
-    let until = tenant.today() + Days::new(u64::from(ahead));
-    tenant.refresh_calendars(origin, until);
-    let tenant = &*tenant;
-    let days = (until - origin).num_days() as usize + 1;
-    let mut table = Table::from_tenant(tenant, origin, days);
-    let net = lower::lower(tenant, &mut table);
-    let mut ctx = Context::new(&net, &table);
-    let earliest = bound::earliest(&ctx);
-    bound::prioritise(&mut ctx, &earliest);
-    let found = search::search(&ctx, &earliest, overrides(&net, &table, hints));
-    let solved = Solved {
-        state: write::write(&ctx, tenant, &earliest, &found.pass),
-        hints: self::hints(&net, &table, &found.overrides),
-    };
-    (solved, found.pass.overflow || earliest.overflow)
 }
 // }}}
 
