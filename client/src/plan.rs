@@ -16,7 +16,7 @@ use crate::{
     chart_edit,
     context::ContextBar,
     data::DataWindow,
-    draft::{Draft, Drafting},
+    draft::{Draft, Drafting, Pick},
     editor::ItemEditor,
     format,
     gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene, shift},
@@ -420,6 +420,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                             group,
                                             item: (!d.new).then_some(d.node),
                                             days,
+                                            pick: match d.pick {
+                                                Some(Pick::Before) => Some(false),
+                                                Some(Pick::After) => Some(true),
+                                                _ => None,
+                                            },
                                         }
                                     })
                                 }))

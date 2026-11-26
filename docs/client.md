@@ -102,9 +102,9 @@ A new item has a card over the bottom of the chart with its shape (`card.rs`):
 - Middle grip: drop on a group, on an item to join its group, or on blank space for the top level; or click it and then click.
 - Right edge: the day count. Drag sideways to change it (slower under six days), click to type it. The shape never changes length.
 
-On touch nothing on the card drags, so the chart still pans: handles are tapped and days typed. Escape or a second click puts a lit handle out.
+On touch nothing on the card drags, so the chart still pans: handles are tapped and days typed. A second click puts a lit handle out.
 
-An item in the plan has no card: while its pane is open its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). The days it really ran are set in the pane.
+An item in the plan has no card: while its pane is open its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). Clicking one of its dots, without dragging, fills it: clicks on other items then link or unlink them until it is clicked again. The days it really ran are set in the pane.
 
 ### Shift editing
 

@@ -88,6 +88,8 @@ pub struct Editing {
     pub resize: Callback<(PlanNode, i32)>,
     /// The days an item runs for
     pub duration: Callback<PlanNode, u32>,
+    /// `(node, right)`: a click on the dot off an edge of the item, with no drag
+    pub pick: Callback<(PlanNode, bool)>,
     /// The links along the longest chain between two items
     pub chain: Callback<(PlanNode, PlanNode), Vec<Link>>,
 }
@@ -106,6 +108,8 @@ pub struct Overlay {
     pub drag: Option<DragView>,
     /// What to say above an item, when nothing is dragged
     pub note: Option<(Rect, String)>,
+    /// The dot that clicks on items answer to: the right one, or the left
+    pub picked: Option<bool>,
 }
 
 pub enum DragView {
@@ -212,8 +216,14 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
             Handle::Move => grip(ctx, *x, *y, lit),
             Handle::Link { right } => {
                 // a dot is grey until it is taken, then it takes the colour of its direction
-                ctx.set_fill_style_str(DARK);
-                ctx.set_stroke_style_str(if lit { direction(*right) } else { LIGHT });
+                // and the one that is picked is filled with it
+                let picked = overlay.picked == Some(*right);
+                ctx.set_fill_style_str(if picked { direction(*right) } else { DARK });
+                ctx.set_stroke_style_str(if lit || picked {
+                    direction(*right)
+                } else {
+                    LIGHT
+                });
                 ctx.set_line_width(3.0);
                 let _ = ctx.arc(*x, *y, 5.5, 0.0, std::f64::consts::TAU);
                 ctx.fill();

@@ -51,6 +51,8 @@ pub struct Staged {
     pub item: Option<Mark>,
     /// Its days when they have changed, as `+2 (6d)`
     pub days: Option<String>,
+    /// The dot of the item that clicks on others answer to: the right one, or the left
+    pub pick: Option<bool>,
 }
 
 #[derive(Default)]
@@ -525,6 +527,7 @@ pub fn Gantt(
                     pointer: at,
                     drag: view,
                     note,
+                    picked: staged.as_ref().and_then(|s| s.pick),
                 },
             );
         }
@@ -732,7 +735,10 @@ pub fn Gantt(
             drag.set(None);
             let (from_x, from_y) = grabbed_at.get_value();
             if (from_x - x).hypot(from_y - y) < TAP_MOUSE {
-                tap(x, y, ev.shift_key());
+                match done {
+                    Drag::Link { node, right } => editing.pick.run((node, right)),
+                    _ => tap(x, y, ev.shift_key()),
+                }
                 return;
             }
             let over = hit(x, y).map(|(m, _)| m);

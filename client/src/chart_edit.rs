@@ -225,6 +225,8 @@ pub fn editing(plan: ShortId) -> Editing {
         })
     });
     Editing {
+        // only an item being edited has dots to click, see `staging`
+        pick: Callback::new(|_| ()),
         dated,
         shift_dates,
         link,
@@ -306,7 +308,19 @@ pub fn staging(
         let staged = draft.with_untracked(|d| d.as_ref().filter(|_| ours(node))?.duration);
         staged.unwrap_or_else(|| live.duration.run(node))
     });
+    // a click on a dot of the item makes clicks on others link and unlink them, another ends it
+    let pick = Callback::new(move |(node, right): (PlanNode, bool)| {
+        if ours(node) {
+            let side = if right { Pick::After } else { Pick::Before };
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick = Some(side).filter(|s| d.pick != Some(*s));
+                }
+            });
+        }
+    });
     Editing {
+        pick,
         link,
         unlink,
         moved,
