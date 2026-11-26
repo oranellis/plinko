@@ -168,6 +168,13 @@ impl Context<'_> {
                 };
                 let (name, span) = match node {
                     PlanNode::PlanBuffer(id) => self.buffer(id, span),
+                    // a delay with no name is told from a buffer by its shape, so only its days
+                    PlanNode::PlanDelay(id) => match self.plan.plan_delays().get(&id) {
+                        Some(delay) if delay.name().is_none() => {
+                            (format!("{}d", delay.duration()), span)
+                        }
+                        _ => (node_name(self.plan, node), span),
+                    },
                     _ => (node_name(self.plan, node), span),
                 };
                 Some(Entry {
