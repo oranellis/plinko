@@ -47,8 +47,9 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
 
 ## Storage and auth
 
-- One SQLite file per tenant, `data/<name>/tenant.db`, holds the update log, snapshots (every N updates, replay
-  from the last), credentials and sessions. Users are already tenant state, so there is no
+- One SQLite file per tenant, `data/<name>/tenant.db`, holds the update log, a snapshot of the tenant for each
+  day (loading replays from the last), what the scheduler decided after updates, credentials and
+  sessions. Users are already tenant state, so there is no
   global user table.
 - The log holds only staged updates, no secrets. Password hashes are in a separate `credentials`
   table keyed by user id, never in updates or snapshots.
