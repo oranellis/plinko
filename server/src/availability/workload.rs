@@ -11,6 +11,9 @@ pub struct Workload {
 
 // impl Workload {{{
 impl Workload {
+    pub const MIN: Workload = Workload { value: 0 };
+    pub const MAX: Workload = Workload { value: 8 };
+
     pub fn new(value: u8) -> PlinkoResult<Self> {
         if value <= 8 {
             Ok(Self { value })
