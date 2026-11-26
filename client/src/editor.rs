@@ -14,6 +14,7 @@ use plinko::{
         milestone::MilestonePatch,
         parent::Parent,
         plan_buffer::PlanBufferPatch,
+        plan_delay::PlanDelayPatch,
         task::{Assignee, PersistentState, Status, Task, TaskPatch, Worker},
         task_group::TaskGroupPatch,
     },
@@ -85,7 +86,7 @@ pub fn ItemEditor(
                 PlanNode::Task(id) => view! { <TaskForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
                 PlanNode::Milestone(id) => view! { <MilestoneForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
                 PlanNode::PlanBuffer(id) => view! { <BufferForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
-                PlanNode::PlanDelay(_) => ().into_any(),
+                PlanNode::PlanDelay(id) => view! { <DelayForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
                 PlanNode::TaskGroup(id) => view! { <GroupForm plan=plan id=id on_close=on_close on_cancel=on_cancel remove=remove /> }.into_any(),
             }}
         </div>
@@ -842,6 +843,61 @@ fn BufferForm(
                         }}
                     </button>
                 </div>
+            </Field>
+            <ParentPicker plan=plan me=node parent=parent />
+            <Dependencies plan=plan me=node deps=deps />
+            <Dependents plan=plan me=node deps=dependents />
+            <Actions on_cancel=on_cancel on_delete=remove />
+        </form>
+    }
+    .into_any()
+}
+
+#[component]
+fn DelayForm(
+    plan: ShortId,
+    id: Uuid,
+    on_close: Callback<()>,
+    on_cancel: Callback<()>,
+    remove: Callback<()>,
+) -> impl IntoView {
+    let sync = use_sync();
+    let Some(delay) = snapshot(plan, |p| p.plan_delays().get(&id).cloned()) else {
+        return view! { <p>"This delay has been removed."</p> }.into_any();
+    };
+    let node = PlanNode::PlanDelay(id);
+    let name = RwSignal::new(delay.name().unwrap_or_default().to_string());
+    let duration = RwSignal::new(i64::from(*delay.duration()));
+    let parent = RwSignal::new(delay.parent());
+    let deps = RwSignal::new(delay.dependencies().clone());
+    let original = StoredValue::new(delay);
+    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
+    let dependents = RwSignal::new(was.clone());
+    let save = move |_| {
+        let old = original.get_value();
+        // a delay with no name is shown by how long it is
+        let named = Some(name.get_untracked()).filter(|n| !n.trim().is_empty());
+        let patch = PlanDelayPatch {
+            id,
+            name: changed(&old.name().map(str::to_string), named),
+            parent: changed(&old.parent(), parent.get_untracked()),
+            dependencies: changed(old.dependencies(), deps.get_untracked()),
+            duration: changed(
+                old.duration(),
+                duration.get_untracked().clamp(0, 3650) as u32,
+            ),
+        };
+        sync.plan(plan, PlanUpdate::PlanDelay(Crud::Update(patch)));
+        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
+        on_close.run(());
+    };
+    view! {
+        <form class="form" on:submit=move |ev| { ev.prevent_default(); save(()); }>
+            <Field label="Name (optional)">
+                <Text value=name on_input=Callback::new(move |v| name.set(v)) />
+            </Field>
+            <Field label="Duration (calendar days)">
+                <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=0 max=3650 />
             </Field>
             <ParentPicker plan=plan me=node parent=parent />
             <Dependencies plan=plan me=node deps=deps />
