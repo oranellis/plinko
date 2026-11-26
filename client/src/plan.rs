@@ -1,32 +1,23 @@
 //! One plan: its toolbar of icons, its Gantt chart or list, and the window for the item that is open.
 
 // modules {{{
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use leptos::prelude::*;
 use plinko::{
-    availability::workload::Workload,
-    common::{crud::Crud, short_id::ShortId},
-    planner::items::{
-        dependency::PlanNode,
-        milestone::NewMilestone,
-        parent::Parent,
-        plan_buffer::NewPlanBuffer,
-        plan_delay::{NewPlanDelay, PlanDelayPatch},
-        task::{NewTask, TaskPatch, Worker},
-        task_group::NewTaskGroup,
-    },
-    planner::plan_update::PlanUpdate,
-    protocol::Created,
+    common::short_id::ShortId,
+    planner::items::{dependency::PlanNode, parent::Parent},
     scheduler::state::PlanVolatileState,
 };
 use uuid::Uuid;
 
 use crate::{
+    card::{self, Card},
     chart_edit,
     context::ContextBar,
     data::DataWindow,
-    editor::{ItemEditor, remove_item},
+    draft::{Draft, Drafting},
+    editor::ItemEditor,
     format,
     gantt::{self, Gantt, arrange::Mark, layout::Viewport, scene},
     guard::{ConfirmLeave, Guard},
@@ -38,28 +29,8 @@ use crate::{
 };
 // }}}
 
-// task_patch {{{
-fn task_patch(id: Uuid) -> TaskPatch {
-    TaskPatch {
-        id,
-        name: None,
-        parent: None,
-        duration: None,
-        time_constraint: None,
-        dependencies: None,
-        allocations: None,
-        affinities: None,
-        actual_workers: None,
-        persistent_state: None,
-    }
-}
-// }}}
-
 // types {{{
-/// Sets up a new item once it exists: what it depends on to begin with, and for a task who does it
-type Anchor =
-    fn(Uuid, ShortId, &crate::sync::Sync, Option<PlanNode>, Box<dyn FnOnce(Option<Created>)>);
-
+/// The kinds of item the add menu makes
 #[derive(Clone, Copy)]
 enum Kind {
     Task,
@@ -132,13 +103,23 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 .unwrap_or_default()
         })
     });
+    // an item being added, which is not in the plan until it is saved, and the group it goes in
+    let adding = RwSignal::new(None::<(PlanNode, Parent)>);
     let node = Memo::new(move |_| {
+        if let Some((node, _)) = adding.get() {
+            return Some(node);
+        }
         let id = open.get()?;
         sync.tenant.with(|t| {
             let p = t.as_ref()?.plans().get(&plan)?;
             model::nodes(p).into_iter().find(|n| n.id() == id)
         })
     });
+    // what the card and the chart change of the item whose pane is open, until it is saved
+    let draft = RwSignal::new(None::<Draft>);
+    provide_context(Drafting(draft));
+    let probe: card::Probe = RwSignal::new(None);
+    let spot = RwSignal::new(None::<PlanNode>);
     let today = Signal::derive(move || {
         sync.tenant
             .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
@@ -216,39 +197,69 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             Some((left, top))
         })
     });
-    let fresh = Fresh::new();
-    Effect::new(move |_| fresh.only(open.get()));
-    let go = move |tab: PlanTab, open: Option<Uuid>| navigate(Route::Plan(plan, tab, open));
+    let go = move |tab: PlanTab, open: Option<Uuid>| {
+        adding.set(None);
+        navigate(Route::Plan(plan, tab, open))
+    };
     let guard = Guard::new();
+    // a click while a handle of the card is lit is the card's: it links, unlinks or places the
+    // item being edited, and is nothing else. Gives whether it was.
+    let card_click = move |clicked: Option<PlanNode>| {
+        let (mut used, mut said) = (false, None);
+        sync.tenant.with_untracked(|t| {
+            let Some(p) = t.as_ref().and_then(|t| t.plans().get(&plan)) else {
+                return;
+            };
+            draft.update(|d| {
+                if let Some(d) = d {
+                    match card::picked(p, d, clicked) {
+                        Ok(card) => used = card,
+                        Err(why) => (used, said) = (true, Some(why)),
+                    }
+                }
+            });
+        });
+        if used {
+            guard.dirtied();
+        }
+        if said.is_some() {
+            sync.notice.set(said);
+        }
+        used
+    };
     // an item is opened or the pane closed only after asking about changes not yet saved
     let on_open = Callback::new(move |node: PlanNode| {
+        if card_click(Some(node)) {
+            return;
+        }
         guard.then(Callback::new(move |()| {
             go(tab.get_untracked(), Some(node.id()))
         }));
     });
     // a tap on the chart selects, and with an edit pane open that moves to the item tapped
     let on_tap = Callback::new(move |node: PlanNode| {
+        if card_click(Some(node)) {
+            return;
+        }
         selected.set(Some(node));
         if tab.get_untracked() == PlanTab::Gantt && open_node_exists.get_untracked() {
             on_open.run(node);
         }
     });
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
-    // leaving a new item that was never saved takes it away again, as Cancel does
-    let leave = Callback::new(move |()| {
-        let item = node.get_untracked();
-        if let Some(item) = item.filter(|i| fresh.dropped(sync, plan, *i)) {
-            remove_item(sync, plan, item);
-        }
-        on_close.run(());
-    });
     let on_blank = Callback::new(move |()| {
+        if card_click(None) {
+            return;
+        }
         selected.set(None);
         if node.get_untracked().is_some() {
-            guard.then(leave);
+            guard.then(on_close);
         }
     });
     let on_toggle = Callback::new(move |node: PlanNode| {
+        if card_click(Some(node)) {
+            return;
+        }
         collapsed.update(|c| {
             if !c.remove(&node.id()) {
                 c.insert(node.id());
@@ -279,134 +290,29 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         }
     });
 
-    // new items go in the group that is open, or beside the item that is
+    // a new item starts as a draft on the card, in the group that is open or beside the item
+    // that is, and is only added to the plan when it is saved
     let add = move |kind: Kind| {
-        let parent = node
-            .get_untracked()
-            .and_then(|n| match n {
-                PlanNode::TaskGroup(id) => Some(Parent::Node(id)),
-                other => sync.tenant.with_untracked(|t| {
-                    let p = t.as_ref()?.plans().get(&plan)?;
-                    Some(match other {
-                        PlanNode::Task(id) => p.tasks().get(&id)?.parent(),
-                        PlanNode::Milestone(id) => p.milestones().get(&id)?.parent(),
-                        PlanNode::PlanBuffer(id) => p.plan_buffers().get(&id)?.parent(),
-                        PlanNode::PlanDelay(id) => p.plan_delays().get(&id)?.parent(),
-                        PlanNode::TaskGroup(_) => unreachable!("a group is handled above"),
-                    })
-                }),
-            })
-            .unwrap_or(Parent::Plan);
-        let nil = Uuid::nil();
-        let (update, depends): (PlanUpdate, Anchor) = match kind {
-            Kind::Task => (
-                PlanUpdate::Task(Crud::Add(NewTask {
-                    id: nil,
-                    name: "New task".to_string(),
-                    parent,
-                })),
-                |id, plan, sync, start, then| {
-                    // the person creating it does it for half a day by default
-                    let me = sync.me.get_untracked().map(|m| Worker::User(m.id));
-                    let patch = TaskPatch {
-                        dependencies: start.map(|d| vec![d]),
-                        allocations: me.map(|who| HashMap::from([(who, Workload::new_const(4))])),
-                        ..task_patch(id)
-                    };
-                    sync.plan_then(plan, PlanUpdate::Task(Crud::Update(patch)), then);
-                },
-            ),
-            Kind::Milestone => (
-                PlanUpdate::Milestone(Crud::Add(NewMilestone {
-                    id: nil,
-                    name: "New milestone".to_string(),
-                    parent,
-                })),
-                |id, plan, sync, start, then| {
-                    let patch = plinko::planner::items::milestone::MilestonePatch {
-                        id,
-                        name: None,
-                        parent: None,
-                        time_constraint: None,
-                        dependencies: start.map(|d| vec![d]),
-                        persistent_state: None,
-                    };
-                    sync.plan_then(plan, PlanUpdate::Milestone(Crud::Update(patch)), then);
-                },
-            ),
-            Kind::Group => (
-                PlanUpdate::TaskGroup(Crud::Add(NewTaskGroup {
-                    id: nil,
-                    name: "New group".to_string(),
-                    parent,
-                })),
-                |id, plan, sync, start, then| {
-                    let patch = plinko::planner::items::task_group::TaskGroupPatch {
-                        time_constraint: None,
-                        id,
-                        name: None,
-                        dependencies: start.map(|d| vec![d]),
-                        parent: None,
-                    };
-                    sync.plan_then(plan, PlanUpdate::TaskGroup(Crud::Update(patch)), then);
-                },
-            ),
-            Kind::Buffer => (
-                PlanUpdate::PlanBuffer(Crud::Add(NewPlanBuffer {
-                    id: nil,
-                    parent,
-                    duration: 3,
-                })),
-                |id, plan, sync, start, then| {
-                    let patch = plinko::planner::items::plan_buffer::PlanBufferPatch {
-                        id,
-                        parent: None,
-                        dependencies: start.map(|d| vec![d]),
-                        set_start_day: None,
-                        duration: None,
-                    };
-                    sync.plan_then(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)), then);
-                },
-            ),
-            Kind::Delay => (
-                PlanUpdate::PlanDelay(Crud::Add(NewPlanDelay {
-                    id: nil,
-                    name: None,
-                    parent,
-                    duration: 3,
-                })),
-                |id, plan, sync, start, then| {
-                    let patch = PlanDelayPatch {
-                        id,
-                        name: None,
-                        parent: None,
-                        dependencies: start.map(|d| vec![d]),
-                        duration: None,
-                    };
-                    sync.plan_then(plan, PlanUpdate::PlanDelay(Crud::Update(patch)), then);
-                },
-            ),
-        };
-        // top level items begin from the plan's default start node when it has one
-        let start = sync.tenant.with_untracked(|t| {
-            let p = t.as_ref()?.plans().get(&plan)?;
-            let node = p
-                .scheduler_data()
-                .default_start()
-                .filter(|_| parent == Parent::Plan)?;
-            Some(node)
-        });
-        let current = tab.get_untracked();
-        sync.plan_then(plan, update, move |created| {
-            if let Some(Created::Item(id)) = created {
-                // anchored to the start so it is scheduled, then open for editing
-                let open = Box::new(move |_| {
-                    fresh.set(id);
-                    navigate(Route::Plan(plan, current, Some(id)));
-                });
-                depends(id, plan, &sync, start, open);
-            }
-        });
+        guard.then(Callback::new(move |()| {
+            let open = node
+                .get_untracked()
+                .filter(|_| adding.get_untracked().is_none());
+            let parent = sync.tenant.with_untracked(|t| {
+                let p = t.as_ref()?.plans().get(&plan)?;
+                Some(card::beside(p, open))
+            });
+            // it has no id until the plan gives it one
+            let nil = Uuid::nil();
+            let new = match kind {
+                Kind::Task => PlanNode::Task(nil),
+                Kind::Milestone => PlanNode::Milestone(nil),
+                Kind::Group => PlanNode::TaskGroup(nil),
+                Kind::Buffer => PlanNode::PlanBuffer(nil),
+                Kind::Delay => PlanNode::PlanDelay(nil),
+            };
+            go(tab.get_untracked(), None);
+            adding.set(Some((new, parent.unwrap_or(Parent::Plan))));
+        }));
     };
 
     let icon_button = move |label: &'static str, kind: IconKind, on: Callback<()>| {
@@ -493,6 +399,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 reveal=reveal
                                 jump=jump
                                 focus=focus
+                                staged=Signal::derive(move || draft.with(|d| {
+                                    d.as_ref().map(|d| (d.dependencies.clone(), d.dependents.clone()))
+                                }))
+                                spot=spot
+                                probe=probe
                             />
                         }.into_any(),
                         PlanTab::List => view! { <List rows=rows on_open=on_open on_toggle=on_toggle /> }.into_any(),
@@ -512,13 +423,16 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         })
                     }}
                 </div>
+                <Card plan=plan draft=draft probe=probe spot=spot on_change=Callback::new(move |()| guard.dirtied()) />
                 {move || data_of.get().map(|data_node| view! {
                     <DataWindow plan=plan node=data_node on_close=Callback::new(move |()| data_of.set(None)) />
                 })}
                 {move || {
-                    node.get()
-                        .filter(|_| tab.get() != PlanTab::Settings)
-                        .map(|node| view! { <ItemPane plan=plan node=node fresh=fresh guard=guard on_close=on_close /> })
+                    let open = node.get().filter(|_| tab.get() != PlanTab::Settings);
+                    // the draft is there before the pane, whose form starts from it
+                    let new = adding.get_untracked().map(|(_, parent)| parent);
+                    draft.set(open.and_then(|node| Draft::open(sync, plan, node, new)));
+                    open.map(|node| view! { <ItemPane plan=plan node=node guard=guard on_close=on_close /> })
                 }}
                 </div>
                 <ConfirmLeave guard=guard />
@@ -619,7 +533,7 @@ pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
     ev.target()
         .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
         .is_some_and(|t| {
-            t.closest("button, a, input, select, canvas, .name, .pane")
+            t.closest("button, a, input, select, canvas, .name, .pane, .draftcard")
                 .ok()
                 .flatten()
                 .is_none()
@@ -640,111 +554,37 @@ fn focus_first_box() {
 }
 // }}}
 
-// Fresh {{{
-/// An item just added and not saved yet, which is taken away again if its pane is left without
-/// saving. It stops being new once its pane is left for anything else, or it is changed from
-/// outside the pane (on the chart, say), so that only what nobody has kept is ever taken away.
-#[derive(Clone, Copy)]
-pub struct Fresh(RwSignal<Option<(Uuid, Option<Vec<u8>>)>>);
-
-impl Fresh {
-    pub fn new() -> Self {
-        Self(RwSignal::new(None))
-    }
-
-    fn set(&self, id: Uuid) {
-        self.0.try_set(Some((id, None)));
-    }
-
-    fn clear(&self) {
-        self.0.try_set(None);
-    }
-
-    fn is(&self, node: PlanNode) -> bool {
-        self.0
-            .with_untracked(|f| f.as_ref().is_some_and(|(id, _)| *id == node.id()))
-    }
-
-    /// Nothing is new but the item whose pane is open
-    fn only(&self, open: Option<Uuid>) {
-        let other = self
-            .0
-            .with_untracked(|f| f.as_ref().is_some_and(|(id, _)| Some(*id) != open));
-        if other {
-            self.clear();
-        }
-    }
-
-    fn now(sync: crate::sync::Sync, plan: ShortId, node: PlanNode) -> Option<Vec<u8>> {
-        let item = |t: &Option<plinko::multitenancy::tenant::Tenant>| {
-            model::item_bytes(t.as_ref()?.plans().get(&plan)?, node)
-        };
-        sync.tenant.with_untracked(item)
-    }
-
-    /// Remembers how the new item is as its pane opens
-    fn opened(&self, sync: crate::sync::Sync, plan: ShortId, node: PlanNode) {
-        if self.is(node) {
-            self.0
-                .try_set(Some((node.id(), Self::now(sync, plan, node))));
-        }
-    }
-
-    /// Whether the item is new and as it was when its pane opened, so leaving the pane takes
-    /// it away. Either way it is not new any more.
-    fn dropped(&self, sync: crate::sync::Sync, plan: ShortId, node: PlanNode) -> bool {
-        let was = self
-            .0
-            .try_get_untracked()
-            .flatten()
-            .filter(|(id, _)| *id == node.id());
-        self.clear();
-        was.is_some_and(|(_, then)| then.is_some() && then == Self::now(sync, plan, node))
-    }
-}
-
-impl Default for Fresh {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-// }}}
-
 // ItemPane {{{
 /// The pane beside the chart for editing the item that is open
 #[component]
 pub fn ItemPane(
     plan: ShortId,
     node: PlanNode,
-    fresh: Fresh,
     guard: Guard,
     on_close: Callback<()>,
 ) -> impl IntoView {
-    let sync = use_sync();
     guard.opened();
     on_cleanup(move || guard.closed());
-    // a new item has its first box ready to type in, its name or for a buffer its days
-    if fresh.is(node) {
-        fresh.opened(sync, plan, node);
+    // a new item has its first box ready to type in
+    let draft = expect_context::<Drafting>().0;
+    let new = draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.new));
+    if new {
         set_timeout(focus_first_box, std::time::Duration::from_millis(80));
     }
-    let title = match node {
-        PlanNode::Task(_) => "Edit Task",
-        PlanNode::Milestone(_) => "Edit Milestone",
-        PlanNode::PlanBuffer(_) => "Edit Buffer",
-        PlanNode::PlanDelay(_) => "Edit Delay",
-        PlanNode::TaskGroup(_) => "Edit Task Group",
+    let title = match (node, new) {
+        (PlanNode::Task(_), true) => "New Task",
+        (PlanNode::Milestone(_), true) => "New Milestone",
+        (PlanNode::PlanBuffer(_), true) => "New Buffer",
+        (PlanNode::PlanDelay(_), true) => "New Delay",
+        (PlanNode::TaskGroup(_), true) => "New Task Group",
+        (PlanNode::Task(_), false) => "Edit Task",
+        (PlanNode::Milestone(_), false) => "Edit Milestone",
+        (PlanNode::PlanBuffer(_), false) => "Edit Buffer",
+        (PlanNode::PlanDelay(_), false) => "Edit Delay",
+        (PlanNode::TaskGroup(_), false) => "Edit Task Group",
     };
-    let saved = Callback::new(move |()| {
-        fresh.clear();
-        on_close.run(());
-    });
-    let cancel = Callback::new(move |()| {
-        if fresh.dropped(sync, plan, node) {
-            remove_item(sync, plan, node);
-        }
-        on_close.run(());
-    });
+    // nothing of a new item is in the plan until it is saved, so there is nothing to undo
+    let (saved, cancel) = (on_close, on_close);
     // escape is the same as clicking off the pane: it asks first when something is unsaved
     crate::escape::on_escape(|| true, Callback::new(move |()| guard.then(cancel)));
     view! {

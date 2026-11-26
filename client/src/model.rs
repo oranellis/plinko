@@ -6,7 +6,6 @@ use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
-    codec,
     planner::items::{
         dependency::PlanNode, milestone::DerivedStatus, parent::Parent, task::Status,
     },
@@ -115,16 +114,15 @@ pub fn parent_of_in(
     })
 }
 
-/// An item as bytes, to tell whether it has changed
-pub fn item_bytes(plan: &Plan, node: PlanNode) -> Option<Vec<u8>> {
-    let bytes = match node {
-        PlanNode::Task(id) => codec::encode(plan.tasks().get(&id)?),
-        PlanNode::Milestone(id) => codec::encode(plan.milestones().get(&id)?),
-        PlanNode::TaskGroup(id) => codec::encode(plan.task_groups().get(&id)?),
-        PlanNode::PlanBuffer(id) => codec::encode(plan.plan_buffers().get(&id)?),
-        PlanNode::PlanDelay(id) => codec::encode(plan.plan_delays().get(&id)?),
-    };
-    bytes.ok()
+/// What waits for a node, by name
+pub fn dependents(plan: &Plan, node: PlanNode) -> Vec<PlanNode> {
+    let mut found: Vec<(String, PlanNode)> = nodes(plan)
+        .into_iter()
+        .filter(|n| *n != node && dependencies(plan, *n).contains(&node))
+        .map(|n| (node_name(plan, n), n))
+        .collect();
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found.into_iter().map(|(_, n)| n).collect()
 }
 
 /// What a node depends on

@@ -5,40 +5,12 @@
 use chrono::NaiveDate;
 use plinko::{
     common::dates::{NodeConstraint, NodeEnd, TimeConstraint},
-    planner::items::{
-        dependency::PlanNode,
-        parent::Parent,
-        task::{Status, Worker},
-    },
+    planner::items::task::{Status, Worker},
 };
 use uuid::Uuid;
 // }}}
 
 // helpers {{{
-pub fn node_value(node: PlanNode) -> String {
-    match node {
-        PlanNode::Task(id) => format!("task:{id}"),
-        PlanNode::Milestone(id) => format!("milestone:{id}"),
-        PlanNode::PlanBuffer(id) => format!("buffer:{id}"),
-        PlanNode::PlanDelay(id) => format!("delay:{id}"),
-        PlanNode::TaskGroup(id) => format!("group:{id}"),
-    }
-}
-
-pub fn parse_node(text: &str) -> Option<PlanNode> {
-    let (kind, id) = text.split_once(':')?;
-    let id = Uuid::parse_str(id).ok()?;
-    let node = match kind {
-        "task" => PlanNode::Task(id),
-        "milestone" => PlanNode::Milestone(id),
-        "buffer" => PlanNode::PlanBuffer(id),
-        "delay" => PlanNode::PlanDelay(id),
-        "group" => PlanNode::TaskGroup(id),
-        _ => return None,
-    };
-    Some(node)
-}
-
 pub fn worker_value(worker: Worker) -> String {
     match worker {
         Worker::User(id) => format!("user:{id}"),
@@ -59,23 +31,6 @@ pub fn parse_worker(text: &str) -> Option<Worker> {
         "tag" => Some(Worker::Tag(id)),
         "group" => Some(Worker::UserGroup(id)),
         _ => None,
-    }
-}
-
-pub fn parent_value(parent: Parent) -> String {
-    match parent {
-        Parent::Plan => "plan".to_string(),
-        Parent::Node(id) => format!("group:{id}"),
-    }
-}
-
-pub fn parse_parent(text: &str) -> Option<Parent> {
-    match text {
-        "plan" => Some(Parent::Plan),
-        _ => text
-            .strip_prefix("group:")
-            .and_then(|id| Uuid::parse_str(id).ok())
-            .map(Parent::Node),
     }
 }
 
@@ -154,14 +109,6 @@ mod tests {
 
     #[test]
     fn what_a_select_picks_is_read_back() {
-        for node in [
-            PlanNode::Task(id()),
-            PlanNode::Milestone(id()),
-            PlanNode::PlanBuffer(id()),
-            PlanNode::TaskGroup(id()),
-        ] {
-            assert_eq!(parse_node(&node_value(node)), Some(node));
-        }
         for worker in [
             Worker::User(id()),
             Worker::Tag(id()),
@@ -169,9 +116,6 @@ mod tests {
             Worker::Placeholder,
         ] {
             assert_eq!(parse_worker(&worker_value(worker)), Some(worker));
-        }
-        for parent in [Parent::Plan, Parent::Node(id())] {
-            assert_eq!(parse_parent(&parent_value(parent)), Some(parent));
         }
         for status in [
             Status::NotStarted,
@@ -186,10 +130,8 @@ mod tests {
 
     #[test]
     fn nonsense_is_not_read() {
-        assert_eq!(parse_node("task:not-an-id"), None);
-        assert_eq!(parse_node("sprint:abc"), None);
         assert_eq!(parse_worker(""), None);
-        assert_eq!(parse_parent("group:"), None);
+        assert_eq!(parse_worker("user:not-an-id"), None);
         assert_eq!(parse_status("done"), None);
     }
 

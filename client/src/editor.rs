@@ -11,27 +11,26 @@ use plinko::{
     common::{crud::Crud, dates::NodeEnd, short_id::ShortId},
     planner::items::{
         dependency::PlanNode,
-        milestone::MilestonePatch,
+        milestone::{Milestone, MilestonePatch, NewMilestone},
         parent::Parent,
-        plan_buffer::PlanBufferPatch,
-        plan_delay::PlanDelayPatch,
-        task::{Assignee, PersistentState, Status, Task, TaskPatch, Worker},
-        task_group::TaskGroupPatch,
+        plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
+        plan_delay::{NewPlanDelay, PlanDelay, PlanDelayPatch},
+        task::{Assignee, NewTask, PersistentState, Status, Task, TaskPatch, Worker},
+        task_group::{NewTaskGroup, TaskGroup, TaskGroupPatch},
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
+    protocol::Created,
 };
 use uuid::Uuid;
 
 use crate::{
     datepicker::{DatePicker, OptionalDate},
+    draft::{Draft, Drafting, NEW_WAIT_DAYS},
     format, forms,
     icons::{Icon, IconKind},
-    model::{self, node_name},
+    model,
     sync::Sync,
-    ui::{
-        Actions, Block, Choice, Field, Hours, List, Number, Picker, Segmented, Select, Text,
-        options, use_sync,
-    },
+    ui::{Actions, Block, Choice, Field, Hours, List, Picker, Segmented, Text, options, use_sync},
 };
 // }}}
 
@@ -51,6 +50,71 @@ fn snapshot<R>(plan: ShortId, f: impl FnOnce(&Plan) -> Option<R>) -> Option<R> {
 
 fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {
     (*old != new).then_some(new)
+}
+
+/// Whether the form is for an item that is not in the plan yet
+fn is_new() -> bool {
+    let draft = expect_context::<Drafting>().0;
+    draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.new))
+}
+
+/// The item a form is for: the one in the plan, or for a new one what adding it would give
+fn item<T>(
+    plan: ShortId,
+    found: impl FnOnce(&Plan) -> Option<T>,
+    made: impl FnOnce(Parent) -> T,
+) -> Option<T> {
+    let draft = expect_context::<Drafting>().0;
+    match draft.with_untracked(|d| d.as_ref().filter(|d| d.new).map(|d| d.parent)) {
+        Some(parent) => Some(made(parent)),
+        None => snapshot(plan, found),
+    }
+}
+
+/// An update to an item, for the item with another id
+fn retarget(update: PlanUpdate, id: Uuid) -> PlanUpdate {
+    match update {
+        PlanUpdate::Task(Crud::Update(p)) => PlanUpdate::Task(Crud::Update(TaskPatch { id, ..p })),
+        PlanUpdate::Milestone(Crud::Update(p)) => {
+            PlanUpdate::Milestone(Crud::Update(MilestonePatch { id, ..p }))
+        }
+        PlanUpdate::PlanBuffer(Crud::Update(p)) => {
+            PlanUpdate::PlanBuffer(Crud::Update(PlanBufferPatch { id, ..p }))
+        }
+        PlanUpdate::PlanDelay(Crud::Update(p)) => {
+            PlanUpdate::PlanDelay(Crud::Update(PlanDelayPatch { id, ..p }))
+        }
+        PlanUpdate::TaskGroup(Crud::Update(p)) => {
+            PlanUpdate::TaskGroup(Crud::Update(TaskGroupPatch { id, ..p }))
+        }
+        other => other,
+    }
+}
+
+/// Saves a form: its patch, which has the place, links and days of the draft in it, and what the
+/// draft says of the items that wait for this one. A new item is added first, and the rest then
+/// goes to the id it was given.
+fn commit(sync: Sync, plan: ShortId, draft: &Draft, name: String, patch: PlanUpdate) {
+    let (draft, node) = (draft.clone(), draft.node);
+    let adding = draft.new.then(|| draft.adding(name));
+    let finish = move |node: PlanNode| {
+        sync.plan(plan, retarget(patch, node.id()));
+        let waiting = sync.tenant.with_untracked(|t| {
+            let plan = t.as_ref()?.plans().get(&plan)?;
+            Some(draft.dependent_updates(plan, node))
+        });
+        for update in waiting.unwrap_or_default() {
+            sync.plan(plan, update);
+        }
+    };
+    match adding {
+        None => finish(node),
+        Some(adding) => sync.plan_then(plan, adding, move |created| {
+            if let Some(Created::Item(id)) = created {
+                finish(node.node_type().node(id));
+            }
+        }),
+    }
 }
 
 /// Takes an item out of its plan, joining what was around it back together
@@ -75,9 +139,14 @@ pub fn ItemEditor(
     on_cancel: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
-    let remove = Callback::new(move |()| {
-        remove_item(sync, plan, node);
-        on_close.run(());
+    // there is nothing to take out of the plan for an item that is not in it yet
+    let new = is_new();
+    let remove = Callback::new(move |()| match new {
+        true => on_cancel.run(()),
+        false => {
+            remove_item(sync, plan, node);
+            on_close.run(());
+        }
     });
     view! {
         <div class="editor">
@@ -161,186 +230,6 @@ fn who_name(who: Assignee) -> String {
 // }}}
 
 // pickers {{{
-/// Every item of the plan that something can depend on, other than `except`. Plan targets are
-/// marked, and the start of the parent is offered when `with_start`.
-fn depends_options(plan: ShortId, except: PlanNode) -> Signal<Vec<Choice>> {
-    Signal::derive(move || {
-        let named = read(plan, |p| {
-            let targets: HashSet<PlanNode> = p.targets().values().map(|t| t.node()).collect();
-            let mut named: Vec<Choice> = model::nodes(p)
-                .into_iter()
-                .filter(|n| *n != except)
-                .map(|n| {
-                    let tone = if targets.contains(&n) { "target" } else { "" };
-                    let value = forms::node_value(n);
-                    Choice::new(value, node_name(p, n), tone)
-                })
-                .collect();
-            named.sort_by(|a, b| a.label.cmp(&b.label).then(a.value.cmp(&b.value)));
-            Some(named)
-        });
-        named.unwrap_or_default()
-    })
-}
-
-/// What an item waits for, or what waits for it
-#[component]
-fn DependencyList(
-    #[prop(into)] label: String,
-    #[prop(into)] empty: String,
-    #[prop(into)] placeholder: String,
-    choices: Signal<Vec<Choice>>,
-    deps: RwSignal<Vec<PlanNode>>,
-    /// What a new row starts as, the first choice not yet listed if nothing is given
-    #[prop(optional)]
-    fresh: Option<PlanNode>,
-) -> impl IntoView {
-    let add = move |()| {
-        let listed = deps.get_untracked();
-        let choices = choices.get_untracked();
-        let mut unlisted = choices.iter().filter_map(|c| forms::parse_node(&c.value));
-        let first = fresh.or_else(|| unlisted.find(|n| !listed.contains(n)));
-        deps.update(|d| d.extend(first));
-    };
-    view! {
-        <List
-            label=label
-            empty=empty
-            add="Add"
-            count=Signal::derive(move || deps.with(Vec::len))
-            on_add=Callback::new(add)
-        >
-            <For each=move || 0..deps.with(Vec::len) key=|i| *i children=move |i| {
-                let node = Signal::derive(move || {
-                    deps.with(|d| d.get(i).map(|d| forms::node_value(*d)).unwrap_or_default())
-                });
-                view! {
-                    <div class="row">
-                        <Picker
-                            value=node
-                            choices=choices
-                            placeholder=placeholder.clone()
-                            on_change=Callback::new(move |v: String| {
-                                if let Some(node) = forms::parse_node(&v) {
-                                    deps.update(|d| if let Some(d) = d.get_mut(i) { *d = node });
-                                }
-                            })
-                        />
-                        <button type="button" class="plain" aria-label="Remove" on:click=move |_| {
-                            deps.update(|d| { if i < d.len() { d.remove(i); } });
-                        }>"✕"</button>
-                    </div>
-                }
-            } />
-        </List>
-    }
-}
-
-#[component]
-fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<PlanNode>>) -> impl IntoView {
-    view! {
-        <DependencyList
-            label="Dependencies"
-            empty="No dependencies added yet"
-            placeholder="Select dependency…"
-            choices=depends_options(plan, me)
-            deps=deps
-        />
-    }
-}
-
-/// The items that wait for this one, which are kept in their own dependencies
-#[component]
-fn Dependents(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<PlanNode>>) -> impl IntoView {
-    view! {
-        <DependencyList
-            label="Required by"
-            empty="No dependents added yet"
-            placeholder="Select dependent…"
-            choices=depends_options(plan, me)
-            deps=deps
-            fresh=me
-        />
-    }
-}
-
-/// The items that depend on `me`, as dependencies on them
-fn dependents_of(plan: &Plan, me: PlanNode) -> Vec<PlanNode> {
-    let mut found: Vec<(String, PlanNode)> = model::nodes(plan)
-        .into_iter()
-        .filter(|n| *n != me && model::dependencies(plan, *n).contains(&me))
-        .map(|n| (node_name(plan, n), n))
-        .collect();
-    found.sort_by(|a, b| a.0.cmp(&b.0));
-    found.into_iter().map(|(_, d)| d).collect()
-}
-
-fn set_dependencies(sync: Sync, plan: ShortId, node: PlanNode, deps: Vec<PlanNode>) {
-    sync.plan(plan, PlanUpdate::set_dependencies(node, deps));
-}
-
-/// Changes the dependencies of the other items to match what was asked for in `new`
-fn apply_dependents(sync: Sync, plan: ShortId, me: PlanNode, old: &[PlanNode], new: &[PlanNode]) {
-    let wanted = |deps: &[PlanNode]| -> HashSet<PlanNode> {
-        deps.iter()
-            .filter_map(|d| match *d {
-                n if n != me => Some(n),
-                _ => None,
-            })
-            .collect()
-    };
-    let (old, new) = (wanted(old), wanted(new));
-    for other in old.symmetric_difference(&new).copied() {
-        let mut deps = sync
-            .tenant
-            .with_untracked(|t| Some(model::dependencies(t.as_ref()?.plans().get(&plan)?, other)))
-            .unwrap_or_default();
-        let mine = me;
-        deps.retain(|d| *d != mine || new.contains(&other));
-        if new.contains(&other) && !deps.contains(&mine) {
-            deps.push(mine);
-        }
-        set_dependencies(sync, plan, other, deps);
-    }
-}
-
-#[component]
-fn ParentPicker(plan: ShortId, me: PlanNode, parent: RwSignal<Parent>) -> impl IntoView {
-    let choices = Signal::derive(move || {
-        let mut options = vec![("plan".to_string(), "Top level".to_string())];
-        let groups = read(plan, |p| {
-            let mut groups: Vec<(String, String)> = p
-                .task_groups()
-                .values()
-                .filter(|g| PlanNode::TaskGroup(*g.id()) != me)
-                .map(|g| {
-                    (
-                        forms::parent_value(Parent::Node(*g.id())),
-                        g.name().to_string(),
-                    )
-                })
-                .collect();
-            groups.sort();
-            Some(groups)
-        });
-        options.extend(groups.unwrap_or_default());
-        options
-    });
-    view! {
-        <Field label="Group">
-            <Select
-                value=Signal::derive(move || forms::parent_value(parent.get()))
-                options=choices
-                on_change=Callback::new(move |v: String| {
-                    if let Some(p) = forms::parse_parent(&v) {
-                        parent.set(p);
-                    }
-                })
-            />
-        </Field>
-    }
-}
-
 /// How the item is held to a date, and the date for the kinds that have one. With `end` the
 /// date can be for the first or the last day of the item.
 #[component]
@@ -523,29 +412,36 @@ fn TaskForm(
     remove: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
-    let Some(task) = snapshot(plan, |p| p.tasks().get(&id).cloned()) else {
+    let found = |p: &Plan| p.tasks().get(&id).cloned();
+    let made = |parent| {
+        Task::from(NewTask {
+            id,
+            name: "New task".to_string(),
+            parent,
+        })
+    };
+    let Some(task) = item(plan, found, made) else {
         return view! { <p>"This task has been removed."</p> }.into_any();
     };
     let today = sync
         .tenant
         .with_untracked(|t| t.as_ref().map(|t| t.today()))
         .unwrap_or_default();
-    let node = PlanNode::Task(id);
     let name = RwSignal::new(task.name().to_string());
-    let duration = RwSignal::new(i64::from(task.duration()));
     let constraint = task.time_constraint();
     let (constraint_kind, constraint_day) = forms::constraint_parts(constraint.constraint);
     let kind = RwSignal::new(constraint_kind.to_string());
     let day = RwSignal::new(constraint_day.unwrap_or(today));
     let end = RwSignal::new(constraint.end);
-    let parent = RwSignal::new(task.parent());
-    let deps = RwSignal::new(task.dependencies().clone());
     let mut asked: Vec<(Worker, u8)> = task
         .allocations()
         .iter()
         .map(|(w, h)| (*w, h.get()))
         .collect();
     asked.sort_by_key(|(w, _)| forms::worker_value(*w));
+    // whoever adds a task does it for half a day, unless they say otherwise
+    let me = sync.me.get_untracked().map(|m| (Worker::User(m.id), 4));
+    asked.extend(me.filter(|_| is_new()));
     let allocations = RwSignal::new(asked);
     let affinities = RwSignal::new(task.affinities().clone());
     let state = task.persistent_state();
@@ -554,10 +450,12 @@ fn TaskForm(
     let ended = RwSignal::new(state.actual_end_date);
     let recorded = RwSignal::new(task.actual_workers().clone());
     let original = StoredValue::new(task);
-    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
-    let dependents = RwSignal::new(was.clone());
 
+    let drafting = expect_context::<Drafting>().0;
     let save = move |_| {
+        let Some(draft) = drafting.get_untracked() else {
+            return;
+        };
         let old: Task = original.get_value();
         let allocations: std::collections::HashMap<Worker, Workload> = allocations
             .get_untracked()
@@ -577,11 +475,8 @@ fn TaskForm(
         let patch = TaskPatch {
             id,
             name: changed(&old.name().to_string(), name.get_untracked()),
-            parent: changed(&old.parent(), parent.get_untracked()),
-            duration: changed(
-                &old.duration(),
-                duration.get_untracked().clamp(1, 3650) as u32,
-            ),
+            parent: changed(&old.parent(), draft.parent),
+            duration: changed(&old.duration(), draft.duration.unwrap_or(1).clamp(1, 3650)),
             time_constraint: changed(
                 &old.time_constraint(),
                 forms::node_constraint(
@@ -590,15 +485,20 @@ fn TaskForm(
                     end.get_untracked(),
                 ),
             ),
-            dependencies: changed(old.dependencies(), deps.get_untracked()),
+            dependencies: changed(old.dependencies(), draft.dependencies.clone()),
             allocations: changed(old.allocations(), allocations),
             affinities: changed(old.affinities(), affinities.get_untracked()),
             // who did the work is whoever was asked for, so what is kept is only for those still asked
             actual_workers: changed(old.actual_workers(), kept),
             persistent_state: changed(&old.persistent_state(), new_state),
         };
-        sync.plan(plan, PlanUpdate::Task(Crud::Update(patch)));
-        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
+        commit(
+            sync,
+            plan,
+            &draft,
+            name.get_untracked(),
+            PlanUpdate::Task(Crud::Update(patch)),
+        );
         on_close.run(());
     };
     view! {
@@ -634,9 +534,6 @@ fn TaskForm(
                     })
                 />
             </Block>
-            <Field label="Duration (days)">
-                <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=1 max=3650 />
-            </Field>
             <Constraint kind=kind day=day end=end />
             <div class="cols">
                 <Field label=Signal::derive(move || {
@@ -653,10 +550,7 @@ fn TaskForm(
                     <OptionalDate value=ended disabled=Signal::derive(move || matches!(status.get(), Status::NotStarted | Status::InProgress)) />
                 </Field>
             </div>
-            <ParentPicker plan=plan me=node parent=parent />
             <Workers plan=plan allocations=allocations />
-            <Dependencies plan=plan me=node deps=deps />
-            <Dependents plan=plan me=node deps=dependents />
             <Affinities plan=plan chosen=affinities />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
@@ -715,38 +609,50 @@ fn MilestoneForm(
     remove: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
-    let Some(milestone) = snapshot(plan, |p| p.milestones().get(&id).cloned()) else {
+    let found = |p: &Plan| p.milestones().get(&id).cloned();
+    let made = |parent| {
+        Milestone::from(NewMilestone {
+            id,
+            name: "New milestone".to_string(),
+            parent,
+        })
+    };
+    let Some(milestone) = item(plan, found, made) else {
         return view! { <p>"This milestone has been removed."</p> }.into_any();
     };
     let today = sync
         .tenant
         .with_untracked(|t| t.as_ref().map(|t| t.today()))
         .unwrap_or_default();
-    let node = PlanNode::Milestone(id);
     let name = RwSignal::new(milestone.name().to_string());
     let (constraint_kind, constraint_day) = forms::constraint_parts(milestone.time_constraint());
     let kind = RwSignal::new(constraint_kind.to_string());
     let day = RwSignal::new(constraint_day.unwrap_or(today));
-    let parent = RwSignal::new(milestone.parent());
-    let deps = RwSignal::new(milestone.dependencies().clone());
     let original = StoredValue::new(milestone);
-    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
-    let dependents = RwSignal::new(was.clone());
+    let drafting = expect_context::<Drafting>().0;
     let save = move |_| {
+        let Some(draft) = drafting.get_untracked() else {
+            return;
+        };
         let old = original.get_value();
         let patch = MilestonePatch {
             id,
             name: changed(&old.name().to_string(), name.get_untracked()),
-            parent: changed(&old.parent(), parent.get_untracked()),
+            parent: changed(&old.parent(), draft.parent),
             time_constraint: changed(
                 &old.time_constraint(),
                 forms::constraint_from(&kind.get_untracked(), day.get_untracked()),
             ),
-            dependencies: changed(old.dependencies(), deps.get_untracked()),
+            dependencies: changed(old.dependencies(), draft.dependencies.clone()),
             persistent_state: None,
         };
-        sync.plan(plan, PlanUpdate::Milestone(Crud::Update(patch)));
-        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
+        commit(
+            sync,
+            plan,
+            &draft,
+            name.get_untracked(),
+            PlanUpdate::Milestone(Crud::Update(patch)),
+        );
         on_close.run(());
     };
     view! {
@@ -755,9 +661,6 @@ fn MilestoneForm(
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
             </Field>
             <Constraint kind=kind day=day />
-            <ParentPicker plan=plan me=node parent=parent />
-            <Dependencies plan=plan me=node deps=deps />
-            <Dependents plan=plan me=node deps=dependents />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
@@ -773,31 +676,40 @@ fn BufferForm(
     remove: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
-    let Some(buffer) = snapshot(plan, |p| p.plan_buffers().get(&id).cloned()) else {
+    let found = |p: &Plan| p.plan_buffers().get(&id).cloned();
+    let made = |parent| {
+        PlanBuffer::from(NewPlanBuffer {
+            id,
+            parent,
+            duration: NEW_WAIT_DAYS,
+        })
+    };
+    let Some(buffer) = item(plan, found, made) else {
         return view! { <p>"This buffer has been removed."</p> }.into_any();
     };
     let node = PlanNode::PlanBuffer(id);
-    let duration = RwSignal::new(i64::from(*buffer.duration()));
     let set = RwSignal::new(*buffer.set_start_day());
-    let parent = RwSignal::new(buffer.parent());
-    let deps = RwSignal::new(buffer.dependencies().clone());
     let original = StoredValue::new(buffer);
-    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
-    let dependents = RwSignal::new(was.clone());
+    let drafting = expect_context::<Drafting>().0;
     let save = move |_| {
+        let Some(draft) = drafting.get_untracked() else {
+            return;
+        };
         let old = original.get_value();
         let patch = PlanBufferPatch {
             id,
-            parent: changed(&old.parent(), parent.get_untracked()),
-            dependencies: changed(old.dependencies(), deps.get_untracked()),
+            parent: changed(&old.parent(), draft.parent),
+            dependencies: changed(old.dependencies(), draft.dependencies.clone()),
             set_start_day: changed(old.set_start_day(), set.get_untracked()),
-            duration: changed(
-                old.duration(),
-                duration.get_untracked().clamp(0, 3650) as u32,
-            ),
+            duration: changed(old.duration(), draft.duration.unwrap_or(0).min(3650)),
         };
-        sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
-        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
+        commit(
+            sync,
+            plan,
+            &draft,
+            String::new(),
+            PlanUpdate::PlanBuffer(Crud::Update(patch)),
+        );
         on_close.run(());
     };
     // whether the set start is the day the buffer is scheduled to start on
@@ -810,9 +722,6 @@ fn BufferForm(
     };
     view! {
         <form class="form" on:submit=move |ev| { ev.prevent_default(); save(()); }>
-            <Field label="Duration (days)">
-                <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=0 max=3650 />
-            </Field>
             <Field label="Set Start (it grows or shrinks to keep its end)">
                 <div class="row">
                     <OptionalDate value=set />
@@ -840,9 +749,6 @@ fn BufferForm(
                     </button>
                 </div>
             </Field>
-            <ParentPicker plan=plan me=node parent=parent />
-            <Dependencies plan=plan me=node deps=deps />
-            <Dependents plan=plan me=node deps=dependents />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
@@ -858,33 +764,42 @@ fn DelayForm(
     remove: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
-    let Some(delay) = snapshot(plan, |p| p.plan_delays().get(&id).cloned()) else {
+    let found = |p: &Plan| p.plan_delays().get(&id).cloned();
+    let made = |parent| {
+        PlanDelay::from(NewPlanDelay {
+            id,
+            name: None,
+            parent,
+            duration: NEW_WAIT_DAYS,
+        })
+    };
+    let Some(delay) = item(plan, found, made) else {
         return view! { <p>"This delay has been removed."</p> }.into_any();
     };
-    let node = PlanNode::PlanDelay(id);
     let name = RwSignal::new(delay.name().unwrap_or_default().to_string());
-    let duration = RwSignal::new(i64::from(*delay.duration()));
-    let parent = RwSignal::new(delay.parent());
-    let deps = RwSignal::new(delay.dependencies().clone());
     let original = StoredValue::new(delay);
-    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
-    let dependents = RwSignal::new(was.clone());
+    let drafting = expect_context::<Drafting>().0;
     let save = move |_| {
+        let Some(draft) = drafting.get_untracked() else {
+            return;
+        };
         let old = original.get_value();
         // a delay with no name is shown by how long it is
         let named = Some(name.get_untracked()).filter(|n| !n.trim().is_empty());
         let patch = PlanDelayPatch {
             id,
             name: changed(&old.name().map(str::to_string), named),
-            parent: changed(&old.parent(), parent.get_untracked()),
-            dependencies: changed(old.dependencies(), deps.get_untracked()),
-            duration: changed(
-                old.duration(),
-                duration.get_untracked().clamp(0, 3650) as u32,
-            ),
+            parent: changed(&old.parent(), draft.parent),
+            dependencies: changed(old.dependencies(), draft.dependencies.clone()),
+            duration: changed(old.duration(), draft.duration.unwrap_or(0).min(3650)),
         };
-        sync.plan(plan, PlanUpdate::PlanDelay(Crud::Update(patch)));
-        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
+        commit(
+            sync,
+            plan,
+            &draft,
+            name.get_untracked(),
+            PlanUpdate::PlanDelay(Crud::Update(patch)),
+        );
         on_close.run(());
     };
     view! {
@@ -892,12 +807,6 @@ fn DelayForm(
             <Field label="Name (optional)">
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
             </Field>
-            <Field label="Duration (calendar days)">
-                <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=0 max=3650 />
-            </Field>
-            <ParentPicker plan=plan me=node parent=parent />
-            <Dependencies plan=plan me=node deps=deps />
-            <Dependents plan=plan me=node deps=dependents />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }
@@ -913,10 +822,17 @@ fn GroupForm(
     remove: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
-    let Some(group) = snapshot(plan, |p| p.task_groups().get(&id).cloned()) else {
+    let found = |p: &Plan| p.task_groups().get(&id).cloned();
+    let made = |parent| {
+        TaskGroup::from(NewTaskGroup {
+            id,
+            name: "New group".to_string(),
+            parent,
+        })
+    };
+    let Some(group) = item(plan, found, made) else {
         return view! { <p>"This group has been removed."</p> }.into_any();
     };
-    let node = PlanNode::TaskGroup(id);
     let today = sync
         .tenant
         .with_untracked(|t| t.as_ref().map(|t| t.today()))
@@ -927,18 +843,18 @@ fn GroupForm(
     let kind = RwSignal::new(constraint_kind.to_string());
     let day = RwSignal::new(constraint_day.unwrap_or(today));
     let end = RwSignal::new(constraint.end);
-    let parent = RwSignal::new(group.parent());
-    let deps = RwSignal::new(group.dependencies().clone());
     let original = StoredValue::new(group);
-    let was = snapshot(plan, |p| Some(dependents_of(p, node))).unwrap_or_default();
-    let dependents = RwSignal::new(was.clone());
+    let drafting = expect_context::<Drafting>().0;
     let save = move |_| {
+        let Some(draft) = drafting.get_untracked() else {
+            return;
+        };
         let old = original.get_value();
         let patch = TaskGroupPatch {
             id,
             name: changed(&old.name().to_string(), name.get_untracked()),
-            dependencies: changed(old.dependencies(), deps.get_untracked()),
-            parent: changed(&old.parent(), parent.get_untracked()),
+            dependencies: changed(old.dependencies(), draft.dependencies.clone()),
+            parent: changed(&old.parent(), draft.parent),
             time_constraint: changed(
                 &old.time_constraint(),
                 forms::node_constraint(
@@ -948,8 +864,13 @@ fn GroupForm(
                 ),
             ),
         };
-        sync.plan(plan, PlanUpdate::TaskGroup(Crud::Update(patch)));
-        apply_dependents(sync, plan, node, &was, &dependents.get_untracked());
+        commit(
+            sync,
+            plan,
+            &draft,
+            name.get_untracked(),
+            PlanUpdate::TaskGroup(Crud::Update(patch)),
+        );
         on_close.run(());
     };
     view! {
@@ -958,9 +879,6 @@ fn GroupForm(
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
             </Field>
             <Constraint kind=kind day=day end=end />
-            <ParentPicker plan=plan me=node parent=parent />
-            <Dependencies plan=plan me=node deps=deps />
-            <Dependents plan=plan me=node deps=dependents />
             <Actions on_cancel=on_cancel on_delete=remove />
         </form>
     }

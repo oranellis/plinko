@@ -13,13 +13,15 @@ use uuid::Uuid;
 use wasm_bindgen::JsCast;
 
 use crate::{
+    card::Card,
+    draft::{Draft, Drafting},
     format,
     gantt::info::info,
     guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     mine::{MyTask, use_tasks_of},
     nav::Route,
-    plan::{Fresh, ItemPane, blank_click},
+    plan::{ItemPane, blank_click},
     ui::use_sync,
 };
 // }}}
@@ -295,7 +297,9 @@ pub fn Allocations(
         lines.join("\n")
     };
     let open = RwSignal::new(None::<(ShortId, PlanNode)>);
-    let fresh = Fresh::new();
+    // what the card changes of the task whose pane is open, until it is saved
+    let draft = RwSignal::new(None::<Draft>);
+    provide_context(Drafting(draft));
     let guard = Guard::new();
     let close = Callback::new(move |()| open.set(None));
     let blank = move || {
@@ -446,11 +450,14 @@ pub fn Allocations(
                     </Show>
                 </div>
                 {move || {
-                    open.get().map(|(plan, node)| view! {
+                    let open_now = open.get();
+                    // the draft is there before the pane, whose form starts from it
+                    draft.set(open_now.and_then(|(plan, node)| Draft::open(sync, plan, node, None)));
+                    open_now.map(|(plan, node)| view! {
+                        <Card plan=plan draft=draft on_change=Callback::new(move |()| guard.dirtied()) />
                         <ItemPane
                             plan=plan
                             node=node
-                            fresh=fresh
                             guard=guard
                             on_close=Callback::new(move |_| open.set(None))
                         />

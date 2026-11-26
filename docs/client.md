@@ -92,6 +92,16 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 
 Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane.
 
+### The card
+
+While an item is created or edited a card floats over the bottom of the chart with the item's shape (`card.rs`). Its group, dependencies, dependents and days are set there, not in the pane, and are staged in a `Draft` (`draft.rs`) that reaches the plan only on save; a new item is not in the plan until then. Redundant links are dropped by the server on save, not while picking.
+
+- Left and right circles: what it waits for and what waits for it. Drag one onto an item to link it, or click it to light it and then click items to link or unlink them. What is linked is outlined on the chart in the usual magenta and cyan. A link that would make a loop is refused with a notice.
+- Middle grip: drop on a group, on an item to join its group, or on blank space for the top level; or click it and then click.
+- Right edge: the day count. Drag sideways to change it, click to type it. The shape never changes length.
+
+On touch nothing drags, so the chart still pans: handles are tapped and days typed. Escape or a second click puts a lit handle out. The allocations page shows the card without a chart to pick from.
+
 ### Shift editing
 
 A top level item with no dependencies shows a purple wash on its left edge while hovered, like the blue one on the right of an item nothing depends on. Plan settings name a default start node (a picker with search) that new top level items depend on to begin with; the plan has no start date to set.

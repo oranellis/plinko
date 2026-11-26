@@ -74,6 +74,9 @@ pub struct Frame<'a> {
     pub today: NaiveDate,
     pub hover: Option<Mark>,
     pub selected: Option<Mark>,
+    /// What an item being edited waits for and what waits for it, which are outlined in place of
+    /// what the links say
+    pub staged: Option<(&'a [Mark], &'a [Mark])>,
     pub links: &'a [Link],
     /// Something to outline in red, and how strongly
     pub flash: Option<(Mark, f64, &'static str)>,
@@ -235,17 +238,21 @@ impl Marked {
         let group = placed
             .iter()
             .find(|p| p.kind == Kind::Group && Some(p.mark) == frame.hover);
+        // a group's start is only marked by its diamond, the group itself is not before, and
+        // the end of a group likewise
+        let before = linked(Role::Before)
+            .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
+            .map(|l| mark_of(l.from));
+        let after = linked(Role::After)
+            .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
+            .map(|l| mark_of(l.to));
+        let (before, after) = match frame.staged {
+            Some((before, after)) => (before.to_vec(), after.to_vec()),
+            None => (before.collect(), after.collect()),
+        };
         Self {
-            // a group's start is only marked by its diamond, the group itself is not before
-            before: linked(Role::Before)
-                .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
-                .map(|l| mark_of(l.from))
-                .collect(),
-            // the end of a group is only marked by its diamond
-            after: linked(Role::After)
-                .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
-                .map(|l| mark_of(l.to))
-                .collect(),
+            before,
+            after,
             chain: linked(Role::Chain)
                 .flat_map(|l| [mark_of(l.from), mark_of(l.to)])
                 .collect(),

@@ -39,6 +39,9 @@ const TAP_TOUCH: f64 = 10.0;
 const FRICTION: f64 = 0.85;
 // }}}
 
+/// What an item being edited waits for, and what waits for it, if one is
+pub type Staged = Option<(Vec<Mark>, Vec<Mark>)>;
+
 #[derive(Default)]
 struct Gesture {
     touches: HashMap<i32, (f64, f64)>,
@@ -86,6 +89,16 @@ pub fn Gantt(
     /// An item to put in the middle, with a light outline that fades away
     #[prop(optional)]
     reveal: Option<RwSignal<Option<Mark>>>,
+    /// What an item being edited waits for and what waits for it, outlined in place of the links
+    /// of what is selected
+    #[prop(optional, into)]
+    staged: Option<Signal<Staged>>,
+    /// An item to outline as if the pointer were on it, for a drag that began off the chart
+    #[prop(optional, into)]
+    spot: Option<Signal<Option<Mark>>>,
+    /// Set to a way of asking what item is at a point of the window, while the chart is there
+    #[prop(optional)]
+    probe: Option<crate::card::Probe>,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
     let size = RwSignal::new((800.0, 600.0));
@@ -246,6 +259,19 @@ pub fn Gantt(
 
     // what is under the pointer
     let hit = move |x: f64, y: f64| hits.with_value(|h| h.hit(x, y));
+    if let Some(probe) = probe {
+        probe.set(Some(Callback::new(move |(x, y): (f64, f64)| {
+            let canvas = canvas.try_get_untracked()??;
+            let rect = AsRef::<web_sys::Element>::as_ref(&canvas).get_bounding_client_rect();
+            let inside = (rect.left()..=rect.right()).contains(&x)
+                && (rect.top()..=rect.bottom()).contains(&y);
+            let found = inside.then(|| hit(x - rect.left(), y - rect.top()));
+            found.map(|item| item.map(|(mark, _)| mark))
+        })));
+        on_cleanup(move || {
+            let _ = probe.try_set(None);
+        });
+    }
     // where an item is drawn, a group by its name strip
     let rect_of = move |mark: Mark| -> Option<Rect> {
         hits.with_value(|h| {
@@ -305,9 +331,10 @@ pub fn Gantt(
             return;
         };
         let picked = selected.get();
+        let staged = staged.and_then(|s| s.get());
         let (vp, hovered, flashed, today) = (
             viewport.get().unwrap_or_default(),
-            hover.get(),
+            hover.get().or_else(|| spot.and_then(|s| s.get())),
             flash.get(),
             today.get(),
         );
@@ -386,6 +413,7 @@ pub fn Gantt(
                     today,
                     hover: hovered,
                     selected: picked,
+                    staged: staged.as_ref().map(|(b, a)| (b.as_slice(), a.as_slice())),
                     links: &linked,
                     flash: flashed,
                     info: if over_violation.is_some() { &[] } else { &info },
@@ -499,6 +527,8 @@ pub fn Gantt(
             canvas.track(),
             linked.track(),
             said.track(),
+            staged.map(|s| s.track()),
+            spot.map(|s| s.track()),
         );
         // the pointer matters while something follows it: a drag, the handles, a note on a warning
         let warns = hovered

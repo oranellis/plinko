@@ -54,6 +54,13 @@ impl Guard {
         self.dirty.try_set(false);
     }
 
+    /// What is being edited was changed from outside the pane
+    pub fn dirtied(&self) {
+        if self.open.get_untracked() {
+            self.dirty.set(true);
+        }
+    }
+
     pub fn clean(&self) {
         self.dirty.try_set(false);
     }

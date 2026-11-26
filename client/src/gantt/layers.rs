@@ -196,6 +196,7 @@ pub fn render(
         today,
         hover: None,
         selected: None,
+        staged: None,
         links: &[],
         flash: None,
         info: &[],
