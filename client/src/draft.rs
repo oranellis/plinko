@@ -2,12 +2,18 @@
 //! only reaches the plan when it is saved, so it can be discarded as a whole.
 
 // modules {{{
+use chrono::{Duration, NaiveDate};
 use leptos::prelude::*;
 use plinko::{
     common::{crud::Crud, short_id::ShortId},
     planner::items::{
-        dependency::PlanNode, milestone::NewMilestone, parent::Parent, plan_buffer::NewPlanBuffer,
-        plan_delay::NewPlanDelay, task::NewTask, task_group::NewTaskGroup,
+        dependency::PlanNode,
+        milestone::NewMilestone,
+        parent::Parent,
+        plan_buffer::NewPlanBuffer,
+        plan_delay::NewPlanDelay,
+        task::{NewTask, PersistentState},
+        task_group::NewTaskGroup,
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
 };
@@ -32,6 +38,8 @@ pub struct Draft {
     pub dependents: Vec<PlanNode>,
     /// Its days, for the kinds that have them
     pub duration: Option<u32>,
+    /// The days the day it really started and the day it really ended are moved by
+    pub moved: (i32, i32),
     /// The handle of the card that is lit, which clicks on the chart then answer to
     pub pick: Option<Pick>,
 }
@@ -70,6 +78,7 @@ impl Draft {
             dependencies: model::dependencies(plan, node),
             dependents: model::dependents(plan, node),
             duration,
+            moved: (0, 0),
             pick: None,
         })
     }
@@ -92,6 +101,7 @@ impl Draft {
                 .collect(),
             dependents: Vec::new(),
             duration,
+            moved: (0, 0),
             pick: None,
         }
     }
@@ -162,6 +172,19 @@ impl Draft {
             plan.apply_update(update).map_err(loops)?;
         }
         Ok(())
+    }
+
+    /// The days a task really ran once they are moved as the draft says, never ending before
+    /// they start
+    pub fn dates(&self, state: PersistentState) -> PersistentState {
+        let by = |day: NaiveDate, days: i32| day.checked_add_signed(Duration::days(days.into()));
+        let start = state.actual_start_date.and_then(|d| by(d, self.moved.0));
+        let end = state.actual_end_date.and_then(|d| by(d, self.moved.1));
+        PersistentState {
+            actual_start_date: start,
+            actual_end_date: end.map(|e| start.map_or(e, |s| e.max(s))),
+            ..state
+        }
     }
 
     /// The update that adds the item, for one that is new

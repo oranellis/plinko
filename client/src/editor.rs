@@ -15,7 +15,7 @@ use plinko::{
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
         plan_delay::{NewPlanDelay, PlanDelay, PlanDelayPatch},
-        task::{Assignee, NewTask, PersistentState, Status, Task, TaskPatch, Worker},
+        task::{Assignee, NewTask, Task, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroup, TaskGroupPatch},
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
@@ -444,11 +444,6 @@ fn TaskForm(
     asked.extend(me.filter(|_| is_new()));
     let allocations = RwSignal::new(asked);
     let affinities = RwSignal::new(task.affinities().clone());
-    let state = task.persistent_state();
-    // the status is set from the bar under the selected item, here it only says which days apply
-    let status = state.status;
-    let started = RwSignal::new(state.actual_start_date);
-    let ended = RwSignal::new(state.actual_end_date);
     let recorded = RwSignal::new(task.actual_workers().clone());
     let original = StoredValue::new(task);
 
@@ -463,11 +458,20 @@ fn TaskForm(
             .into_iter()
             .filter_map(|(w, h)| Some((w, Workload::new(h).ok()?)))
             .collect();
-        let new_state = PersistentState {
-            status,
-            actual_start_date: started.get_untracked(),
-            actual_end_date: ended.get_untracked(),
-        };
+        // its status and the days it really ran are the chart's, which may have changed them since
+        let state = sync
+            .tenant
+            .with_untracked(|t| {
+                Some(
+                    t.as_ref()?
+                        .plans()
+                        .get(&plan)?
+                        .tasks()
+                        .get(&id)?
+                        .persistent_state(),
+                )
+            })
+            .unwrap_or_else(|| old.persistent_state());
         let kept: std::collections::HashMap<Worker, Assignee> = recorded
             .get_untracked()
             .into_iter()
@@ -491,7 +495,7 @@ fn TaskForm(
             affinities: changed(old.affinities(), affinities.get_untracked()),
             // who did the work is whoever was asked for, so what is kept is only for those still asked
             actual_workers: changed(old.actual_workers(), kept),
-            persistent_state: changed(&old.persistent_state(), new_state),
+            persistent_state: changed(&state, draft.dates(state)),
         };
         commit(
             sync,
@@ -508,21 +512,6 @@ fn TaskForm(
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
             </Field>
             <Constraint kind=kind day=day end=end />
-            <div class="cols">
-                <Field label=Signal::derive(move || {
-                    let missing = matches!(status, Status::InProgress | Status::OnHold) && started.get().is_none();
-                    if missing { "Actual Start *" } else { "Actual Start" }.to_string()
-                })>
-                    <OptionalDate value=started disabled=Signal::derive(move || status == Status::NotStarted) />
-                </Field>
-                <Field label=Signal::derive(move || {
-                    let missing = matches!(status, Status::Completed | Status::Dropped) && ended.get().is_none();
-                    let label = if status == Status::OnHold { "Paused On" } else { "Actual End" };
-                    if missing { format!("{label} *") } else { label.to_string() }
-                })>
-                    <OptionalDate value=ended disabled=Signal::derive(move || matches!(status, Status::NotStarted | Status::InProgress)) />
-                </Field>
-            </div>
             <Workers plan=plan allocations=allocations />
             <Affinities plan=plan chosen=affinities />
             <Actions on_cancel=on_cancel on_delete=remove />

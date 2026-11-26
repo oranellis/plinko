@@ -104,7 +104,7 @@ A new item has a card over the bottom of the chart with its shape (`card.rs`):
 
 On touch nothing on the card drags, so the chart still pans: handles are tapped and days typed. A second click puts a lit handle out.
 
-An item in the plan has no card: while its pane is open its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). Clicking one of its dots, without dragging, leaves it in its colour: clicks on other items then link or unlink them until it is clicked again. The days it really ran are set in the pane.
+An item in the plan has no card: while its pane is open its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). Clicking one of its dots, without dragging, leaves it in its colour: clicks on other items then link or unlink them until it is clicked again. The days a started task really ran are staged too, as how far each is moved, and show above it as `start -1  end +2`.
 
 ### Shift editing
 
@@ -112,7 +112,7 @@ A top level item with no dependencies shows a purple wash on its left edge while
 
 With shift held, items the pointer is near show handles: a dot off each edge (drag to another item; right edge: it depends on this item, left edge: this item depends on it), a dot in the middle (drop on a group to move in, on another item to join its group, on blank space for the top level, see `Plan::moving`) and, for tasks and buffers, a grip inside the right edge that changes the duration by whole grid days, shown as `+2 (6d)`. Dragging to the chart's edge scrolls it. Shift-clicking an item linked to the selected one cuts that dependency. With an item selected, hovering another one on a dependency chain with it shows the longest chain in red.
 
-Handles are grey; a dependency dot takes magenta (left, what comes before) or cyan (right, what comes after) when taken. For started tasks (in progress, on hold, completed) dragging the middle handle sideways moves the days they really ran, unless it is dropped on another item, and the right grip changes the end date of on hold and completed ones (in progress ones change duration as normal).
+Handles are grey; a dependency dot takes magenta (left, what comes before) or cyan (right, what comes after) when taken. For started tasks (in progress, on hold, completed) dragging the middle handle sideways moves the days they really ran, unless it is dropped on another item, and the right grip changes the end date of on hold and completed ones (in progress ones change duration as normal). A grip inside the left edge of a started task changes the day it started.
 
 ### Drawing the chart
 

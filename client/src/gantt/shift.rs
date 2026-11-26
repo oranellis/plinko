@@ -28,7 +28,7 @@ const DARK: &str = "#3a3a3e";
 fn reach(handle: Handle) -> (f64, f64) {
     match handle {
         Handle::Move => (0.0, 0.0),
-        Handle::Resize => (9.0, 14.0),
+        Handle::Resize | Handle::Start => (9.0, 14.0),
         Handle::Link { .. } => (12.0, 12.0),
     }
 }
@@ -50,8 +50,10 @@ pub enum Handle {
     Link { right: bool },
     /// Moves the item into the group it is dropped on
     Move,
-    /// Changes how many days it runs
+    /// Changes how many days it runs, or the day it really ended
     Resize,
+    /// Changes the day it really started
+    Start,
 }
 
 // Handle supporting types {{{
@@ -69,6 +71,11 @@ pub enum Drag {
         last_day: i64,
         duration: u32,
     },
+    Start {
+        node: PlanNode,
+        /// The day offset of the first day it ran
+        first_day: i64,
+    },
 }
 
 /// What the chart asks of the plan, which the page answers
@@ -84,6 +91,8 @@ pub struct Editing {
     pub dated: Callback<PlanNode, bool>,
     /// Moves the days the item really ran by `days`
     pub shift_dates: Callback<(PlanNode, i32)>,
+    /// Moves the day the item really started by `days`
+    pub restart: Callback<(PlanNode, i32)>,
     /// Gives the item `days` more days, or fewer when negative
     pub resize: Callback<(PlanNode, i32)>,
     /// The days an item runs for
@@ -127,20 +136,24 @@ pub enum DragView {
         by: (f64, f64),
         name: String,
     },
-    /// A ghost of the item with the length it would have, its outline left as it was
+    /// A ghost of the item where it would run, its outline left as it was
     Resize {
         label: String,
         origin: Rect,
-        width: f64,
+        grown: Rect,
     },
 }
 // }}}
 
 // impl Grips {{{
 impl Grips {
-    pub fn of(kind: Kind, rect: Rect) -> Self {
+    /// `started` is for what has really started, which has a grip for that day in its left edge
+    pub fn of(kind: Kind, rect: Rect, started: bool) -> Self {
         let middle = rect.y + rect.h / 2.0;
         let mut list = Vec::new();
+        if started {
+            list.push((Handle::Start, (rect.x + 6.0, middle)));
+        }
         if matches!(kind, Kind::Task | Kind::Buffer) {
             list.push((Handle::Resize, (rect.x + rect.w - 6.0, middle)));
         }
@@ -212,7 +225,7 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
         ctx.set_line_width(2.0);
         ctx.begin_path();
         match handle {
-            Handle::Resize => slot(ctx, *x, *y, lit),
+            Handle::Resize | Handle::Start => slot(ctx, *x, *y, lit),
             Handle::Move => grip(ctx, *x, *y, lit),
             Handle::Link { right } => {
                 // a dot is grey until it is taken, then it takes the colour of its direction
@@ -264,14 +277,10 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
         Some(DragView::Resize {
             label,
             origin,
-            width,
+            grown,
         }) => {
             leave_outline(ctx, *origin);
-            let grown = Rect {
-                w: *width,
-                ..*origin
-            };
-            ghost(ctx, grown, "");
+            ghost(ctx, *grown, "");
             said(ctx, label, grown.x + grown.w / 2.0, grown.y - 6.0);
         }
         None => {
@@ -394,7 +403,7 @@ mod tests {
     #[test]
     fn only_tasks_and_buffers_can_be_resized() {
         let has = |kind| {
-            Grips::of(kind, rect())
+            Grips::of(kind, rect(), false)
                 .list
                 .iter()
                 .any(|(h, _)| *h == Handle::Resize)
@@ -405,7 +414,7 @@ mod tests {
 
     #[test]
     fn the_whole_item_moves_except_the_right_edge_and_the_dots() {
-        let grips = Grips::of(Kind::Task, rect());
+        let grips = Grips::of(Kind::Task, rect(), false);
         // the item is x 100 to 220, y 50 to 74, the duration grip is inside its right edge
         assert_eq!(grips.at(214.0, 62.0), Some(Handle::Resize));
         assert_eq!(grips.at(110.0, 52.0), Some(Handle::Move));

@@ -49,7 +49,7 @@ pub struct Staged {
     pub group: Option<Mark>,
     /// The item itself when it is on the chart, whose handles then show without shift
     pub item: Option<Mark>,
-    /// Its days when they have changed, as `+2 (6d)`
+    /// What has changed of its days, as `+2 (6d)` or `start -1`
     pub days: Option<String>,
     /// The dot of the item that clicks on others answer to: the right one, or the left
     pub pick: Option<bool>,
@@ -298,7 +298,7 @@ pub fn Gantt(
     let handles_of = move |node: PlanNode| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
         match (kind, rect_of(node)) {
-            (Some(kind), Some(rect)) => Grips::of(kind, rect),
+            (Some(kind), Some(rect)) => Grips::of(kind, rect, editing.dated.run(node)),
             _ => Grips::default(),
         }
     };
@@ -515,8 +515,30 @@ pub fn Gantt(
                     DragView::Resize {
                         label: shift::resize_label(delta, new),
                         origin,
-                        width: (origin.w + f64::from(delta) * vp.day_width)
-                            .max(layout::MIN_BAR_WIDTH),
+                        grown: Rect {
+                            w: (origin.w + f64::from(delta) * vp.day_width)
+                                .max(layout::MIN_BAR_WIDTH),
+                            ..origin
+                        },
+                    }
+                }
+                Drag::Start { node, first_day } => {
+                    let vp = viewport.get_untracked().unwrap_or_default();
+                    let by = f64::from(day_shift(viewport, at.0, first_day as f64)) * vp.day_width;
+                    let origin = rect_of(node).unwrap_or(Rect {
+                        x: at.0,
+                        y: at.1,
+                        w: 0.0,
+                        h: 0.0,
+                    });
+                    DragView::Resize {
+                        label: format!("{:+}", day_shift(viewport, at.0, first_day as f64)),
+                        origin,
+                        grown: Rect {
+                            x: origin.x + by.min(origin.w - layout::MIN_BAR_WIDTH),
+                            w: (origin.w - by).max(layout::MIN_BAR_WIDTH),
+                            ..origin
+                        },
                     }
                 }
             });
@@ -594,6 +616,15 @@ pub fn Gantt(
                 drag.set(Some(match handle {
                     Handle::Link { right } => Drag::Link { node, right },
                     Handle::Move => Drag::Move(node),
+                    Handle::Start => {
+                        let first = scene.with_untracked(|s| {
+                            s.placed(node).map(|p| (p.span.0 - s.origin).num_days())
+                        });
+                        Drag::Start {
+                            node,
+                            first_day: first.unwrap_or(0),
+                        }
+                    }
                     Handle::Resize => {
                         let end = scene.with_untracked(|s| {
                             s.arrangement
@@ -757,6 +788,12 @@ pub fn Gantt(
                         }
                     } else if over != Some(node) {
                         editing.moved.run((node, over));
+                    }
+                }
+                Drag::Start { node, first_day } => {
+                    let by = day_shift(viewport, x, first_day as f64);
+                    if by != 0 {
+                        editing.restart.run((node, by));
                     }
                 }
                 Drag::Resize {

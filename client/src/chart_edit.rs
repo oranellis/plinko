@@ -167,6 +167,24 @@ pub fn editing(plan: ShortId) -> Editing {
             )])
         }));
     });
+    let restart = Callback::new(move |(node, days): (PlanNode, i32)| {
+        send(read(&|p| {
+            let PlanNode::Task(id) = node else {
+                return None;
+            };
+            let state = p.tasks().get(&id)?.persistent_state();
+            let start = state
+                .actual_start_date?
+                .checked_add_signed(Duration::days(i64::from(days)))?;
+            Some(vec![task_state(
+                id,
+                PersistentState {
+                    actual_start_date: Some(state.actual_end_date.map_or(start, |e| start.min(e))),
+                    ..state
+                },
+            )])
+        }));
+    });
     let resize = Callback::new(move |(node, days): (PlanNode, i32)| {
         send(read(&|p| {
             // finished or paused work ends on another day, the rest takes more or fewer days
@@ -229,6 +247,7 @@ pub fn editing(plan: ShortId) -> Editing {
         pick: Callback::new(|_| ()),
         dated,
         shift_dates,
+        restart,
         link,
         unlink,
         moved,
@@ -293,10 +312,34 @@ pub fn staging(
             false => live.moved.run((node, over)),
         },
     );
-    // the days something being edited really ran are the pane's to set
-    let dated = Callback::new(move |node: PlanNode| !ours(node) && live.dated.run(node));
-    let resize = Callback::new(move |(node, days): (PlanNode, i32)| match ours(node) {
+    // whether the days it really ran have an end, which its right grip then moves
+    let finished = |p: &Plan, node: PlanNode| match node {
+        PlanNode::Task(id) => p
+            .tasks()
+            .get(&id)
+            .is_some_and(|t| ended(t.persistent_state()).is_some()),
+        _ => false,
+    };
+    let shift_dates = Callback::new(move |(node, days): (PlanNode, i32)| match ours(node) {
         true => stage(&|_, d| {
+            d.moved = (d.moved.0 + days, d.moved.1 + days);
+            Ok(())
+        }),
+        false => live.shift_dates.run((node, days)),
+    });
+    let restart = Callback::new(move |(node, days): (PlanNode, i32)| match ours(node) {
+        true => stage(&|_, d| {
+            d.moved.0 += days;
+            Ok(())
+        }),
+        false => live.restart.run((node, days)),
+    });
+    let resize = Callback::new(move |(node, days): (PlanNode, i32)| match ours(node) {
+        true => stage(&|p, d| {
+            if finished(p, d.node) {
+                d.moved.1 += days;
+                return Ok(());
+            }
             let least = card::least_days(d.node);
             let grown = |now: u32| (i64::from(now) + i64::from(days)).clamp(least, card::MOST_DAYS);
             d.duration = d.duration.map(|now| grown(now) as u32);
@@ -305,8 +348,18 @@ pub fn staging(
         false => live.resize.run((node, days)),
     });
     let duration = Callback::new(move |node: PlanNode| {
-        let staged = draft.with_untracked(|d| d.as_ref().filter(|_| ours(node))?.duration);
-        staged.unwrap_or_else(|| live.duration.run(node))
+        let saved = live.duration.run(node);
+        let Some(d) = draft.get_untracked().filter(|_| ours(node)) else {
+            return saved;
+        };
+        let ended = sync.tenant.with_untracked(|t| {
+            let plan = t.as_ref().and_then(|t| t.plans().get(&plan));
+            plan.is_some_and(|p| finished(p, node))
+        });
+        match ended {
+            true => (i64::from(saved) + i64::from(d.moved.1 - d.moved.0)).max(1) as u32,
+            false => d.duration.unwrap_or(saved),
+        }
     });
     // a click on a dot of the item makes clicks on others link and unlink them, another ends it
     let pick = Callback::new(move |(node, right): (PlanNode, bool)| {
@@ -324,7 +377,8 @@ pub fn staging(
         link,
         unlink,
         moved,
-        dated,
+        shift_dates,
+        restart,
         resize,
         duration,
         ..live

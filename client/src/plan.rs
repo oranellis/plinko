@@ -414,6 +414,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                         let days = d.duration.zip(saved).filter(|(now, was)| now != was).map(|(now, was)| {
                                             shift::resize_label(now as i32 - was as i32, now)
                                         });
+                                        // and the days it really ran from the ones it has
+                                        let moved = [("start", d.moved.0), ("end", d.moved.1)]
+                                            .into_iter()
+                                            .filter(|(_, by)| *by != 0)
+                                            .map(|(which, by)| format!("{which} {by:+}"));
+                                        let said: Vec<String> = days.into_iter().chain(moved).collect();
+                                        let days = Some(said.join("  ")).filter(|s| !s.is_empty());
                                         Staged {
                                             before: d.dependencies.clone(),
                                             after: d.dependents.clone(),
