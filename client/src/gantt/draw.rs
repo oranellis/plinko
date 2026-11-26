@@ -76,7 +76,7 @@ pub struct Frame<'a> {
     pub selected: Option<Mark>,
     /// What an item being edited waits for and what waits for it, which are outlined in place of
     /// what the links say
-    pub staged: Option<(&'a [Mark], &'a [Mark])>,
+    pub staged: Option<(&'a [Mark], &'a [Mark], Option<Mark>)>,
     pub links: &'a [Link],
     /// Something to outline in red, and how strongly
     pub flash: Option<(Mark, f64, &'static str)>,
@@ -132,6 +132,8 @@ struct Marked {
     after: Vec<Mark>,
     /// Everything inside the group under the pointer
     inside: Vec<Mark>,
+    /// The group the item being edited is in
+    holds: Option<Mark>,
     /// The ends of the chain from the selected item to the one under the pointer
     chain: Vec<Mark>,
 }
@@ -247,10 +249,11 @@ impl Marked {
             .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
             .map(|l| mark_of(l.to));
         let (before, after) = match frame.staged {
-            Some((before, after)) => (before.to_vec(), after.to_vec()),
+            Some((before, after, _)) => (before.to_vec(), after.to_vec()),
             None => (before.collect(), after.collect()),
         };
         Self {
+            holds: frame.staged.and_then(|s| s.2),
             before,
             after,
             chain: linked(Role::Chain)
@@ -285,7 +288,7 @@ fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(S
         Some((TARGET.to_string(), 3.0))
     } else if frame.hover == Some(mark) || frame.selected == Some(mark) {
         Some((HOVERED.to_string(), 3.5))
-    } else if marked.inside.contains(&mark) {
+    } else if marked.inside.contains(&mark) || marked.holds == Some(mark) {
         Some((INSIDE.to_string(), 3.0))
     } else if marked.before.contains(&mark) {
         Some((BEFORE.to_string(), 3.0))
@@ -441,7 +444,8 @@ impl Shape {
 /// the names that are drawn over the layers. `by` is how far the layers are from where they were drawn.
 pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
     let marked = Marked::of(frame);
-    let mut marks: Vec<Mark> = [frame.hover, frame.selected, frame.flash.map(|f| f.0)]
+    let flashed = frame.flash.map(|f| f.0);
+    let mut marks: Vec<Mark> = [frame.hover, frame.selected, flashed, marked.holds]
         .into_iter()
         .flatten()
         .collect();

@@ -400,7 +400,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 jump=jump
                                 focus=focus
                                 staged=Signal::derive(move || draft.with(|d| {
-                                    d.as_ref().map(|d| (d.dependencies.clone(), d.dependents.clone()))
+                                    d.as_ref().map(|d| {
+                                        let group = match d.parent {
+                                            Parent::Node(id) => Some(PlanNode::TaskGroup(id)),
+                                            Parent::Plan => None,
+                                        };
+                                        (d.dependencies.clone(), d.dependents.clone(), group)
+                                    })
                                 }))
                                 spot=spot
                                 probe=probe

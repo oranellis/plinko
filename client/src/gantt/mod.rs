@@ -39,8 +39,8 @@ const TAP_TOUCH: f64 = 10.0;
 const FRICTION: f64 = 0.85;
 // }}}
 
-/// What an item being edited waits for, and what waits for it, if one is
-pub type Staged = Option<(Vec<Mark>, Vec<Mark>)>;
+/// What an item being edited waits for, what waits for it and the group it is in, if one is
+pub type Staged = Option<(Vec<Mark>, Vec<Mark>, Option<Mark>)>;
 
 #[derive(Default)]
 struct Gesture {
@@ -413,7 +413,9 @@ pub fn Gantt(
                     today,
                     hover: hovered,
                     selected: picked,
-                    staged: staged.as_ref().map(|(b, a)| (b.as_slice(), a.as_slice())),
+                    staged: staged
+                        .as_ref()
+                        .map(|(b, a, g)| (b.as_slice(), a.as_slice(), *g)),
                     links: &linked,
                     flash: flashed,
                     info: if over_violation.is_some() { &[] } else { &info },
