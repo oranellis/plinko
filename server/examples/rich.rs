@@ -582,6 +582,65 @@ fn score(
 }
 // }}}
 
+// verify {{{
+/// Checks a schedule against the tenant without the scheduler's help, and gives what is wrong
+/// with it: a person with more hours on a day than they have, a task that does not have its
+/// hours on as many days as it lasts, one that skips a day it could have been worked on (so
+/// other work breaks it up), or one that starts before what it depends on ends
+fn verify(tenant: &Tenant, state: &scheduler::state::TenantVolatileState) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let hours_of = |user: &Uuid, day: NaiveDate| {
+        let calendar = tenant.calendar(user);
+        calendar.and_then(|c| c.on(day)).map_or(0, |w| w.get())
+    };
+    for (user, schedule) in &state.users {
+        for day in schedule.assignments.keys() {
+            if schedule.booked_on(*day) > u32::from(hours_of(user, *day)) {
+                wrong.push(format!("{user} has too many hours on {day}"));
+            }
+        }
+    }
+    for (id, plan) in tenant.plans() {
+        let placed = &state.plans[id];
+        for (task_id, task) in plan.tasks() {
+            let Some(at) = placed.tasks.get(task_id) else {
+                continue;
+            };
+            for dependency in task.dependencies() {
+                let Dependency::Node(PlanNode::Task(before)) = dependency else {
+                    continue;
+                };
+                let ends = placed.tasks.get(before).map(|b| b.date_range.end());
+                if ends.is_some_and(|end| at.date_range.start() < end) {
+                    wrong.push(format!("{task_id} starts before {before} ends"));
+                }
+            }
+            for (worker, asked) in task.allocations() {
+                let Some(Assignee::User(user)) = at.workers.get(worker) else {
+                    continue;
+                };
+                let days = &at.assignments[&Assignee::User(*user)];
+                if days.len() != task.duration() as usize || days.values().any(|h| h != asked) {
+                    wrong.push(format!(
+                        "{task_id} does not have its hours on each of its days"
+                    ));
+                }
+                let (first, last) = (*days.keys().next().unwrap(), *days.keys().last().unwrap());
+                let skipped = first.iter_days().take_while(|d| *d < last).any(|day| {
+                    let could = hours_of(user, day) >= asked.get()
+                        && plan.task_allows_day(task_id, day).unwrap_or(true);
+                    could && !days.contains_key(&day)
+                });
+                if skipped {
+                    wrong.push(format!("{task_id} is broken up by other work"));
+                }
+            }
+        }
+    }
+    wrong
+}
+// }}}
+
 // main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
@@ -636,6 +695,12 @@ fn main() {
         let state = scheduler::solve(&mut world.tenant, &scheduler::Hints::default()).state;
         let seconds = started.elapsed().as_secs_f64();
         let unscheduled: usize = state.plans.values().map(|p| p.unscheduled.len()).sum();
+        let wrong = verify(&world.tenant, &state);
+        assert!(
+            wrong.is_empty(),
+            "the schedule is not valid: {:?}",
+            &wrong[..wrong.len().min(5)]
+        );
         let (violated, late, worst, end, delay) = score(&state, since);
         println!(
             "seed {seed}: {} dated, {violated} missed, {late} days late, worst {worst}, plan end {end} days, {unscheduled} unscheduled, {seconds:.1}s",
