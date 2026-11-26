@@ -12,7 +12,7 @@ use plinko::{
 use wasm_bindgen::JsCast;
 
 use crate::{
-    context::{EditButtons, NameBox},
+    context::{EditSwitch, Extras, NameBox},
     draft::{Draft, Pick},
     model,
     ui::use_sync,
@@ -415,7 +415,8 @@ pub fn Card(
                 {move || node.get().map(|_| view! {
                     <div class="draftcard-row">
                         <NameBox draft=draft on_save=on_save />
-                        <EditButtons plan=plan draft=draft on_save=on_save on_cancel=on_cancel />
+                        <Extras plan=plan draft=draft />
+                        <EditSwitch on_save=on_save on_cancel=on_cancel />
                     </div>
                 })}
                 {move || said().map(|said| view! { <p class="draftcard-said">{said}</p> })}

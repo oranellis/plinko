@@ -253,14 +253,26 @@ impl Draft {
         Pin::of(self.constraint.constraint, end)
     }
 
-    /// A click on the timer by an end of the item: lets go of the day when it is that end that
-    /// is held, and else holds that end, to the day the other was held to or to `day`
-    pub fn time(&mut self, end: bool, day: NaiveDate) {
-        let held = if end { Held::Latest } else { Held::Earliest };
-        self.hold(match self.pin() {
-            Some(pin) if pin.end == end => None,
-            Some(pin) => Some(Pin { end, ..pin }),
-            None => Some(Pin { day, held, end }),
+    /// Goes round what of the item is held to a day: nothing, its first day, then its last. A
+    /// milestone is one day, held or not. `first` and `last` are the days it is scheduled on.
+    pub fn hold_next(&mut self, first: NaiveDate, last: NaiveDate) {
+        let (start, end) = (
+            Pin {
+                day: first,
+                held: Held::Earliest,
+                end: false,
+            },
+            Pin {
+                day: last,
+                held: Held::Latest,
+                end: true,
+            },
+        );
+        self.hold(match (self.pin(), self.node) {
+            (None, PlanNode::Milestone(_)) => Some(end),
+            (None, _) => Some(start),
+            (Some(pin), _) if !pin.end => Some(end),
+            (Some(_), _) => None,
         });
     }
 

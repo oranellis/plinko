@@ -163,6 +163,11 @@ pub fn Icon(
             <line x1="9.2" y1="6.8" x2="9" y2="10.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::Timer => view! {
+            <circle cx="8" cy="9" r="4.7" stroke="currentColor" stroke-width="1.2" fill="none" />
+            <path d="M8 6.4V9H10M6.6 2.4H9.4M8 2.4V4.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+        }
+        .into_any(),
         IconKind::Plus => view! {
             <line x1="8" y1="3.5" x2="8" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             <line x1="3.5" y1="8" x2="12.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
@@ -227,6 +232,7 @@ pub enum IconKind {
     Pencil,
     Close,
     Bin,
+    Timer,
     Plus,
     Play,
 }

@@ -33,7 +33,6 @@ fn reach(handle: Handle) -> (f64, f64) {
     match handle {
         Handle::Move => (0.0, 0.0),
         Handle::Resize | Handle::Start => (9.0, 14.0),
-        Handle::Timer { .. } => (9.0, 10.0),
         Handle::Day => (11.0, 9.0),
         Handle::Hold(_) => (HOLD_BUTTON / 2.0, HOLD_BUTTON / 2.0),
         Handle::Link { .. } => (12.0, 12.0),
@@ -63,8 +62,6 @@ pub enum Handle {
     Resize,
     /// Changes the day it really started
     Start,
-    /// A click holds its first day to a day or lets it go, or its last day for `end`
-    Timer { end: bool },
     /// The day it is held to: dragged to another, or clicked to pick one and how it is held
     Day,
     /// A click holds it this way, or for `None` lets it go
@@ -148,8 +145,6 @@ pub struct Editing {
     pub pin: Callback<PlanNode, Option<Pin>>,
     /// `(node, end, day)`: holds the first day of the item to a day, or its last for `end`
     pub constrain: Callback<(PlanNode, bool, NaiveDate)>,
-    /// `(node, end)`: a click on the timer by an end of the item
-    pub timer: Callback<(PlanNode, bool)>,
     /// How the item is held to its day, or with `None` that it no longer is
     pub hold: Callback<(PlanNode, Option<Held>)>,
     /// A click on the held day, after which a click on another day moves it there
@@ -320,10 +315,6 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
         ctx.begin_path();
         match handle {
             Handle::Resize | Handle::Start => slot(ctx, *x, *y, lit),
-            Handle::Timer { end } => {
-                let active = overlay.pin.is_some_and(|p| p.end == *end);
-                timer(ctx, *x, *y, active, lit);
-            }
             Handle::Day => day_handle(ctx, *x, *y, lit || overlay.daying),
             Handle::Hold(held) => {
                 let active = held.is_some() && overlay.pin.map(|p| p.held) == *held;
@@ -440,29 +431,6 @@ pub fn paint_pin(ctx: &Pen, pin: &PinView) {
     ctx.set_stroke_style_str(PIN);
     ctx.set_line_width(2.5);
     held_sign(ctx, pin.x, pin.row.y - 9.0, pin.held, 1.0);
-    ctx.restore();
-}
-
-/// The timer by an end of the item being edited, lit when that end is held to a day and faint
-/// when it is not: a click holds it or lets it go
-fn timer(ctx: &Pen, x: f64, y: f64, active: bool, lit: bool) {
-    ctx.save();
-    ctx.set_global_alpha(if active || lit { 1.0 } else { 0.45 });
-    ctx.set_stroke_style_str(if active { PIN } else { LIGHT });
-    ctx.set_fill_style_str(DARK);
-    ctx.set_line_width(1.8);
-    ctx.set_line_cap("round");
-    ctx.begin_path();
-    let _ = ctx.arc(x, y + 1.0, 6.5, 0.0, std::f64::consts::TAU);
-    ctx.fill();
-    ctx.stroke();
-    ctx.begin_path();
-    ctx.move_to(x, y - 3.0);
-    ctx.line_to(x, y + 1.0);
-    ctx.line_to(x + 3.0, y + 1.0);
-    ctx.move_to(x - 2.5, y - 8.0);
-    ctx.line_to(x + 2.5, y - 8.0);
-    ctx.stroke();
     ctx.restore();
 }
 

@@ -63,6 +63,7 @@ expect(await a.evaluate(() => !!document.querySelector(".contextbar")), "tapping
 await click(a, "Edit");
 await sleep(300);
 expect(await a.evaluate(() => !!document.querySelector(".contextbar.docked input.namebox")), "the bar's pencil docks it with the name to edit");
+await a.hover(".editswitch"); await sleep(200);
 await click(a, "Cancel");
 // dragging pans, the wheel zooms: the day labels change
 const before = await a.screenshot({ encoding: "base64" });

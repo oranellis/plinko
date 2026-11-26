@@ -53,10 +53,8 @@ pub struct Staged {
     pub days: Option<String>,
     /// The days its left and right edges are moved by, which a ghost of it shows
     pub edges: (i32, i32),
-    /// The day it is held to, whether it can be held to one, which gives it timers to click, and
-    /// whether a click on another day moves the day
+    /// The day it is held to, and whether a click on another day moves the day
     pub pin: Option<Pin>,
-    pub pins: bool,
     pub daying: bool,
     /// The dot of the item that clicks on others answer to: the right one, or the left
     pub pick: Option<bool>,
@@ -342,45 +340,34 @@ pub fn Gantt(
     let staged_of = move |node: PlanNode| {
         staged.and_then(|s| s.with_untracked(|s| s.clone().filter(|s| s.item == Some(node))))
     };
-    // the handles of the item the pointer is near. The one being edited has a timer under each
-    // end that can be held to a day, a handle on the held day in the header, and under that
-    // while it is picked the ways to hold it.
+    // the handles of the item the pointer is near. The one being edited has a handle on the day
+    // it is held to, in the header, and under that while it is picked the ways to hold it.
     let handles_of = move |node: PlanNode| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
         let (Some(kind), Some(rect)) = (kind, staged_rect(node)) else {
             return Grips::default();
         };
         let mut grips = Grips::of(kind, rect, editing.dated.run(node));
-        if let Some(staged) = staged_of(node).filter(|s| s.pins) {
-            // a milestone is a day, held by its end
-            let ends: &[bool] = match kind {
-                arrange::Kind::Milestone => &[true],
-                _ => &[false, true],
-            };
-            for end in ends {
-                let x = rect.x + if *end { rect.w } else { 0.0 };
-                let under = rect.y + rect.h + 11.0;
-                grips.list.push((Handle::Timer { end: *end }, (x, under)));
-            }
-            if let Some(view) = staged.pin.and_then(|p| pin_view(node, p, false)) {
-                let x = view.cell.x + view.cell.w / 2.0;
-                grips
-                    .list
-                    .push((Handle::Day, (x, layout::HEADER_HEIGHT - 7.0)));
-                let ways = [
-                    Some(Held::Earliest),
-                    Some(Held::Fixed),
-                    Some(Held::Latest),
-                    None,
-                ];
-                for (i, way) in ways.into_iter().enumerate().filter(|_| staged.daying) {
-                    // in a row under the day, kept on the chart at its edges
-                    let (reach, wide) = (shift::HOLD_BUTTON * 2.0, size.get_untracked().0);
-                    let x = x.clamp(reach, (wide - reach).max(reach));
-                    let along = (i as f64 - 1.5) * shift::HOLD_BUTTON;
-                    let under = layout::HEADER_HEIGHT + shift::HOLD_BUTTON / 2.0 + 4.0;
-                    grips.list.push((Handle::Hold(way), (x + along, under)));
-                }
+        let staged = staged_of(node);
+        let held = staged.as_ref().and_then(|s| s.pin);
+        let daying = staged.is_some_and(|s| s.daying);
+        if let Some(view) = held.and_then(|p| pin_view(node, p, false)) {
+            let x = view.cell.x + view.cell.w / 2.0;
+            let day = (x, layout::HEADER_HEIGHT - 7.0);
+            grips.list.push((Handle::Day, day));
+            let ways = [
+                Some(Held::Earliest),
+                Some(Held::Fixed),
+                Some(Held::Latest),
+                None,
+            ];
+            for (i, way) in ways.into_iter().enumerate().filter(|_| daying) {
+                // in a row under the day, kept on the chart at its edges
+                let (reach, wide) = (shift::HOLD_BUTTON * 2.0, size.get_untracked().0);
+                let x = x.clamp(reach, (wide - reach).max(reach));
+                let along = (i as f64 - 1.5) * shift::HOLD_BUTTON;
+                let under = layout::HEADER_HEIGHT + shift::HOLD_BUTTON / 2.0 + 4.0;
+                grips.list.push((Handle::Hold(way), (x + along, under)));
             }
         }
         grips
@@ -755,7 +742,7 @@ pub fn Gantt(
                         node,
                         end: staged_of(node).and_then(|s| s.pin).is_some_and(|p| p.end),
                     },
-                    Handle::Timer { .. } | Handle::Hold(_) => Drag::Press { node, handle },
+                    Handle::Hold(_) => Drag::Press { node, handle },
                     Handle::Start => {
                         let first = scene.with_untracked(|s| {
                             s.placed(node).map(|p| (p.span.0 - s.origin).num_days())
@@ -917,7 +904,6 @@ pub fn Gantt(
             if let Drag::Press { node, handle } = done {
                 match handle {
                     _ if handles_of(node).at(x, y) != Some(handle) => {}
-                    Handle::Timer { end } => editing.timer.run((node, end)),
                     Handle::Hold(way) => editing.hold.run((node, way)),
                     _ => {}
                 }

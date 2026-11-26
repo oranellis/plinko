@@ -251,9 +251,8 @@ pub fn editing(plan: ShortId) -> Editing {
     });
     Editing {
         pin,
-        // only an item being edited has timers, a day to drag and dots to click, see `staging`
+        // only an item being edited has a day to drag and dots to click, see `staging`
         constrain: Callback::new(|_| ()),
-        timer: Callback::new(|_| ()),
         hold: Callback::new(|_| ()),
         daying: Callback::new(|_| ()),
         pick: Callback::new(|_| ()),
@@ -397,26 +396,6 @@ pub fn staging(
             });
         }
     });
-    // a timer holds its end where the schedule has it: the first day, or the last
-    let timer = Callback::new(move |(node, end): (PlanNode, bool)| {
-        let span = sync.schedule.with_untracked(|s| {
-            let state = s.as_ref().and_then(|(_, s)| s.plans.get(&plan));
-            model::span_of(state, node)
-        });
-        let day = span.map(|(first, after)| match end {
-            true => after.pred_opt().map_or(first, |last| last.max(first)),
-            false => first,
-        });
-        let today = sync
-            .tenant
-            .with_untracked(|t| t.as_ref().map(|t| t.today()));
-        if let Some(day) = day.or(today).filter(|_| ours(node)) {
-            stage(&|_, d| {
-                d.time(end, day);
-                Ok(())
-            });
-        }
-    });
     let hold = Callback::new(move |(node, held): (PlanNode, Option<Held>)| {
         if ours(node) {
             stage(&|_, d| {
@@ -437,7 +416,6 @@ pub fn staging(
     });
     Editing {
         constrain,
-        timer,
         hold,
         daying,
         pick,

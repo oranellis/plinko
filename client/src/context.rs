@@ -88,14 +88,20 @@ pub fn ContextBar(
             }}
             {has_data(node).then(|| view! {
                 <button type="button" class="ctx" title="Data" aria-label="Data" on:click=move |_| on_data.run(())>
-                    <Icon kind=IconKind::Data size=18 />
+                    <Icon kind=IconKind::Data size=20 />
                 </button>
             })}
-            <button type="button" class="ctx" class:on=move || docked.get() title="Edit" aria-label="Edit" on:click=move |_| on_edit.run(())>
-                <Icon kind=IconKind::Pencil size=18 />
-            </button>
-            <Show when=move || docked.get()>
-                <EditButtons plan=plan draft=draft on_save=on_save on_cancel=on_cancel on_delete=on_delete />
+            // the pencil starts the edit, and is then what ends it
+            <Show
+                when=move || docked.get()
+                fallback=move || view! {
+                    <button type="button" class="ctx" title="Edit" aria-label="Edit" on:click=move |_| on_edit.run(())>
+                        <Icon kind=IconKind::Pencil size=20 />
+                    </button>
+                }
+            >
+                <EditSwitch on_save=on_save on_cancel=on_cancel on_delete=on_delete />
+                <Extras plan=plan draft=draft />
             </Show>
         </div>
     }
@@ -151,34 +157,66 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
 }
 // }}}
 
-// EditButtons {{{
-/// Who works on the draft's task, and saving, leaving and for an item in the plan deleting it
+// Extras {{{
+/// Who works on the draft's task, and for an item in the plan which of its ends is held to a day
 #[component]
-pub fn EditButtons(
-    plan: ShortId,
-    draft: RwSignal<Option<Draft>>,
-    on_save: Callback<()>,
-    on_cancel: Callback<()>,
-    #[prop(optional, into)] on_delete: Option<Callback<()>>,
-) -> impl IntoView {
-    let task = draft.with_untracked(|d| {
-        d.as_ref()
-            .is_some_and(|d| matches!(d.node, PlanNode::Task(_)))
+pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
+    let sync = use_sync();
+    let (task, holds) = draft.with_untracked(|d| {
+        let node = d.as_ref().map(|d| (d.node, d.new));
+        (
+            matches!(node, Some((PlanNode::Task(_), _))),
+            matches!(
+                node,
+                Some((
+                    PlanNode::Task(_) | PlanNode::TaskGroup(_) | PlanNode::Milestone(_),
+                    false
+                ))
+            ),
+        )
     });
     let workers = RwSignal::new(false);
     crate::escape::on_escape(
         move || workers.get(),
         Callback::new(move |()| workers.set(false)),
     );
-    let button = move |label: &'static str,
-                       kind: IconKind,
-                       tone: &'static str,
-                       on: Callback<()>| {
-        view! {
-            <button type="button" class=format!("ctx fadein {tone}") title=label aria-label=label on:click=move |_| on.run(())>
-                <Icon kind=kind size=18 />
-            </button>
-        }
+    // which end is held: its first day, or its last, which is the only one a milestone has
+    let held = move || draft.with(|d| d.as_ref().and_then(Draft::pin).map(|p| p.end));
+    let single = draft.with_untracked(|d| {
+        d.as_ref()
+            .is_some_and(|d| matches!(d.node, PlanNode::Milestone(_)))
+    });
+    let held_label = move || match (held(), single) {
+        (None, true) => "Not held to a day: hold it to the day it is on",
+        (None, false) => "Not held to a day: hold its first day",
+        (Some(false), _) => "Its first day is held: hold its last day instead",
+        (Some(true), _) => "Held to a day: let it go",
+    };
+    // the days the schedule has it on, which is where a day is first held
+    let hold_next = move || {
+        let today = sync
+            .tenant
+            .with_untracked(|t| t.as_ref().map(|t| t.today()));
+        draft.update(|d| {
+            let Some(d) = d else {
+                return;
+            };
+            let span = sync.schedule.with_untracked(|s| {
+                let state = s.as_ref().and_then(|(_, s)| s.plans.get(&plan));
+                model::span_of(state, d.node)
+            });
+            let days = span
+                .map(|(first, after)| {
+                    (
+                        first,
+                        after.pred_opt().map_or(first, |last| last.max(first)),
+                    )
+                })
+                .or(today.map(|day| (day, day)));
+            if let Some((first, last)) = days {
+                d.hold_next(first, last);
+            }
+        });
     };
     view! {
         {task.then(|| view! {
@@ -191,15 +229,63 @@ pub fn EditButtons(
                 aria-expanded=move || workers.get().to_string()
                 on:click=move |_| workers.update(|w| *w = !*w)
             >
-                <Icon kind=IconKind::Person size=18 />
+                <Icon kind=IconKind::Person size=20 />
             </button>
             <Show when=move || workers.get()>
                 <WorkersWindow plan=plan draft=draft />
             </Show>
         })}
-        {button("Save", IconKind::Tick, "save", on_save)}
-        {button("Cancel", IconKind::Close, "", on_cancel)}
-        {on_delete.map(|on_delete| button("Delete", IconKind::Bin, "danger", on_delete))}
+        {holds.then(|| view! {
+            <button
+                type="button"
+                class="ctx fadein"
+                class:held-start=move || held() == Some(false)
+                class:held-end=move || held() == Some(true)
+                title=held_label
+                aria-label=held_label
+                on:click=move |_| hold_next()
+            >
+                <Icon kind=IconKind::Timer size=20 />
+            </button>
+        })}
+    }
+}
+// }}}
+
+// EditSwitch {{{
+/// What to do with what is being edited, in place of the pencil: one button that saves it, with
+/// leaving it and deleting it a hover away, like the statuses of a task
+#[component]
+pub fn EditSwitch(
+    on_save: Callback<()>,
+    on_cancel: Callback<()>,
+    #[prop(optional, into)] on_delete: Option<Callback<()>>,
+) -> impl IntoView {
+    // a pencil with what happens to the edit in its corner, or for deleting a bin that fills it
+    let option = |label: &'static str,
+                  class: &'static str,
+                  mark: Option<IconKind>,
+                  on: Callback<()>| {
+        view! {
+            <button type="button" class=format!("st {class}") title=label aria-label=label on:click=move |_| on.run(())>
+                {match mark {
+                    Some(mark) => view! {
+                        <Icon kind=IconKind::Pencil size=20 />
+                        <span class="mini"><Icon kind=mark size=12 /></span>
+                    }.into_any(),
+                    None => view! { <Icon kind=IconKind::Bin size=28 /> }.into_any(),
+                }}
+            </button>
+        }
+    };
+    view! {
+        <div class="statusswitch editswitch fadein">
+            <div class="statuscol">
+                {option("Save", "next save", Some(IconKind::Tick), on_save)}
+                {option("Cancel", "cancel", Some(IconKind::Close), on_cancel)}
+                {on_delete.map(|on_delete| option("Delete", "delete", None, on_delete))}
+            </div>
+        </div>
     }
 }
 // }}}
@@ -218,7 +304,7 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
             .unwrap_or_default()
     });
     view! {
-        <div class="statusswitch" style=move || format!("--shift:{}px", -(position(next(status.get())) as i32) * 34)>
+        <div class="statusswitch" style=move || format!("--shift:{}px", -(position(next(status.get())) as i32) * 40)>
             <div class="statuscol">
                 {STATUSES
                     .into_iter()
@@ -234,7 +320,7 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
                                 aria-label=label
                                 on:click=move |_| set_status(plan, task, to)
                             >
-                                <Icon kind=icon size=18 />
+                                <Icon kind=icon size=20 />
                             </button>
                         }
                     })
@@ -310,7 +396,7 @@ fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
                 }
             }
         >
-            {move || view! { <Icon kind=kind() size=18 /> }}
+            {move || view! { <Icon kind=kind() size=20 /> }}
         </button>
     }
 }
