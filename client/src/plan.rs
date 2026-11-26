@@ -411,6 +411,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                         };
                                         // how far the days are from the ones the plan has
                                         let saved = Draft::open(sync, plan, d.node, None).and_then(|s| s.duration);
+                                        let longer = d.duration.zip(saved).map_or(0, |(now, was)| now as i32 - was as i32);
                                         let days = d.duration.zip(saved).filter(|(now, was)| now != was).map(|(now, was)| {
                                             shift::resize_label(now as i32 - was as i32, now)
                                         });
@@ -427,6 +428,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                             group,
                                             item: (!d.new).then_some(d.node),
                                             days,
+                                            edges: (d.moved.0, d.moved.1 + longer),
                                             pick: match d.pick {
                                                 Some(Pick::Before) => Some(false),
                                                 Some(Pick::After) => Some(true),

@@ -117,6 +117,8 @@ pub struct Overlay {
     pub drag: Option<DragView>,
     /// What to say above an item, when nothing is dragged
     pub note: Option<(Rect, String)>,
+    /// Where the item being edited would run, shown over it when nothing is dragged
+    pub ghost: Option<Rect>,
     /// The dot that clicks on items answer to: the right one, or the left
     pub picked: Option<bool>,
 }
@@ -216,6 +218,10 @@ pub fn resize_label(delta: i32, duration: u32) -> String {
 pub fn paint(ctx: &Pen, overlay: &Overlay) {
     ctx.save();
     let dragging = overlay.drag.is_some();
+    // under the handles, which are on it
+    if let Some(r) = overlay.ghost.filter(|_| !dragging) {
+        ghost(ctx, r, "");
+    }
     for (handle, (x, y)) in &overlay.handles.list {
         // only the grabbed one stays while dragging, drawn where the pointer is
         let lit = overlay.handles.at(overlay.pointer.0, overlay.pointer.1) == Some(*handle);

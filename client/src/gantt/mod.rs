@@ -51,6 +51,8 @@ pub struct Staged {
     pub item: Option<Mark>,
     /// What has changed of its days, as `+2 (6d)` or `start -1`
     pub days: Option<String>,
+    /// The days its left and right edges are moved by, which a ghost of it shows
+    pub edges: (i32, i32),
     /// The dot of the item that clicks on others answer to: the right one, or the left
     pub pick: Option<bool>,
 }
@@ -294,10 +296,28 @@ pub fn Gantt(
                 .or_else(|| h.headers().find(|(m, ..)| *m == mark).map(|(_, r, _)| r))
         })
     };
+    // how far the edges of the item being edited are moved, in days
+    let edges_of = move |node: PlanNode| {
+        let staged = staged.and_then(|s| {
+            s.with_untracked(|s| s.as_ref().filter(|s| s.item == Some(node)).map(|s| s.edges))
+        });
+        staged.unwrap_or_default()
+    };
+    // where an item is once what is staged of its edges is done, which is where its handles are
+    let staged_rect = move |node: PlanNode| -> Option<Rect> {
+        let (r, (left, right)) = (rect_of(node)?, edges_of(node));
+        let day = viewport.get_untracked().unwrap_or_default().day_width;
+        let (left, right) = (f64::from(left) * day, f64::from(right) * day);
+        Some(Rect {
+            x: r.x + left,
+            w: (r.w - left + right).max(layout::MIN_BAR_WIDTH),
+            ..r
+        })
+    };
     // the handles of the item the pointer is near
     let handles_of = move |node: PlanNode| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
-        match (kind, rect_of(node)) {
+        match (kind, staged_rect(node)) {
             (Some(kind), Some(rect)) => Grips::of(kind, rect, editing.dated.run(node)),
             _ => Grips::default(),
         }
@@ -449,7 +469,10 @@ pub fn Gantt(
             let handles = gripped.map(handles_of).unwrap_or_default();
             let note = staged
                 .as_ref()
-                .and_then(|s| Some((rect_of(s.item?)?, s.days.clone()?)));
+                .and_then(|s| Some((staged_rect(s.item?)?, s.days.clone()?)));
+            let ghost = pinned
+                .filter(|node| edges_of(*node) != (0, 0))
+                .and_then(staged_rect);
             let target = |own: PlanNode| {
                 hit(at.0, at.1)
                     .map(|(m, _)| m)
@@ -506,7 +529,7 @@ pub fn Gantt(
                 } => {
                     let vp = viewport.get_untracked().unwrap_or_default();
                     let (delta, new) = shift::resized(vp.day_at(at.0), last_day, duration);
-                    let origin = rect_of(node).unwrap_or(Rect {
+                    let origin = staged_rect(node).unwrap_or(Rect {
                         x: at.0,
                         y: at.1,
                         w: 0.0,
@@ -525,7 +548,7 @@ pub fn Gantt(
                 Drag::Start { node, first_day } => {
                     let vp = viewport.get_untracked().unwrap_or_default();
                     let by = f64::from(day_shift(viewport, at.0, first_day as f64)) * vp.day_width;
-                    let origin = rect_of(node).unwrap_or(Rect {
+                    let origin = staged_rect(node).unwrap_or(Rect {
                         x: at.0,
                         y: at.1,
                         w: 0.0,
@@ -549,6 +572,7 @@ pub fn Gantt(
                     pointer: at,
                     drag: view,
                     note,
+                    ghost,
                     picked: staged.as_ref().and_then(|s| s.pick),
                 },
             );
@@ -622,7 +646,7 @@ pub fn Gantt(
                         });
                         Drag::Start {
                             node,
-                            first_day: first.unwrap_or(0),
+                            first_day: first.unwrap_or(0) + i64::from(edges_of(node).0),
                         }
                     }
                     Handle::Resize => {
@@ -633,7 +657,8 @@ pub fn Gantt(
                                 .find(|p| p.mark == node)
                                 .map(|p| (s.origin, p.span.1))
                         });
-                        let last_day = end.map_or(0, |(start, end)| (end - start).num_days() - 1);
+                        let last_day = end.map_or(0, |(start, end)| (end - start).num_days() - 1)
+                            + i64::from(edges_of(node).1);
                         Drag::Resize {
                             node,
                             last_day,
