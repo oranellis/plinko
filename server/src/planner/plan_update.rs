@@ -65,7 +65,6 @@ impl PlanUpdate {
                 id,
                 name: None,
                 parent,
-                mode: None,
                 duration: None,
                 time_constraint: None,
                 dependencies,

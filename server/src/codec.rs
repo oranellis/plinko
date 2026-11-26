@@ -38,7 +38,6 @@ mod tests {
             id: Uuid::new_v4(),
             name: None,
             parent: None,
-            mode: None,
             duration: Some(3),
             time_constraint: None,
             dependencies: None,

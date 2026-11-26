@@ -290,7 +290,6 @@ fn tasks_move_between_groups_and_block_group_removal() {
         id: task_id,
         name: None,
         parent: Some(Parent::Node(b)),
-        mode: None,
         duration: None,
         time_constraint: None,
         dependencies: None,

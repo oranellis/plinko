@@ -14,7 +14,7 @@ use plinko::{
         milestone::MilestonePatch,
         parent::Parent,
         plan_buffer::PlanBufferPatch,
-        task::{Assignee, PersistentState, ScheduleMode, Status, Task, TaskPatch, Worker},
+        task::{Assignee, PersistentState, Status, Task, TaskPatch, Worker},
         task_group::TaskGroupPatch,
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
@@ -519,14 +519,6 @@ fn TaskForm(
     let node = PlanNode::Task(id);
     let name = RwSignal::new(task.name().to_string());
     let duration = RwSignal::new(i64::from(task.duration()));
-    let mode = RwSignal::new(
-        if task.mode() == ScheduleMode::Strict {
-            "strict"
-        } else {
-            "relaxed"
-        }
-        .to_string(),
-    );
     let (constraint_kind, constraint_day) = forms::constraint_parts(task.time_constraint());
     let kind = RwSignal::new(constraint_kind.to_string());
     let day = RwSignal::new(constraint_day.unwrap_or(today));
@@ -556,11 +548,6 @@ fn TaskForm(
             .into_iter()
             .filter_map(|(w, h)| Some((w, Workload::new(h).ok()?)))
             .collect();
-        let new_mode = if mode.get_untracked() == "relaxed" {
-            ScheduleMode::Relaxed
-        } else {
-            ScheduleMode::Strict
-        };
         let new_state = PersistentState {
             status: status.get_untracked(),
             actual_start_date: started.get_untracked(),
@@ -575,7 +562,6 @@ fn TaskForm(
             id,
             name: changed(&old.name().to_string(), name.get_untracked()),
             parent: changed(&old.parent(), parent.get_untracked()),
-            mode: changed(&old.mode(), new_mode),
             duration: changed(
                 &old.duration(),
                 duration.get_untracked().clamp(1, 3650) as u32,
@@ -628,18 +614,9 @@ fn TaskForm(
                     })
                 />
             </Block>
-            <div class="cols">
-                <Field label="Duration (days)">
-                    <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=1 max=3650 />
-                </Field>
-                <Field label="Mode">
-                    <Select
-                        value=mode
-                        options=options([("strict", "Strict"), ("relaxed", "Relaxed")])
-                        on_change=Callback::new(move |v| mode.set(v))
-                    />
-                </Field>
-            </div>
+            <Field label="Duration (days)">
+                <Number value=duration on_input=Callback::new(move |n| duration.set(n)) min=1 max=3650 />
+            </Field>
             <Constraint kind=kind day=day />
             <div class="cols">
                 <Field label=Signal::derive(move || {

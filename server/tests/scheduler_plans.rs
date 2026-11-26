@@ -148,7 +148,6 @@ impl Plans {
             id: task,
             name: None,
             parent: None,
-            mode: None,
             duration: None,
             time_constraint: None,
             dependencies: None,
@@ -411,10 +410,6 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
                     plans.patch(plan, task, |p| {
                         p.time_constraint = Some(TimeConstraint::Fixed(date))
                     });
-                }
-                if random.below(4) == 0 {
-                    let relaxed = Some(plinko::planner::items::task::ScheduleMode::Relaxed);
-                    plans.patch(plan, task, |p| p.mode = relaxed);
                 }
                 made.push((plan, task, after, fixed));
                 tasks.push(task);

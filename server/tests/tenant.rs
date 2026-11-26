@@ -513,7 +513,6 @@ fn task_patch(id: Uuid, change: impl FnOnce(&mut TaskPatch)) -> TaskPatch {
         id,
         name: None,
         parent: None,
-        mode: None,
         duration: None,
         time_constraint: None,
         dependencies: None,

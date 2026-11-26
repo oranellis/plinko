@@ -273,7 +273,6 @@ mod tests {
             id: ids[1],
             name: None,
             parent: None,
-            mode: None,
             duration: None,
             time_constraint: None,
             dependencies: Some(vec![Dependency::Node(PlanNode::Task(ids[0]))]),

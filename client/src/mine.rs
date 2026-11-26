@@ -108,7 +108,6 @@ pub fn set_status(plan: ShortId, task: Uuid, status: Status) {
         id: task,
         name: None,
         parent: None,
-        mode: None,
         duration: None,
         time_constraint: None,
         dependencies: None,

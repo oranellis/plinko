@@ -35,7 +35,6 @@ fn patch(id: Uuid) -> TaskPatch {
         id,
         name: None,
         parent: None,
-        mode: None,
         duration: None,
         time_constraint: None,
         dependencies: None,

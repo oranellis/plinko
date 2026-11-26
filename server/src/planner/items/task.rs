@@ -22,7 +22,7 @@ pub struct Task {
     id: Uuid,
     name: String,
     parent: Parent,
-    mode: ScheduleMode,
+    /// Days of work, each with every worker's hours, in one run that other work does not break up
     duration: u32,
     time_constraint: TimeConstraint,
     dependencies: Vec<Dependency>,
@@ -57,10 +57,6 @@ impl Task {
     /// Days, at least 1
     pub fn duration(&self) -> u32 {
         self.duration
-    }
-
-    pub fn mode(&self) -> ScheduleMode {
-        self.mode
     }
 
     pub fn time_constraint(&self) -> TimeConstraint {
@@ -110,7 +106,6 @@ impl From<NewTask> for Task {
             id: new.id,
             name: new.name,
             parent: new.parent,
-            mode: ScheduleMode::Strict,
             duration: 1,
             time_constraint: TimeConstraint::None,
             dependencies: Vec::new(),
@@ -136,9 +131,6 @@ impl Patchable<TaskPatch> for Task {
         }
         if let Some(p) = patch.parent {
             self.parent = p
-        }
-        if let Some(m) = patch.mode {
-            self.mode = m
         }
         if let Some(d) = patch.duration {
             self.duration = d
@@ -206,16 +198,6 @@ pub enum Status {
     Dropped,
 }
 
-/// How a task fills the days it is worked on
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ScheduleMode {
-    /// Only days where the whole daily block of hours is free
-    #[default]
-    Strict,
-    /// Any day with free time, using whatever is free up to the daily block
-    Relaxed,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Worker {
     Tag(Uuid),
@@ -238,7 +220,6 @@ pub struct TaskPatch {
     pub id: Uuid,
     pub name: Option<String>,
     pub parent: Option<Parent>,
-    pub mode: Option<ScheduleMode>,
     pub duration: Option<u32>,
     pub time_constraint: Option<TimeConstraint>,
     pub dependencies: Option<Vec<Dependency>>,
@@ -246,42 +227,5 @@ pub struct TaskPatch {
     pub affinities: Option<HashSet<Uuid>>,
     pub actual_workers: Option<HashMap<Worker, Assignee>>,
     pub persistent_state: Option<PersistentState>,
-}
-// }}}
-
-// impl ScheduleMode {{{
-impl ScheduleMode {
-    /// The hours worked on a day when `wanted` are asked for and `available` are free
-    pub fn hours_on(self, wanted: Workload, available: Workload) -> Workload {
-        match self {
-            ScheduleMode::Strict if available.get() >= wanted.get() => wanted,
-            ScheduleMode::Strict => Workload::default(),
-            ScheduleMode::Relaxed => {
-                Workload::new(wanted.get().min(available.get())).expect("at most the wanted hours")
-            }
-        }
-    }
-}
-// }}}
-
-// tests {{{
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn hours(h: u8) -> Workload {
-        Workload::new_const(h)
-    }
-
-    #[test]
-    fn strict_needs_the_whole_block_and_relaxed_takes_what_is_free() {
-        let (strict, relaxed) = (ScheduleMode::Strict, ScheduleMode::Relaxed);
-        assert_eq!(strict.hours_on(hours(4), hours(8)), hours(4));
-        assert_eq!(strict.hours_on(hours(4), hours(4)), hours(4));
-        assert_eq!(strict.hours_on(hours(4), hours(3)), hours(0));
-        assert_eq!(relaxed.hours_on(hours(4), hours(8)), hours(4));
-        assert_eq!(relaxed.hours_on(hours(4), hours(3)), hours(3));
-        assert_eq!(relaxed.hours_on(hours(4), hours(0)), hours(0));
-    }
 }
 // }}}

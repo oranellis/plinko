@@ -175,7 +175,6 @@ fn main() {
                 id,
                 name: None,
                 parent: None,
-                mode: None,
                 duration: Some(1 + random.below(4) as u32),
                 time_constraint: constraint,
                 dependencies: Some(on),

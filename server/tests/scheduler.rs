@@ -185,7 +185,6 @@ impl World {
             id,
             name: None,
             parent: None,
-            mode: None,
             duration: None,
             time_constraint: None,
             dependencies: None,

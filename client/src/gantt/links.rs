@@ -175,7 +175,6 @@ mod tests {
             id,
             name: None,
             parent: None,
-            mode: None,
             duration: None,
             time_constraint: None,
             dependencies: Some(on.to_vec()),

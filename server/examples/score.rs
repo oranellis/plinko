@@ -183,7 +183,6 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 id: task,
                 name: None,
                 parent: None,
-                mode: None,
                 duration: Some(1 + random.below(6) as u32),
                 time_constraint: dates.get(&task).copied(),
                 dependencies: Some(on),
