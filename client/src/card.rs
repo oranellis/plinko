@@ -95,14 +95,6 @@ fn new_name(node: PlanNode) -> &'static str {
         PlanNode::PlanDelay(_) => "Delay",
     }
 }
-
-/// How many of something there are, in words
-fn counted(n: usize, one: &str, many: &str) -> String {
-    match n {
-        1 => format!("1 {one}"),
-        n => format!("{n} {many}"),
-    }
-}
 // }}}
 
 // Card {{{
@@ -276,29 +268,13 @@ pub fn Card(
             }),
         }
     };
+    // what a lit handle is waiting for
     let said = move || {
-        let Some(d) = draft.get() else {
-            return String::new();
-        };
-        if let Some(pick) = d.pick {
-            return match pick {
-                Pick::Before => "Click the items it waits for",
-                Pick::After => "Click the items that wait for it",
-                Pick::Group => "Click a group to put it in, or an empty part of the chart",
-            }
-            .to_string();
-        }
-        let group = match d.parent {
-            Parent::Plan => "Top level".to_string(),
-            Parent::Node(id) => sync.tenant.with(|t| {
-                let plan = t.as_ref().and_then(|t| t.plans().get(&plan));
-                let name = plan.map(|p| node_name(p, PlanNode::TaskGroup(id)));
-                format!("In {}", name.unwrap_or_default())
-            }),
-        };
-        let before = counted(d.dependencies.len(), "dependency", "dependencies");
-        let after = counted(d.dependents.len(), "dependent", "dependents");
-        format!("{group} · {before} · {after}")
+        draft.with(|d| d.as_ref()?.pick).map(|pick| match pick {
+            Pick::Before => "Click the items it waits for",
+            Pick::After => "Click the items that wait for it",
+            Pick::Group => "Click a group to put it in, or an empty part of the chart",
+        })
     };
     // the line from a handle being dragged to the pointer
     let line = move || {
@@ -315,6 +291,14 @@ pub fn Card(
         })
     };
     let charted = probe.is_some();
+    let linked = move |pick: Pick| {
+        draft.with(|d| {
+            d.as_ref().map_or(0, |d| match pick {
+                Pick::After => d.dependents.len(),
+                _ => d.dependencies.len(),
+            })
+        })
+    };
     let knob = move |pick: Pick, label: &'static str| {
         let side = if pick == Pick::After {
             "after"
@@ -328,7 +312,7 @@ pub fn Card(
                     class=format!("draftcard-knob {side}")
                     class:lit=move || lit(pick)
                     title=label
-                    aria-label=label
+                    aria-label=move || format!("{label} ({} linked)", linked(pick))
                     aria-pressed=move || lit(pick).to_string()
                     on:pointerdown=move |ev| down(Grab::Link(pick), ev)
                     on:pointermove=moved
@@ -414,7 +398,7 @@ pub fn Card(
                     </div>
                     {knob(Pick::After, "What waits for it: drag onto an item, or click and pick items")}
                 </div>
-                <p class="draftcard-said">{said}</p>
+                {move || said().map(|said| view! { <p class="draftcard-said">{said}</p> })}
             </div>
             {line}
         </Show>

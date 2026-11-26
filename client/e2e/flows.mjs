@@ -115,7 +115,7 @@ await a.evaluate(() => [...document.querySelectorAll(".popover li button")].find
 await click(a, "Save Plan Settings"); await sleep(800);
 await click(a, "Back"); await sleep(400);
 await add(a, "Add task"); await a.waitForSelector(".editor form");
-expect(await a.evaluate(() => document.querySelector(".draftcard-said").textContent.includes("1 dependency")), "a new item depends on the default start node");
+expect(await a.evaluate(() => document.querySelector(".draftcard-knob.before").getAttribute("aria-label").includes("(1 linked)")), "a new item depends on the default start node");
 
 // on a phone nothing is wider than the screen, the names are balanced against the days, the grip
 // moves by touch and the add menu goes away when it is tapped off
