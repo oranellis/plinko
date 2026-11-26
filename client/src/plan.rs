@@ -216,8 +216,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             Some((left, top))
         })
     });
-    // an item just added and not saved yet, which is dropped again if the window is cancelled
-    let fresh = RwSignal::new(None::<Uuid>);
+    let fresh = Fresh::new();
+    Effect::new(move |_| fresh.only(open.get()));
     let go = move |tab: PlanTab, open: Option<Uuid>| navigate(Route::Plan(plan, tab, open));
     let guard = Guard::new();
     // an item is opened or the pane closed only after asking about changes not yet saved
@@ -237,8 +237,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     // leaving a new item that was never saved takes it away again, as Cancel does
     let leave = Callback::new(move |()| {
         let item = node.get_untracked();
-        if let Some(item) = item.filter(|i| fresh.get_untracked() == Some(i.id())) {
-            fresh.set(None);
+        if let Some(item) = item.filter(|i| fresh.dropped(sync, plan, *i)) {
             remove_item(sync, plan, item);
         }
         on_close.run(());
@@ -402,7 +401,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             if let Some(Created::Item(id)) = created {
                 // anchored to the start so it is scheduled, then open for editing
                 let open = Box::new(move |_| {
-                    fresh.try_set(Some(id));
+                    fresh.set(id);
                     navigate(Route::Plan(plan, current, Some(id)));
                 });
                 depends(id, plan, &sync, start, open);
@@ -641,13 +640,83 @@ fn focus_first_box() {
 }
 // }}}
 
+// Fresh {{{
+/// An item just added and not saved yet, which is taken away again if its pane is left without
+/// saving. It stops being new once its pane is left for anything else, or it is changed from
+/// outside the pane (on the chart, say), so that only what nobody has kept is ever taken away.
+#[derive(Clone, Copy)]
+pub struct Fresh(RwSignal<Option<(Uuid, Option<Vec<u8>>)>>);
+
+impl Fresh {
+    pub fn new() -> Self {
+        Self(RwSignal::new(None))
+    }
+
+    fn set(&self, id: Uuid) {
+        self.0.try_set(Some((id, None)));
+    }
+
+    fn clear(&self) {
+        self.0.try_set(None);
+    }
+
+    fn is(&self, node: PlanNode) -> bool {
+        self.0
+            .with_untracked(|f| f.as_ref().is_some_and(|(id, _)| *id == node.id()))
+    }
+
+    /// Nothing is new but the item whose pane is open
+    fn only(&self, open: Option<Uuid>) {
+        let other = self
+            .0
+            .with_untracked(|f| f.as_ref().is_some_and(|(id, _)| Some(*id) != open));
+        if other {
+            self.clear();
+        }
+    }
+
+    fn now(sync: crate::sync::Sync, plan: ShortId, node: PlanNode) -> Option<Vec<u8>> {
+        let item = |t: &Option<plinko::multitenancy::tenant::Tenant>| {
+            model::item_bytes(t.as_ref()?.plans().get(&plan)?, node)
+        };
+        sync.tenant.with_untracked(item)
+    }
+
+    /// Remembers how the new item is as its pane opens
+    fn opened(&self, sync: crate::sync::Sync, plan: ShortId, node: PlanNode) {
+        if self.is(node) {
+            self.0
+                .try_set(Some((node.id(), Self::now(sync, plan, node))));
+        }
+    }
+
+    /// Whether the item is new and as it was when its pane opened, so leaving the pane takes
+    /// it away. Either way it is not new any more.
+    fn dropped(&self, sync: crate::sync::Sync, plan: ShortId, node: PlanNode) -> bool {
+        let was = self
+            .0
+            .try_get_untracked()
+            .flatten()
+            .filter(|(id, _)| *id == node.id());
+        self.clear();
+        was.is_some_and(|(_, then)| then.is_some() && then == Self::now(sync, plan, node))
+    }
+}
+
+impl Default for Fresh {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+// }}}
+
 // ItemPane {{{
 /// The pane beside the chart for editing the item that is open
 #[component]
 pub fn ItemPane(
     plan: ShortId,
     node: PlanNode,
-    fresh: RwSignal<Option<Uuid>>,
+    fresh: Fresh,
     guard: Guard,
     on_close: Callback<()>,
 ) -> impl IntoView {
@@ -655,7 +724,8 @@ pub fn ItemPane(
     guard.opened();
     on_cleanup(move || guard.closed());
     // a new item has its first box ready to type in, its name or for a buffer its days
-    if fresh.get_untracked() == Some(node.id()) {
+    if fresh.is(node) {
+        fresh.opened(sync, plan, node);
         set_timeout(focus_first_box, std::time::Duration::from_millis(80));
     }
     let title = match node {
@@ -666,12 +736,11 @@ pub fn ItemPane(
         PlanNode::TaskGroup(_) => "Edit Task Group",
     };
     let saved = Callback::new(move |()| {
-        fresh.set(None);
+        fresh.clear();
         on_close.run(());
     });
     let cancel = Callback::new(move |()| {
-        if fresh.get_untracked() == Some(node.id()) {
-            fresh.set(None);
+        if fresh.dropped(sync, plan, node) {
             remove_item(sync, plan, node);
         }
         on_close.run(());

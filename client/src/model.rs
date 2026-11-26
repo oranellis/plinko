@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
+    codec,
     planner::items::{
         dependency::{Dependency, PlanNode},
         milestone::DerivedStatus,
@@ -115,6 +116,18 @@ pub fn parent_of_in(
             Parent::Plan => None,
         }
     })
+}
+
+/// An item as bytes, to tell whether it has changed
+pub fn item_bytes(plan: &Plan, node: PlanNode) -> Option<Vec<u8>> {
+    let bytes = match node {
+        PlanNode::Task(id) => codec::encode(plan.tasks().get(&id)?),
+        PlanNode::Milestone(id) => codec::encode(plan.milestones().get(&id)?),
+        PlanNode::TaskGroup(id) => codec::encode(plan.task_groups().get(&id)?),
+        PlanNode::PlanBuffer(id) => codec::encode(plan.plan_buffers().get(&id)?),
+        PlanNode::PlanDelay(id) => codec::encode(plan.plan_delays().get(&id)?),
+    };
+    bytes.ok()
 }
 
 /// What a node depends on

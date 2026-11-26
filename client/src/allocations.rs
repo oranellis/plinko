@@ -19,7 +19,7 @@ use crate::{
     icons::{Icon, IconKind},
     mine::{MyTask, use_tasks_of},
     nav::Route,
-    plan::{ItemPane, blank_click},
+    plan::{Fresh, ItemPane, blank_click},
     ui::use_sync,
 };
 // }}}
@@ -295,7 +295,7 @@ pub fn Allocations(
         lines.join("\n")
     };
     let open = RwSignal::new(None::<(ShortId, PlanNode)>);
-    let fresh = RwSignal::new(None::<Uuid>);
+    let fresh = Fresh::new();
     let guard = Guard::new();
     let close = Callback::new(move |()| open.set(None));
     let blank = move || {
