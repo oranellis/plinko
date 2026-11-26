@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::{
     datepicker::{DatePicker, OptionalDate},
-    draft::{Draft, Drafting, NEW_WAIT_DAYS},
+    draft::{Draft, Drafting, NEW_DAYS},
     format, forms,
     icons::{Icon, IconKind},
     model,
@@ -681,7 +681,7 @@ fn BufferForm(
         PlanBuffer::from(NewPlanBuffer {
             id,
             parent,
-            duration: NEW_WAIT_DAYS,
+            duration: NEW_DAYS,
         })
     };
     let Some(buffer) = item(plan, found, made) else {
@@ -770,7 +770,7 @@ fn DelayForm(
             id,
             name: None,
             parent,
-            duration: NEW_WAIT_DAYS,
+            duration: NEW_DAYS,
         })
     };
     let Some(delay) = item(plan, found, made) else {

@@ -16,8 +16,8 @@ use crate::{model, sync::Sync};
 // }}}
 
 // constants {{{
-/// The days a new buffer or delay starts with
-pub const NEW_WAIT_DAYS: u32 = 3;
+/// The days a new task, buffer or delay starts with
+pub const NEW_DAYS: u32 = 3;
 // }}}
 
 /// What of an item is set from the card: where it is and how long it lasts
@@ -79,8 +79,7 @@ impl Draft {
     pub fn new(plan: &Plan, node: PlanNode, parent: Parent) -> Self {
         let start = plan.scheduler_data().default_start();
         let duration = match node {
-            PlanNode::Task(_) => Some(1),
-            PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => Some(NEW_WAIT_DAYS),
+            PlanNode::Task(_) | PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => Some(NEW_DAYS),
             PlanNode::Milestone(_) | PlanNode::TaskGroup(_) => None,
         };
         Self {
@@ -179,13 +178,13 @@ impl Draft {
             PlanNode::PlanBuffer(_) => PlanUpdate::PlanBuffer(Crud::Add(NewPlanBuffer {
                 id,
                 parent,
-                duration: self.duration.unwrap_or(NEW_WAIT_DAYS),
+                duration: self.duration.unwrap_or(NEW_DAYS),
             })),
             PlanNode::PlanDelay(_) => PlanUpdate::PlanDelay(Crud::Add(NewPlanDelay {
                 id,
                 name: Some(name).filter(|n| !n.is_empty()),
                 parent,
-                duration: self.duration.unwrap_or(NEW_WAIT_DAYS),
+                duration: self.duration.unwrap_or(NEW_DAYS),
             })),
         }
     }

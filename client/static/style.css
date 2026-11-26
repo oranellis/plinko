@@ -466,24 +466,26 @@ button.ctx:disabled { opacity: 0.35; cursor: default; }
 .draftcard-knob { --c: #fc1ef1; width: 30px; height: 30px; min-height: 0; padding: 0; flex: none; border-radius: 50%; background: var(--card); border: 2.5px solid var(--c); cursor: grab; touch-action: none; }
 .draftcard-knob.after { --c: #07fcd7; }
 .draftcard-knob:hover { background: color-mix(in srgb, var(--c) 30%, var(--card)); }
-.draftcard-knob.lit { background: var(--c); box-shadow: 0 0 0 5px color-mix(in srgb, var(--c) 35%, transparent); }
+.draftcard-knob.lit { background: radial-gradient(circle closest-side, var(--c) 78%, var(--card) 82%); }
 .draftcard-shape { position: relative; width: 250px; height: 40px; display: flex; align-items: center; padding: 0 10px; color: rgba(255, 255, 255, 0.9); }
 .draftcard-shape.task { background: #555; border-radius: 6px; }
 .draftcard-shape.group { height: 54px; align-items: flex-start; padding-top: 6px; border: 1.5px solid #8a8a8a; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
 .draftcard-shape.buffer { border: 1.5px dashed #8a8a8a; border-radius: 6px; }
 .draftcard-shape.delay { border: dashed #8a8a8a; border-width: 0 1.5px; background: repeating-linear-gradient(to right, #8a8a8a 0 3px, transparent 3px 6px) center / 100% 1.5px no-repeat; }
 .draftcard-shape.delay .draftcard-name { background: var(--card); padding: 0 4px; }
-.draftcard-shape.milestone { width: 40px; margin-bottom: 22px; padding: 0; }
+.draftcard-shape.milestone { width: 40px; margin-bottom: 28px; padding: 0; }
 .draftcard-shape.milestone::before { content: ""; position: absolute; inset: 6px; background: #555; border-radius: 3px; transform: rotate(45deg); }
 .draftcard-shape.milestone .draftcard-name { display: none; }
 .draftcard-name { position: relative; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
-.draftcard-grip { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 36px; height: 22px; min-height: 0; padding: 0; border: 1.5px solid rgba(255, 255, 255, 0.6); border-radius: 6px; background: rgba(0, 0, 0, 0.4) radial-gradient(circle, rgba(255, 255, 255, 0.85) 1.2px, transparent 1.7px) center / 7px 7px; cursor: grab; touch-action: none; }
-.draftcard-grip:hover { border-color: #fff; }
-.draftcard-grip.lit { border-color: #1e88e5; background-color: #1255a5; box-shadow: 0 0 0 4px rgba(30, 136, 229, 0.45); }
-.draftcard-shape.milestone .draftcard-grip { top: auto; bottom: -24px; transform: translateX(-50%); }
-.draftcard-days { position: absolute; right: -3px; top: -5px; bottom: -5px; display: flex; }
-.draftcard-daycount { display: flex; align-items: center; gap: 7px; min-height: 0; padding: 0 0 0 9px; background: var(--card); border: 1.5px solid #e8e8e8; border-radius: 8px; color: #e8e8e8; font-size: 14px; font-variant-numeric: tabular-nums; cursor: ew-resize; touch-action: none; }
-.draftcard-daycount i { align-self: stretch; width: 9px; background: #e8e8e8; border-radius: 0 5px 5px 0; }
+.draftcard-grip { --c: #c4c4c9; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 34px; height: 30px; min-height: 0; padding: 0; border: 0; background: none; cursor: grab; touch-action: none; }
+.draftcard-grip::before { content: ""; position: absolute; left: 7px; right: 7px; top: 13px; height: 4px; border-radius: 2px; background: var(--c); box-shadow: 0 -8px var(--c), 0 8px var(--c); }
+.draftcard-shape.task .draftcard-grip { --c: #2c2c30; }
+.draftcard-grip:hover, .draftcard-shape.task .draftcard-grip:hover { --c: #ececf0; background: none; }
+.draftcard-grip.lit, .draftcard-shape.task .draftcard-grip.lit { --c: #1e88e5; }
+.draftcard-shape.milestone .draftcard-grip { top: auto; bottom: -30px; transform: translateX(-50%); }
+.draftcard-days { position: absolute; right: 0; top: 0; bottom: 0; display: flex; }
+.draftcard-daycount { display: flex; align-items: center; gap: 7px; min-height: 0; padding: 0 0 0 9px; background: var(--card); border: 1.5px solid #e8e8e8; border-radius: 6px; color: #e8e8e8; font-size: 14px; font-variant-numeric: tabular-nums; cursor: ew-resize; touch-action: none; }
+.draftcard-daycount i { align-self: stretch; width: 9px; background: #e8e8e8; border-radius: 0 4px 4px 0; }
 .draftcard-daycount:hover, .draftcard-days.held .draftcard-daycount { background: var(--card); border-color: var(--accent); color: #fff; }
 .draftcard-daycount:hover i, .draftcard-days.held .draftcard-daycount i { background: var(--accent); }
 .draftcard-daybox { width: 78px; text-align: right; }
