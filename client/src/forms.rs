@@ -5,7 +5,7 @@
 use chrono::NaiveDate;
 use plinko::{
     common::dates::{NodeConstraint, NodeEnd, TimeConstraint},
-    planner::items::task::{Status, Worker},
+    planner::items::task::Worker,
 };
 use uuid::Uuid;
 // }}}
@@ -74,28 +74,6 @@ pub fn parse_end(value: &str) -> NodeEnd {
         _ => NodeEnd::Start,
     }
 }
-
-pub fn status_value(status: Status) -> &'static str {
-    match status {
-        Status::NotStarted => "not-started",
-        Status::InProgress => "in-progress",
-        Status::OnHold => "on-hold",
-        Status::Completed => "completed",
-        Status::Dropped => "dropped",
-    }
-}
-
-pub fn parse_status(text: &str) -> Option<Status> {
-    [
-        Status::NotStarted,
-        Status::InProgress,
-        Status::OnHold,
-        Status::Completed,
-        Status::Dropped,
-    ]
-    .into_iter()
-    .find(|s| status_value(*s) == text)
-}
 // }}}
 
 // tests {{{
@@ -117,22 +95,12 @@ mod tests {
         ] {
             assert_eq!(parse_worker(&worker_value(worker)), Some(worker));
         }
-        for status in [
-            Status::NotStarted,
-            Status::InProgress,
-            Status::OnHold,
-            Status::Completed,
-            Status::Dropped,
-        ] {
-            assert_eq!(parse_status(status_value(status)), Some(status));
-        }
     }
 
     #[test]
     fn nonsense_is_not_read() {
         assert_eq!(parse_worker(""), None);
         assert_eq!(parse_worker("user:not-an-id"), None);
-        assert_eq!(parse_status("done"), None);
     }
 
     #[test]

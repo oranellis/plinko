@@ -445,7 +445,8 @@ fn TaskForm(
     let allocations = RwSignal::new(asked);
     let affinities = RwSignal::new(task.affinities().clone());
     let state = task.persistent_state();
-    let status = RwSignal::new(state.status);
+    // the status is set from the bar under the selected item, here it only says which days apply
+    let status = state.status;
     let started = RwSignal::new(state.actual_start_date);
     let ended = RwSignal::new(state.actual_end_date);
     let recorded = RwSignal::new(task.actual_workers().clone());
@@ -463,7 +464,7 @@ fn TaskForm(
             .filter_map(|(w, h)| Some((w, Workload::new(h).ok()?)))
             .collect();
         let new_state = PersistentState {
-            status: status.get_untracked(),
+            status,
             actual_start_date: started.get_untracked(),
             actual_end_date: ended.get_untracked(),
         };
@@ -506,48 +507,20 @@ fn TaskForm(
             <Field label="Name">
                 <Text value=name on_input=Callback::new(move |v| name.set(v)) />
             </Field>
-            <Block label="Status">
-                <Segmented
-                    value=Signal::derive(move || forms::status_value(status.get()).to_string())
-                    options=options([
-                        ("not-started", "Not Started"),
-                        ("in-progress", "In Progress"),
-                        ("on-hold", "On Hold"),
-                        ("completed", "Complete"),
-                        ("dropped", "Dropped"),
-                    ])
-                    on_change=Callback::new(move |v: String| {
-                        let Some(next) = forms::parse_status(&v) else { return };
-                        status.set(next);
-                        match next {
-                            Status::NotStarted => { started.set(None); ended.set(None); }
-                            _ => {
-                                // anything past not started has started, today if it never said
-                                if started.get_untracked().is_none() { started.set(Some(today)); }
-                                match next {
-                                    Status::InProgress => ended.set(None),
-                                    // when it was put on hold, or finished or dropped
-                                    _ => if ended.get_untracked().is_none() { ended.set(Some(today)); },
-                                }
-                            }
-                        }
-                    })
-                />
-            </Block>
             <Constraint kind=kind day=day end=end />
             <div class="cols">
                 <Field label=Signal::derive(move || {
-                    let missing = matches!(status.get(), Status::InProgress | Status::OnHold) && started.get().is_none();
+                    let missing = matches!(status, Status::InProgress | Status::OnHold) && started.get().is_none();
                     if missing { "Actual Start *" } else { "Actual Start" }.to_string()
                 })>
-                    <OptionalDate value=started disabled=Signal::derive(move || status.get() == Status::NotStarted) />
+                    <OptionalDate value=started disabled=Signal::derive(move || status == Status::NotStarted) />
                 </Field>
                 <Field label=Signal::derive(move || {
-                    let missing = matches!(status.get(), Status::Completed | Status::Dropped) && ended.get().is_none();
-                    let label = if status.get() == Status::OnHold { "Paused On" } else { "Actual End" };
+                    let missing = matches!(status, Status::Completed | Status::Dropped) && ended.get().is_none();
+                    let label = if status == Status::OnHold { "Paused On" } else { "Actual End" };
                     if missing { format!("{label} *") } else { label.to_string() }
                 })>
-                    <OptionalDate value=ended disabled=Signal::derive(move || matches!(status.get(), Status::NotStarted | Status::InProgress)) />
+                    <OptionalDate value=ended disabled=Signal::derive(move || matches!(status, Status::NotStarted | Status::InProgress)) />
                 </Field>
             </div>
             <Workers plan=plan allocations=allocations />
