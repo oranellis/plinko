@@ -1,138 +1,199 @@
 // modules {{{
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::HashMap;
+
+use uuid::Uuid;
 
 use crate::{
+    common::short_id::ShortId,
     planner::items::dependency::PlanNode,
-    planner::{
-        graph::{Edge, Graph, Vertex},
-        plan::Plan,
+    scheduler::state::UnscheduledReason,
+    scheduler::{
+        arc::{Arc, ArcId},
+        day::Day,
     },
 };
 // }}}
 
-/// A plan's dependency graph with what the scheduler orders by: a topological order and the
-/// length of the longest chain of work that still follows each vertex
-pub struct Network<'a> {
-    graph: Graph<'a>,
-    deps: HashMap<Vertex, Vec<Edge>>,
-    order: Vec<Vertex>,
-    remaining: HashMap<Vertex, i64>,
-    /// What waits for each vertex
-    after: HashMap<Vertex, Vec<Vertex>>,
+/// Every plan of a tenant as one network of vertices (day boundaries) and the arcs between
+/// them, indexed densely so a run is array lookups
+#[derive(Clone, Debug, Default)]
+pub struct Network {
+    pub vertices: Vec<Vertex>,
+    pub arcs: Vec<Arc>,
+    /// The start of today, which what starts a plan waits on
+    pub root: VertexId,
+    /// In id order
+    pub plans: Vec<PlanInfo>,
+    /// Where each plan node went, by the position of its plan
+    pub lowered: HashMap<(u32, PlanNode), Lowered>,
+    /// What is left out before scheduling, like dropped tasks or tasks no one can work
+    pub unscheduled: HashMap<(u32, PlanNode), UnscheduledReason>,
+    /// Every vertex after everything it waits on
+    pub order: Vec<VertexId>,
 }
 
+// Network supporting types {{{
+/// A vertex in `Network::vertices`
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct VertexId(pub u32);
+
+/// A day boundary that waits on other vertices and on arcs: "these things are done". Nodes with
+/// the same dependencies share one, so only what belongs to a single milestone or group (their
+/// `earliest`) is ever on a vertex of its own.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Vertex {
+    pub after: Vec<VertexId>,
+    pub incoming: Vec<ArcId>,
+    /// The vertices that wait on this one
+    pub next: Vec<VertexId>,
+    pub outgoing: Vec<ArcId>,
+    /// Not before this day
+    pub earliest: Option<Day>,
+    /// A hard date not to pass, which limits what comes before it without moving anything
+    pub deadline: Option<Day>,
+    /// Where it is whatever it waits on
+    pub pinned: Option<Day>,
+}
+
+/// What a plan aims for
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlanInfo {
+    pub id: ShortId,
+    /// Waits on everything in the plan, so its time is the plan's end
+    pub end: VertexId,
+    /// Days added to how late the plan's goals count as
+    pub priority: i64,
+    pub targets: Vec<Target>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Target {
+    pub id: Uuid,
+    pub vertex: VertexId,
+    pub priority: i64,
+}
+
+/// Where a plan node went: a milestone has the same start and end, a group spans its members
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lowered {
+    pub start: VertexId,
+    pub end: VertexId,
+    pub arc: Option<ArcId>,
+}
+// }}}
+
 // impl Network {{{
-impl<'a> Network<'a> {
-    pub fn new(plan: &'a Plan) -> Self {
-        let graph = Graph::new(plan);
-        let vertices = graph.vertices();
-        let deps: HashMap<Vertex, Vec<Edge>> =
-            vertices.iter().map(|v| (*v, graph.edges(*v))).collect();
-        let mut dependents: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
-        for (v, edges) in &deps {
-            for e in edges {
-                if let Some(from) = e.from {
-                    dependents.entry(from).or_default().push(*v);
+impl Network {
+    pub fn add_vertex(&mut self, vertex: Vertex) -> VertexId {
+        self.vertices.push(vertex);
+        VertexId(self.vertices.len() as u32 - 1)
+    }
+
+    pub fn add_arc(&mut self, arc: Arc) -> ArcId {
+        self.arcs.push(arc);
+        ArcId(self.arcs.len() as u32 - 1)
+    }
+
+    pub fn vertex(&self, id: VertexId) -> &Vertex {
+        &self.vertices[id.0 as usize]
+    }
+
+    pub fn vertex_mut(&mut self, id: VertexId) -> &mut Vertex {
+        &mut self.vertices[id.0 as usize]
+    }
+
+    pub fn arc(&self, id: ArcId) -> &Arc {
+        &self.arcs[id.0 as usize]
+    }
+
+    pub fn arc_ids(&self) -> impl Iterator<Item = ArcId> + use<> {
+        (0..self.arcs.len() as u32).map(ArcId)
+    }
+
+    /// Fills in what follows each vertex and the order to visit them in, once everything is
+    /// added. Vertices on a cycle are left out of the order.
+    pub fn link(&mut self) {
+        for v in &mut self.vertices {
+            v.next.clear();
+            v.outgoing.clear();
+            v.incoming.clear();
+        }
+        for i in 0..self.vertices.len() {
+            for from in self.vertices[i].after.clone() {
+                self.vertex_mut(from).next.push(VertexId(i as u32));
+            }
+        }
+        for i in 0..self.arcs.len() {
+            let (start, end) = (self.arcs[i].start, self.arcs[i].end);
+            self.vertex_mut(start).outgoing.push(ArcId(i as u32));
+            self.vertex_mut(end).incoming.push(ArcId(i as u32));
+        }
+        let mut waiting: Vec<usize> = self
+            .vertices
+            .iter()
+            .map(|v| v.after.len() + v.incoming.len())
+            .collect();
+        let mut ready: Vec<VertexId> = (0..self.vertices.len())
+            .rev()
+            .filter(|i| waiting[*i] == 0)
+            .map(|i| VertexId(i as u32))
+            .collect();
+        self.order = Vec::with_capacity(self.vertices.len());
+        while let Some(v) = ready.pop() {
+            self.order.push(v);
+            let vertex = &self.vertices[v.0 as usize];
+            let ends = vertex.outgoing.iter().map(|a| self.arcs[a.0 as usize].end);
+            for next in vertex.next.iter().copied().chain(ends) {
+                waiting[next.0 as usize] -= 1;
+                if waiting[next.0 as usize] == 0 {
+                    ready.push(next);
                 }
             }
         }
-        let order = topological(&vertices, &deps, &dependents);
-        let mut remaining: HashMap<Vertex, i64> = HashMap::new();
-        for v in order.iter().rev() {
-            let after = dependents.get(v).into_iter().flatten();
-            let longest = after.map(|w| remaining[w]);
-            let own = duration(plan, v);
-            remaining.insert(*v, own + longest.max().unwrap_or(0));
-        }
-        Self {
-            graph,
-            deps,
-            order,
-            remaining,
-            after: dependents,
-        }
-    }
-
-    /// Every vertex after the ones it depends on, ties broken by id
-    pub fn order(&self) -> &[Vertex] {
-        &self.order
-    }
-
-    pub fn deps(&self, v: &Vertex) -> &[Edge] {
-        self.deps.get(v).map_or(&[], Vec::as_slice)
-    }
-
-    pub fn members(&self, group: &uuid::Uuid) -> &[PlanNode] {
-        self.graph.members(group)
-    }
-
-    /// The days of work that follow the vertex and including it, the longer the more urgent
-    pub fn remaining(&self, v: &Vertex) -> i64 {
-        self.remaining.get(v).copied().unwrap_or(0)
-    }
-
-    /// The vertices and everything that waits for them, directly or not
-    pub fn downstream(&self, roots: impl IntoIterator<Item = Vertex>) -> HashSet<Vertex> {
-        let mut seen = HashSet::new();
-        let mut stack: Vec<Vertex> = roots.into_iter().collect();
-        while let Some(v) = stack.pop() {
-            if seen.insert(v) {
-                stack.extend(self.after.get(&v).into_iter().flatten().copied());
-            }
-        }
-        seen
-    }
-
-    /// The vertices and everything they depend on
-    pub fn ancestors(&self, roots: impl IntoIterator<Item = Vertex>) -> HashSet<Vertex> {
-        let mut seen = HashSet::new();
-        let mut stack: Vec<Vertex> = roots.into_iter().collect();
-        while let Some(v) = stack.pop() {
-            if seen.insert(v) {
-                stack.extend(self.deps(&v).iter().filter_map(|e| e.from));
-            }
-        }
-        seen
     }
 }
 // }}}
 
-// helpers {{{
-fn duration(plan: &Plan, v: &Vertex) -> i64 {
-    match v {
-        Vertex::Node(PlanNode::Task(id)) => i64::from(plan.tasks()[id].duration()),
-        Vertex::Node(PlanNode::PlanBuffer(id)) => i64::from(*plan.plan_buffers()[id].duration()),
-        Vertex::Node(PlanNode::PlanDelay(id)) => i64::from(*plan.plan_delays()[id].duration()),
-        _ => 0,
-    }
-}
+// tests {{{
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use crate::scheduler::{
+        arc::{ArcKind, Work},
+        table::RowId,
+    };
 
-/// Kahn's algorithm taking the lowest id first, so the order does not depend on map order
-fn topological(
-    vertices: &[Vertex],
-    deps: &HashMap<Vertex, Vec<Edge>>,
-    dependents: &HashMap<Vertex, Vec<Vertex>>,
-) -> Vec<Vertex> {
-    let mut waiting: HashMap<Vertex, usize> = vertices
-        .iter()
-        .map(|v| (*v, deps[v].iter().filter(|e| e.from.is_some()).count()))
-        .collect();
-    let mut ready: BTreeMap<(u8, uuid::Uuid), Vertex> = waiting
-        .iter()
-        .filter(|(_, n)| **n == 0)
-        .map(|(v, _)| (v.key(), *v))
-        .collect();
-    let mut order = Vec::with_capacity(vertices.len());
-    while let Some((_, v)) = ready.pop_first() {
-        order.push(v);
-        for w in dependents.get(&v).into_iter().flatten() {
-            let n = waiting.get_mut(w).expect("every vertex is counted");
-            *n -= 1;
-            if *n == 0 {
-                ready.insert(w.key(), *w);
-            }
-        }
+    /// A wait of `days` from `start` to a vertex of its own
+    pub fn wait(net: &mut Network, start: VertexId, days: u32) -> VertexId {
+        let end = net.add_vertex(Vertex::default());
+        net.add_arc(Arc {
+            node: PlanNode::PlanDelay(Uuid::from_u128(u128::from(end.0))),
+            plan: 0,
+            start,
+            end,
+            kind: ArcKind::Work(Work::wait(days, RowId(0))),
+        });
+        end
     }
-    order
+
+    #[test]
+    fn the_order_visits_a_vertex_after_all_it_waits_on() {
+        let mut net = Network::default();
+        let root = net.add_vertex(Vertex::default());
+        let a = wait(&mut net, root, 3);
+        let b = wait(&mut net, root, 5);
+        let join = net.add_vertex(Vertex {
+            after: vec![a, b],
+            ..Vertex::default()
+        });
+        let c = wait(&mut net, join, 2);
+        net.link();
+        let at = |v: VertexId| net.order.iter().position(|o| *o == v).unwrap();
+        assert_eq!(net.order.len(), 5);
+        assert!(at(root) < at(a) && at(root) < at(b));
+        assert!(at(a) < at(join) && at(b) < at(join) && at(join) < at(c));
+        assert_eq!(net.vertex(a).next, [join]);
+        assert_eq!(net.vertex(join).outgoing.len(), 1);
+    }
 }
 // }}}

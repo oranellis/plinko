@@ -21,7 +21,7 @@ use plinko::{
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
         plan_delay::{NewPlanDelay, PlanDelayPatch},
-        task::{Assignee, NewTask, PersistentState, ScheduleMode, Status, TaskPatch, Worker},
+        task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
         task_group::{NewTaskGroup, TaskGroupPatch},
     },
     planner::resources::{
@@ -32,8 +32,8 @@ use plinko::{
     },
     planner::{plan::NewPlan, plan_update::PlanUpdate},
     scheduler::{
-        Refreshed, Tracker, prepare, solve_tenant,
-        state::{Baseline, PlanVolatileState, UnscheduledReason},
+        Hints, solve,
+        state::{PlanVolatileState, UnscheduledReason},
     },
 };
 use uuid::Uuid;
@@ -299,32 +299,8 @@ impl World {
         id
     }
 
-    /// Applies a plan update through a tracker, which notes what it may change
-    fn tracked(&mut self, tracker: &mut Tracker, update: PlanUpdate) {
-        let update = TenantUpdate {
-            time: DateTime::from_timestamp(978307200, 0).unwrap(),
-            actor: self.root,
-            update_type: TenantUpdateType::Plan(PlanTenantUpdate::Update(
-                self.plan,
-                Box::new(update),
-            )),
-        };
-        tracker.apply(&mut self.tenant, update).unwrap();
-    }
-
-    fn stored(&self) -> PlanVolatileState {
-        let schedule = self.tenant.schedule().expect("scheduled");
-        schedule.plans[&self.plan].clone()
-    }
-
-    fn baseline(&mut self) -> Baseline {
-        prepare(&mut self.tenant);
-        self.tenant.baseline(&self.plan).expect("prepared").clone()
-    }
-
     fn solve(&mut self) -> PlanVolatileState {
-        prepare(&mut self.tenant);
-        let mut state = solve_tenant(&self.tenant);
+        let mut state = solve(&mut self.tenant, &Hints::default()).state;
         state.plans.remove(&self.plan).expect("the plan is solved")
     }
 }
@@ -439,26 +415,6 @@ fn strict_runs_restart_on_a_busy_day_but_not_across_weekends() {
     assert_eq!(span(&state, run), (d(4), d(9)));
     assert_eq!(span(&state, long), (d(1), d(9)));
     assert!(state.constraint_violations.is_empty());
-}
-// }}}
-
-// relaxed_tasks_use_what_is_free {{{
-#[test]
-fn relaxed_tasks_use_what_is_free() {
-    let mut world = World::new();
-    let alice = world.user();
-    let holder = world.task(1, &[(user(alice), 4)], &[start()]);
-    world.patch(holder, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(d(3)))
-    });
-    let task = world.task(3, &[(user(alice), 8)], &[start()]);
-    world.patch(task, |p| p.mode = Some(ScheduleMode::Relaxed));
-    let state = world.solve();
-    assert_eq!(
-        days_of(&state, task, alice),
-        [(d(1), 8), (d(2), 8), (d(3), 4), (d(4), 4)]
-    );
-    assert_eq!(span(&state, task), (d(1), d(5)));
 }
 // }}}
 
@@ -978,82 +934,6 @@ fn the_same_updates_give_the_same_schedule() {
 }
 // }}}
 
-// slack_is_how_much_later_a_node_can_finish_before_the_plan_does {{{
-#[test]
-fn slack_is_how_much_later_a_node_can_finish_before_the_plan_does() {
-    let mut world = World::new();
-    let (alice, bob) = (world.user(), world.user());
-    let first = world.task(2, &[(user(alice), 8)], &[start()]);
-    let second = world.task(2, &[(user(alice), 8)], &[after(node(first))]);
-    let aside = world.task(1, &[(user(bob), 8)], &[start()]);
-    let slack = world.baseline().slack;
-    assert_eq!(slack[&node(first)], 0);
-    assert_eq!(slack[&node(second)], 0);
-    // it ends on the 2nd and the plan on the 5th
-    assert_eq!(slack[&node(aside)], 3);
-}
-// }}}
-
-// slack_counts_the_order_people_work_in {{{
-#[test]
-fn slack_counts_the_order_people_work_in() {
-    let mut world = World::new();
-    let (alice, bob, carol) = (world.user(), world.user(), world.user());
-    let one = world.task(1, &[(user(alice), 8)], &[start()]);
-    let two = world.task(1, &[(user(alice), 8)], &[start()]);
-    let apart = world.task(1, &[(user(carol), 8)], &[start()]);
-    world.task(2, &[(user(bob), 8)], &[start()]);
-    let state = world.solve();
-    let slack = world.baseline().slack;
-    let (first, second) = if span(&state, one).0 < span(&state, two).0 {
-        (one, two)
-    } else {
-        (two, one)
-    };
-    // the first has to be done for the second to be on time, the one on her own has a day
-    assert_eq!(slack[&node(first)], 0);
-    assert_eq!(slack[&node(second)], 0);
-    assert_eq!(slack[&node(apart)], 1);
-}
-// }}}
-
-// slack_follows_targets_and_hard_dates {{{
-#[test]
-fn slack_follows_targets_and_hard_dates() {
-    let mut world = World::new();
-    let chain = world.task(1, &[], &[start()]);
-    let goal = world.milestone(&[after(node(chain))]);
-    world.target(PlanNode::Milestone(goal));
-    let dated = world.task(1, &[], &[start()]);
-    world.patch(dated, |p| {
-        p.time_constraint = Some(TimeConstraint::Latest(d(10)))
-    });
-    let rest = world.task(1, &[], &[start()]);
-    let slack = world.baseline().slack;
-    assert_eq!(slack[&node(chain)], 0);
-    assert_eq!(slack[&PlanNode::Milestone(goal)], 0);
-    // it may start on the 10th, so end on the 11th, having ended on the 2nd
-    assert_eq!(slack[&node(dated)], 9);
-    assert!(!slack.contains_key(&node(rest)));
-}
-// }}}
-
-// slack_is_negative_once_a_hard_date_is_missed {{{
-#[test]
-fn slack_is_negative_once_a_hard_date_is_missed() {
-    let mut world = World::new();
-    let first = world.task(3, &[], &[start()]);
-    let late = world.task(1, &[], &[after(node(first))]);
-    world.patch(late, |p| {
-        p.time_constraint = Some(TimeConstraint::Latest(d(2)))
-    });
-    let slack = world.baseline().slack;
-    // it starts on the 4th and ends on the 5th, but could end on the 3rd
-    assert_eq!(slack[&node(late)], -2);
-    assert_eq!(slack[&node(first)], -2);
-}
-// }}}
-
 // a_snapshot_of_a_tenant_schedules_the_same {{{
 #[test]
 fn a_snapshot_of_a_tenant_schedules_the_same() {
@@ -1128,158 +1008,6 @@ fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_i
     let mut starts: Vec<NaiveDate> = tests.iter().map(|t| span(&state, *t).0).collect();
     starts.sort();
     assert_eq!(starts, [d(1), d(8), d(15), d(22)]);
-}
-// }}}
-
-// scheduled_world {{{
-/// What the tracker gives back for the tenant, which has a full schedule to start from
-fn scheduled_world() -> (World, Uuid, [Uuid; 3], Uuid) {
-    let mut world = World::new();
-    let alice = world.user();
-    let bob = world.user();
-    let a = world.task(2, &[(user(alice), 8)], &[start()]);
-    let b = world.task(2, &[(user(alice), 8)], &[after(node(a))]);
-    let c = world.task(1, &[(user(alice), 8)], &[after(node(b))]);
-    let apart = world.task(3, &[(user(bob), 8)], &[start()]);
-    plinko::scheduler::schedule(&mut world.tenant);
-    (world, alice, [a, b, c], apart)
-}
-// }}}
-
-// a_change_places_what_depends_on_it_again_and_leaves_the_rest {{{
-#[test]
-fn a_change_places_what_depends_on_it_again_and_leaves_the_rest() {
-    let (mut world, _, [a, b, c], apart) = scheduled_world();
-    let before = world.stored();
-    let mut tracker = Tracker::default();
-    world.tracked(
-        &mut tracker,
-        PlanUpdate::Task(Crud::Update(TaskPatch {
-            id: a,
-            name: None,
-            parent: None,
-            mode: None,
-            duration: Some(4),
-            time_constraint: None,
-            dependencies: None,
-            allocations: None,
-            affinities: None,
-            actual_workers: None,
-            persistent_state: None,
-        })),
-    );
-    assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Partly);
-    let after = world.stored();
-    // the task that does not depend on it did not move and the chain follows
-    assert_eq!(after.tasks[&apart], before.tasks[&apart]);
-    assert_eq!(span(&after, a), (d(1), d(5)));
-    assert_eq!(span(&after, b), (d(5), d(9)));
-    assert_eq!(span(&after, c), (d(9), d(10)));
-    // as a full run would
-    let mut full = World::new();
-    std::mem::swap(&mut full.tenant, &mut world.tenant);
-    plinko::scheduler::schedule(&mut full.tenant);
-    full.plan = world.plan;
-    for task in [a, b, c, apart] {
-        assert_eq!(
-            full.stored().tasks[&task].date_range,
-            after.tasks[&task].date_range
-        );
-    }
-}
-// }}}
-
-// updates_that_change_nothing_scheduled_leave_the_schedule_alone {{{
-#[test]
-fn updates_that_change_nothing_scheduled_leave_the_schedule_alone() {
-    let (mut world, _, [a, ..], _) = scheduled_world();
-    let before = world.stored();
-    let mut tracker = Tracker::default();
-    world.tracked(
-        &mut tracker,
-        PlanUpdate::Task(Crud::Update(TaskPatch {
-            id: a,
-            name: Some("Renamed".to_string()),
-            parent: None,
-            mode: None,
-            duration: None,
-            time_constraint: None,
-            dependencies: None,
-            allocations: None,
-            affinities: None,
-            actual_workers: None,
-            persistent_state: None,
-        })),
-    );
-    world.tracked(
-        &mut tracker,
-        PlanUpdate::Describe(node(a), Some("Words".to_string())),
-    );
-    assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Unchanged);
-    assert_eq!(world.stored(), before);
-}
-// }}}
-
-// a_new_task_is_placed_around_what_is_there {{{
-#[test]
-fn a_new_task_is_placed_around_what_is_there() {
-    let (mut world, alice, [a, b, c], apart) = scheduled_world();
-    let before = world.stored();
-    let mut tracker = Tracker::default();
-    let id = world.id();
-    let new = NewTask {
-        id,
-        name: "New".to_string(),
-        parent: Parent::Plan,
-    };
-    world.tracked(&mut tracker, PlanUpdate::Task(Crud::Add(new)));
-    world.tracked(
-        &mut tracker,
-        PlanUpdate::Task(Crud::Update(TaskPatch {
-            id,
-            name: None,
-            parent: None,
-            mode: None,
-            duration: Some(2),
-            time_constraint: None,
-            dependencies: Some(deps(&[start()])),
-            allocations: Some(HashMap::from([(user(alice), h(8))])),
-            affinities: None,
-            actual_workers: None,
-            persistent_state: None,
-        })),
-    );
-    assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Partly);
-    let after = world.stored();
-    for task in [a, b, c, apart] {
-        assert_eq!(after.tasks[&task], before.tasks[&task]);
-    }
-    // alice is busy through Friday the 5th with the chain, so it goes after the weekend
-    assert_eq!(span(&after, id), (d(8), d(10)));
-}
-// }}}
-
-// changes_to_people_or_the_clock_schedule_everything_again {{{
-#[test]
-fn changes_to_people_or_the_clock_schedule_everything_again() {
-    let (mut world, alice, ..) = scheduled_world();
-    let mut tracker = Tracker::default();
-    let update = TenantUpdate {
-        time: DateTime::from_timestamp(978307200, 0).unwrap(),
-        actor: world.root,
-        update_type: TenantUpdateType::Availability(
-            alice,
-            RuleSetUpdate::Rule(Crud::Add(NewRule {
-                name: String::new(),
-                stop_day: None,
-                id: Uuid::new_v4(),
-                start_day: NaiveDate::from_ymd_opt(2000, 1, 3).unwrap(),
-                kind: RuleKind::Weekly(WeeklySchedule::new([h(4); 7])),
-            })),
-        ),
-    };
-    tracker.apply(&mut world.tenant, update).unwrap();
-    assert_eq!(tracker.schedule(&mut world.tenant), Refreshed::Fully);
 }
 // }}}
 

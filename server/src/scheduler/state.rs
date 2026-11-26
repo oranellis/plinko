@@ -5,13 +5,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::NaiveDate;
 use uuid::Uuid;
 
-use crate::planner::graph::Vertex;
 use crate::{
     availability::workload::Workload,
-    common::{
-        dates::{DateRange, TimeConstraint},
-        short_id::ShortId,
-    },
+    common::{dates::TimeConstraint, short_id::ShortId},
     planner::items::{
         dependency::PlanNode,
         milestone, plan_buffer, plan_delay,
@@ -89,34 +85,6 @@ impl TenantVolatileState {
 // }}}
 
 // TenantVolatileState supporting types {{{
-/// A plan scheduled on its own, with no other plan wanting its people: what other results are
-/// measured against
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Baseline {
-    pub state: PlanVolatileState,
-    /// Days each node could finish later without moving a target or passing a hard date, counting
-    /// the people it shares with other work in the plan. Nodes that feed no target and have no
-    /// hard date of their own are left out. Negative when a hard date is already passed.
-    pub slack: HashMap<PlanNode, i64>,
-    /// The same against each target on its own, or the plan end alone when there are none
-    pub by_target: Vec<TargetSlack>,
-    /// The same against the plan end for every node, including ones feeding no target
-    pub plan_slack: HashMap<PlanNode, i64>,
-    /// Where every vertex of the plan sits when it is on its own
-    pub(crate) ranges: HashMap<Vertex, DateRange>,
-    /// The earliest each node with a hard date could start however free people are, from the
-    /// work before it and the days it takes
-    pub earliest: HashMap<PlanNode, NaiveDate>,
-}
-
-/// Slack of the nodes that lead to one target, `id` is `None` for the end of the plan
-#[derive(Clone, Debug, PartialEq)]
-pub struct TargetSlack {
-    pub id: Option<Uuid>,
-    pub priority: i32,
-    pub slack: HashMap<PlanNode, i64>,
-}
-
 /// One plan's schedule. Items it could schedule are in the maps for their kind, the rest are in
 /// `unscheduled` with the reason.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -135,7 +103,8 @@ pub struct PlanVolatileState {
     pub constraint_violations: HashMap<PlanNode, ConstraintViolation>,
 }
 
-/// When a target lands as scheduled, against when its plan would land it with no other plans
+/// When a target lands as scheduled, against the earliest it could if nobody ever ran out of
+/// hours
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TargetForecast {
     pub forecast: NaiveDate,
@@ -187,18 +156,6 @@ pub struct UserAssignment {
 
 // impl PlanVolatileState {{{
 impl PlanVolatileState {
-    /// Sets each forecast's baseline from the plan scheduled on its own
-    pub fn compare_to(&mut self, alone: &PlanVolatileState) {
-        for (id, forecast) in &mut self.targets {
-            if let Some(solo) = alone.targets.get(id) {
-                forecast.baseline = solo.forecast;
-            }
-        }
-        if let (Some(forecast), Some(solo)) = (&mut self.plan_end, &alone.plan_end) {
-            forecast.baseline = solo.forecast;
-        }
-    }
-
     /// The day after the last day anything in the plan is scheduled, `None` if nothing is
     pub fn end(&self) -> Option<NaiveDate> {
         let tasks = self.tasks.values().map(|t| t.date_range.end());
@@ -218,7 +175,7 @@ impl PlanVolatileState {
 
 // impl TargetForecast {{{
 impl TargetForecast {
-    /// Days the target is later than the plan alone, never negative
+    /// Days the target is later than the earliest it could be, never negative
     pub fn delay(&self) -> i64 {
         (self.forecast - self.baseline).num_days().max(0)
     }

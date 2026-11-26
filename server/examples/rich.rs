@@ -602,8 +602,7 @@ fn main() {
         };
         // the reference schedule has no hard dates
         let mut plain = make(&opts, &HashMap::new(), &HashMap::new());
-        scheduler::prepare(&mut plain.tenant);
-        let reference = scheduler::solve_tenant(&plain.tenant);
+        let reference = scheduler::solve(&mut plain.tenant, &scheduler::Hints::default()).state;
         let mut random = Random(seed * 31 + 5);
         let mut dates: HashMap<Uuid, TimeConstraint> = HashMap::new();
         for t in &plain.tasks {
@@ -625,11 +624,8 @@ fn main() {
             dates.clear();
         }
         let mut world = make(&opts, &dates, &HashMap::new());
-        let prep = Instant::now();
-        scheduler::prepare(&mut world.tenant);
-        println!("  prepare {:.2}s", prep.elapsed().as_secs_f64());
         let started = Instant::now();
-        let state = scheduler::solve_tenant(&world.tenant);
+        let state = scheduler::solve(&mut world.tenant, &scheduler::Hints::default()).state;
         let seconds = started.elapsed().as_secs_f64();
         let unscheduled: usize = state.plans.values().map(|p| p.unscheduled.len()).sum();
         let (violated, late, worst, end, delay) = score(&state, since);
@@ -676,19 +672,16 @@ fn main() {
 // }}}
 
 // incremental {{{
-/// Makes `count` small edits one at a time, brings the schedule up to date after each as the server
-/// does and times it, then schedules the tenant afresh to see what the edits cost in quality
+/// Makes `count` small edits one at a time, schedules after each as the server does, starting
+/// from the hints of the last schedule, and times it. Then schedules the tenant with no hints to
+/// see what they are worth.
 fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
     let mut tenant = world.tenant.clone();
-    let fixes = scheduler::schedule(&mut tenant);
-    let mut tracker = scheduler::Tracker::default();
-    tracker.refined(&tenant, fixes);
+    scheduler::schedule(&mut tenant);
     let mut random = Random(opts.seed * 977 + 3);
     let root = *tenant.users().keys().next().unwrap();
     let mut made = Vec::new();
-    let (mut partly, mut fully, mut unchanged) = (0, 0, 0);
     let mut times = Vec::new();
-    let mut by_kind: HashMap<&str, Vec<f64>> = HashMap::new();
     for _ in 0..count {
         let t = &world.tasks[random.below(world.tasks.len() as u64) as usize];
         let plan = world.plans[t.plan];
@@ -741,52 +734,25 @@ fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
                 Box::new(PlanUpdate::Task(Crud::Update(patch))),
             )),
         };
-        let applied = tracker.apply(&mut tenant, update);
-        if applied.is_err() {
+        if tenant.apply_update(update).is_err() {
             continue;
         }
         made.push(());
         let started = Instant::now();
-        let kind = match tracker.schedule(&mut tenant) {
-            scheduler::Refreshed::Partly => {
-                partly += 1;
-                "partly"
-            }
-            scheduler::Refreshed::Fully => {
-                fully += 1;
-                "fully"
-            }
-            scheduler::Refreshed::Unchanged => {
-                unchanged += 1;
-                "unchanged"
-            }
-        };
+        scheduler::schedule(&mut tenant);
         times.push(started.elapsed().as_secs_f64());
-        by_kind
-            .entry(kind)
-            .or_default()
-            .push(started.elapsed().as_secs_f64());
-    }
-    for (kind, list) in &by_kind {
-        println!(
-            "  {kind}: {} runs, mean {:.3}s",
-            list.len(),
-            list.iter().sum::<f64>() / list.len() as f64
-        );
     }
     let mean = times.iter().sum::<f64>() / times.len().max(1) as f64;
     let worst = times.iter().cloned().fold(0.0, f64::max);
     let kept = tenant.schedule().cloned().unwrap();
     let (m1, l1, _, e1, _) = score(&kept, since);
     let mut again = tenant.clone();
-    again.clear_baselines();
     let started = Instant::now();
-    scheduler::schedule(&mut again);
+    let fresh = scheduler::solve(&mut again, &scheduler::Hints::default()).state;
     let full_time = started.elapsed().as_secs_f64();
-    let fresh = again.schedule().cloned().unwrap();
     let (m2, l2, _, e2, _) = score(&fresh, since);
     println!(
-        "  {} edits: {partly} partly, {fully} fully, {unchanged} unchanged; mean {mean:.3}s worst {worst:.3}s each, a full run {full_time:.2}s",
+        "  {} edits: mean {mean:.3}s worst {worst:.3}s each, a run with no hints {full_time:.2}s",
         made.len()
     );
     println!(
@@ -836,8 +802,7 @@ fn validate(
     }
     println!("  the solver's days miss {kept_missed} real dates, {kept_late} days late in all");
     let mut checked = make(opts, &fixed, &pins);
-    scheduler::prepare(&mut checked.tenant);
-    let state = scheduler::solve_tenant(&checked.tenant);
+    let state = scheduler::solve(&mut checked.tenant, &scheduler::Hints::default()).state;
     let mut moved = 0;
     let mut missing = 0;
     let mut worst = 0;

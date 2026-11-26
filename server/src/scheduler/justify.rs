@@ -1,7 +1,7 @@
 // modules {{{
 use std::collections::BinaryHeap;
 
-use crate::scheduler_new::{
+use crate::scheduler::{
     arc::{ArcId, ArcKind, Until},
     day::Day,
     network::VertexId,
@@ -91,7 +91,7 @@ fn late_starts(ctx: &Context, pass: &Pass) -> Vec<i64> {
 fn push_late(
     ctx: &Context,
     pass: &Pass,
-    ledger: &mut crate::scheduler_new::ledger::Ledger,
+    ledger: &mut crate::scheduler::ledger::Ledger,
     id: ArcId,
     by: Day,
 ) -> i64 {

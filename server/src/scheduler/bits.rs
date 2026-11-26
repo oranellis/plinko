@@ -1,5 +1,5 @@
 // modules {{{
-use crate::scheduler_new::day::Day;
+use crate::scheduler::day::Day;
 // }}}
 
 /// A set of days as bits, one word for every 64 days

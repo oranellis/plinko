@@ -9,7 +9,7 @@ use crate::{
     common::short_id::ShortId,
     multitenancy::tenant::Tenant,
     planner::plan::Plan,
-    scheduler_new::{
+    scheduler::{
         bits::{Bits, Valid},
         day::Day,
     },

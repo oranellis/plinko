@@ -226,10 +226,7 @@ fn main() {
         store.set_password(root, "password123").unwrap();
     }
     let started = Instant::now();
-    scheduler::prepare(&mut tenant);
-    println!("prepare (calendars, baselines): {:?}", started.elapsed());
-    let started = Instant::now();
-    let state = scheduler::solve_tenant(&tenant);
+    let state = scheduler::solve(&mut tenant, &scheduler::Hints::default()).state;
     println!("solve: {:?}", started.elapsed());
     let scheduled: usize = state.plans.values().map(|p| p.tasks.len()).sum();
     let unscheduled: usize = state.plans.values().map(|p| p.unscheduled.len()).sum();

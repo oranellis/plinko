@@ -20,13 +20,13 @@ use crate::{
         plan::Plan,
         plan_entity::{AbstractPlanNode, PlanItem},
     },
-    scheduler::{state::UnscheduledReason, status::milestone_statuses},
-    scheduler_new::{
+    scheduler::{
         arc::{Arc, ArcKind, Buffer, Progress, Slot, Until, Work},
         day::Day,
         network::{Lowered, Network, PlanInfo, Target, Vertex, VertexId},
         table::{RowId, RowKey, Table},
     },
+    scheduler::{state::UnscheduledReason, status::milestone_statuses},
 };
 // }}}
 

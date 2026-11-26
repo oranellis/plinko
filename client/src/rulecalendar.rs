@@ -46,7 +46,7 @@ impl Value for Workload {
         self.get()
     }
     fn from_level(level: u8) -> Self {
-        Workload::new(level.min(Self::MAX)).expect("kept within the hours of a day")
+        Workload::new(level.min(<Self as Value>::MAX)).expect("kept within the hours of a day")
     }
     fn level_text(level: u8) -> String {
         format!("{level} h")

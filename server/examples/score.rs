@@ -337,8 +337,7 @@ fn main() {
     for seed in 1..=seeds as u64 {
         // the reference schedule has no hard dates
         let mut plain = make(seed, plans, 500, &HashMap::new());
-        scheduler::prepare(&mut plain.tenant);
-        let reference = scheduler::solve_tenant(&plain.tenant);
+        let reference = scheduler::solve(&mut plain.tenant, &scheduler::Hints::default()).state;
         let mut random = Random(seed * 31 + 5);
         let mut dates: HashMap<Uuid, TimeConstraint> = HashMap::new();
         for (plan, tasks) in &plain.plans {
@@ -363,9 +362,8 @@ fn main() {
         }
         dated += dates.len() as f64;
         let mut world = make(seed, plans, 500, &dates);
-        scheduler::prepare(&mut world.tenant);
         let started = Instant::now();
-        let state = scheduler::solve_tenant(&world.tenant);
+        let state = scheduler::solve(&mut world.tenant, &scheduler::Hints::default()).state;
         seconds += started.elapsed().as_secs_f64();
         if let Ok(dir) = std::env::var("EXPORT") {
             export(

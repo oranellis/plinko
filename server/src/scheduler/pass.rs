@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     scheduler::state::UnscheduledReason,
-    scheduler_new::{
+    scheduler::{
         arc::{ArcId, ArcKind, Buffer, Progress, Work},
         bits::Valid,
         day::Day,
@@ -246,7 +246,7 @@ impl Pass {
         mut snapshots: Option<&mut Vec<(usize, Pass)>>,
     ) {
         let every = (ctx.net.arcs.len() / SNAPSHOTS).max(1);
-        while let Some(arc) = self.pick(rules) {
+        while let Some(arc) = self.pick(ctx, rules) {
             if let Some(snapshots) = snapshots.as_deref_mut()
                 && self.steps.len().is_multiple_of(every)
                 && snapshots
@@ -267,18 +267,18 @@ impl Pass {
 
     /// The next arc to place: the first ready one that no override holds back. If only held back
     /// ones are left, the overrides cannot all be kept, so the first of those goes.
-    fn pick(&mut self, rules: &Rules) -> Option<ArcId> {
+    fn pick(&mut self, ctx: &Context, rules: &Rules) -> Option<ArcId> {
         let held = |pass: &Self, arc: &ArcId| {
             let after = rules.overrides.and_then(|o| o.after.get(arc));
             after.is_some_and(|others| others.iter().any(|b| !pass.done[b.0 as usize]))
         };
+        // what is no longer held back is ready like the rest
         let (free, still): (Vec<ArcId>, Vec<ArcId>) = std::mem::take(&mut self.deferred)
             .into_iter()
             .partition(|arc| !held(self, arc));
         self.deferred = still;
-        if let Some(arc) = free.into_iter().min() {
-            return Some(arc);
-        }
+        let free = free.into_iter().map(|arc| (ctx.key(arc, rules), arc));
+        self.ready.extend(free);
         while let Some((_, arc)) = self.ready.pop_first() {
             if !held(self, &arc) {
                 return Some(arc);

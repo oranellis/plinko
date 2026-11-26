@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::scheduler_new::{
+use crate::scheduler::{
     arc::ArcId,
     justify::justify,
     network::VertexId,
@@ -184,7 +184,7 @@ fn flips(ctx: &Context, trial: &Trial) -> Vec<Flip> {
     let mut found: Vec<(i64, Flip)> = Vec::new();
     let mut seen: HashSet<Late> = HashSet::new();
     let mut stack: Vec<Late> = trial.score.late.clone();
-    let day = |d: crate::scheduler_new::day::Day| i64::from(d.0);
+    let day = |d: crate::scheduler::day::Day| i64::from(d.0);
     while let Some(late) = stack.pop() {
         if !seen.insert(late) || found.len() >= MOST_FLIPS {
             continue;

@@ -21,18 +21,18 @@ use crate::{
         plan_entity::PlanItem,
     },
     scheduler::{
-        state::{
-            ConstraintViolation, PlanVolatileState, TargetForecast, TenantVolatileState,
-            UnscheduledReason,
-        },
-        status::milestone_statuses,
-    },
-    scheduler_new::{
         arc::Work,
         day::Day,
         network::{Lowered, VertexId},
         pass::{Context, Pass, Placed},
         table::RowKey,
+    },
+    scheduler::{
+        state::{
+            ConstraintViolation, PlanVolatileState, TargetForecast, TenantVolatileState,
+            UnscheduledReason,
+        },
+        status::milestone_statuses,
     },
 };
 // }}}

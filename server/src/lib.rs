@@ -8,7 +8,6 @@ pub mod net;
 pub mod planner;
 pub mod protocol;
 pub mod scheduler;
-pub mod scheduler_new;
 #[cfg(feature = "server")]
 pub mod store;
 pub mod traits;

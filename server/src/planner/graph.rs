@@ -84,11 +84,6 @@ impl<'a> Graph<'a> {
         self.edges(v).into_iter().filter_map(|e| e.from).collect()
     }
 
-    /// The items whose parent is the group
-    pub(crate) fn members(&self, group: &Uuid) -> &[PlanNode] {
-        self.members.get(group).map_or(&[], Vec::as_slice)
-    }
-
     /// Every vertex of the plan, in a fixed order
     pub(crate) fn vertices(&self) -> Vec<Vertex> {
         let plan = self.plan;

@@ -1,7 +1,7 @@
 // modules {{{
 use crate::{
     scheduler::state::UnscheduledReason,
-    scheduler_new::{
+    scheduler::{
         arc::ArcId,
         day::Day,
         network::VertexId,

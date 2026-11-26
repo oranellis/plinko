@@ -1,5 +1,5 @@
 // modules {{{
-use crate::scheduler_new::{
+use crate::scheduler::{
     arc::{ArcId, ArcKind},
     day::Day,
     network::VertexId,

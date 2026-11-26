@@ -23,10 +23,7 @@ use crate::{
         plan_update::PlanUpdate,
         resources::user::NewPlanUser,
     },
-    scheduler::{
-        self,
-        state::{Baseline, TenantVolatileState},
-    },
+    scheduler::{self, Hints, state::TenantVolatileState},
     traits::entity::Entity,
 };
 // }}}
@@ -47,8 +44,9 @@ pub struct Tenant {
     plan_calendars: HashMap<ShortId, Calendar<Workload>>,
     #[serde(skip)]
     schedule: Option<TenantVolatileState>,
+    /// What the last search found, for the next to start from
     #[serde(skip)]
-    baselines: HashMap<ShortId, Baseline>,
+    hints: Hints,
     pub(super) plans: HashMap<ShortId, Plan>,
     pub(super) default_schedule: RuleSet<Workload>,
 }
@@ -87,7 +85,7 @@ impl Tenant {
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),
             schedule: None,
-            baselines: HashMap::new(),
+            hints: Hints::default(),
             plans: HashMap::new(),
             default_schedule: RuleSet::default(),
         }
@@ -143,41 +141,19 @@ impl Tenant {
         self.schedule = Some(schedule);
     }
 
-    /// The plan on its own, as of the last `scheduler::prepare`. An update that changes a plan
-    /// drops its baseline, and one that changes anything else (people, availability, the clock)
-    /// drops them all.
-    pub fn baseline(&self, plan: &ShortId) -> Option<&Baseline> {
-        self.baselines.get(plan)
+    pub fn store_hints(&mut self, hints: Hints) {
+        self.hints = hints;
     }
 
-    /// Drops the baselines, which are worked out again by the next schedule
-    pub fn clear_baselines(&mut self) {
-        self.baselines.clear();
-    }
-
-    pub fn baselines(&self) -> &HashMap<ShortId, Baseline> {
-        &self.baselines
-    }
-
-    pub fn store_baseline(&mut self, plan: ShortId, baseline: Baseline) {
-        self.baselines.insert(plan, baseline);
+    /// The choices the last search found better made the other way, which updates leave alone
+    pub fn hints(&self) -> &Hints {
+        &self.hints
     }
 
     pub fn apply_update(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
-        let plan = match &u.update_type {
-            TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => Some(new.id),
-            TenantUpdateType::Plan(
-                PlanTenantUpdate::Remove(id) | PlanTenantUpdate::Update(id, _),
-            ) => Some(*id),
-            _ => None,
-        };
         let result = self.apply_update_unscheduled(u);
         if result.is_ok() {
             self.schedule = None;
-            match plan {
-                Some(plan) => drop(self.baselines.remove(&plan)),
-                None => self.baselines.clear(),
-            }
         }
         result
     }
@@ -372,7 +348,7 @@ impl Tenant {
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),
             schedule: None,
-            baselines: HashMap::new(),
+            hints: Hints::default(),
             plans: self
                 .plans
                 .iter()

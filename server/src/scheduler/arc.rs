@@ -1,7 +1,7 @@
 // modules {{{
 use crate::{
     planner::items::{dependency::PlanNode, task::Worker},
-    scheduler_new::{
+    scheduler::{
         day::Day,
         network::VertexId,
         table::{MaskId, RowId},

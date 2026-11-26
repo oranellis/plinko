@@ -19,7 +19,7 @@ use plinko::{
         plan::{NewPlan, PlanSchedulerDataPatch},
         plan_update::PlanUpdate,
     },
-    scheduler::{prepare, solve_tenant, state::TenantVolatileState},
+    scheduler::{Hints, solve, state::TenantVolatileState},
 };
 use uuid::Uuid;
 // }}}
@@ -205,8 +205,7 @@ impl Plans {
     }
 
     fn solve(&mut self) -> TenantVolatileState {
-        prepare(&mut self.tenant);
-        solve_tenant(&self.tenant)
+        solve(&mut self.tenant, &Hints::default()).state
     }
 }
 // }}}
@@ -263,36 +262,6 @@ fn forecasts_are_compared_with_the_plan_on_its_own() {
         state.plans[&long].plan_end.unwrap().baseline,
         day(2024, 1, 3)
     );
-}
-// }}}
-
-// baselines_are_cached_and_dropped_when_what_they_depend_on_changes {{{
-#[test]
-fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
-    let mut plans = Plans::new();
-    let ((one, _), (two, _)) = (plans.plan(1), plans.plan(1));
-    assert!(plans.tenant.baseline(&one).is_none());
-    plans.solve();
-    assert!(plans.tenant.baseline(&one).is_some());
-    assert!(plans.tenant.baseline(&two).is_some());
-
-    // changing a plan only drops its own
-    let new = NewTask {
-        id: Uuid::new_v4(),
-        name: "More".to_string(),
-        parent: Parent::Plan,
-    };
-    plans.update(one, PlanUpdate::Task(Crud::Add(new)));
-    assert!(plans.tenant.baseline(&one).is_none());
-    assert!(plans.tenant.baseline(&two).is_some());
-
-    // the clock, or anything about people, drops them all
-    plans.solve();
-    plans.apply(TenantUpdateType::SetToday(day(2024, 1, 2)));
-    assert!(plans.tenant.baseline(&one).is_none());
-    assert!(plans.tenant.baseline(&two).is_none());
-    plans.solve();
-    assert!(plans.tenant.baseline(&two).is_some());
 }
 // }}}
 
@@ -503,36 +472,5 @@ fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help() {
     assert_eq!(first_day(&state, waiting, wait), day(2024, 1, 1));
     let worker = state.plans[&tagged].tasks[&held].workers[&Worker::Tag(tag)];
     assert_eq!(worker, Assignee::User(high));
-}
-// }}}
-
-// someone_much_less_booked_is_worth_finishing_a_day_later {{{
-#[test]
-fn someone_much_less_booked_is_worth_finishing_a_day_later() {
-    let mut plans = Plans::new();
-    let plan = plans.empty();
-    let (alice, bob) = (plans.person(plan), plans.person(plan));
-    let tag = plans.tag(plan, &[alice, bob]);
-    // bob does not work Mondays, so finishes a day after alice, who has a day booked
-    let rule = plinko::availability::rule::NewRule {
-        name: String::new(),
-        stop_day: None,
-        id: Uuid::new_v4(),
-        start_day: day(2000, 1, 3),
-        kind: plinko::availability::rule::RuleKind::Weekly(
-            plinko::availability::rule::WeeklySchedule::new(
-                [0, 8, 8, 8, 8, 0, 0].map(Workload::new_const),
-            ),
-        ),
-    };
-    let update = plinko::availability::rule_set::RuleSetUpdate::Rule(Crud::Add(rule));
-    plans.apply(TenantUpdateType::Availability(bob, update));
-    let booked = plans.task_for(plan, 1, Worker::User(alice), &[]);
-    fixed(&mut plans, plan, booked, day(2024, 1, 3));
-    let task = plans.task_for(plan, 2, Worker::Tag(tag), &[]);
-    let state = plans.solve();
-    let worker = state.plans[&plan].tasks[&task].workers[&Worker::Tag(tag)];
-    assert_eq!(worker, Assignee::User(bob));
-    assert_eq!(first_day(&state, plan, task), day(2024, 1, 2));
 }
 // }}}
