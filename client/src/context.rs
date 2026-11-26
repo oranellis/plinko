@@ -20,7 +20,6 @@ use crate::{
     card::{Card, Probe},
     data::{blocks_said, has_data},
     draft::Draft,
-    editor::WorkersWindow,
     format,
     gantt::shift::Held,
     icons::{Icon, IconKind},
@@ -198,17 +197,17 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
             let _ = input.set_attribute("style", &format!("height:{}px", input.scroll_height()));
         }
     };
-    // the name of a new item is ready to type over
-    set_timeout(
-        move || {
-            fit();
-            if let Some(input) = input.try_get_untracked().flatten().filter(|_| new) {
-                let _ = input.focus();
-                input.select();
-            }
-        },
-        std::time::Duration::from_millis(80),
-    );
+    // the name of a new item is ready to type over, as soon as it is there: selecting it any
+    // later would be over what has been typed since
+    let was = draft.with_untracked(|d| d.as_ref().map(|d| d.name.clone()).unwrap_or_default());
+    request_animation_frame(move || {
+        fit();
+        let input = input.try_get_untracked().flatten().filter(|_| new);
+        if let Some(input) = input.filter(|i| i.value() == was) {
+            let _ = input.focus();
+            input.select();
+        }
+    });
     match node {
         None | Some(PlanNode::PlanBuffer(_)) => view! { <span class="namebox fadein">"Buffer"</span> }.into_any(),
         Some(node) => view! {
@@ -318,28 +317,19 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
 // }}}
 
 // Extras {{{
-/// Who works on the draft's task, and for an item in the plan which of its ends is held to a day
+/// For an item in the plan, which of its ends is held to a day
 #[component]
 pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let sync = use_sync();
-    let (task, holds) = draft.with_untracked(|d| {
-        let node = d.as_ref().map(|d| (d.node, d.new));
-        (
-            matches!(node, Some((PlanNode::Task(_), _))),
-            matches!(
-                node,
-                Some((
-                    PlanNode::Task(_) | PlanNode::TaskGroup(_) | PlanNode::Milestone(_),
-                    false
-                ))
-            ),
+    let holds = draft.with_untracked(|d| {
+        matches!(
+            d.as_ref().map(|d| (d.node, d.new)),
+            Some((
+                PlanNode::Task(_) | PlanNode::TaskGroup(_) | PlanNode::Milestone(_),
+                false
+            ))
         )
     });
-    let workers = RwSignal::new(false);
-    crate::escape::on_escape(
-        move || workers.get(),
-        Callback::new(move |()| workers.set(false)),
-    );
     // which end is held: its first day, or its last, which is the only one a milestone has
     let held = move || draft.with(|d| d.as_ref().and_then(Draft::pin).map(|p| p.end));
     let single = draft.with_untracked(|d| {
@@ -379,22 +369,6 @@ pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
         });
     };
     view! {
-        {task.then(|| view! {
-            <button
-                type="button"
-                class="ctx fadein"
-                class:on=move || workers.get()
-                title="Workers"
-                aria-label="Workers"
-                aria-expanded=move || workers.get().to_string()
-                on:click=move |_| workers.update(|w| *w = !*w)
-            >
-                <Icon kind=IconKind::Person size=20 />
-            </button>
-            <Show when=move || workers.get()>
-                <WorkersWindow plan=plan draft=draft />
-            </Show>
-        })}
         {holds.then(|| view! {
             <button
                 type="button"
