@@ -3,13 +3,13 @@
 //! here, so what is drawn is what is hit.
 
 // constants {{{
-pub const ROW_HEIGHT: f64 = 36.0;
+pub const ROW_HEIGHT: f64 = 40.0;
 pub const HEADER_HEIGHT: f64 = 56.0;
 /// Where the first lane starts: under the header, with a little room
 pub const LANES_TOP: f64 = HEADER_HEIGHT + 8.0;
 /// The month row of the header, the day row is the rest
 pub const MONTH_HEIGHT: f64 = 22.0;
-pub const DAY_WIDTH: f64 = 34.0;
+pub const DAY_WIDTH: f64 = 38.0;
 pub const MIN_DAY_WIDTH: f64 = 8.0;
 pub const MAX_DAY_WIDTH: f64 = 80.0;
 /// Room above and below a bar in its row
@@ -186,8 +186,8 @@ mod tests {
             scroll_x: 100.0,
             ..Viewport::default()
         };
-        assert_eq!(view.x(10.0), 240.0);
-        assert_eq!(view.day_at(240.0), 10.0);
+        assert_eq!(view.x(10.0), 10.0 * DAY_WIDTH - 100.0);
+        assert_eq!(view.day_at(10.0 * DAY_WIDTH - 100.0), 10.0);
         assert_eq!(view.lane_top(0), LANES_TOP);
         assert_eq!(view.lane_top(2), LANES_TOP + 2.0 * ROW_HEIGHT);
     }
@@ -239,9 +239,9 @@ mod tests {
     fn bars_are_inset_rounded_boxes_and_never_too_thin() {
         let view = Viewport::default();
         let bar = view.bar(2.0, 5.0, 1);
-        // three days wide less the inset either side, 24 high in a 36 row
+        // three days wide less the inset either side, and a row high less the inset above and below
         assert!((bar.w - (3.0 * DAY_WIDTH - 2.0 * 0.12 * DAY_WIDTH)).abs() < 1e-9);
-        assert_eq!(bar.h, 24.0);
+        assert_eq!(bar.h, ROW_HEIGHT - 2.0 * BAR_INSET_Y);
         assert_eq!(bar.y, LANES_TOP + ROW_HEIGHT + BAR_INSET_Y);
         assert!(view.bar(2.0, 2.0, 0).w >= MIN_BAR_WIDTH);
         let (x, y) = view.start_centre(2.0, 1);
