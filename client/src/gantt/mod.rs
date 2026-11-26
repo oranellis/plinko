@@ -39,8 +39,19 @@ const TAP_TOUCH: f64 = 10.0;
 const FRICTION: f64 = 0.85;
 // }}}
 
-/// What an item being edited waits for, what waits for it and the group it is in, if one is
-pub type Staged = Option<(Vec<Mark>, Vec<Mark>, Option<Mark>)>;
+/// What is not saved yet of the item being created or edited
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Staged {
+    /// What it waits for and what waits for it
+    pub before: Vec<Mark>,
+    pub after: Vec<Mark>,
+    /// The group it is in
+    pub group: Option<Mark>,
+    /// The item itself when it is on the chart, whose handles then show without shift
+    pub item: Option<Mark>,
+    /// Its days when they have changed, as `+2 (6d)`
+    pub days: Option<String>,
+}
 
 #[derive(Default)]
 struct Gesture {
@@ -92,7 +103,7 @@ pub fn Gantt(
     /// What an item being edited waits for and what waits for it, outlined in place of the links
     /// of what is selected
     #[prop(optional, into)]
-    staged: Option<Signal<Staged>>,
+    staged: Option<Signal<Option<Staged>>>,
     /// An item to outline as if the pointer were on it, for a drag that began off the chart
     #[prop(optional, into)]
     spot: Option<Signal<Option<Mark>>>,
@@ -413,9 +424,7 @@ pub fn Gantt(
                     today,
                     hover: hovered,
                     selected: picked,
-                    staged: staged
-                        .as_ref()
-                        .map(|(b, a, g)| (b.as_slice(), a.as_slice(), *g)),
+                    staged: staged.as_ref(),
                     links: &linked,
                     flash: flashed,
                     info: if over_violation.is_some() { &[] } else { &info },
@@ -431,8 +440,14 @@ pub fn Gantt(
                 paint_notes(ctx, &frame);
             });
         });
-        if editing_shift {
-            let handles = near.map(handles_of).unwrap_or_default();
+        // the item being edited keeps its handles, shift shows those of the item the pointer is near
+        let pinned = staged.as_ref().and_then(|s| s.item);
+        let gripped = near.filter(|_| editing_shift).or(pinned);
+        if editing_shift || gripped.is_some() {
+            let handles = gripped.map(handles_of).unwrap_or_default();
+            let note = staged
+                .as_ref()
+                .and_then(|s| Some((rect_of(s.item?)?, s.days.clone()?)));
             let target = |own: PlanNode| {
                 hit(at.0, at.1)
                     .map(|(m, _)| m)
@@ -509,10 +524,12 @@ pub fn Gantt(
                     handles,
                     pointer: at,
                     drag: view,
+                    note,
                 },
             );
         }
     };
+    let pinned = move || staged.and_then(|s| s.with_untracked(|s| s.as_ref()?.item));
     let due = StoredValue::new_local(false);
     Effect::new(move |_| {
         // the things a drawing depends on, and a drawing is asked for when any of them changes
@@ -535,7 +552,7 @@ pub fn Gantt(
         // the pointer matters while something follows it: a drag, the handles, a note on a warning
         let warns = hovered
             .is_some_and(|m| scene.with_untracked(|s| s.placed(m).is_some_and(|p| p.violated)));
-        if dragging || shifted || warns {
+        if dragging || shifted || warns || pinned().is_some() {
             pointer.track();
         }
         if !due.get_value() {
@@ -549,12 +566,15 @@ pub fn Gantt(
     });
 
     let down = move |ev: PointerEvent| {
-        // shift on a handle starts editing instead of panning
-        if ev.shift_key() && ev.pointer_type() == "mouse" {
+        // a handle starts editing instead of panning: with shift, or of the item being edited
+        if ev.pointer_type() == "mouse" {
             let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
-            if let Some((node, handle)) = nearby
+            let gripped = nearby
                 .get_untracked()
-                .and_then(|node| handles_of(node).at(x, y).map(|h| (node, h)))
+                .filter(|_| ev.shift_key())
+                .or_else(pinned);
+            if let Some((node, handle)) =
+                gripped.and_then(|node| handles_of(node).at(x, y).map(|h| (node, h)))
             {
                 if let Some(canvas) = canvas.get_untracked() {
                     let element: &web_sys::Element = canvas.as_ref();

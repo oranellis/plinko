@@ -19,7 +19,7 @@ use crate::{
     draft::{Draft, Drafting},
     editor::ItemEditor,
     format,
-    gantt::{self, Gantt, arrange::Mark, layout::Viewport, scene},
+    gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene, shift},
     guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     model::{self, Look, Row},
@@ -136,6 +136,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         reveal.set(Some(PlanNode::Task(task)));
         asked.set(None);
     }
+    let revealed = reveal.get_untracked();
     let searching = RwSignal::new(false);
     let listing = RwSignal::new(false);
 
@@ -170,7 +171,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         said
     });
 
-    let selected = RwSignal::new(None::<PlanNode>);
+    let selected = RwSignal::new(revealed);
     let any_selected = Memo::new(move |_| selected.get().is_some());
     crate::escape::on_escape(
         move || any_selected.get(),
@@ -392,7 +393,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 violation=violation
                                 on_open=on_tap
                                 on_edit=on_open
-                                editing=chart_edit::editing(plan)
+                                editing=chart_edit::staging(chart_edit::editing(plan), plan, draft, guard)
                                 selected=Signal::derive(move || chosen.get())
                                 on_toggle=on_toggle
                                 on_blank=on_blank
@@ -405,7 +406,18 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                             Parent::Node(id) => Some(PlanNode::TaskGroup(id)),
                                             Parent::Plan => None,
                                         };
-                                        (d.dependencies.clone(), d.dependents.clone(), group)
+                                        // how far the days are from the ones the plan has
+                                        let saved = Draft::open(sync, plan, d.node, None).and_then(|s| s.duration);
+                                        let days = d.duration.zip(saved).filter(|(now, was)| now != was).map(|(now, was)| {
+                                            shift::resize_label(now as i32 - was as i32, now)
+                                        });
+                                        Staged {
+                                            before: d.dependencies.clone(),
+                                            after: d.dependents.clone(),
+                                            group,
+                                            item: (!d.new).then_some(d.node),
+                                            days,
+                                        }
                                     })
                                 }))
                                 spot=spot

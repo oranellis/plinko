@@ -30,7 +30,7 @@ const EASED: i64 = 6;
 const MOST_BOXES: u32 = 30;
 
 /// The most days an item can be given
-const MOST_DAYS: i64 = 3650;
+pub const MOST_DAYS: i64 = 3650;
 // }}}
 
 /// How to ask the chart what is at a point of the window: `None` off the chart, `Some(None)` on
@@ -97,7 +97,7 @@ fn dragged_days(from: u32, dx: f64) -> i64 {
 }
 
 /// The fewest days a kind of item can last
-fn least_days(node: PlanNode) -> i64 {
+pub fn least_days(node: PlanNode) -> i64 {
     match node {
         PlanNode::Task(_) => 1,
         _ => 0,
@@ -126,17 +126,17 @@ fn new_name(node: PlanNode) -> &'static str {
 // }}}
 
 // Card {{{
-/// The card for the page's draft, shown while there is one. `probe` is how drops and `spot` how
-/// the item under a drag reach the chart, with no chart the handles that need one are left out.
+/// The card for the page's draft, shown while it is of an item not in the plan yet: one that is
+/// has its handles on the chart. `probe` is how drops and `spot` how the item under a drag reach
+/// the chart.
 #[component]
 pub fn Card(
     plan: ShortId,
     draft: RwSignal<Option<Draft>>,
-    #[prop(optional)] probe: Option<Probe>,
-    #[prop(optional)] spot: Option<RwSignal<Option<PlanNode>>>,
+    probe: Probe,
+    spot: RwSignal<Option<PlanNode>>,
     /// The draft was changed from the card
-    #[prop(optional)]
-    on_change: Option<Callback<()>>,
+    on_change: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
     let held = RwSignal::new(None::<Held>);
@@ -149,11 +149,7 @@ pub fn Card(
             }
         });
     };
-    let changed = move || {
-        if let Some(on_change) = on_change {
-            on_change.run(());
-        }
-    };
+    let changed = move || on_change.run(());
     // changes the draft, and says why if the plan would not take the change
     let change = move |f: &dyn Fn(&mut Draft, &Plan) -> Result<(), String>| {
         let mut said = None;
@@ -169,7 +165,7 @@ pub fn Card(
             None => changed(),
         }
     };
-    let at_point = move |at: (f64, f64)| probe.and_then(|p| p.get_untracked()?.run(at));
+    let at_point = move |at: (f64, f64)| probe.get_untracked().and_then(|p| p.run(at));
     let node = Memo::new(move |_| draft.with(|d| d.as_ref().map(|d| d.node)));
     let lit = move |pick: Pick| draft.with(|d| d.as_ref().is_some_and(|d| d.pick == Some(pick)));
     let days = move || draft.with(|d| d.as_ref().and_then(|d| d.duration));
@@ -213,9 +209,7 @@ pub fn Card(
                 changed();
             }
             Grab::Link(_) | Grab::Move => {
-                if let Some(spot) = spot {
-                    spot.set(at_point(now.at).flatten());
-                }
+                spot.set(at_point(now.at).flatten());
             }
         }
     };
@@ -224,9 +218,7 @@ pub fn Card(
             return;
         };
         held.set(None);
-        if let Some(spot) = spot {
-            spot.set(None);
-        }
+        spot.set(None);
         let over = at_point(done.at);
         match (done.grab, done.dragged()) {
             // a click lights the handle, or puts it out, and the chart then answers to it
@@ -257,9 +249,7 @@ pub fn Card(
     };
     let cancelled = move |_: PointerEvent| {
         held.set(None);
-        if let Some(spot) = spot {
-            spot.set(None);
-        }
+        spot.set(None);
     };
     Effect::new(move |_| {
         if typing.get()
@@ -317,7 +307,6 @@ pub fn Card(
             </svg>
         })
     };
-    let charted = probe.is_some();
     let linked = move |pick: Pick| {
         draft.with(|d| {
             d.as_ref().map_or(0, |d| match pick {
@@ -332,8 +321,7 @@ pub fn Card(
         } else {
             "before"
         };
-        charted.then(|| {
-            view! {
+        view! {
                 <button
                     type="button"
                     class=format!("draftcard-knob {side}")
@@ -346,19 +334,17 @@ pub fn Card(
                     on:pointerup=up
                     on:pointercancel=cancelled
                 ></button>
-            }
-        })
+        }
     };
 
     view! {
-        <Show when=move || node.get().is_some()>
+        <Show when=move || draft.with(|d| d.as_ref().is_some_and(|d| d.new))>
             <div class="draftcard" on:click=|ev| ev.stop_propagation()>
                 <div class="draftcard-stage">
                     {knob(Pick::Before, "What it waits for: drag onto an item, or click and pick items")}
                     <div class=move || format!("draftcard-shape {}", node.get().map_or("", kind_class))>
                         <span class="draftcard-name">{name}</span>
-                        {charted.then(|| view! {
-                            <button
+                        <button
                                 type="button"
                                 class="draftcard-grip"
                                 class:lit=move || lit(Pick::Group)
@@ -370,7 +356,6 @@ pub fn Card(
                                 on:pointerup=up
                                 on:pointercancel=cancelled
                             ></button>
-                        })}
                         <Show when=move || days().is_some()>
                             <div class="draftcard-days" class:held=move || held.with(|h| h.is_some_and(|h| h.grab == Grab::Days))>
                                 <Show

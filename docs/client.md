@@ -71,7 +71,7 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
 - Items open in a pane beside the chart. A plan can also be shown as a list.
 - Home shows your tasks in progress and the next ones to start, with buttons to start or finish them,
   and your favourite plans. Allocations is a table with a row for each of your tasks across plans and the hours you work on
-  each day, under a row of the hours you have. Availability opens your own calendar.
+  each day, under a row of the hours you have; a task there opens its plan with the task selected. Availability opens your own calendar.
 - Availability, and the days an affinity allows, are edited from a calendar (`rulecalendar.rs`): a
   window from plan settings, a full page for your own hours. Dates and week start follow the
   preferences of the browser.
@@ -92,15 +92,19 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 
 Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane.
 
-### The card
+### Creating and editing
 
-While an item is created or edited a card floats over the bottom of the chart with the item's shape (`card.rs`). Its group, dependencies, dependents and days are set there, not in the pane, and are staged in a `Draft` (`draft.rs`) that reaches the plan only on save; a new item is not in the plan until then. Redundant links are dropped by the server on save, not while picking.
+What is set of an item's group, dependencies, dependents and days while it is created or edited is staged in a `Draft` (`draft.rs`) and reaches the plan only on save; a new item is not in the plan until then. Redundant links are dropped by the server on save. On the chart what is staged shows as the usual magenta and cyan outlines, a blue outline on its group, and changed days as `+2 (5d)` above the item.
 
-- Left and right circles: what it waits for and what waits for it. Drag one onto an item to link it, or click it to light it and then click items to link or unlink them. What is linked is outlined on the chart in the usual magenta and cyan. A link that would make a loop is refused with a notice.
+A new item has a card over the bottom of the chart with its shape (`card.rs`):
+
+- Left and right circles: what it waits for and what waits for it. Drag one onto an item to link it, or click it to light it and then click items to link or unlink them. A link that would make a loop is refused with a notice.
 - Middle grip: drop on a group, on an item to join its group, or on blank space for the top level; or click it and then click.
-- Right edge: the day count. Drag sideways to change it, click to type it. The shape never changes length.
+- Right edge: the day count. Drag sideways to change it (slower under six days), click to type it. The shape never changes length.
 
-On touch nothing drags, so the chart still pans: handles are tapped and days typed. Escape or a second click puts a lit handle out. The allocations page shows the card without a chart to pick from.
+On touch nothing on the card drags, so the chart still pans: handles are tapped and days typed. Escape or a second click puts a lit handle out.
+
+An item in the plan has no card: while its pane is open its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). The days it really ran are set in the pane.
 
 ### Shift editing
 

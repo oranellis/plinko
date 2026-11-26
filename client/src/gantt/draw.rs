@@ -76,7 +76,7 @@ pub struct Frame<'a> {
     pub selected: Option<Mark>,
     /// What an item being edited waits for and what waits for it, which are outlined in place of
     /// what the links say
-    pub staged: Option<(&'a [Mark], &'a [Mark], Option<Mark>)>,
+    pub staged: Option<&'a super::Staged>,
     pub links: &'a [Link],
     /// Something to outline in red, and how strongly
     pub flash: Option<(Mark, f64, &'static str)>,
@@ -249,11 +249,11 @@ impl Marked {
             .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
             .map(|l| mark_of(l.to));
         let (before, after) = match frame.staged {
-            Some((before, after, _)) => (before.to_vec(), after.to_vec()),
+            Some(staged) => (staged.before.clone(), staged.after.clone()),
             None => (before.collect(), after.collect()),
         };
         Self {
-            holds: frame.staged.and_then(|s| s.2),
+            holds: frame.staged.and_then(|s| s.group),
             before,
             after,
             chain: linked(Role::Chain)

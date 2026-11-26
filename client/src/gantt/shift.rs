@@ -104,6 +104,8 @@ pub struct Overlay {
     pub handles: Grips,
     pub pointer: (f64, f64),
     pub drag: Option<DragView>,
+    /// What to say above an item, when nothing is dragged
+    pub note: Option<(Rect, String)>,
 }
 
 pub enum DragView {
@@ -260,18 +262,28 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
                 ..*origin
             };
             ghost(ctx, grown, "");
-            ctx.set_font("bold 13px sans-serif");
-            ctx.set_text_align("center");
-            ctx.set_fill_style_str("#fff");
-            let _ = ctx.fill_text(label, grown.x + grown.w / 2.0, grown.y - 6.0);
+            said(ctx, label, grown.x + grown.w / 2.0, grown.y - 6.0);
         }
-        None => {}
+        None => {
+            if let Some((r, note)) = &overlay.note {
+                said(ctx, note, r.x + r.w / 2.0, r.y - 6.0);
+            }
+        }
     }
     ctx.restore();
 }
 // }}}
 
 // helpers {{{
+/// Words above an item, centred on `x`
+fn said(ctx: &Pen, text: &str, x: f64, y: f64) {
+    ctx.set_font("bold 13px sans-serif");
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("alphabetic");
+    ctx.set_fill_style_str("#fff");
+    let _ = ctx.fill_text(text, x, y);
+}
+
 /// The dashed outline left where an item was while a ghost of it is dragged
 fn leave_outline(ctx: &Pen, r: Rect) {
     ctx.set_stroke_style_str(COLOUR);

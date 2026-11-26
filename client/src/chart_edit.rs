@@ -16,7 +16,10 @@ use plinko::{
 };
 
 use crate::{
+    card,
+    draft::{Draft, Pick},
     gantt::{links, shift::Editing},
+    guard::Guard,
     model,
     ui::use_sync,
 };
@@ -230,6 +233,87 @@ pub fn editing(plan: ShortId) -> Editing {
         resize,
         duration,
         chain,
+    }
+}
+// }}}
+
+// staging {{{
+/// The same as `live`, but what is asked of the item being edited goes in its draft, to be saved
+/// or discarded with the rest of it
+pub fn staging(
+    live: Editing,
+    plan: ShortId,
+    draft: RwSignal<Option<Draft>>,
+    guard: Guard,
+) -> Editing {
+    let sync = use_sync();
+    let ours = move |node: PlanNode| {
+        draft.with_untracked(|d| d.as_ref().is_some_and(|d| !d.new && d.node == node))
+    };
+    let stage = move |f: &dyn Fn(&Plan, &mut Draft) -> Result<(), String>| {
+        let mut said = None;
+        sync.tenant.with_untracked(|t| {
+            if let Some(p) = t.as_ref().and_then(|t| t.plans().get(&plan)) {
+                draft.update(|d| said = d.as_mut().and_then(|d| f(p, d).err()));
+            }
+        });
+        guard.dirtied();
+        if said.is_some() {
+            sync.notice.set(said);
+        }
+    };
+    let link = Callback::new(move |(node, other, right): (PlanNode, PlanNode, bool)| {
+        // the right edge: the other waits on this item, the left: this item waits on the other
+        let side = |after: bool| if after { Pick::After } else { Pick::Before };
+        if ours(node) {
+            stage(&|p, d| d.link(p, side(right), other));
+        } else if ours(other) {
+            stage(&|p, d| d.link(p, side(!right), node));
+        } else {
+            live.link.run((node, other, right));
+        }
+    });
+    let unlink = Callback::new(move |(selected, other): (PlanNode, PlanNode)| {
+        let them = match (ours(selected), ours(other)) {
+            (true, _) => other,
+            (_, true) => selected,
+            _ => return live.unlink.run((selected, other)),
+        };
+        stage(&|p, d| match d.dependencies.contains(&them) {
+            true => d.toggle(p, Pick::Before, them),
+            false if d.dependents.contains(&them) => d.toggle(p, Pick::After, them),
+            false => Ok(()),
+        });
+    });
+    let moved = Callback::new(
+        move |(node, over): (PlanNode, Option<PlanNode>)| match ours(node) {
+            true => stage(&|p, d| d.place(p, over)),
+            false => live.moved.run((node, over)),
+        },
+    );
+    // the days something being edited really ran are the pane's to set
+    let dated = Callback::new(move |node: PlanNode| !ours(node) && live.dated.run(node));
+    let resize = Callback::new(move |(node, days): (PlanNode, i32)| match ours(node) {
+        true => stage(&|_, d| {
+            let least = card::least_days(d.node);
+            let grown = |now: u32| (i64::from(now) + i64::from(days)).clamp(least, card::MOST_DAYS);
+            d.duration = d.duration.map(|now| grown(now) as u32);
+            Ok(())
+        }),
+        false => live.resize.run((node, days)),
+    });
+    let duration = Callback::new(move |node: PlanNode| {
+        let staged = draft.with_untracked(|d| d.as_ref().filter(|_| ours(node))?.duration);
+        staged.unwrap_or_else(|| live.duration.run(node))
+    });
+    Editing {
+        link,
+        unlink,
+        moved,
+        dated,
+        resize,
+        duration,
+        ..live
     }
 }
 // }}}
