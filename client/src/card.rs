@@ -24,6 +24,8 @@ const CLICK: f64 = 5.0;
 
 /// How far the days handle is dragged for each day
 const DAY_STEP: f64 = 14.0;
+/// The days from which a drag changes them at the full rate
+const EASED: i64 = 6;
 /// The most boxes shown for the days while they are dragged
 const MOST_BOXES: u32 = 30;
 
@@ -68,6 +70,32 @@ impl Held {
 // }}}
 
 // helpers {{{
+/// How far the pointer goes to take an item from `day` days to one more: twice as far from one
+/// day, easing to `DAY_STEP` from `EASED` days on, so the few days most items have are easy to hit
+fn day_width(day: i64) -> f64 {
+    let slow = (EASED - day.max(1)).max(0) as f64 / (EASED - 1) as f64;
+    DAY_STEP * (1.0 + slow)
+}
+
+/// How far along the drag an item of `days` days is
+fn day_place(days: i64) -> f64 {
+    let eased: f64 = (0..days.min(EASED)).map(day_width).sum();
+    eased + (days - EASED).max(0) as f64 * DAY_STEP
+}
+
+/// The days an item that had `from` has once its handle is dragged `dx` sideways, before limits
+fn dragged_days(from: u32, dx: f64) -> i64 {
+    let target = day_place(i64::from(from)) + dx;
+    let mut days = i64::from(from);
+    while target >= (day_place(days) + day_place(days + 1)) / 2.0 {
+        days += 1;
+    }
+    while days > 0 && target < (day_place(days - 1) + day_place(days)) / 2.0 {
+        days -= 1;
+    }
+    days
+}
+
 /// The fewest days a kind of item can last
 fn least_days(node: PlanNode) -> i64 {
     match node {
@@ -175,10 +203,9 @@ pub fn Card(
         }
         match now.grab {
             Grab::Days => {
-                let steps = ((now.at.0 - now.from.0) / DAY_STEP).round() as i64;
                 draft.update(|d| {
                     if let Some(d) = d {
-                        let wanted = i64::from(now.days) + steps;
+                        let wanted = dragged_days(now.days, now.at.0 - now.from.0);
                         let days = wanted.clamp(least_days(d.node), MOST_DAYS) as u32;
                         d.duration = d.duration.map(|_| days);
                     }
@@ -429,6 +456,29 @@ pub fn beside(plan: &Plan, open: Option<PlanNode>) -> Parent {
         Some(PlanNode::TaskGroup(id)) => Parent::Node(id),
         Some(other) => model::parent_of(plan, other),
         None => Parent::Plan,
+    }
+}
+// }}}
+
+// tests {{{
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn few_days_take_a_longer_drag_than_many() {
+        assert_eq!(day_width(1), DAY_STEP * 2.0);
+        assert_eq!(day_width(6), DAY_STEP);
+        assert!(day_width(3) > day_width(4));
+        // a drag that is three days at the full rate
+        let dx = DAY_STEP * 3.0;
+        assert_eq!(dragged_days(1, dx), 3);
+        assert_eq!(dragged_days(10, dx), 13);
+        assert_eq!(dragged_days(10, -dx), 7);
+        assert_eq!(dragged_days(3, 0.0), 3);
+        assert_eq!(dragged_days(2, -1000.0), 0);
+        // there and back again is where it began
+        assert_eq!(dragged_days(dragged_days(2, 200.0) as u32, -200.0), 2);
     }
 }
 // }}}
