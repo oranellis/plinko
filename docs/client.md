@@ -112,7 +112,7 @@ A top level item with no dependencies shows a purple wash on its left edge while
 
 With shift held, items the pointer is near show handles: a dot off each edge (drag to another item; right edge: it depends on this item, left edge: this item depends on it), a dot in the middle (drop on a group to move in, on another item to join its group, on blank space for the top level, see `Plan::moving`) and, for tasks and buffers, a grip inside the right edge that changes the duration by whole grid days, shown as `+2 (6d)`. Dragging to the chart's edge scrolls it. Shift-clicking an item linked to the selected one cuts that dependency. With an item selected, hovering another one on a dependency chain with it shows the longest chain in red.
 
-Handles are grey; a dependency dot takes magenta (left, what comes before) or cyan (right, what comes after) when taken. For started tasks (in progress, on hold, completed) dragging the middle handle sideways moves the days they really ran, unless it is dropped on another item, and the right grip changes the end date of on hold and completed ones (in progress ones change duration as normal). A grip inside the left edge of a started task changes the day it started.
+Handles are grey; a dependency dot takes magenta (left, what comes before) or cyan (right, what comes after) when taken. For started tasks (in progress, on hold, completed) dragging the middle handle sideways moves the days they really ran, unless it is dropped on another item, and the right grip changes the end date of on hold, completed and dropped ones (in progress ones change duration as normal). A grip inside the left edge of a started task changes the day it started.
 
 ### Drawing the chart
 

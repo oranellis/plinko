@@ -33,7 +33,7 @@ fn on(node: PlanNode) -> PlanNode {
 /// The days a task really started and ended, for one whose end is recorded
 fn ended(state: PersistentState) -> Option<(NaiveDate, NaiveDate)> {
     match (state.status, state.actual_start_date, state.actual_end_date) {
-        (Status::Completed | Status::OnHold, Some(start), Some(end)) => {
+        (Status::Completed | Status::OnHold | Status::Dropped, Some(start), Some(end)) => {
             Some((start, end.max(start)))
         }
         _ => None,
