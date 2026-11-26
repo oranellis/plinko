@@ -447,9 +447,8 @@ textarea.description { min-height: 90px; }
 
 /* the bar under the selected item of the chart */
 .contextbar { position: absolute; z-index: 20; display: flex; gap: 4px; padding: 4px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }
-/* while its item is edited the bar slides to the bottom middle, where its statuses open upwards */
-.contextbar.docked { left: 50%; top: calc(100% - 62px); translate: -50% 0; transition: left 0.3s ease, top 0.3s ease, translate 0.3s ease; }
-.contextbar.docked .statusswitch:hover .statuscol { top: auto; bottom: 0; }
+/* while its item is edited the bar slides to the bottom middle, with room under it for its statuses */
+.contextbar.docked { left: 50%; top: calc(100% - 200px); translate: -50% 0; transition: left 0.3s ease, top 0.3s ease, translate 0.3s ease; }
 button.ctx, .statusswitch .st { width: 34px; height: 34px; min-height: 0; padding: 0; display: grid; place-items: center; background: none; border: 1.5px solid var(--line); border-radius: 8px; color: var(--muted); flex: none; }
 button.ctx:hover:not(:disabled) { border-color: var(--text); color: var(--text); background: none; }
 button.ctx:disabled { opacity: 0.35; cursor: default; }

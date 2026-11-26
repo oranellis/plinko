@@ -90,7 +90,7 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 
 ## Gantt selection
 
-Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane. While the pane is open the bar slides to the bottom middle of the chart, out of the way of the handles, and its statuses open upwards.
+Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane. While the pane is open the bar slides to the bottom middle of the chart, out of the way of the handles.
 
 ### Creating and editing
 
