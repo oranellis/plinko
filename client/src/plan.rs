@@ -12,6 +12,7 @@ use plinko::{
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
+        plan_delay::{NewPlanDelay, PlanDelayPatch},
         task::{NewTask, TaskPatch, Worker},
         task_group::NewTaskGroup,
     },
@@ -65,6 +66,7 @@ enum Kind {
     Milestone,
     Group,
     Buffer,
+    Delay,
 }
 // }}}
 
@@ -367,6 +369,24 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     sync.plan_then(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)), then);
                 },
             ),
+            Kind::Delay => (
+                PlanUpdate::PlanDelay(Crud::Add(NewPlanDelay {
+                    id: nil,
+                    name: None,
+                    parent,
+                    duration: 3,
+                })),
+                |id, plan, sync, start, then| {
+                    let patch = PlanDelayPatch {
+                        id,
+                        name: None,
+                        parent: None,
+                        dependencies: start.map(|d| vec![d]),
+                        duration: None,
+                    };
+                    sync.plan_then(plan, PlanUpdate::PlanDelay(Crud::Update(patch)), then);
+                },
+            ),
         };
         // top level items begin from the plan's default start node when it has one
         let start = sync.tenant.with_untracked(|t| {
@@ -579,6 +599,7 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
                     {item(Kind::Milestone, IconKind::AddMilestone, "Milestone", "Add milestone")}
                     {item(Kind::Group, IconKind::AddGroup, "Group", "Add task group")}
                     {item(Kind::Buffer, IconKind::AddBuffer, "Buffer", "Add buffer")}
+                    {item(Kind::Delay, IconKind::AddDelay, "Delay", "Add delay")}
                 </div>
             </Show>
             <Show when=move || pinned.get()>

@@ -99,6 +99,13 @@ pub fn Icon(
             <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::AddDelay => view! {
+            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1" />
+            <path d="M6.5 4V6.5L8.2 7.6" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="13" y1="10" x2="13" y2="15.5" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
+            <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
+        }
+        .into_any(),
         IconKind::Circle => view! {
             <circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="1.4" />
         }
@@ -199,6 +206,7 @@ pub enum IconKind {
     AddMilestone,
     AddGroup,
     AddBuffer,
+    AddDelay,
     Alert,
     Person,
     Tick,
