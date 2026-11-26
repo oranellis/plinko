@@ -29,7 +29,7 @@ use plinko::{
         user_group::NewTenantUserGroup,
     },
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         task::{Assignee, NewTask, TaskPatch, Worker},
@@ -312,14 +312,12 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
                 &nodes[(layer.saturating_sub(2) * LAYER).min(nodes.len())
                     ..(layer * LAYER).min(nodes.len())]
             };
-            let mut on: Vec<Dependency> = Vec::new();
-            if pool.is_empty() {
-                on.push(Dependency::default());
-            } else {
+            let mut on: Vec<PlanNode> = Vec::new();
+            if !pool.is_empty() {
                 for _ in 0..1 + random.below(3) {
                     let pick = pool[random.below(pool.len() as u64) as usize];
-                    if !on.contains(&Dependency::Node(pick)) {
-                        on.push(Dependency::Node(pick));
+                    if !on.contains(&pick) {
+                        on.push(pick);
                     }
                 }
             }
@@ -373,7 +371,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
             let deps = on
                 .iter()
                 .filter_map(|d| match *d {
-                    Dependency::Node(PlanNode::Task(t) | PlanNode::Milestone(t)) => Some(t),
+                    PlanNode::Task(t) | PlanNode::Milestone(t) => Some(t),
                     _ => None,
                 })
                 .collect();
@@ -396,12 +394,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
                     parent: Parent::Plan,
                 };
                 send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-                let gather: Vec<Dependency> = nodes
-                    .iter()
-                    .rev()
-                    .take(4)
-                    .map(|n| Dependency::Node(*n))
-                    .collect();
+                let gather: Vec<PlanNode> = nodes.iter().rev().take(4).copied().collect();
                 let patch = MilestonePatch {
                     id: milestone,
                     name: None,
@@ -422,12 +415,7 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
             parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-        let after: Vec<Dependency> = nodes
-            .iter()
-            .rev()
-            .take(6)
-            .map(|n| Dependency::Node(*n))
-            .collect();
+        let after: Vec<PlanNode> = nodes.iter().rev().take(6).copied().collect();
         let patch = MilestonePatch {
             id: end,
             name: None,
@@ -460,10 +448,10 @@ fn make(opts: &Opts, dates: &HashMap<Uuid, TimeConstraint>, pins: &HashMap<Uuid,
 // }}}
 
 // node_ids {{{
-fn node_ids(deps: &[Dependency]) -> Vec<Uuid> {
+fn node_ids(deps: &[PlanNode]) -> Vec<Uuid> {
     deps.iter()
         .filter_map(|d| match *d {
-            Dependency::Node(PlanNode::Task(t) | PlanNode::Milestone(t)) => Some(t),
+            PlanNode::Task(t) | PlanNode::Milestone(t) => Some(t),
             _ => None,
         })
         .collect()
@@ -607,7 +595,7 @@ fn verify(tenant: &Tenant, state: &scheduler::state::TenantVolatileState) -> Vec
                 continue;
             };
             for dependency in task.dependencies() {
-                let Dependency::Node(PlanNode::Task(before)) = dependency else {
+                let PlanNode::Task(before) = dependency else {
                     continue;
                 };
                 let ends = placed.tasks.get(before).map(|b| b.date_range.end());
@@ -780,21 +768,16 @@ fn incremental(world: &Made, opts: &Opts, count: usize, since: NaiveDate) {
             }
             _ => {
                 // waits for one more earlier task of the plan
-                let mut on: Vec<Dependency> = t
-                    .deps
-                    .iter()
-                    .map(|d| Dependency::Node(PlanNode::Task(*d)))
-                    .collect();
+                let mut on: Vec<PlanNode> = t.deps.iter().map(|d| PlanNode::Task(*d)).collect();
                 let earlier = world.tasks.iter().position(|o| o.id == t.id).unwrap();
                 if earlier == 0 {
                     continue;
                 }
                 let other = &world.tasks[random.below(earlier as u64) as usize];
-                if other.plan != t.plan || on.contains(&Dependency::Node(PlanNode::Task(other.id)))
-                {
+                if other.plan != t.plan || on.contains(&PlanNode::Task(other.id)) {
                     continue;
                 }
-                on.push(Dependency::Node(PlanNode::Task(other.id)));
+                on.push(PlanNode::Task(other.id));
                 patch.dependencies = Some(on);
             }
         }

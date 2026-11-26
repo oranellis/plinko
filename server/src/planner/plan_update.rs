@@ -7,7 +7,7 @@ use crate::{
     availability::workload::Workload,
     common::crud::Crud,
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
@@ -50,7 +50,7 @@ pub enum PlanUpdate {
 // impl PlanUpdate {{{
 impl PlanUpdate {
     /// Replaces the dependencies of an item and changes nothing else
-    pub fn set_dependencies(node: PlanNode, dependencies: Vec<Dependency>) -> Self {
+    pub fn set_dependencies(node: PlanNode, dependencies: Vec<PlanNode>) -> Self {
         Self::rewire(node, None, Some(dependencies))
     }
 
@@ -58,7 +58,7 @@ impl PlanUpdate {
     pub fn rewire(
         node: PlanNode,
         parent: Option<Parent>,
-        dependencies: Option<Vec<Dependency>>,
+        dependencies: Option<Vec<PlanNode>>,
     ) -> Self {
         match node {
             PlanNode::Task(id) => PlanUpdate::Task(Crud::Update(TaskPatch {

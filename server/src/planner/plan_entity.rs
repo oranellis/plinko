@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::{
     common::error::{PlinkoError, PlinkoResult},
     planner::items::{
-        dependency::{Dependency, PlanNode, PlanNodeType},
+        dependency::{PlanNode, PlanNodeType},
         milestone::{Milestone, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBuffer, PlanBufferPatch},
@@ -32,7 +32,7 @@ use crate::{
 pub trait AbstractPlanNode {
     fn id(&self) -> Uuid;
     fn parent(&self) -> Parent;
-    fn dependencies(&self) -> &[Dependency];
+    fn dependencies(&self) -> &[PlanNode];
     fn node_type(&self) -> PlanNodeType;
 }
 
@@ -80,7 +80,7 @@ macro_rules! plan_item {
             fn parent(&self) -> Parent {
                 $ty::parent(self)
             }
-            fn dependencies(&self) -> &[Dependency] {
+            fn dependencies(&self) -> &[PlanNode] {
                 $ty::dependencies(self)
             }
             fn node_type(&self) -> PlanNodeType {

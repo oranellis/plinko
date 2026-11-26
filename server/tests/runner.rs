@@ -9,7 +9,6 @@ use plinko::{
         user::{NewTenantLoginUser, Role},
     },
     planner::items::{
-        dependency::Dependency,
         parent::Parent,
         task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
     },
@@ -91,7 +90,6 @@ fn updates_are_staged_applied_and_scheduled() {
     assert_ne!(task, CLIENT_ID);
     let setup = TaskPatch {
         duration: Some(2),
-        dependencies: Some(vec![Dependency::ParentStart]),
         allocations: Some([(Worker::User(bob), Workload::new_const(8))].into()),
         ..patch(task)
     };

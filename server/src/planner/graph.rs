@@ -5,13 +5,8 @@ use uuid::Uuid;
 
 use crate::{
     planner::items::{
-        dependency::{Dependency, PlanNode},
-        milestone::Milestone,
-        parent::Parent,
-        plan_buffer::PlanBuffer,
-        plan_delay::PlanDelay,
-        task::Task,
-        task_group::TaskGroup,
+        dependency::PlanNode, milestone::Milestone, parent::Parent, plan_buffer::PlanBuffer,
+        plan_delay::PlanDelay, task::Task, task_group::TaskGroup,
     },
     planner::{plan::Plan, plan_entity::PlanItem},
 };
@@ -125,18 +120,16 @@ impl<'a> Graph<'a> {
         let Some(item) = T::entities(self.plan).get(&id) else {
             return Vec::new();
         };
-        let parent = item.parent();
-        // an item that depends on nothing begins when its parent does
-        let none = [Dependency::default()];
-        let dependencies = match item.dependencies() {
-            [] => &none,
-            some => some,
+        // its dependencies in the order it has them, then the start of its parent, which every
+        // item waits for: the enclosing group's start, or today (`None`) at the top level
+        let start = match item.parent() {
+            Parent::Node(group) => Some(Vertex::GroupStart(group)),
+            Parent::Plan => None,
         };
+        let dependencies = item.dependencies().iter().map(|d| Some((*d).into()));
         dependencies
-            .iter()
-            .map(|d| Edge {
-                from: resolve(d, parent),
-            })
+            .chain([start])
+            .map(|from| Edge { from })
             .collect()
     }
 }
@@ -149,14 +142,6 @@ fn collect_members<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<Pla
     }
 }
 
-/// `ParentStart` is the enclosing group's start, or today (`None`) at top level
-fn resolve(dep: &Dependency, parent: Parent) -> Option<Vertex> {
-    match (*dep, parent) {
-        (Dependency::Node(n), _) => Some(n.into()),
-        (Dependency::ParentStart, Parent::Node(group)) => Some(Vertex::GroupStart(group)),
-        (Dependency::ParentStart, Parent::Plan) => None,
-    }
-}
 // }}}
 
 // cycle check {{{
@@ -217,7 +202,7 @@ impl Reach<'_, '_> {
 /// The dependencies the items touching `touched` can do without: those another dependency of the
 /// same item already implies. A chain a to b to c makes a direct a to c redundant. Gives each changed item with the
 /// dependencies to keep, in order.
-pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependency>)> {
+pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<PlanNode>)> {
     let graph = Graph::new(plan);
     let vertices = graph.vertices();
     let mut waiting: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
@@ -260,7 +245,7 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
             Vertex::Node(PlanNode::TaskGroup(_)) => continue,
         };
         let edges = graph.edges(v);
-        let kept: Vec<Dependency> = deps
+        let kept: Vec<PlanNode> = deps
             .iter()
             .zip(&edges)
             .enumerate()
@@ -283,7 +268,7 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
 // }}}
 
 // dependencies {{{
-fn dependencies<'a, T: PlanItem + 'a>(plan: &'a Plan, id: Uuid) -> &'a [Dependency] {
+fn dependencies<'a, T: PlanItem + 'a>(plan: &'a Plan, id: Uuid) -> &'a [PlanNode] {
     T::entities(plan)
         .get(&id)
         .map_or(&[], |item| item.dependencies())

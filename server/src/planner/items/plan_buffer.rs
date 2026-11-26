@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::{
     common::{dates::DateRange, error::PlinkoResult},
     helpers::functions::check_id_match,
-    planner::items::{dependency::Dependency, parent::Parent},
+    planner::items::{dependency::PlanNode, parent::Parent},
     traits::patch::Patchable,
 };
 // }}}
@@ -16,7 +16,7 @@ use crate::{
 pub struct PlanBuffer {
     id: Uuid,
     parent: Parent,
-    dependencies: Vec<Dependency>,
+    dependencies: Vec<PlanNode>,
     set_start_day: Option<NaiveDate>,
     duration: u32,
 }
@@ -31,7 +31,7 @@ impl PlanBuffer {
         &self.id
     }
 
-    pub fn dependencies(&self) -> &Vec<Dependency> {
+    pub fn dependencies(&self) -> &Vec<PlanNode> {
         &self.dependencies
     }
 
@@ -64,7 +64,7 @@ impl Patchable<PlanBufferPatch> for PlanBuffer {
             self.parent = p;
         }
         if let Some(p) = patch.dependencies {
-            self.dependencies = Dependency::merged(p);
+            self.dependencies = PlanNode::merged(p);
         }
         if let Some(p) = patch.set_start_day {
             self.set_start_day = p
@@ -95,7 +95,7 @@ pub struct NewPlanBuffer {
 pub struct PlanBufferPatch {
     pub id: Uuid,
     pub parent: Option<Parent>,
-    pub dependencies: Option<Vec<Dependency>>,
+    pub dependencies: Option<Vec<PlanNode>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

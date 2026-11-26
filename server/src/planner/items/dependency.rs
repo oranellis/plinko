@@ -5,32 +5,10 @@ use std::hash::Hash;
 use uuid::Uuid;
 // }}}
 
-/// What an item waits for, the end of another node or the start of its group
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Dependency {
-    /// The start of the enclosing task group, or today for top level items
-    #[default]
-    ParentStart,
-    Node(PlanNode),
-}
-
-// impl Dependency {{{
-impl Dependency {
-    /// Each node once, in the order first given
-    pub fn merged(deps: Vec<Dependency>) -> Vec<Dependency> {
-        let mut out: Vec<Dependency> = Vec::new();
-        for dep in deps {
-            if !out.contains(&dep) {
-                out.push(dep);
-            }
-        }
-        out
-    }
-}
-// }}}
-
-// Dependency supporting types {{{
 /// A schedulable node. A task group is a single node that ends when all of its members end.
+///
+/// An item's dependencies are the nodes whose end it waits for. Besides them every item waits
+/// for the start of the group it is in, or for today at the top level, which is never listed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlanNode {
     Task(Uuid),
@@ -40,6 +18,7 @@ pub enum PlanNode {
     TaskGroup(Uuid),
 }
 
+// PlanNode supporting types {{{
 /// The kind of a node, without which one it is
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PlanNodeType {
@@ -72,6 +51,17 @@ impl PlanNode {
             PlanNode::TaskGroup(_) => PlanNodeType::TaskGroup,
         }
     }
+
+    /// Each node once, in the order first given
+    pub fn merged(nodes: Vec<PlanNode>) -> Vec<PlanNode> {
+        let mut out: Vec<PlanNode> = Vec::new();
+        for node in nodes {
+            if !out.contains(&node) {
+                out.push(node);
+            }
+        }
+        out
+    }
 }
 // }}}
 
@@ -96,10 +86,10 @@ mod tests {
 
     #[test]
     fn a_repeated_node_is_kept_once() {
-        let on = |id| Dependency::Node(PlanNode::Task(id));
+        let on = |id| PlanNode::Task(id);
         let (a, b) = (Uuid::new_v4(), Uuid::new_v4());
         assert_eq!(
-            Dependency::merged(vec![on(a), on(b), on(a)]),
+            PlanNode::merged(vec![on(a), on(b), on(a)]),
             vec![on(a), on(b)]
         );
     }

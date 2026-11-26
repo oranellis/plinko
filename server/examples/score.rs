@@ -16,7 +16,7 @@ use plinko::{
         user::{NewTenantLoginUser, Role},
     },
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         task::{NewTask, TaskPatch, Worker},
@@ -163,14 +163,12 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 &nodes[(layer.saturating_sub(2) * LAYER).min(nodes.len())
                     ..(layer * LAYER).min(nodes.len())]
             };
-            let mut on: Vec<Dependency> = Vec::new();
-            if pool.is_empty() {
-                on.push(Dependency::default());
-            } else {
+            let mut on: Vec<PlanNode> = Vec::new();
+            if !pool.is_empty() {
                 for _ in 0..1 + random.below(3) {
                     let pick = pool[random.below(pool.len() as u64) as usize];
-                    if !on.contains(&Dependency::Node(pick)) {
-                        on.push(Dependency::Node(pick));
+                    if !on.contains(&pick) {
+                        on.push(pick);
                     }
                 }
             }
@@ -202,7 +200,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                     parent: Parent::Plan,
                 };
                 send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-                let gather = nodes.iter().rev().take(4).map(|n| Dependency::Node(*n));
+                let gather = nodes.iter().rev().take(4).copied();
                 let patch = MilestonePatch {
                     id: milestone,
                     name: None,
@@ -222,7 +220,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
             parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-        let after = nodes.iter().rev().take(6).map(|n| Dependency::Node(*n));
+        let after = nodes.iter().rev().take(6).copied();
         let patch = MilestonePatch {
             id: end,
             name: None,
@@ -264,14 +262,8 @@ fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, p
     let mut starts = Vec::new();
     for (p, (plan_id, _)) in world.plans.iter().enumerate() {
         let plan = &world.tenant.plans()[plan_id];
-        let deps = |list: &[Dependency]| {
-            let nodes: Vec<String> = list
-                .iter()
-                .filter_map(|d| match d {
-                    Dependency::Node(n) => Some(node(n)),
-                    _ => None,
-                })
-                .collect();
+        let deps = |list: &[PlanNode]| {
+            let nodes: Vec<String> = list.iter().map(node).collect();
             nodes.join(",")
         };
         for (id, t) in plan.tasks() {

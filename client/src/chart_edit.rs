@@ -7,7 +7,7 @@ use leptos::prelude::*;
 use plinko::{
     common::{crud::Crud, short_id::ShortId},
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         parent::Parent,
         plan_buffer::PlanBufferPatch,
         task::{PersistentState, Status, TaskPatch},
@@ -23,8 +23,8 @@ use crate::{
 // }}}
 
 // helpers {{{
-fn on(node: PlanNode) -> Dependency {
-    Dependency::Node(node)
+fn on(node: PlanNode) -> PlanNode {
+    node
 }
 
 /// The days a task really started and ended, for one whose end is recorded
@@ -37,7 +37,7 @@ fn ended(state: PersistentState) -> Option<(NaiveDate, NaiveDate)> {
     }
 }
 
-fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
+fn with_dependency(deps: Vec<PlanNode>, node: PlanNode) -> Vec<PlanNode> {
     let mut deps = deps;
     if !deps.iter().any(|d| *d == on(node)) {
         deps.push(on(node));
@@ -45,7 +45,7 @@ fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
     deps
 }
 
-fn without_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
+fn without_dependency(deps: Vec<PlanNode>, node: PlanNode) -> Vec<PlanNode> {
     deps.into_iter().filter(|d| *d != on(node)).collect()
 }
 

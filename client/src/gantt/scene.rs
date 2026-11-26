@@ -7,10 +7,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::NaiveDate;
 use plinko::{
     availability::day_value::DayValue,
-    planner::items::{
-        dependency::{Dependency, PlanNode},
-        parent::Parent,
-    },
+    planner::items::{dependency::PlanNode, parent::Parent},
     planner::plan::Plan,
     scheduler::state::PlanVolatileState,
 };
@@ -94,9 +91,7 @@ pub fn build(
     let mut depended: HashSet<PlanNode> = HashSet::new();
     for node in &nodes {
         for dep in model::dependencies(plan, *node) {
-            if let Dependency::Node(before) = dep {
-                depended.insert(before);
-            }
+            depended.insert(dep);
         }
     }
     let targets: HashSet<PlanNode> = plan.targets().values().map(|t| t.node()).collect();
@@ -190,9 +185,7 @@ impl Context<'_> {
                             .iter()
                             .any(|group| self.depended.contains(group)),
                     rooted: model::parent_of(self.plan, node) == Parent::Plan
-                        && model::dependencies(self.plan, node)
-                            .iter()
-                            .all(|d| *d == Dependency::ParentStart),
+                        && model::dependencies(self.plan, node).is_empty(),
                     pinned: matches!(node, PlanNode::PlanBuffer(id)
                         if self.plan.plan_buffers().get(&id).is_some_and(|b| b.set_start_day().is_some())),
                     target: self.targets.contains(&node),
@@ -236,7 +229,7 @@ mod tests {
     use plinko::{
         common::{crud::Crud, dates::DateRange, short_id::ShortId},
         planner::items::{
-            dependency::Dependency,
+            dependency::PlanNode,
             task::{self, NewTask, TaskPatch},
         },
         planner::{plan::NewPlan, plan_update::PlanUpdate},
@@ -282,7 +275,7 @@ mod tests {
             parent: None,
             duration: None,
             time_constraint: None,
-            dependencies: Some(vec![Dependency::Node(PlanNode::Task(ids[0]))]),
+            dependencies: Some(vec![PlanNode::Task(ids[0])]),
             allocations: None,
             affinities: None,
             actual_workers: None,

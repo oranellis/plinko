@@ -37,7 +37,10 @@ Written: `TenantVolatileState { plans, users }` (`scheduler/state.rs`).
 ### Date conventions
 
 - `DateRange` ends are exclusive. Durations are days, allocations 0 to 8 hours a day.
-- Work that has not started cannot start before tomorrow. `ParentStart` at the top level is today.
+- Work that has not started cannot start before tomorrow.
+- An item's dependencies are the nodes whose end it waits for. Besides them, an item in a group
+  waits for the group to start, and a top level item with no dependencies starts with the plan,
+  today. Neither is listed.
 - A milestone is shown on the last day of what it depends on, never before today unless it has
   already happened. What follows it starts the day after.
 - A time constraint on a task or group is for its first or its last day (`NodeConstraint`). A
@@ -58,7 +61,7 @@ Written: `TenantVolatileState { plans, users }` (`scheduler/state.rs`).
 - **Recorded workers** (`Task.actual_workers`) replace the worker they are recorded for. They are
   filled in from the last schedule when a task starts (`Tenant::fill_defaults`).
 - **Milestones** take no time. Their status is derived (`scheduler/status.rs`).
-- **Task groups** start their members (`ParentStart`) when their own dependencies are done, and
+- **Task groups** start when their own dependencies are done, which their members wait for, and
   cover their first member's start to their last member's end. With no members they last 3
   calendar days. A group with members none of which is scheduled is unscheduled.
 - **Delays** take calendar days.
@@ -71,15 +74,18 @@ Written: `TenantVolatileState { plans, users }` (`scheduler/state.rs`).
   fixed dates are hard dates: missing one is a violation.
 - **Unscheduled reasons:** `Dropped`, `NoEligibleWorkers` (a tag or group resolves to nobody),
   `NoCapacity` (no days within the furthest horizon, or one person asked for more than 8 hours),
-  `DependsOnUnscheduled` (nothing it depends on is scheduled), `NoScheduledMembers`. An item with
-  one dependency scheduled and another not is placed after the one that is.
+  `DependsOnUnscheduled` (it lists dependencies and none of them is scheduled, or its group has
+  not started), `NoScheduledMembers`. An item with one dependency scheduled and another not is
+  placed after the one that is. Its group having started does not count as a dependency that is
+  scheduled.
 
 ## 4. The network
 
 `lower.rs` turns the tenant into one `Network` for all plans, in plan then id order.
 
 - A **vertex** is a day boundary: "these things are done". Its time is the latest of what it waits
-  on, and no earlier than its `earliest`. Nodes with the same dependencies share one vertex, so
+  on, and no earlier than its `earliest`. Its `anchor` is the start of the group it is in, which it
+  waits for without that making it scheduled. Nodes with the same dependencies share one vertex, so
   what belongs to one node is only on a vertex that node owns: a milestone, and the start of a
   group with an earliest start. `deadline` is a hard date, which limits what comes before without
   moving anything. Each plan has an end vertex that waits on everything in it.

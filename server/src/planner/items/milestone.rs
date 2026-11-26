@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::{
     common::{dates::TimeConstraint, error::PlinkoResult},
     helpers::functions::check_id_match,
-    planner::items::{dependency::Dependency, parent::Parent},
+    planner::items::{dependency::PlanNode, parent::Parent},
     planner::resources::data_block::DataBlocks,
     traits::patch::Patchable,
 };
@@ -18,7 +18,7 @@ pub struct Milestone {
     name: String,
     parent: Parent,
     time_constraint: TimeConstraint,
-    dependencies: Vec<Dependency>,
+    dependencies: Vec<PlanNode>,
     description: Option<String>,
     data: DataBlocks,
     persistent_state: PersistentState,
@@ -50,7 +50,7 @@ impl Milestone {
         &mut self.data
     }
 
-    pub fn dependencies(&self) -> &Vec<Dependency> {
+    pub fn dependencies(&self) -> &Vec<PlanNode> {
         &self.dependencies
     }
 
@@ -95,7 +95,7 @@ impl Patchable<MilestonePatch> for Milestone {
             self.time_constraint = t;
         }
         if let Some(d) = patch.dependencies {
-            self.dependencies = Dependency::merged(d);
+            self.dependencies = PlanNode::merged(d);
         }
         if let Some(p) = patch.persistent_state {
             self.persistent_state = p
@@ -140,7 +140,7 @@ pub struct MilestonePatch {
     pub name: Option<String>,
     pub parent: Option<Parent>,
     pub time_constraint: Option<TimeConstraint>,
-    pub dependencies: Option<Vec<Dependency>>,
+    pub dependencies: Option<Vec<PlanNode>>,
     pub persistent_state: Option<PersistentState>,
 }
 // }}}

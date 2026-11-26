@@ -8,10 +8,7 @@ use leptos::prelude::*;
 use plinko::{
     codec,
     planner::items::{
-        dependency::{Dependency, PlanNode},
-        milestone::DerivedStatus,
-        parent::Parent,
-        task::Status,
+        dependency::PlanNode, milestone::DerivedStatus, parent::Parent, task::Status,
     },
     planner::plan::Plan,
     scheduler::state::{PlanVolatileState, UnscheduledReason},
@@ -131,7 +128,7 @@ pub fn item_bytes(plan: &Plan, node: PlanNode) -> Option<Vec<u8>> {
 }
 
 /// What a node depends on
-pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<Dependency> {
+pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<PlanNode> {
     match node {
         PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.dependencies().clone()),
         PlanNode::Milestone(id) => plan.milestones().get(&id).map(|m| m.dependencies().clone()),

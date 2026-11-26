@@ -9,7 +9,7 @@ use plinko::{
         user::{NewTenantLoginUser, Role},
     },
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         milestone::NewMilestone,
         parent::Parent,
         task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
@@ -128,12 +128,7 @@ impl Plans {
             parent: Parent::Plan,
         };
         self.update(plan, PlanUpdate::Task(Crud::Add(new)));
-        let after: Vec<Dependency> = match after {
-            [] => vec![Dependency::ParentStart],
-            nodes => nodes.iter().map(|n| Dependency::Node(*n)).collect(),
-        }
-        .into_iter()
-        .collect();
+        let after: Vec<PlanNode> = after.to_vec();
         let who = [(worker, Workload::new_const(8))];
         self.patch(plan, task, |p| {
             p.duration = Some(days);
@@ -173,7 +168,7 @@ impl Plans {
             name: None,
             parent: None,
             time_constraint: None,
-            dependencies: Some(vec![Dependency::Node(after)]),
+            dependencies: Some(vec![after]),
             persistent_state: None,
         };
         self.update(plan, PlanUpdate::Milestone(Crud::Update(patch)));

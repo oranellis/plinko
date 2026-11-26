@@ -10,7 +10,7 @@ use plinko::{
     availability::workload::Workload,
     common::{crud::Crud, dates::NodeEnd, short_id::ShortId},
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         milestone::MilestonePatch,
         parent::Parent,
         plan_buffer::PlanBufferPatch,
@@ -163,12 +163,8 @@ fn who_name(who: Assignee) -> String {
 // pickers {{{
 /// Every item of the plan that something can depend on, other than `except`. Plan targets are
 /// marked, and the start of the parent is offered when `with_start`.
-fn depends_options(plan: ShortId, except: PlanNode, with_start: bool) -> Signal<Vec<Choice>> {
+fn depends_options(plan: ShortId, except: PlanNode) -> Signal<Vec<Choice>> {
     Signal::derive(move || {
-        let mut options = Vec::new();
-        if with_start {
-            options.push(Choice::new("start", "Parent Start", "start"));
-        }
         let named = read(plan, |p| {
             let targets: HashSet<PlanNode> = p.targets().values().map(|t| t.node()).collect();
             let mut named: Vec<Choice> = model::nodes(p)
@@ -176,15 +172,14 @@ fn depends_options(plan: ShortId, except: PlanNode, with_start: bool) -> Signal<
                 .filter(|n| *n != except)
                 .map(|n| {
                     let tone = if targets.contains(&n) { "target" } else { "" };
-                    let value = forms::node_value(Dependency::Node(n));
+                    let value = forms::node_value(n);
                     Choice::new(value, node_name(p, n), tone)
                 })
                 .collect();
             named.sort_by(|a, b| a.label.cmp(&b.label).then(a.value.cmp(&b.value)));
             Some(named)
         });
-        options.extend(named.unwrap_or_default());
-        options
+        named.unwrap_or_default()
     })
 }
 
@@ -195,17 +190,25 @@ fn DependencyList(
     #[prop(into)] empty: String,
     #[prop(into)] placeholder: String,
     choices: Signal<Vec<Choice>>,
-    deps: RwSignal<Vec<Dependency>>,
-    /// What a new row starts as
-    fresh: Dependency,
+    deps: RwSignal<Vec<PlanNode>>,
+    /// What a new row starts as, the first choice not yet listed if nothing is given
+    #[prop(optional)]
+    fresh: Option<PlanNode>,
 ) -> impl IntoView {
+    let add = move |()| {
+        let listed = deps.get_untracked();
+        let choices = choices.get_untracked();
+        let mut unlisted = choices.iter().filter_map(|c| forms::parse_node(&c.value));
+        let first = fresh.or_else(|| unlisted.find(|n| !listed.contains(n)));
+        deps.update(|d| d.extend(first));
+    };
     view! {
         <List
             label=label
             empty=empty
             add="Add"
             count=Signal::derive(move || deps.with(Vec::len))
-            on_add=Callback::new(move |()| deps.update(|d| d.push(fresh)))
+            on_add=Callback::new(add)
         >
             <For each=move || 0..deps.with(Vec::len) key=|i| *i children=move |i| {
                 let node = Signal::derive(move || {
@@ -234,61 +237,54 @@ fn DependencyList(
 }
 
 #[component]
-fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> impl IntoView {
+fn Dependencies(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<PlanNode>>) -> impl IntoView {
     view! {
         <DependencyList
             label="Dependencies"
             empty="No dependencies added yet"
             placeholder="Select dependency…"
-            choices=depends_options(plan, me, true)
+            choices=depends_options(plan, me)
             deps=deps
-            fresh=Dependency::default()
         />
     }
 }
 
 /// The items that wait for this one, which are kept in their own dependencies
 #[component]
-fn Dependents(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<Dependency>>) -> impl IntoView {
+fn Dependents(plan: ShortId, me: PlanNode, deps: RwSignal<Vec<PlanNode>>) -> impl IntoView {
     view! {
         <DependencyList
             label="Required by"
             empty="No dependents added yet"
             placeholder="Select dependent…"
-            choices=depends_options(plan, me, false)
+            choices=depends_options(plan, me)
             deps=deps
-            fresh=Dependency::Node(me)
+            fresh=me
         />
     }
 }
 
 /// The items that depend on `me`, as dependencies on them
-fn dependents_of(plan: &Plan, me: PlanNode) -> Vec<Dependency> {
-    let mut found: Vec<(String, Dependency)> = model::nodes(plan)
+fn dependents_of(plan: &Plan, me: PlanNode) -> Vec<PlanNode> {
+    let mut found: Vec<(String, PlanNode)> = model::nodes(plan)
         .into_iter()
-        .filter(|n| *n != me && model::dependencies(plan, *n).contains(&Dependency::Node(me)))
-        .map(|n| (node_name(plan, n), Dependency::Node(n)))
+        .filter(|n| *n != me && model::dependencies(plan, *n).contains(&me))
+        .map(|n| (node_name(plan, n), n))
         .collect();
     found.sort_by(|a, b| a.0.cmp(&b.0));
     found.into_iter().map(|(_, d)| d).collect()
 }
 
-fn set_dependencies(sync: Sync, plan: ShortId, node: PlanNode, deps: Vec<Dependency>) {
+fn set_dependencies(sync: Sync, plan: ShortId, node: PlanNode, deps: Vec<PlanNode>) {
     sync.plan(plan, PlanUpdate::set_dependencies(node, deps));
 }
 
 /// Changes the dependencies of the other items to match what was asked for in `new`
-fn apply_dependents(
-    sync: Sync,
-    plan: ShortId,
-    me: PlanNode,
-    old: &[Dependency],
-    new: &[Dependency],
-) {
-    let wanted = |deps: &[Dependency]| -> HashSet<PlanNode> {
+fn apply_dependents(sync: Sync, plan: ShortId, me: PlanNode, old: &[PlanNode], new: &[PlanNode]) {
+    let wanted = |deps: &[PlanNode]| -> HashSet<PlanNode> {
         deps.iter()
             .filter_map(|d| match *d {
-                Dependency::Node(n) if n != me => Some(n),
+                n if n != me => Some(n),
                 _ => None,
             })
             .collect()
@@ -299,7 +295,7 @@ fn apply_dependents(
             .tenant
             .with_untracked(|t| Some(model::dependencies(t.as_ref()?.plans().get(&plan)?, other)))
             .unwrap_or_default();
-        let mine = Dependency::Node(me);
+        let mine = me;
         deps.retain(|d| *d != mine || new.contains(&other));
         if new.contains(&other) && !deps.contains(&mine) {
             deps.push(mine);

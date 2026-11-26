@@ -11,7 +11,7 @@ use crate::{
         error::{PlinkoError, PlinkoResult},
     },
     helpers::functions::check_id_match,
-    planner::items::{dependency::Dependency, parent::Parent},
+    planner::items::{dependency::PlanNode, parent::Parent},
     planner::resources::data_block::DataBlocks,
     traits::patch::Patchable,
 };
@@ -26,7 +26,7 @@ pub struct Task {
     duration: u32,
     /// A date for its first or its last day
     time_constraint: NodeConstraint,
-    dependencies: Vec<Dependency>,
+    dependencies: Vec<PlanNode>,
     /// Hours per day each worker spends on the task for its duration
     allocations: HashMap<Worker, Workload>,
     /// Linked affinities, the task is only worked on days that every one of them allows
@@ -64,7 +64,7 @@ impl Task {
         self.time_constraint
     }
 
-    pub fn dependencies(&self) -> &Vec<Dependency> {
+    pub fn dependencies(&self) -> &Vec<PlanNode> {
         &self.dependencies
     }
 
@@ -140,7 +140,7 @@ impl Patchable<TaskPatch> for Task {
             self.time_constraint = t
         }
         if let Some(d) = patch.dependencies {
-            self.dependencies = Dependency::merged(d)
+            self.dependencies = PlanNode::merged(d)
         }
         if let Some(a) = patch.allocations {
             self.allocations = a
@@ -223,7 +223,7 @@ pub struct TaskPatch {
     pub parent: Option<Parent>,
     pub duration: Option<u32>,
     pub time_constraint: Option<NodeConstraint>,
-    pub dependencies: Option<Vec<Dependency>>,
+    pub dependencies: Option<Vec<PlanNode>>,
     pub allocations: Option<HashMap<Worker, Workload>>,
     pub affinities: Option<HashSet<Uuid>>,
     pub actual_workers: Option<HashMap<Worker, Assignee>>,

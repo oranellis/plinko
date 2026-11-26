@@ -2,10 +2,7 @@
 
 // modules {{{
 use crate::{
-    planner::items::{
-        dependency::{Dependency, PlanNode},
-        parent::Parent,
-    },
+    planner::items::{dependency::PlanNode, parent::Parent},
     planner::{
         plan::Plan,
         plan_update::PlanUpdate,
@@ -30,10 +27,10 @@ impl Plan {
         }
     }
 
-    /// The updates that put `node` in the group `to`, or at the top for `PlanStart`. Leaving a
-    /// group the item takes the group's dependencies as its own start. Entering one, what the item
-    /// waited on moves onto the group, what waited on the item outside the group waits on the
-    /// group's end, and the item waits on the group's start.
+    /// The updates that put `node` in the group `to`, or at the top for `Parent::Plan`. Leaving a
+    /// group the item takes the group's dependencies as its own, as it waited for the group's
+    /// start. Entering one, what the item waited on outside it moves onto the group, and what
+    /// waited on the item outside the group waits on the group's end.
     pub fn moving(&self, node: PlanNode, to: Parent) -> Result<Vec<PlanUpdate>, String> {
         let (from, mut deps) = placement(self, node);
         if from == to {
@@ -46,35 +43,20 @@ impl Plan {
         }
         let mut updates = Vec::new();
         if let Parent::Node(id) = from {
+            // it waited for the group's start, so it waits for what the group waits for
             let (_, outer) = placement(self, PlanNode::TaskGroup(id));
-            deps = Dependency::merged(
-                deps.into_iter()
-                    .flat_map(|d| match d {
-                        Dependency::ParentStart => outer.clone(),
-                        Dependency::Node(_) => vec![d],
-                    })
-                    .collect(),
-            );
-            if deps.is_empty() {
-                deps.push(Dependency::default());
-            }
+            deps = PlanNode::merged([deps, outer].concat());
         }
         if let Parent::Node(id) = to {
             let group = PlanNode::TaskGroup(id);
-            let (lifted, inside): (Vec<_>, Vec<_>) = deps.into_iter().partition(|d| match *d {
-                Dependency::ParentStart => false,
-                Dependency::Node(n) => !self.is_within(n, group),
-            });
+            let (lifted, inside): (Vec<_>, Vec<_>) =
+                deps.into_iter().partition(|n| !self.is_within(*n, group));
             let (_, own) = placement(self, group);
-            let mut group_deps = Dependency::merged([own, lifted].concat());
-            // waiting on the parent's start is implied once there is something else to wait on
-            if group_deps.len() > 1 {
-                group_deps.retain(|d| *d != Dependency::ParentStart);
-            }
+            let group_deps = PlanNode::merged([own, lifted].concat());
             updates.push(PlanUpdate::set_dependencies(group, group_deps));
-            deps = [vec![Dependency::default()], inside].concat();
-            let mine = Dependency::Node(node);
-            let ends = Dependency::Node(group);
+            deps = inside;
+            let mine = node;
+            let ends = group;
             for other in all_nodes(self)
                 .into_iter()
                 .filter(|n| *n != node && !self.is_within(*n, group))
@@ -88,7 +70,7 @@ impl Plan {
                     updates.push(PlanUpdate::rewire(
                         other,
                         None,
-                        Some(Dependency::merged(swapped)),
+                        Some(PlanNode::merged(swapped)),
                     ));
                 }
             }

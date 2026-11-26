@@ -42,6 +42,9 @@ pub struct VertexId(pub u32);
 /// `earliest`) is ever on a vertex of its own.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Vertex {
+    /// The start of the group this is in, which it waits for like the rest. It is not what makes
+    /// it scheduled: with other things to wait on and none of them scheduled, it is not either.
+    pub anchor: Option<VertexId>,
     pub after: Vec<VertexId>,
     pub incoming: Vec<ArcId>,
     /// The vertices that wait on this one
@@ -82,6 +85,20 @@ pub struct Lowered {
 }
 // }}}
 
+// impl Vertex {{{
+impl Vertex {
+    /// The vertices it waits on, the start of its group among them
+    pub fn before(&self) -> impl Iterator<Item = VertexId> + '_ {
+        self.after.iter().copied().chain(self.anchor)
+    }
+
+    /// How many things it waits on
+    pub fn inputs(&self) -> usize {
+        self.before().count() + self.incoming.len()
+    }
+}
+// }}}
+
 // impl Network {{{
 impl Network {
     pub fn add_vertex(&mut self, vertex: Vertex) -> VertexId {
@@ -119,7 +136,8 @@ impl Network {
             v.incoming.clear();
         }
         for i in 0..self.vertices.len() {
-            for from in self.vertices[i].after.clone() {
+            let before: Vec<VertexId> = self.vertices[i].before().collect();
+            for from in before {
                 self.vertex_mut(from).next.push(VertexId(i as u32));
             }
         }
@@ -128,11 +146,7 @@ impl Network {
             self.vertex_mut(start).outgoing.push(ArcId(i as u32));
             self.vertex_mut(end).incoming.push(ArcId(i as u32));
         }
-        let mut waiting: Vec<usize> = self
-            .vertices
-            .iter()
-            .map(|v| v.after.len() + v.incoming.len())
-            .collect();
+        let mut waiting: Vec<usize> = self.vertices.iter().map(Vertex::inputs).collect();
         let mut ready: Vec<VertexId> = (0..self.vertices.len())
             .rev()
             .filter(|i| waiting[*i] == 0)

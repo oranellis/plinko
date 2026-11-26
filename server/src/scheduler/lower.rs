@@ -9,7 +9,7 @@ use crate::{
     multitenancy::tenant::Tenant,
     planner::{
         items::{
-            dependency::{Dependency, PlanNode},
+            dependency::PlanNode,
             milestone::{DerivedStatus, Milestone},
             parent::Parent,
             plan_buffer::PlanBuffer,
@@ -70,7 +70,7 @@ struct Lowering<'a> {
     table: &'a mut Table,
     net: &'a mut Network,
     /// The vertex for each set of several vertices that something waits on together
-    joins: &'a mut HashMap<Vec<VertexId>, VertexId>,
+    joins: &'a mut HashMap<(Option<VertexId>, Vec<VertexId>), VertexId>,
     statuses: HashMap<Uuid, DerivedStatus>,
     items: HashMap<PlanNode, Item>,
     starts: HashMap<PlanNode, VertexId>,
@@ -83,7 +83,7 @@ struct Lowering<'a> {
 #[derive(Clone)]
 struct Item {
     parent: Parent,
-    dependencies: Vec<Dependency>,
+    dependencies: Vec<PlanNode>,
     dropped: bool,
 }
 
@@ -157,24 +157,29 @@ impl Lowering<'_> {
         self.table.today.next()
     }
 
-    /// The vertex for several vertices being done, shared by everything that waits on the same
-    fn join(&mut self, mut after: Vec<VertexId>) -> VertexId {
+    /// The vertex for something in a group that has started (`anchor`, none at the top level)
+    /// and the vertices of what it depends on being done, shared by everything that waits on the
+    /// same. With nothing to depend on that is the start of the group, or of the plan.
+    fn join(&mut self, anchor: Option<VertexId>, mut after: Vec<VertexId>) -> VertexId {
         after.sort();
         after.dedup();
-        match after.as_slice() {
-            [] => self.net.root,
-            [one] => *one,
-            _ => match self.joins.get(&after) {
-                Some(join) => *join,
-                None => {
-                    let join = self.net.add_vertex(Vertex {
-                        after: after.clone(),
-                        ..Vertex::default()
-                    });
-                    self.joins.insert(after, join);
-                    join
+        match (anchor, after.as_slice()) {
+            (None, []) => self.net.root,
+            (Some(start), []) => start,
+            (None, [one]) => *one,
+            _ => {
+                let key = (anchor, after);
+                if let Some(join) = self.joins.get(&key) {
+                    return *join;
                 }
-            },
+                let join = self.net.add_vertex(Vertex {
+                    anchor,
+                    after: key.1.clone(),
+                    ..Vertex::default()
+                });
+                self.joins.insert(key, join);
+                join
+            }
         }
     }
 
@@ -189,23 +194,18 @@ impl Lowering<'_> {
         if !self.visiting.insert(node) {
             return self.net.root;
         }
-        // an item that depends on nothing begins when its parent does
-        let dependencies = match item.dependencies.as_slice() {
-            [] => &[Dependency::ParentStart][..],
-            some => some,
+        // besides what it depends on, an item in a group waits for the group to start
+        let anchor = match item.parent {
+            Parent::Node(group) => Some(self.start_of(PlanNode::TaskGroup(group))),
+            Parent::Plan => None,
         };
         let mut after = Vec::new();
-        for dependency in dependencies {
-            after.push(match (*dependency, item.parent) {
-                (Dependency::Node(on), _) if self.items.contains_key(&on) => self.end_of(on),
-                (Dependency::Node(_), _) => continue,
-                (Dependency::ParentStart, Parent::Node(group)) => {
-                    self.start_of(PlanNode::TaskGroup(group))
-                }
-                (Dependency::ParentStart, Parent::Plan) => self.net.root,
-            });
+        for on in &item.dependencies {
+            if self.items.contains_key(on) {
+                after.push(self.end_of(*on));
+            }
         }
-        let mut start = self.join(after);
+        let mut start = self.join(anchor, after);
         // a group that may not start before a day starts on a vertex of its own, as the day is
         // not for whatever else waits on the same things
         if let PlanNode::TaskGroup(id) = node {
@@ -321,7 +321,7 @@ impl Lowering<'_> {
             .collect();
         let followed = |node: &PlanNode| {
             let mut others = self.items.values().filter(|item| inside(item));
-            others.any(|item| item.dependencies.contains(&Dependency::Node(*node)))
+            others.any(|item| item.dependencies.contains(&*node))
         };
         let last: Vec<PlanNode> = members.into_iter().filter(|n| !followed(n)).collect();
         for node in last {
@@ -367,8 +367,7 @@ impl Lowering<'_> {
 
     /// The earliest hard date of the tasks and milestones that depend on a buffer directly
     fn shrink_to(&self, buffer: PlanNode) -> Option<Day> {
-        let depends =
-            |dependencies: &[Dependency]| dependencies.contains(&Dependency::Node(buffer));
+        let depends = |dependencies: &[PlanNode]| dependencies.contains(&buffer);
         let tasks = self.plan.tasks().values();
         let tasks = tasks
             .filter(|t| depends(t.dependencies()))

@@ -206,11 +206,7 @@ impl Pass {
             ledger: Ledger::new(ctx.table),
             time: vec![None; net.vertices.len()],
             settled: vec![false; net.vertices.len()],
-            waiting: net
-                .vertices
-                .iter()
-                .map(|v| (v.after.len() + v.incoming.len()) as u32)
-                .collect(),
+            waiting: net.vertices.iter().map(|v| v.inputs() as u32).collect(),
             placed: vec![None; net.arcs.len()],
             done: vec![false; net.arcs.len()],
             failed: vec![None; net.arcs.len()],
@@ -329,9 +325,14 @@ impl Pass {
                 let ends = |a: &ArcId| Some(self.placed[a.0 as usize].as_ref()?.end);
                 let incoming = vertex.incoming.iter().map(ends);
                 let waits = !vertex.after.is_empty() || !vertex.incoming.is_empty();
+                // the group it is in has to have started, which alone does not schedule it
+                let started = match vertex.anchor {
+                    Some(anchor) => Some(self.time[anchor.0 as usize]?),
+                    None => None,
+                };
                 match after.chain(incoming).flatten().max() {
                     None if waits => None,
-                    waited => waited.max(vertex.earliest),
+                    waited => waited.max(started).max(vertex.earliest),
                 }
             });
             for next in &vertex.next {

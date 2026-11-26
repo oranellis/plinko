@@ -6,7 +6,7 @@ use crate::helpers::double_option;
 use crate::{
     common::{dates::DateRange, error::PlinkoResult},
     helpers::functions::check_id_match,
-    planner::items::{dependency::Dependency, parent::Parent},
+    planner::items::{dependency::PlanNode, parent::Parent},
     traits::patch::Patchable,
 };
 // }}}
@@ -18,7 +18,7 @@ pub struct PlanDelay {
     id: Uuid,
     name: Option<String>,
     parent: Parent,
-    dependencies: Vec<Dependency>,
+    dependencies: Vec<PlanNode>,
     duration: u32,
 }
 
@@ -36,7 +36,7 @@ impl PlanDelay {
         self.parent
     }
 
-    pub fn dependencies(&self) -> &Vec<Dependency> {
+    pub fn dependencies(&self) -> &Vec<PlanNode> {
         &self.dependencies
     }
 
@@ -68,7 +68,7 @@ impl Patchable<PlanDelayPatch> for PlanDelay {
             self.parent = p;
         }
         if let Some(p) = patch.dependencies {
-            self.dependencies = Dependency::merged(p);
+            self.dependencies = PlanNode::merged(p);
         }
         if let Some(p) = patch.duration {
             self.duration = p;
@@ -104,7 +104,7 @@ pub struct PlanDelayPatch {
     )]
     pub name: Option<Option<String>>,
     pub parent: Option<Parent>,
-    pub dependencies: Option<Vec<Dependency>>,
+    pub dependencies: Option<Vec<PlanNode>>,
     pub duration: Option<u32>,
 }
 // }}}

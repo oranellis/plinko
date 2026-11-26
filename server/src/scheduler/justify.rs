@@ -75,7 +75,7 @@ fn late_starts(ctx: &Context, pass: &Pass) -> Vec<i64> {
                 starts[arc.0 as usize] = push_late(ctx, pass, &mut ledger, *arc, by);
             }
         }
-        let before = vertex.after.iter().copied();
+        let before = vertex.before();
         let before = before.chain(vertex.incoming.iter().map(|a| net.arc(*a).start));
         for u in before {
             following[u.0 as usize] -= 1;

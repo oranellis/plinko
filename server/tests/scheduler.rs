@@ -20,7 +20,7 @@ use plinko::{
         user::{NewTenantLoginUser, Role},
     },
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         milestone::{DerivedStatus, MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
@@ -58,17 +58,13 @@ fn h(hours: u8) -> Workload {
     Workload::new_const(hours)
 }
 
-type Dep = Dependency;
-
-fn start() -> Dep {
-    Dependency::ParentStart
-}
+type Dep = PlanNode;
 
 fn after(node: PlanNode) -> Dep {
-    Dependency::Node(node)
+    node
 }
 
-fn deps(deps: &[Dep]) -> Vec<Dependency> {
+fn deps(deps: &[Dep]) -> Vec<PlanNode> {
     deps.to_vec()
 }
 
@@ -345,7 +341,7 @@ fn only_days(state: &PlanVolatileState, task: Uuid, who: Uuid) -> Vec<u32> {
 fn a_task_works_its_duration_in_days() {
     let mut world = World::new();
     let alice = world.user();
-    let task = world.task(3, &[(user(alice), 8)], &[start()]);
+    let task = world.task(3, &[(user(alice), 8)], &[]);
     let state = world.solve();
     assert_eq!(span(&state, task), (d(1), d(4)));
     assert_eq!(
@@ -362,7 +358,7 @@ fn a_task_works_its_duration_in_days() {
 #[test]
 fn tasks_with_no_workers_last_their_duration_in_plan_working_days() {
     let mut world = World::new();
-    let task = world.task(6, &[], &[start()]);
+    let task = world.task(6, &[], &[]);
     let state = world.solve();
     // Monday to the next Monday, skipping the weekend
     assert_eq!(span(&state, task), (d(1), d(9)));
@@ -375,8 +371,8 @@ fn tasks_with_no_workers_last_their_duration_in_plan_working_days() {
 fn two_strict_tasks_share_a_person_who_has_the_hours() {
     let mut world = World::new();
     let alice = world.user();
-    let a = world.task(1, &[(user(alice), 4)], &[start()]);
-    let b = world.task(1, &[(user(alice), 4)], &[start()]);
+    let a = world.task(1, &[(user(alice), 4)], &[]);
+    let b = world.task(1, &[(user(alice), 4)], &[]);
     let state = world.solve();
     assert_eq!(span(&state, a), (d(1), d(2)));
     assert_eq!(span(&state, b), (d(1), d(2)));
@@ -388,7 +384,7 @@ fn two_strict_tasks_share_a_person_who_has_the_hours() {
 fn strict_workers_stay_on_the_same_days() {
     let mut world = World::new();
     let (alice, bob) = (world.user(), world.user());
-    let task = world.task(4, &[(user(alice), 4), (user(bob), 8)], &[start()]);
+    let task = world.task(4, &[(user(alice), 4), (user(bob), 8)], &[]);
     let state = world.solve();
     assert_eq!(span(&state, task), (d(1), d(5)));
     assert_eq!(only_days(&state, task, alice), [1, 2, 3, 4]);
@@ -406,12 +402,12 @@ fn strict_workers_stay_on_the_same_days() {
 fn strict_runs_restart_on_a_busy_day_but_not_across_weekends() {
     let mut world = World::new();
     let alice = world.user();
-    let holder = world.task(1, &[(user(alice), 4)], &[start()]);
+    let holder = world.task(1, &[(user(alice), 4)], &[]);
     world.patch(holder, |p| {
         p.time_constraint = Some(TimeConstraint::Fixed(d(3)).into())
     });
-    let run = world.task(3, &[(user(alice), 8)], &[start()]);
-    let long = world.task(6, &[], &[start()]);
+    let run = world.task(3, &[(user(alice), 8)], &[]);
+    let long = world.task(6, &[], &[]);
     let state = world.solve();
     assert_eq!(span(&state, holder), (d(3), d(4)));
     // Wednesday is half taken, so the run starts over on Thursday, across the weekend
@@ -427,8 +423,8 @@ fn strict_runs_restart_on_a_busy_day_but_not_across_weekends() {
 fn work_in_progress_claims_hours_before_longer_chains() {
     let mut world = World::new();
     let alice = world.user();
-    let active = world.task(5, &[(user(alice), 8)], &[start()]);
-    let first = world.task(1, &[(user(alice), 8)], &[start()]);
+    let active = world.task(5, &[(user(alice), 8)], &[]);
+    let first = world.task(1, &[(user(alice), 8)], &[]);
     let long = world.task(5, &[(user(alice), 8)], &[after(node(first))]);
     world.set_state(active, Status::InProgress, Some(1), None);
     let state = world.solve();
@@ -445,7 +441,7 @@ fn work_in_progress_claims_hours_before_longer_chains() {
 fn work_in_progress_runs_up_to_today_even_past_its_duration() {
     let mut world = World::new();
     let alice = world.user();
-    let task = world.task(1, &[(user(alice), 8)], &[start()]);
+    let task = world.task(1, &[(user(alice), 8)], &[]);
     world.set_state(task, Status::InProgress, Some(1), None);
     world.apply(TenantUpdateType::SetToday(d(5)));
     let state = world.solve();
@@ -459,7 +455,7 @@ fn work_in_progress_runs_up_to_today_even_past_its_duration() {
 fn completed_work_is_inferred_from_its_dates() {
     let mut world = World::new();
     let alice = world.user();
-    let done = world.task(3, &[(user(alice), 8)], &[start()]);
+    let done = world.task(3, &[(user(alice), 8)], &[]);
     let next = world.task(1, &[(user(alice), 8)], &[after(node(done))]);
     let day = |n| NaiveDate::from_ymd_opt(2023, 12, n).unwrap();
     let state = PersistentState {
@@ -483,7 +479,7 @@ fn completed_work_is_inferred_from_its_dates() {
 fn milestones_land_on_the_last_day_of_the_work_before_them() {
     let mut world = World::new();
     let alice = world.user();
-    let first = world.task(3, &[(user(alice), 8)], &[start()]);
+    let first = world.task(3, &[(user(alice), 8)], &[]);
     let marker = world.milestone(&[after(node(first))]);
     let again = world.milestone(&[after(PlanNode::Milestone(marker))]);
     let next = world.task(
@@ -511,7 +507,7 @@ fn milestones_stay_on_a_day_worked_outside_the_usual_week() {
     let mut world = World::new();
     let alice = world.user();
     world.weekly_hours(alice, [8, 8, 8, 8, 8, 8, 0]);
-    let first = world.task(6, &[(user(alice), 8)], &[start()]);
+    let first = world.task(6, &[(user(alice), 8)], &[]);
     let marker = world.milestone(&[after(node(first))]);
     let next = world.task(
         1,
@@ -531,8 +527,8 @@ fn milestones_stay_on_a_day_worked_outside_the_usual_week() {
 fn milestone_statuses_follow_what_they_depend_on() {
     let mut world = World::new();
     let alice = world.user();
-    let done = world.task(1, &[(user(alice), 8)], &[start()]);
-    let busy = world.task(1, &[(user(alice), 8)], &[start()]);
+    let done = world.task(1, &[(user(alice), 8)], &[]);
+    let busy = world.task(1, &[(user(alice), 8)], &[]);
     world.set_state(done, Status::Completed, Some(1), Some(1));
     world.set_state(busy, Status::InProgress, Some(1), None);
     let complete = world.milestone(&[after(node(done))]);
@@ -562,12 +558,12 @@ fn milestone_statuses_follow_what_they_depend_on() {
 fn dropped_tasks_are_transparent_and_on_hold_tasks_end_when_held() {
     let mut world = World::new();
     let alice = world.user();
-    let first = world.task(2, &[(user(alice), 8)], &[start()]);
+    let first = world.task(2, &[(user(alice), 8)], &[]);
     let dropped = world.task(5, &[(user(alice), 8)], &[after(node(first))]);
     let last = world.task(1, &[], &[after(node(dropped))]);
     world.set_state(dropped, Status::Dropped, None, None);
     let bob = world.user();
-    let held = world.task(3, &[(user(bob), 8)], &[start()]);
+    let held = world.task(3, &[(user(bob), 8)], &[]);
     world.set_state(held, Status::OnHold, Some(1), Some(2));
     let after_hold = world.task(1, &[], &[after(node(held))]);
     let marker = world.milestone(&[after(node(held))]);
@@ -593,21 +589,21 @@ fn time_constraints_hold_or_are_reported_violated() {
     let mut world = World::new();
     let (alice, bob) = (world.user(), world.user());
     world.weekly_hours(bob, [8, 8, 8, 8, 8, 0, 0]);
-    let fixed = world.task(1, &[(user(alice), 8)], &[start()]);
+    let fixed = world.task(1, &[(user(alice), 8)], &[]);
     world.patch(fixed, |p| {
         p.time_constraint = Some(TimeConstraint::Fixed(d(10)).into())
     });
-    let first = world.task(3, &[(user(alice), 8)], &[start()]);
+    let first = world.task(3, &[(user(alice), 8)], &[]);
     let late = world.task(1, &[], &[after(node(first))]);
     world.patch(late, |p| {
         p.time_constraint = Some(TimeConstraint::Latest(d(2)).into())
     });
     // a Saturday that nobody works
-    let weekend = world.task(1, &[(user(bob), 8)], &[start()]);
+    let weekend = world.task(1, &[(user(bob), 8)], &[]);
     world.patch(weekend, |p| {
         p.time_constraint = Some(TimeConstraint::Fixed(d(6)).into())
     });
-    let early = world.task(1, &[], &[start()]);
+    let early = world.task(1, &[], &[]);
     world.patch(early, |p| {
         p.time_constraint = Some(TimeConstraint::Earliest(d(3)).into())
     });
@@ -627,14 +623,14 @@ fn time_constraints_hold_or_are_reported_violated() {
 fn hard_dated_chains_go_before_target_chains_before_the_rest() {
     let mut world = World::new();
     let alice = world.user();
-    let hard = world.task(1, &[(user(alice), 8)], &[start()]);
+    let hard = world.task(1, &[(user(alice), 8)], &[]);
     world.patch(hard, |p| {
         p.time_constraint = Some(TimeConstraint::Fixed(d(3)).into())
     });
-    let chain = world.task(3, &[(user(alice), 8)], &[start()]);
+    let chain = world.task(3, &[(user(alice), 8)], &[]);
     let goal = world.milestone(&[after(node(chain))]);
     world.target(PlanNode::Milestone(goal));
-    let rest = world.task(1, &[(user(alice), 8)], &[start()]);
+    let rest = world.task(1, &[(user(alice), 8)], &[]);
     let state = world.solve();
     assert_eq!(span(&state, hard), (d(3), d(4)));
     assert!(state.constraint_violations.is_empty());
@@ -651,8 +647,8 @@ fn hard_dated_chains_go_before_target_chains_before_the_rest() {
 fn tasks_off_the_target_chain_never_delay_it() {
     let mut world = World::new();
     let alice = world.user();
-    let rest = world.task(5, &[(user(alice), 8)], &[start()]);
-    let chain = world.task(2, &[(user(alice), 8)], &[start()]);
+    let rest = world.task(5, &[(user(alice), 8)], &[]);
+    let chain = world.task(2, &[(user(alice), 8)], &[]);
     let goal = world.milestone(&[after(node(chain))]);
     let target = world.target(PlanNode::Milestone(goal));
     let state = world.solve();
@@ -668,11 +664,11 @@ fn tags_and_groups_pick_whoever_finishes_first() {
     let mut world = World::new();
     let (alice, bob, carol) = (world.user(), world.user(), world.user());
     let tag = world.tag(&[alice, bob]);
-    let busy = world.task(2, &[(user(alice), 8)], &[start()]);
+    let busy = world.task(2, &[(user(alice), 8)], &[]);
     world.patch(busy, |p| {
         p.time_constraint = Some(TimeConstraint::Fixed(d(1)).into())
     });
-    let by_tag = world.task(1, &[(Worker::Tag(tag), 8)], &[start()]);
+    let by_tag = world.task(1, &[(Worker::Tag(tag), 8)], &[]);
     let state = world.solve();
     assert_eq!(
         state.tasks[&by_tag].workers[&Worker::Tag(tag)],
@@ -692,7 +688,7 @@ fn tags_and_groups_pick_whoever_finishes_first() {
     world.plan_update(PlanUpdate::UserGroup(Crud::Add(
         plinko::planner::resources::user::NewPlanUserGroup { id: group },
     )));
-    let by_group = world.task(1, &[(Worker::UserGroup(group), 8)], &[start()]);
+    let by_group = world.task(1, &[(Worker::UserGroup(group), 8)], &[]);
     let state = world.solve();
     let picked = state.tasks[&by_group].workers[&Worker::UserGroup(group)];
     assert_eq!(picked, Assignee::User(carol));
@@ -704,7 +700,7 @@ fn tags_and_groups_pick_whoever_finishes_first() {
 fn recorded_workers_replace_the_named_user() {
     let mut world = World::new();
     let (alice, bob) = (world.user(), world.user());
-    let task = world.task(1, &[(user(alice), 8)], &[start()]);
+    let task = world.task(1, &[(user(alice), 8)], &[]);
     world.patch(task, |p| {
         p.actual_workers = Some(HashMap::from([(user(alice), Assignee::User(bob))]));
     });
@@ -724,7 +720,7 @@ fn a_task_that_depends_on_nothing_starts_with_the_plan() {
     let mut world = World::new();
     let (alice, bob) = (world.user(), world.user());
     let free = world.task(1, &[(user(alice), 8)], &[]);
-    let anchored = world.task(1, &[(user(bob), 8)], &[start()]);
+    let anchored = world.task(1, &[(user(bob), 8)], &[]);
     let state = world.solve();
     assert_eq!(span(&state, free).0, span(&state, anchored).0);
 }
@@ -738,16 +734,66 @@ fn what_cannot_be_scheduled_says_why() {
     let nobody = world.tag(&[]);
     // bob never works
     world.weekly_hours(bob, [0; 7]);
-    let no_one = world.task(1, &[(Worker::Tag(nobody), 8)], &[start()]);
-    let no_time = world.task(1, &[(user(bob), 8)], &[start()]);
+    let no_one = world.task(1, &[(Worker::Tag(nobody), 8)], &[]);
+    let no_time = world.task(1, &[(user(bob), 8)], &[]);
     let behind = world.task(1, &[(user(alice), 8)], &[after(node(no_one))]);
-    let fine = world.task(1, &[(user(alice), 8)], &[start(), after(node(no_one))]);
+    let first = world.task(1, &[(user(alice), 8)], &[]);
+    let fine = world.task(
+        1,
+        &[(user(alice), 8)],
+        &[after(node(no_one)), after(node(first))],
+    );
     let state = world.solve();
     let reason = |task| state.unscheduled[&node(task)];
     assert_eq!(reason(no_one), UnscheduledReason::NoEligibleWorkers);
     assert_eq!(reason(no_time), UnscheduledReason::NoCapacity);
+    // waiting for the plan to start is not enough when all it depends on is unscheduled
     assert_eq!(reason(behind), UnscheduledReason::DependsOnUnscheduled);
-    assert_eq!(span(&state, fine), (d(1), d(2)));
+    // with something it depends on scheduled, it goes after that
+    assert_eq!(span(&state, fine), (d(2), d(3)));
+}
+// }}}
+
+// what_is_in_a_group_waits_for_the_group_whatever_else_it_depends_on {{{
+#[test]
+fn what_is_in_a_group_waits_for_the_group_whatever_else_it_depends_on() {
+    let mut world = World::new();
+    let early = world.task(1, &[], &[]);
+    let late = world.task(5, &[], &[]);
+    let group = world.group(&[after(node(late))]);
+    // it depends only on the early task, but its group does not start until the late one ends
+    let member = world.task_in(Parent::Node(group), 1, &[], &[after(node(early))]);
+    let hollow = world.group(&[]);
+    let nobody = world.tag(&[]);
+    let stuck = world.task(1, &[(Worker::Tag(nobody), 8)], &[]);
+    let inside = world.task_in(Parent::Node(hollow), 1, &[], &[after(node(stuck))]);
+    let state = world.solve();
+    assert_eq!(span(&state, early), (d(1), d(2)));
+    assert_eq!(span(&state, member), (d(8), d(9)));
+    // its group having started does not schedule what depends on nothing that is scheduled
+    let reason = state.unscheduled[&node(inside)];
+    assert_eq!(reason, UnscheduledReason::DependsOnUnscheduled);
+}
+// }}}
+
+// a_wait_after_finished_work_starts_where_that_ended {{{
+#[test]
+fn a_wait_after_finished_work_starts_where_that_ended() {
+    let mut world = World::new();
+    let alice = world.user();
+    let done = world.task(1, &[(user(alice), 8)], &[]);
+    let wait = world.delay(10, &[after(node(done))]);
+    let day = |n| NaiveDate::from_ymd_opt(2023, 12, n).unwrap();
+    let state = PersistentState {
+        status: Status::Completed,
+        actual_start_date: Some(day(20)),
+        actual_end_date: Some(day(20)),
+    };
+    world.patch(done, |p| p.persistent_state = Some(state));
+    let state = world.solve();
+    // ten days from the day after it was done, not from today
+    let range = state.plan_delays[&wait].date_range;
+    assert_eq!((range.start(), range.end()), (day(21), day(31)));
 }
 // }}}
 
@@ -777,9 +823,9 @@ fn affinities_limit_the_days_worked() {
     };
     let late_week = affinity(&mut world, [false, false, false, true, true, false, false]);
     let never = affinity(&mut world, [false; 7]);
-    let limited = world.task(2, &[(user(alice), 8)], &[start()]);
+    let limited = world.task(2, &[(user(alice), 8)], &[]);
     world.patch(limited, |p| p.affinities = Some([late_week].into()));
-    let impossible = world.task(1, &[(user(alice), 8)], &[start()]);
+    let impossible = world.task(1, &[(user(alice), 8)], &[]);
     world.patch(impossible, |p| p.affinities = Some([never].into()));
     let state = world.solve();
     assert_eq!(only_days(&state, limited, alice), [4, 5]);
@@ -795,9 +841,9 @@ fn affinities_limit_the_days_worked() {
 fn groups_cover_their_members_and_start_them_together() {
     let mut world = World::new();
     let alice = world.user();
-    let group = world.group(&[start()]);
+    let group = world.group(&[]);
     let parent = Parent::Node(group);
-    let wait = world.delay_in(parent, 2, &[start()]);
+    let wait = world.delay_in(parent, 2, &[]);
     let one = world.task_in(
         parent,
         2,
@@ -821,16 +867,11 @@ fn groups_cover_their_members_and_start_them_together() {
 #[test]
 fn empty_groups_last_three_calendar_days_and_groups_of_unscheduled_members_are_unscheduled() {
     let mut world = World::new();
-    let empty = world.group(&[start()]);
+    let empty = world.group(&[]);
     let after_empty = world.task(1, &[], &[after(PlanNode::TaskGroup(empty))]);
-    let hollow = world.group(&[start()]);
+    let hollow = world.group(&[]);
     let nobody = world.tag(&[]);
-    world.task_in(
-        Parent::Node(hollow),
-        1,
-        &[(Worker::Tag(nobody), 8)],
-        &[start()],
-    );
+    world.task_in(Parent::Node(hollow), 1, &[(Worker::Tag(nobody), 8)], &[]);
     let state = world.solve();
     // three calendar days from the Sunday before, and the task after it works that Wednesday
     assert_eq!(state.task_groups[&empty].date_range.end(), d(3));
@@ -844,7 +885,7 @@ fn empty_groups_last_three_calendar_days_and_groups_of_unscheduled_members_are_u
 #[test]
 fn buffers_hold_back_what_follows_and_shrink_for_hard_dates() {
     let mut world = World::new();
-    let first = world.task(1, &[], &[start()]);
+    let first = world.task(1, &[], &[]);
     let buffer = world.buffer(3, &[after(node(first))]);
     let next = world.task(1, &[], &[after(PlanNode::PlanBuffer(buffer))]);
     let state = world.solve();
@@ -868,7 +909,7 @@ fn buffers_hold_back_what_follows_and_shrink_for_hard_dates() {
 #[test]
 fn delays_hold_back_what_follows_by_calendar_days() {
     let mut world = World::new();
-    let first = world.task(1, &[], &[start()]);
+    let first = world.task(1, &[], &[]);
     let delay = world.delay(3, &[after(node(first))]);
     let next = world.task(1, &[], &[after(PlanNode::PlanDelay(delay))]);
     let state = world.solve();
@@ -895,9 +936,9 @@ fn delays_hold_back_what_follows_by_calendar_days() {
 fn compaction_fills_room_left_by_other_tasks() {
     let mut world = World::new();
     let alice = world.user();
-    let blocker = world.task(2, &[(user(alice), 8)], &[start()]);
+    let blocker = world.task(2, &[(user(alice), 8)], &[]);
     let tail = world.task(1, &[(user(alice), 8)], &[after(node(blocker))]);
-    let gapped = world.task(2, &[(user(alice), 8)], &[start()]);
+    let gapped = world.task(2, &[(user(alice), 8)], &[]);
     let state = world.solve();
     for task in [blocker, tail, gapped] {
         assert!(span(&state, task).1 <= d(8));
@@ -917,7 +958,7 @@ fn build(world: &mut World) -> PlanVolatileState {
         } else {
             user(people[(i % 3) as usize])
         };
-        let on = previous.map_or(vec![start()], |p| vec![after(node(p))]);
+        let on = previous.map_or(vec![], |p| vec![after(node(p))]);
         let task = world.task(1 + i % 3, &[(who, 4 + (i % 2) as u8 * 4)], &on);
         if i % 4 != 3 {
             previous = Some(task);
@@ -945,14 +986,14 @@ fn a_snapshot_of_a_tenant_schedules_the_same() {
     let (alice, bob) = (world.user(), world.user());
     world.weekly_hours(bob, [4, 4, 4, 4, 4, 0, 0]);
     let tag = world.tag(&[alice, bob]);
-    let first = world.task(2, &[(Worker::Tag(tag), 4), (user(alice), 4)], &[start()]);
+    let first = world.task(2, &[(Worker::Tag(tag), 4), (user(alice), 4)], &[]);
     world.patch(first, |p| {
         p.time_constraint = Some(TimeConstraint::Latest(d(9)).into())
     });
     let marker = world.milestone(&[after(node(first))]);
     let buffer = world.buffer(2, &[after(PlanNode::Milestone(marker))]);
     let group = world.group(&[after(PlanNode::PlanBuffer(buffer))]);
-    world.task_in(Parent::Node(group), 1, &[(user(bob), 2)], &[start()]);
+    world.task_in(Parent::Node(group), 1, &[(user(bob), 2)], &[]);
     world.target(PlanNode::Milestone(marker));
     let expected = world.solve();
 
@@ -972,7 +1013,7 @@ fn what_hangs_from_a_start_milestone_in_the_future_begins_on_that_day() {
     let mut world = World::new();
     let alice = world.user();
     // a plan that starts on a Wednesday, well after today, is a milestone not before then
-    let begin = world.milestone(&[start()]);
+    let begin = world.milestone(&[]);
     world.plan_update(PlanUpdate::Milestone(Crud::Update(MilestonePatch {
         id: begin,
         name: None,
@@ -995,7 +1036,7 @@ fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_i
     let mut world = World::new();
     let alice = world.user();
     let tests: Vec<Uuid> = (0..4)
-        .map(|_| world.task(5, &[(user(alice), 8)], &[start()]))
+        .map(|_| world.task(5, &[(user(alice), 8)], &[]))
         .collect();
     // it starts on the 15th as the third of four, but may start no later than the 8th
     world.patch(tests[2], |p| {
@@ -1020,7 +1061,7 @@ fn a_task_with_a_latest_date_is_ordered_ahead_of_its_equals_even_when_the_date_i
 fn a_date_the_work_before_it_cannot_meet_is_not_counted_as_avoidable() {
     let mut world = World::new();
     let alice = world.user();
-    let a = world.task(5, &[(user(alice), 8)], &[start()]);
+    let a = world.task(5, &[(user(alice), 8)], &[]);
     let b = world.task(5, &[(user(alice), 8)], &[after(node(a))]);
     let c = world.task(1, &[(user(alice), 8)], &[after(node(b))]);
     world.patch(c, |p| {
@@ -1059,15 +1100,15 @@ fn constrain_group(world: &mut World, group: Uuid, constraint: NodeConstraint) {
 fn a_date_can_be_for_the_last_day_of_a_task() {
     let mut world = World::new();
     let (alice, bob, carol) = (world.user(), world.user(), world.user());
-    let held = world.task(3, &[(user(alice), 8)], &[start()]);
+    let held = world.task(3, &[(user(alice), 8)], &[]);
     world.patch(held, |p| {
         p.time_constraint = Some(on_end(TimeConstraint::Earliest(d(10))))
     });
-    let exact = world.task(2, &[(user(bob), 8)], &[start()]);
+    let exact = world.task(2, &[(user(bob), 8)], &[]);
     world.patch(exact, |p| {
         p.time_constraint = Some(on_end(TimeConstraint::Fixed(d(5))))
     });
-    let late = world.task(3, &[(user(carol), 8)], &[start()]);
+    let late = world.task(3, &[(user(carol), 8)], &[]);
     world.patch(late, |p| {
         p.time_constraint = Some(on_end(TimeConstraint::Latest(d(2))))
     });
@@ -1089,20 +1130,20 @@ fn a_date_can_be_for_the_last_day_of_a_task() {
 fn a_group_can_have_a_date_for_its_start_or_its_end() {
     let mut world = World::new();
     let alice = world.user();
-    let later = world.group(&[start()]);
+    let later = world.group(&[]);
     constrain_group(&mut world, later, TimeConstraint::Earliest(d(10)).into());
-    let inside = world.task_in(Parent::Node(later), 1, &[(user(alice), 8)], &[start()]);
+    let inside = world.task_in(Parent::Node(later), 1, &[(user(alice), 8)], &[]);
     // the day is for the group, not for what else starts with the plan
-    let beside = world.task(1, &[(user(alice), 8)], &[start()]);
+    let beside = world.task(1, &[(user(alice), 8)], &[]);
 
-    let held = world.group(&[start()]);
+    let held = world.group(&[]);
     constrain_group(&mut world, held, on_end(TimeConstraint::Earliest(d(12))));
-    let first = world.task_in(Parent::Node(held), 1, &[], &[start()]);
+    let first = world.task_in(Parent::Node(held), 1, &[], &[]);
     let last = world.task_in(Parent::Node(held), 1, &[], &[after(node(first))]);
 
-    let tight = world.group(&[start()]);
+    let tight = world.group(&[]);
     constrain_group(&mut world, tight, on_end(TimeConstraint::Latest(d(1))));
-    let one = world.task_in(Parent::Node(tight), 1, &[], &[start()]);
+    let one = world.task_in(Parent::Node(tight), 1, &[], &[]);
     world.task_in(Parent::Node(tight), 1, &[], &[after(node(one))]);
 
     let state = world.solve();
@@ -1122,7 +1163,7 @@ fn a_group_can_have_a_date_for_its_start_or_its_end() {
 #[test]
 fn set_buffers_keep_their_end_and_shrink_to_nothing_but_never_below() {
     let mut world = World::new();
-    let first = world.task(1, &[], &[start()]);
+    let first = world.task(1, &[], &[]);
     let buffer = world.buffer(5, &[after(node(first))]);
     // set on Monday the 1st, so it ends after five working days whenever it starts
     world.plan_update(PlanUpdate::PlanBuffer(Crud::Update(PlanBufferPatch {

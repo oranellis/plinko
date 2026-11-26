@@ -8,7 +8,7 @@ use plinko::{
     availability::workload::Workload,
     common::{crud::Crud, short_id::ShortId},
     planner::items::{
-        dependency::{Dependency, PlanNode},
+        dependency::PlanNode,
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
@@ -58,7 +58,7 @@ fn task_patch(id: Uuid) -> TaskPatch {
 // types {{{
 /// Sets up a new item once it exists: what it depends on to begin with, and for a task who does it
 type Anchor =
-    fn(Uuid, ShortId, &crate::sync::Sync, Option<Dependency>, Box<dyn FnOnce(Option<Created>)>);
+    fn(Uuid, ShortId, &crate::sync::Sync, Option<PlanNode>, Box<dyn FnOnce(Option<Created>)>);
 
 #[derive(Clone, Copy)]
 enum Kind {
@@ -394,7 +394,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 .scheduler_data()
                 .default_start()
                 .filter(|_| parent == Parent::Plan)?;
-            Some(Dependency::Node(node))
+            Some(node)
         });
         let current = tab.get_untracked();
         sync.plan_then(plan, update, move |created| {

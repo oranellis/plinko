@@ -8,7 +8,7 @@ use crate::{
         error::PlinkoResult,
     },
     helpers::functions::check_id_match,
-    planner::items::{dependency::Dependency, parent::Parent},
+    planner::items::{dependency::PlanNode, parent::Parent},
     planner::resources::data_block::DataBlocks,
     traits::patch::Patchable,
 };
@@ -28,7 +28,7 @@ pub const EMPTY_DAYS: i64 = 3;
 pub struct TaskGroup {
     id: Uuid,
     name: String,
-    dependencies: Vec<Dependency>,
+    dependencies: Vec<PlanNode>,
     parent: Parent,
     /// A date for the first day of its first member or the last day of its last
     time_constraint: NodeConstraint,
@@ -46,7 +46,7 @@ impl TaskGroup {
         &self.name
     }
 
-    pub fn dependencies(&self) -> &Vec<Dependency> {
+    pub fn dependencies(&self) -> &Vec<PlanNode> {
         &self.dependencies
     }
 
@@ -96,7 +96,7 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
             self.name = n;
         }
         if let Some(d) = patch.dependencies {
-            self.dependencies = Dependency::merged(d);
+            self.dependencies = PlanNode::merged(d);
         }
         if let Some(p) = patch.parent {
             self.parent = p;
@@ -121,7 +121,7 @@ pub struct NewTaskGroup {
 pub struct TaskGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
-    pub dependencies: Option<Vec<Dependency>>,
+    pub dependencies: Option<Vec<PlanNode>>,
     pub parent: Option<Parent>,
     pub time_constraint: Option<NodeConstraint>,
 }

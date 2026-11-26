@@ -218,7 +218,7 @@ fn flips(ctx: &Context, trial: &Trial) -> Vec<Flip> {
                 let vertex = net.vertex(v);
                 let at = pass.time[v.0 as usize];
                 let held = |u: &&VertexId| pass.time[u.0 as usize] == at;
-                stack.extend(vertex.after.iter().filter(held).map(|u| Late::Vertex(*u)));
+                stack.extend(vertex.before().filter(|u| held(&u)).map(Late::Vertex));
                 let ends = |a: &&ArcId| pass.placed[a.0 as usize].as_ref().map(|p| p.end) == at;
                 stack.extend(vertex.incoming.iter().filter(ends).map(|a| Late::Arc(*a)));
             }

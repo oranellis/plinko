@@ -5,10 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     planner::items::{
-        dependency::{Dependency, PlanNode},
-        milestone::DerivedStatus,
-        parent::Parent,
-        task::Status,
+        dependency::PlanNode, milestone::DerivedStatus, parent::Parent, task::Status,
     },
     planner::plan::Plan,
 };
@@ -48,7 +45,7 @@ struct Derive<'a> {
 
 // impl Derive {{{
 impl Derive<'_> {
-    fn deps_of(&self, node: PlanNode) -> (&[Dependency], Parent) {
+    fn deps_of(&self, node: PlanNode) -> (&[PlanNode], Parent) {
         let plan = self.plan;
         match node {
             PlanNode::Task(id) => (plan.tasks()[&id].dependencies(), plan.tasks()[&id].parent()),
@@ -92,8 +89,9 @@ impl Derive<'_> {
             .collect()
     }
 
-    /// What `ParentStart` stands for: the dependencies of the group around the item, if any
-    fn parent_start(&self, parent: Parent) -> Option<(Vec<Dependency>, Parent)> {
+    /// What the start of an item's parent waits for: the dependencies of the group around it,
+    /// if it is in one
+    fn parent_start(&self, parent: Parent) -> Option<(Vec<PlanNode>, Parent)> {
         let Parent::Node(group) = parent else {
             return None;
         };
@@ -101,24 +99,18 @@ impl Derive<'_> {
         Some((own.to_vec(), grandparent))
     }
 
-    fn all_done(&mut self, deps: &[Dependency], parent: Parent) -> bool {
-        deps.iter().all(|d| match *d {
-            Dependency::Node(n) => self.is_done(n),
-            Dependency::ParentStart => match self.parent_start(parent) {
-                Some((own, grandparent)) => self.all_done(&own, grandparent),
-                None => true,
-            },
-        })
+    /// Whether everything an item waits for is done: what it depends on, and what its parent's
+    /// start waits for
+    fn all_done(&mut self, deps: &[PlanNode], parent: Parent) -> bool {
+        let before = self.parent_start(parent);
+        deps.iter().all(|n| self.is_done(*n))
+            && before.is_none_or(|(own, grandparent)| self.all_done(&own, grandparent))
     }
 
-    fn any_active(&mut self, deps: &[Dependency], parent: Parent) -> bool {
-        deps.iter().any(|d| match *d {
-            Dependency::Node(n) => self.is_active(n),
-            Dependency::ParentStart => match self.parent_start(parent) {
-                Some((own, grandparent)) => self.any_active(&own, grandparent),
-                None => false,
-            },
-        })
+    fn any_active(&mut self, deps: &[PlanNode], parent: Parent) -> bool {
+        let before = self.parent_start(parent);
+        deps.iter().any(|n| self.is_active(*n))
+            || before.is_some_and(|(own, grandparent)| self.any_active(&own, grandparent))
     }
 
     fn is_done(&mut self, node: PlanNode) -> bool {

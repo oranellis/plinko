@@ -7,13 +7,8 @@ use uuid::Uuid;
 use crate::{
     common::crud::Crud,
     planner::items::{
-        dependency::{Dependency, PlanNode},
-        milestone::Milestone,
-        parent::Parent,
-        plan_buffer::PlanBuffer,
-        plan_delay::PlanDelay,
-        task::Task,
-        task_group::TaskGroup,
+        dependency::PlanNode, milestone::Milestone, parent::Parent, plan_buffer::PlanBuffer,
+        plan_delay::PlanDelay, task::Task, task_group::TaskGroup,
     },
     planner::{
         graph,
@@ -25,7 +20,7 @@ use crate::{
 // }}}
 
 // helpers {{{
-fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<Dependency>) {
+fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<PlanNode>) {
     T::entities(plan)
         .get(&id)
         .map_or((Parent::Plan, Vec::new()), |item| {
@@ -34,7 +29,7 @@ fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<Dependency>) {
 }
 
 /// Where an item is, and what it depends on
-pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<Dependency>) {
+pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<PlanNode>) {
     match node {
         PlanNode::Task(id) => placed::<Task>(plan, id),
         PlanNode::Milestone(id) => placed::<Milestone>(plan, id),
@@ -77,54 +72,37 @@ impl Plan {
         };
         let mut updates = Vec::new();
 
-        // the members take the group's dependencies as the start they had in it
+        // the members waited for the group's start, so they wait for what it waited for, unless
+        // they wait for another member which does
         for member in &members {
             let (_, own) = placement(self, *member);
-            let start: Vec<Dependency> = if deps.is_empty() {
-                vec![Dependency::default()]
-            } else {
-                deps.clone()
+            let moved = match own.iter().any(|d| members.contains(d)) {
+                true => own,
+                false => PlanNode::merged([own, deps.clone()].concat()),
             };
-            let moved = own
-                .into_iter()
-                .flat_map(|d| match d {
-                    Dependency::ParentStart => start.clone(),
-                    Dependency::Node(_) => vec![d],
-                })
-                .collect();
-            updates.push(PlanUpdate::rewire(
-                *member,
-                Some(parent),
-                Some(Dependency::merged(moved)),
-            ));
+            updates.push(PlanUpdate::rewire(*member, Some(parent), Some(moved)));
         }
 
         // what waited on it waits on what it stood for
-        let mine = Dependency::Node(node);
+        let mine = node;
         for other in nodes.iter().filter(|n| **n != node) {
-            let (other_parent, own) = placement(self, *other);
+            let (_, own) = placement(self, *other);
             if !own.contains(&mine) {
                 continue;
             }
-            let replaced: Vec<Dependency> = own
+            let replaced: Vec<PlanNode> = own
                 .into_iter()
                 .flat_map(|d| {
                     if d != mine {
                         return vec![d];
                     }
-                    if !members.is_empty() {
-                        return members.iter().map(|m| Dependency::Node(*m)).collect();
+                    match members.is_empty() {
+                        true => deps.clone(),
+                        false => members.clone(),
                     }
-                    deps.iter()
-                        .filter(|s| **s != Dependency::ParentStart || other_parent == parent)
-                        .cloned()
-                        .collect()
                 })
                 .collect();
-            let replaced = match Dependency::merged(replaced) {
-                kept if kept.is_empty() => vec![Dependency::default()],
-                kept => kept,
-            };
+            let replaced = PlanNode::merged(replaced);
             updates.push(PlanUpdate::rewire(*other, None, Some(replaced)));
         }
 
