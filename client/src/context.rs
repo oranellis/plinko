@@ -50,18 +50,26 @@ fn position(status: Status) -> usize {
 // }}}
 
 // ContextBar {{{
-/// The bar, put where `left` and `top` say on the chart
+/// The bar, put where `at` says on the chart, or slid to the middle of its bottom when `docked`
 #[component]
 pub fn ContextBar(
     plan: ShortId,
     node: PlanNode,
-    left: f64,
-    top: f64,
+    at: Memo<Option<(f64, f64)>>,
+    docked: Memo<bool>,
     on_edit: Callback<()>,
     on_data: Callback<()>,
 ) -> impl IntoView {
     view! {
-        <div class="contextbar" style=format!("left:{left}px;top:{top}px") on:click=|ev| ev.stop_propagation()>
+        <div
+            class="contextbar"
+            class:docked=move || docked.get()
+            style=move || match (docked.get(), at.get()) {
+                (false, Some((left, top))) => format!("left:{left}px;top:{top}px"),
+                _ => String::new(),
+            }
+            on:click=|ev| ev.stop_propagation()
+        >
             {match node {
                 PlanNode::Task(id) => view! { <StatusSwitch plan=plan task=id /> }.into_any(),
                 PlanNode::PlanBuffer(id) => view! { <SetStart plan=plan buffer=id /> }.into_any(),

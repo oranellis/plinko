@@ -202,6 +202,9 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         adding.set(None);
         navigate(Route::Plan(plan, tab, open))
     };
+    // while an item of the plan is edited its bar is out of the way at the bottom of the chart
+    let editing_one = Memo::new(move |_| draft.with(|d| d.as_ref().is_some_and(|d| !d.new)));
+    let bar_shown = Memo::new(move |_| editing_one.get() || bar_at.with(Option::is_some));
     let guard = Guard::new();
     // a click while a handle of the card is lit is the card's: it links, unlinks or places the
     // item being edited, and is nothing else. Gives whether it was.
@@ -428,13 +431,14 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         PlanTab::Settings => view! { <PlanSettings plan=plan /> }.into_any(),
                     }}
                     {move || {
-                        let (plan_node, at) = (chosen.get()?, bar_at.get()?);
-                        (tab.get() == PlanTab::Gantt).then(|| view! {
+                        // only made again for another item, so it slides when it is docked
+                        let plan_node = chosen.get()?;
+                        (tab.get() == PlanTab::Gantt && bar_shown.get()).then(|| view! {
                             <ContextBar
                                 plan=plan
                                 node=plan_node
-                                left=at.0
-                                top=at.1
+                                at=bar_at
+                                docked=editing_one
                                 on_edit=Callback::new(move |()| go(tab.get_untracked(), Some(plan_node.id())))
                                 on_data=Callback::new(move |()| data_of.set(Some(plan_node)))
                             />
