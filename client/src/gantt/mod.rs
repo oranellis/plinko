@@ -53,9 +53,11 @@ pub struct Staged {
     pub days: Option<String>,
     /// The days its left and right edges are moved by, which a ghost of it shows
     pub edges: (i32, i32),
-    /// The day it is held to, and whether it can be held to one, which gives it flags to drag
+    /// The day it is held to, whether it can be held to one, which gives it timers to click, and
+    /// whether a click on another day moves the day
     pub pin: Option<Pin>,
     pub pins: bool,
+    pub daying: bool,
     /// The dot of the item that clicks on others answer to: the right one, or the left
     pub pick: Option<bool>,
 }
@@ -340,8 +342,9 @@ pub fn Gantt(
     let staged_of = move |node: PlanNode| {
         staged.and_then(|s| s.with_untracked(|s| s.clone().filter(|s| s.item == Some(node))))
     };
-    // the handles of the item the pointer is near, with flags for the day the one being edited
-    // is held to: on its pin, or over the edge they hold
+    // the handles of the item the pointer is near. The one being edited has a timer under each
+    // end that can be held to a day, a handle on the held day in the header, and under that
+    // while it is picked the ways to hold it.
     let handles_of = move |node: PlanNode| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
         let (Some(kind), Some(rect)) = (kind, staged_rect(node)) else {
@@ -355,15 +358,29 @@ pub fn Gantt(
                 _ => &[false, true],
             };
             for end in ends {
-                let home = rect.x + if *end { rect.w } else { 0.0 };
-                let on_pin = staged
-                    .pin
-                    .filter(|p| p.end == *end)
-                    .and_then(|p| pin_view(node, p, false));
-                let x = on_pin.map_or(home, |p| p.x);
+                let x = rect.x + if *end { rect.w } else { 0.0 };
+                let under = rect.y + rect.h + 11.0;
+                grips.list.push((Handle::Timer { end: *end }, (x, under)));
+            }
+            if let Some(view) = staged.pin.and_then(|p| pin_view(node, p, false)) {
+                let x = view.cell.x + view.cell.w / 2.0;
                 grips
                     .list
-                    .push((Handle::Flag { end: *end }, (x, rect.y - 9.0)));
+                    .push((Handle::Day, (x, layout::HEADER_HEIGHT - 7.0)));
+                let ways = [
+                    Some(Held::Earliest),
+                    Some(Held::Fixed),
+                    Some(Held::Latest),
+                    None,
+                ];
+                for (i, way) in ways.into_iter().enumerate().filter(|_| staged.daying) {
+                    // in a row under the day, kept on the chart at its edges
+                    let (reach, wide) = (shift::HOLD_BUTTON * 2.0, size.get_untracked().0);
+                    let x = x.clamp(reach, (wide - reach).max(reach));
+                    let along = (i as f64 - 1.5) * shift::HOLD_BUTTON;
+                    let under = layout::HEADER_HEIGHT + shift::HOLD_BUTTON / 2.0 + 4.0;
+                    grips.list.push((Handle::Hold(way), (x + along, under)));
+                }
             }
         }
         grips
@@ -557,99 +574,105 @@ pub fn Gantt(
                     .filter(|m| *m != own)
                     .and_then(rect_of)
             };
-            let view = dragged.map(|d| match d {
-                Drag::Link { node, right } => DragView::Link {
-                    from: handles
-                        .list
-                        .iter()
-                        .find(|(h, _)| *h == Handle::Link { right })
-                        .map_or(at, |(_, p)| *p),
-                    over: target(node),
-                    right,
-                },
-                Drag::Move(node) => {
-                    let (from_x, from_y) = grabbed_at.get_value();
-                    let name = scene.with_untracked(|s| {
-                        s.arrangement
-                            .placed
+            let view = dragged.and_then(|d| {
+                Some(match d {
+                    Drag::Press { .. } => return None,
+                    Drag::Link { node, right } => DragView::Link {
+                        from: handles
+                            .list
                             .iter()
-                            .find(|p| p.mark == node)
-                            .map(|p| p.name.clone())
-                            .unwrap_or_default()
-                    });
-                    let sideways = editing.dated.run(node) && target(node).is_none();
-                    let by = if sideways {
-                        let days = day_shift(viewport, at.0, grabbed_day.get_value());
-                        (
-                            f64::from(days)
-                                * viewport.get_untracked().unwrap_or_default().day_width,
-                            0.0,
-                        )
-                    } else {
-                        (at.0 - from_x, at.1 - from_y)
-                    };
-                    DragView::Move {
+                            .find(|(h, _)| *h == Handle::Link { right })
+                            .map_or(at, |(_, p)| *p),
                         over: target(node),
-                        origin: rect_of(node).unwrap_or(Rect {
+                        right,
+                    },
+                    Drag::Move(node) => {
+                        let (from_x, from_y) = grabbed_at.get_value();
+                        let name = scene.with_untracked(|s| {
+                            s.arrangement
+                                .placed
+                                .iter()
+                                .find(|p| p.mark == node)
+                                .map(|p| p.name.clone())
+                                .unwrap_or_default()
+                        });
+                        let sideways = editing.dated.run(node) && target(node).is_none();
+                        let by = if sideways {
+                            let days = day_shift(viewport, at.0, grabbed_day.get_value());
+                            (
+                                f64::from(days)
+                                    * viewport.get_untracked().unwrap_or_default().day_width,
+                                0.0,
+                            )
+                        } else {
+                            (at.0 - from_x, at.1 - from_y)
+                        };
+                        DragView::Move {
+                            over: target(node),
+                            origin: rect_of(node).unwrap_or(Rect {
+                                x: at.0,
+                                y: at.1,
+                                w: 0.0,
+                                h: 0.0,
+                            }),
+                            by,
+                            name,
+                        }
+                    }
+                    Drag::Resize {
+                        node,
+                        last_day,
+                        duration,
+                    } => {
+                        let vp = viewport.get_untracked().unwrap_or_default();
+                        let (delta, new) = shift::resized(vp.day_at(at.0), last_day, duration);
+                        let origin = staged_rect(node).unwrap_or(Rect {
                             x: at.0,
                             y: at.1,
                             w: 0.0,
                             h: 0.0,
-                        }),
-                        by,
-                        name,
+                        });
+                        DragView::Resize {
+                            label: shift::resize_label(delta, new),
+                            origin,
+                            grown: Rect {
+                                w: (origin.w + f64::from(delta) * vp.day_width)
+                                    .max(layout::MIN_BAR_WIDTH),
+                                ..origin
+                            },
+                        }
                     }
-                }
-                Drag::Resize {
-                    node,
-                    last_day,
-                    duration,
-                } => {
-                    let vp = viewport.get_untracked().unwrap_or_default();
-                    let (delta, new) = shift::resized(vp.day_at(at.0), last_day, duration);
-                    let origin = staged_rect(node).unwrap_or(Rect {
-                        x: at.0,
-                        y: at.1,
-                        w: 0.0,
-                        h: 0.0,
-                    });
-                    DragView::Resize {
-                        label: shift::resize_label(delta, new),
-                        origin,
-                        grown: Rect {
-                            w: (origin.w + f64::from(delta) * vp.day_width)
-                                .max(layout::MIN_BAR_WIDTH),
-                            ..origin
-                        },
+                    Drag::Flag { node, end } => {
+                        match pin_view(node, flagged(node, end, at.0), false) {
+                            Some(pin) => DragView::Flag(pin),
+                            None => DragView::Link {
+                                from: at,
+                                over: None,
+                                right: end,
+                            },
+                        }
                     }
-                }
-                Drag::Flag { node, end } => match pin_view(node, flagged(node, end, at.0), false) {
-                    Some(pin) => DragView::Flag(pin),
-                    None => DragView::Link {
-                        from: at,
-                        over: None,
-                        right: end,
-                    },
-                },
-                Drag::Start { node, first_day } => {
-                    let vp = viewport.get_untracked().unwrap_or_default();
-                    let by = f64::from(day_shift(viewport, at.0, first_day as f64)) * vp.day_width;
-                    let origin = staged_rect(node).unwrap_or(Rect {
-                        x: at.0,
-                        y: at.1,
-                        w: 0.0,
-                        h: 0.0,
-                    });
-                    DragView::Resize {
-                        label: format!("{:+}", day_shift(viewport, at.0, first_day as f64)),
-                        origin,
-                        grown: Rect {
-                            x: origin.x + by.min(origin.w - layout::MIN_BAR_WIDTH),
-                            w: (origin.w - by).max(layout::MIN_BAR_WIDTH),
-                            ..origin
-                        },
+                    Drag::Start { node, first_day } => {
+                        let vp = viewport.get_untracked().unwrap_or_default();
+                        let by =
+                            f64::from(day_shift(viewport, at.0, first_day as f64)) * vp.day_width;
+                        let origin = staged_rect(node).unwrap_or(Rect {
+                            x: at.0,
+                            y: at.1,
+                            w: 0.0,
+                            h: 0.0,
+                        });
+                        DragView::Resize {
+                            label: format!("{:+}", day_shift(viewport, at.0, first_day as f64)),
+                            origin,
+                            grown: Rect {
+                                x: origin.x + by.min(origin.w - layout::MIN_BAR_WIDTH),
+                                w: (origin.w - by).max(layout::MIN_BAR_WIDTH),
+                                ..origin
+                            },
+                        }
                     }
-                }
+                })
             });
             shift::paint(
                 ctx,
@@ -659,6 +682,8 @@ pub fn Gantt(
                     drag: view,
                     note,
                     ghost,
+                    pin: staged.as_ref().and_then(|s| s.pin),
+                    daying: staged.as_ref().is_some_and(|s| s.daying),
                     picked: staged.as_ref().and_then(|s| s.pick),
                 },
             );
@@ -726,7 +751,11 @@ pub fn Gantt(
                 drag.set(Some(match handle {
                     Handle::Link { right } => Drag::Link { node, right },
                     Handle::Move => Drag::Move(node),
-                    Handle::Flag { end } => Drag::Flag { node, end },
+                    Handle::Day => Drag::Flag {
+                        node,
+                        end: staged_of(node).and_then(|s| s.pin).is_some_and(|p| p.end),
+                    },
+                    Handle::Timer { .. } | Handle::Hold(_) => Drag::Press { node, handle },
                     Handle::Start => {
                         let first = scene.with_untracked(|s| {
                             s.placed(node).map(|p| (p.span.0 - s.origin).num_days())
@@ -854,6 +883,14 @@ pub fn Gantt(
 
     // a tap on an item selects it, with shift on one linked to the selected item cuts the link
     let tap = move |x: f64, y: f64, shifted: bool| {
+        // with the held day of the item being edited picked, a click anywhere is on a day for it
+        let picking = pinned().and_then(staged_of).filter(|s| s.daying);
+        if let Some((node, pin)) = picking.and_then(|s| s.item.zip(s.pin)) {
+            editing
+                .constrain
+                .run((node, pin.end, flagged(node, pin.end, x).day));
+            return;
+        }
         if let Some((node, fold)) = hit(x, y) {
             let on_violation = hits.with_value(|h| h.violations().any(|(_, r)| r.contains(x, y)));
             let chosen = selected.get_untracked();
@@ -877,9 +914,19 @@ pub fn Gantt(
         if let Some(done) = drag.get_untracked() {
             drag.set(None);
             let (from_x, from_y) = grabbed_at.get_value();
+            if let Drag::Press { node, handle } = done {
+                match handle {
+                    _ if handles_of(node).at(x, y) != Some(handle) => {}
+                    Handle::Timer { end } => editing.timer.run((node, end)),
+                    Handle::Hold(way) => editing.hold.run((node, way)),
+                    _ => {}
+                }
+                return;
+            }
             if (from_x - x).hypot(from_y - y) < TAP_MOUSE {
                 match done {
                     Drag::Link { node, right } => editing.pick.run((node, right)),
+                    Drag::Flag { node, .. } => editing.daying.run(node),
                     _ => tap(x, y, ev.shift_key()),
                 }
                 return;
@@ -902,6 +949,7 @@ pub fn Gantt(
                         editing.moved.run((node, over));
                     }
                 }
+                Drag::Press { .. } => {}
                 Drag::Flag { node, end } => {
                     editing
                         .constrain

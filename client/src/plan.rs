@@ -478,6 +478,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                             days,
                                             edges: (d.moved.0, d.moved.1 + longer),
                                             pin: d.pin(),
+                                            daying: d.pick == Some(Pick::Day),
                                             pins: !d.new && !matches!(d.node, PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_)),
                                             pick: match d.pick {
                                                 Some(Pick::Before) => Some(false),

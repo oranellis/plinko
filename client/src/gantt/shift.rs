@@ -33,7 +33,9 @@ fn reach(handle: Handle) -> (f64, f64) {
     match handle {
         Handle::Move => (0.0, 0.0),
         Handle::Resize | Handle::Start => (9.0, 14.0),
-        Handle::Flag { .. } => (8.0, 8.0),
+        Handle::Timer { .. } => (9.0, 10.0),
+        Handle::Day => (11.0, 9.0),
+        Handle::Hold(_) => (HOLD_BUTTON / 2.0, HOLD_BUTTON / 2.0),
         Handle::Link { .. } => (12.0, 12.0),
     }
 }
@@ -43,6 +45,8 @@ fn direction(right: bool) -> &'static str {
 }
 // }}}
 // constants {{{
+/// How wide and high a button for how a day is held is, with the room around it
+pub const HOLD_BUTTON: f64 = 28.0;
 /// How near the edge of the chart a drag starts scrolling it
 pub const EDGE: f64 = 36.0;
 const COLOUR: &str = "#1e88e5";
@@ -59,8 +63,12 @@ pub enum Handle {
     Resize,
     /// Changes the day it really started
     Start,
-    /// Holds its first day to the day it is dropped on, or its last day for `end`
-    Flag { end: bool },
+    /// A click holds its first day to a day or lets it go, or its last day for `end`
+    Timer { end: bool },
+    /// The day it is held to: dragged to another, or clicked to pick one and how it is held
+    Day,
+    /// A click holds it this way, or for `None` lets it go
+    Hold(Option<Held>),
 }
 
 // Handle supporting types {{{
@@ -83,9 +91,15 @@ pub enum Drag {
         /// The day offset of the first day it ran
         first_day: i64,
     },
+    /// The held day, taken to another
     Flag {
         node: PlanNode,
         end: bool,
+    },
+    /// A handle that is only clicked
+    Press {
+        node: PlanNode,
+        handle: Handle,
     },
 }
 
@@ -134,6 +148,12 @@ pub struct Editing {
     pub pin: Callback<PlanNode, Option<Pin>>,
     /// `(node, end, day)`: holds the first day of the item to a day, or its last for `end`
     pub constrain: Callback<(PlanNode, bool, NaiveDate)>,
+    /// `(node, end)`: a click on the timer by an end of the item
+    pub timer: Callback<(PlanNode, bool)>,
+    /// How the item is held to its day, or with `None` that it no longer is
+    pub hold: Callback<(PlanNode, Option<Held>)>,
+    /// A click on the held day, after which a click on another day moves it there
+    pub daying: Callback<PlanNode>,
     /// Moves the day the item really started by `days`
     pub restart: Callback<(PlanNode, i32)>,
     /// Gives the item `days` more days, or fewer when negative
@@ -164,6 +184,9 @@ pub struct Overlay {
     pub ghost: Option<Rect>,
     /// The dot that clicks on items answer to: the right one, or the left
     pub picked: Option<bool>,
+    /// The day the item is held to, and whether a click on another day moves it
+    pub pin: Option<Pin>,
+    pub daying: bool,
 }
 
 pub enum DragView {
@@ -297,7 +320,15 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
         ctx.begin_path();
         match handle {
             Handle::Resize | Handle::Start => slot(ctx, *x, *y, lit),
-            Handle::Flag { end } => flag(ctx, *x, *y, *end, lit),
+            Handle::Timer { end } => {
+                let active = overlay.pin.is_some_and(|p| p.end == *end);
+                timer(ctx, *x, *y, active, lit);
+            }
+            Handle::Day => day_handle(ctx, *x, *y, lit || overlay.daying),
+            Handle::Hold(held) => {
+                let active = held.is_some() && overlay.pin.map(|p| p.held) == *held;
+                hold_button(ctx, *x, *y, *held, active, lit);
+            }
             Handle::Move => grip(ctx, *x, *y, lit),
             Handle::Link { right } => {
                 // a dot is grey until it is taken, then it takes the colour of its direction
@@ -367,25 +398,40 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
 // }}}
 
 // helpers {{{
-/// A flag to drag onto a day: a pole with a pennant that points into the item
-fn flag(ctx: &Pen, x: f64, y: f64, end: bool, lit: bool) {
-    let out = if end { -8.0 } else { 8.0 };
-    ctx.set_stroke_style_str(if lit { PIN } else { LIGHT });
-    ctx.set_fill_style_str(if lit { PIN } else { DARK });
-    ctx.set_line_width(1.5);
+/// A line with an open head, from `from` to `to` at the height `y`
+fn arrow(ctx: &Pen, from: f64, to: f64, y: f64, head: f64) {
+    let back = if to > from { -head } else { head };
     ctx.begin_path();
-    ctx.move_to(x, y + 6.0);
-    ctx.line_to(x, y - 6.0);
-    ctx.line_to(x + out, y - 2.5);
-    ctx.line_to(x, y + 1.0);
-    ctx.fill();
+    ctx.move_to(from, y);
+    ctx.line_to(to, y);
+    ctx.move_to(to + back, y - head * 0.85);
+    ctx.line_to(to, y);
+    ctx.line_to(to + back, y + head * 0.85);
     ctx.stroke();
 }
 
+/// The edge of a held day as a tick, with arrows that say which way the item may still go: on
+/// from it for an earliest day, back from it for a latest, and both at it for a fixed one
+fn held_sign(ctx: &Pen, x: f64, y: f64, held: Held, scale: f64) {
+    let (tick, near, far, head) = (7.0 * scale, 6.0 * scale, 30.0 * scale, 7.0 * scale);
+    ctx.set_line_cap("round");
+    ctx.set_line_join("round");
+    ctx.begin_path();
+    ctx.move_to(x, y - tick);
+    ctx.line_to(x, y + tick);
+    ctx.stroke();
+    match held {
+        Held::Earliest => arrow(ctx, x + near, x + far, y, head),
+        Held::Latest => arrow(ctx, x - near, x - far, y, head),
+        Held::Fixed => {
+            arrow(ctx, x + far, x + near, y, head);
+            arrow(ctx, x - far, x - near, y, head);
+        }
+    }
+}
+
 /// The day an item is held to: a band down the chart like the one for today, and by the item's
-/// row arrows that say which way it may still go. They are on the edge of the day that is held,
-/// marked by a tick: on from it for an earliest day, back from it for a latest, and both at it
-/// for a fixed one.
+/// row the sign of how it is held, on the edge of the day that is
 pub fn paint_pin(ctx: &Pen, pin: &PinView) {
     ctx.save();
     ctx.set_global_alpha(if pin.faint { 0.45 } else { 1.0 });
@@ -393,33 +439,78 @@ pub fn paint_pin(ctx: &Pen, pin: &PinView) {
     ctx.fill_rect(pin.cell.x, pin.cell.y, pin.cell.w, pin.height - pin.cell.y);
     ctx.set_stroke_style_str(PIN);
     ctx.set_line_width(2.5);
+    held_sign(ctx, pin.x, pin.row.y - 9.0, pin.held, 1.0);
+    ctx.restore();
+}
+
+/// The timer by an end of the item being edited, lit when that end is held to a day and faint
+/// when it is not: a click holds it or lets it go
+fn timer(ctx: &Pen, x: f64, y: f64, active: bool, lit: bool) {
+    ctx.save();
+    ctx.set_global_alpha(if active || lit { 1.0 } else { 0.45 });
+    ctx.set_stroke_style_str(if active { PIN } else { LIGHT });
+    ctx.set_fill_style_str(DARK);
+    ctx.set_line_width(1.8);
     ctx.set_line_cap("round");
-    ctx.set_line_join("round");
-    let (x, y) = (pin.x, pin.row.y - 9.0);
-    // an arrow from `from` to `to`, a line with an open head
-    let arrow = |from: f64, to: f64| {
-        let back = if to > from { -7.0 } else { 7.0 };
-        ctx.begin_path();
-        ctx.move_to(x + from, y);
-        ctx.line_to(x + to, y);
-        ctx.move_to(x + to + back, y - 6.0);
-        ctx.line_to(x + to, y);
-        ctx.line_to(x + to + back, y + 6.0);
-        ctx.stroke();
-    };
     ctx.begin_path();
-    ctx.move_to(x, y - 7.0);
-    ctx.line_to(x, y + 7.0);
+    let _ = ctx.arc(x, y + 1.0, 6.5, 0.0, std::f64::consts::TAU);
+    ctx.fill();
     ctx.stroke();
-    match pin.held {
-        Held::Earliest => arrow(6.0, 30.0),
-        Held::Latest => arrow(-6.0, -30.0),
-        Held::Fixed => {
-            arrow(30.0, 6.0);
-            arrow(-30.0, -6.0);
+    ctx.begin_path();
+    ctx.move_to(x, y - 3.0);
+    ctx.line_to(x, y + 1.0);
+    ctx.line_to(x + 3.0, y + 1.0);
+    ctx.move_to(x - 2.5, y - 8.0);
+    ctx.line_to(x + 2.5, y - 8.0);
+    ctx.stroke();
+    ctx.restore();
+}
+
+/// The handle of the held day, in its cell of the header: dragged to another day, or clicked
+/// to pick one and how it is held
+fn day_handle(ctx: &Pen, x: f64, y: f64, lit: bool) {
+    ctx.set_fill_style_str(PIN);
+    ctx.begin_path();
+    let _ = ctx.arc(x, y, 5.0, 0.0, std::f64::consts::TAU);
+    ctx.fill();
+    if lit {
+        ctx.set_stroke_style_str(LIT);
+        ctx.set_line_width(2.0);
+        ctx.stroke();
+    }
+}
+
+/// A button under the held day for a way to hold it, or to let it go
+fn hold_button(ctx: &Pen, x: f64, y: f64, held: Option<Held>, active: bool, lit: bool) {
+    let half = HOLD_BUTTON / 2.0 - 2.0;
+    ctx.set_fill_style_str("#181818");
+    ctx.fill_rect(x - half, y - half, half * 2.0, half * 2.0);
+    ctx.set_line_width(1.5);
+    ctx.set_stroke_style_str(if active {
+        PIN
+    } else if lit {
+        LIT
+    } else {
+        "#4a4a50"
+    });
+    ctx.stroke_rect(x - half, y - half, half * 2.0, half * 2.0);
+    ctx.set_stroke_style_str(if active { PIN } else { LIGHT });
+    ctx.set_line_width(1.8);
+    ctx.set_line_cap("round");
+    match held {
+        // the sign sits in the middle of the button, which its arrows are to one side of
+        Some(Held::Earliest) => held_sign(ctx, x - 6.0, y, Held::Earliest, 0.42),
+        Some(Held::Latest) => held_sign(ctx, x + 6.0, y, Held::Latest, 0.42),
+        Some(Held::Fixed) => held_sign(ctx, x, y, Held::Fixed, 0.3),
+        None => {
+            ctx.begin_path();
+            ctx.move_to(x - 4.5, y - 4.5);
+            ctx.line_to(x + 4.5, y + 4.5);
+            ctx.move_to(x + 4.5, y - 4.5);
+            ctx.line_to(x - 4.5, y + 4.5);
+            ctx.stroke();
         }
     }
-    ctx.restore();
 }
 
 /// Words above an item, centred on `x`

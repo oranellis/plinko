@@ -15,7 +15,6 @@ use crate::{
     data::has_data,
     draft::Draft,
     editor::WorkersWindow,
-    gantt::shift::{Held, Pin},
     icons::{Icon, IconKind},
     mine::set_status,
     model,
@@ -166,54 +165,6 @@ pub fn EditButtons(
         d.as_ref()
             .is_some_and(|d| matches!(d.node, PlanNode::Task(_)))
     });
-    // an item on the chart can be held to a day: the button goes round the ways it can be, and
-    // its flags on the chart say which day
-    let sync = use_sync();
-    let holds = draft.with_untracked(|d| {
-        d.as_ref().is_some_and(|d| {
-            !d.new && !matches!(d.node, PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_))
-        })
-    });
-    let held = move || draft.with(|d| d.as_ref().and_then(Draft::pin).map(|p| p.held));
-    let held_label = move || match held() {
-        None => "Not held to a day: hold it no earlier than where it is",
-        Some(Held::Earliest) => "Held no earlier than its day: hold it to exactly that day",
-        Some(Held::Fixed) => "Held to exactly its day: hold it no later than that day",
-        Some(Held::Latest) => "Held no later than its day: let it go",
-    };
-    let hold_next = move || {
-        let today = sync
-            .tenant
-            .with_untracked(|t| t.as_ref().map(|t| t.today()));
-        draft.update(|d| {
-            let Some(d) = d else {
-                return;
-            };
-            let scheduled = sync.schedule.with_untracked(|s| {
-                let state = s.as_ref().and_then(|(_, s)| s.plans.get(&plan));
-                model::span_of(state, d.node).map(|(start, _)| start)
-            });
-            let next = match d.pin() {
-                None => scheduled.or(today).map(|day| Pin {
-                    day,
-                    held: Held::Earliest,
-                    end: matches!(d.node, PlanNode::Milestone(_)),
-                }),
-                Some(pin) => match pin.held {
-                    Held::Earliest => Some(Pin {
-                        held: Held::Fixed,
-                        ..pin
-                    }),
-                    Held::Fixed => Some(Pin {
-                        held: Held::Latest,
-                        ..pin
-                    }),
-                    Held::Latest => None,
-                },
-            };
-            d.hold(next);
-        });
-    };
     let workers = RwSignal::new(false);
     crate::escape::on_escape(
         move || workers.get(),
@@ -245,18 +196,6 @@ pub fn EditButtons(
             <Show when=move || workers.get()>
                 <WorkersWindow plan=plan draft=draft />
             </Show>
-        })}
-        {holds.then(|| view! {
-            <button
-                type="button"
-                class="ctx fadein"
-                class:on=move || held().is_some()
-                title=held_label
-                aria-label=held_label
-                on:click=move |_| hold_next()
-            >
-                <Icon kind=IconKind::Pin size=18 />
-            </button>
         })}
         {button("Save", IconKind::Tick, "save", on_save)}
         {button("Cancel", IconKind::Close, "", on_cancel)}

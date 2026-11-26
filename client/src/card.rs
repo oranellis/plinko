@@ -291,6 +291,7 @@ pub fn Card(
             Pick::Before => "Click the items it waits for",
             Pick::After => "Click the items that wait for it",
             Pick::Group => "Click a group to put it in, or an empty part of the chart",
+            Pick::Day => "Click the day to hold it to",
         })
     };
     // the line from a handle being dragged to the pointer
@@ -434,6 +435,8 @@ pub fn picked(plan: &Plan, draft: &mut Draft, node: Option<PlanNode>) -> Result<
         return Ok(false);
     };
     match (pick, node) {
+        // a day is picked on the chart itself, which knows where its days are
+        (Pick::Day, _) => {}
         (Pick::Group, over) => draft.place(plan, over)?,
         (_, Some(other)) => draft.toggle(plan, pick, other)?,
         (_, None) => {}

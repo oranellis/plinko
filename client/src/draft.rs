@@ -25,7 +25,12 @@ use plinko::{
 };
 use uuid::Uuid;
 
-use crate::{forms, gantt::shift::Pin, model, sync::Sync};
+use crate::{
+    forms,
+    gantt::shift::{Held, Pin},
+    model,
+    sync::Sync,
+};
 // }}}
 
 // constants {{{
@@ -69,6 +74,8 @@ pub enum Pick {
     After,
     /// The item goes in the group clicked, or the group of the item clicked
     Group,
+    /// The day the item is held to moves to the day clicked
+    Day,
 }
 
 // }}}
@@ -246,8 +253,22 @@ impl Draft {
         Pin::of(self.constraint.constraint, end)
     }
 
-    /// Holds it to a day, or to none
+    /// A click on the timer by an end of the item: lets go of the day when it is that end that
+    /// is held, and else holds that end, to the day the other was held to or to `day`
+    pub fn time(&mut self, end: bool, day: NaiveDate) {
+        let held = if end { Held::Latest } else { Held::Earliest };
+        self.hold(match self.pin() {
+            Some(pin) if pin.end == end => None,
+            Some(pin) => Some(Pin { end, ..pin }),
+            None => Some(Pin { day, held, end }),
+        });
+    }
+
+    /// Holds it to a day, or to none, which leaves no day to pick
     pub fn hold(&mut self, pin: Option<Pin>) {
+        if pin.is_none() && self.pick == Some(Pick::Day) {
+            self.pick = None;
+        }
         self.constraint = match pin {
             Some(pin) => NodeConstraint {
                 constraint: pin.constraint(),
