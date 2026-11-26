@@ -5,23 +5,16 @@
 // modules {{{
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 use leptos::{html, prelude::*};
-use plinko::{
-    common::short_id::ShortId, planner::items::dependency::PlanNode,
-    scheduler::state::PlanVolatileState,
-};
+use plinko::{planner::items::dependency::PlanNode, scheduler::state::PlanVolatileState};
 use uuid::Uuid;
 use wasm_bindgen::JsCast;
 
 use crate::{
-    card::Card,
-    draft::{Draft, Drafting},
     format,
     gantt::info::info,
-    guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     mine::{MyTask, use_tasks_of},
-    nav::Route,
-    plan::{ItemPane, blank_click},
+    nav::{PlanTab, Reveal, Route, navigate},
     ui::use_sync,
 };
 // }}}
@@ -296,20 +289,10 @@ pub fn Allocations(
         lines.insert(1.min(lines.len()), format!("Plan: {}", task.plan_name));
         lines.join("\n")
     };
-    let open = RwSignal::new(None::<(ShortId, PlanNode)>);
-    // what the card changes of the task whose pane is open, until it is saved
-    let draft = RwSignal::new(None::<Draft>);
-    provide_context(Drafting(draft));
-    let guard = Guard::new();
-    let close = Callback::new(move |()| open.set(None));
-    let blank = move || {
-        if open.get_untracked().is_some() {
-            guard.then(close);
-        }
-    };
+    // a click on a task goes to its plan, with the task selected in the middle of the chart
+    let reveal = expect_context::<Reveal>().0;
     view! {
         <div class="plan">
-            <ConfirmLeave guard=guard />
             <div class="bar allocbar">
                 {of.is_some().then(|| view! {
                     <a class="toolbar-btn" href=Route::People.path() title="Back to people" aria-label="Back">
@@ -320,7 +303,7 @@ pub fn Allocations(
                 <button type="button" on:click=move |_| to_today()>"Today"</button>
             </div>
             <div class="workspace">
-                <div class="main" on:click=move |ev| if blank_click(&ev) { blank() }>
+                <div class="main">
                     <Show
                         when=move || mine.with(|m| !m.is_empty())
                         fallback=move || view! { <p class="empty">{if of.is_some() { "No tasks are scheduled for them." } else { "No tasks are scheduled for you." }}</p> }
@@ -394,9 +377,12 @@ pub fn Allocations(
                                         let by_day = task.days.clone();
                                         let colour = colour_of(id);
                                         view! {
-                                            <tr class:picked=move || open.with(|o| o.is_some_and(|(_, n)| n.id() == id))>
+                                            <tr>
                                                 <td class="name" title=title>
-                                                    <button type="button" class="plain" on:click=move |_| guard.then(Callback::new(move |()| open.set(Some((plan, PlanNode::Task(id))))))>
+                                                    <button type="button" class="plain" on:click=move |_| {
+                                                        reveal.set(Some((plan, id)));
+                                                        navigate(Route::Plan(plan, PlanTab::Gantt, None));
+                                                    }>
                                                         <strong>{task.name.clone()}</strong>
                                                         <span class="small">{task.plan_name.clone()}</span>
                                                     </button>
@@ -449,20 +435,6 @@ pub fn Allocations(
                         ></div>
                     </Show>
                 </div>
-                {move || {
-                    let open_now = open.get();
-                    // the draft is there before the pane, whose form starts from it
-                    draft.set(open_now.and_then(|(plan, node)| Draft::open(sync, plan, node, None)));
-                    open_now.map(|(plan, node)| view! {
-                        <Card plan=plan draft=draft on_change=Callback::new(move |()| guard.dirtied()) />
-                        <ItemPane
-                            plan=plan
-                            node=node
-                            guard=guard
-                            on_close=Callback::new(move |_| open.set(None))
-                        />
-                    })
-                }}
             </div>
         </div>
     }
