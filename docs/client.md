@@ -104,7 +104,7 @@ A new item has a card over the bottom of the chart with its shape (`card.rs`):
 
 On touch nothing on the card drags, so the chart still pans: handles are tapped and days typed. A second click puts a lit handle out.
 
-An item in the plan has no card: while its pane is open its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). Clicking one of its dots, without dragging, fills it: clicks on other items then link or unlink them until it is clicked again. The days it really ran are set in the pane.
+An item in the plan has no card: while its pane is open its shift handles (below) show without shift, and what they do is staged (`chart_edit::staging`). Clicking one of its dots, without dragging, leaves it in its colour: clicks on other items then link or unlink them until it is clicked again. The days it really ran are set in the pane.
 
 ### Shift editing
 

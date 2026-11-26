@@ -216,9 +216,9 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
             Handle::Move => grip(ctx, *x, *y, lit),
             Handle::Link { right } => {
                 // a dot is grey until it is taken, then it takes the colour of its direction
-                // and the one that is picked is filled with it
+                // and the one that is picked keeps it
                 let picked = overlay.picked == Some(*right);
-                ctx.set_fill_style_str(if picked { direction(*right) } else { DARK });
+                ctx.set_fill_style_str(DARK);
                 ctx.set_stroke_style_str(if lit || picked {
                     direction(*right)
                 } else {
