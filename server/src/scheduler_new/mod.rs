@@ -3,8 +3,10 @@
 
 pub mod arc;
 pub mod bits;
+pub mod bound;
 pub mod day;
 pub mod ledger;
 pub mod lower;
 pub mod network;
+pub mod pass;
 pub mod table;
