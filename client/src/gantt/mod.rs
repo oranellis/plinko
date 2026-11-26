@@ -323,8 +323,7 @@ pub fn Gantt(
         staged.and_then(|s| s.with_untracked(|s| s.clone().filter(|s| s.item == Some(node))))
     };
     // the handles of an item: its grips, which show with shift for the item the pointer is near,
-    // and for the one being edited the ways to hold its day, under the top of the day's band
-    // while the day is picked
+    // and for the one being edited the ways to hold its day, on the day's band
     let handles_of = move |node: PlanNode, gripped: bool| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
         let mut grips = match (kind, rect_of(node)) {
@@ -338,22 +337,18 @@ pub fn Gantt(
         };
         let staged = staged_of(node);
         let held = staged.as_ref().and_then(|s| s.pin);
-        let daying = staged.is_some_and(|s| s.daying);
         if let Some(view) = held.and_then(|p| pin_view(node, p, false)) {
-            let x = view.cell.x + view.cell.w / 2.0;
-            let ways = [
-                Some(Held::Earliest),
-                Some(Held::Fixed),
-                Some(Held::Latest),
-                None,
-            ];
-            for (i, way) in ways.into_iter().enumerate().filter(|_| daying) {
-                // in a row under the day, kept on the chart at its edges
-                let (reach, wide) = (shift::HOLD_BUTTON * 2.0, size.get_untracked().0);
-                let x = x.clamp(reach, (wide - reach).max(reach));
-                let along = (i as f64 - 1.5) * shift::HOLD_BUTTON;
-                let under = layout::HEADER_HEIGHT + shift::HOLD_BUTTON / 2.0 + 8.0;
-                grips.list.push((Handle::Hold(way), (x + along, under)));
+            // in a row on the band, half way down the chart, kept on the chart at its edges
+            let (wide, high) = size.get_untracked();
+            let reach = shift::HOLD_BUTTON * 1.5;
+            let x = (view.cell.x + view.cell.w / 2.0).clamp(reach, (wide - reach).max(reach));
+            let y = (layout::HEADER_HEIGHT + high) / 2.0;
+            for (i, way) in [Held::Earliest, Held::Fixed, Held::Latest]
+                .into_iter()
+                .enumerate()
+            {
+                let along = (i as f64 - 1.0) * shift::HOLD_BUTTON;
+                grips.list.push((Handle::Hold(way), (x + along, y)));
             }
         }
         grips

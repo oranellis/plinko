@@ -428,11 +428,12 @@ pub fn staging(
             });
         }
     });
-    let hold = Callback::new(move |(node, held): (PlanNode, Option<Held>)| {
+    let hold = Callback::new(move |(node, held): (PlanNode, Held)| {
         if ours(node) {
             stage(&|_, d| {
-                let pin = d.pin().zip(held).map(|(pin, held)| Pin { held, ..pin });
-                d.hold(pin);
+                if let Some(pin) = d.pin() {
+                    d.hold(Some(Pin { held, ..pin }));
+                }
                 Ok(())
             });
         }

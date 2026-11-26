@@ -164,6 +164,8 @@ pub fn InfoPanel(
             class="infopanel"
             class:docked=move || edited.get().is_some()
             class:gone=move || shown.with(Option::is_none)
+            // nothing waits for what is looked at: a little blue in its top right corner
+            class:leaf=move || seen.with(|d| d.as_ref().is_some_and(|d| d.dependents.is_empty()))
             on:click=|ev| ev.stop_propagation()
         >
             // made again for each item edited, so the name of a new one is ready to type over

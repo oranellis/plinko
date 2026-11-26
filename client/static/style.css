@@ -458,22 +458,24 @@ textarea.namebox:focus { border-color: var(--accent); outline: none; }
 span.namebox { display: flex; align-items: center; color: var(--muted); }
 button.ctx.on { border-color: var(--text); color: var(--text); }
 /* which end is held to a day: the timer is lit, with a bar on the side of that end */
-button.ctx.held-start, button.ctx.held-end { border-color: #ffb300; color: #ffb300; }
-button.ctx.held-start { box-shadow: inset 4px 0 0 #ffb300; }
-button.ctx.held-end { box-shadow: inset -4px 0 0 #ffb300; }
+button.ctx.held-start, button.ctx.held-end { border-color: #c8e63c; color: #c8e63c; }
+button.ctx.held-start { box-shadow: inset 4px 0 0 #c8e63c; }
+button.ctx.held-end { box-shadow: inset -4px 0 0 #c8e63c; }
 /* what to do with an edit: saving it is the button, leaving and deleting it a hover away. */
 .editswitch .st { --c: #e53935; }
 .editswitch .st.save { --c: #43c463; }
 .editswitch .st.delete:hover { color: var(--c); background: color-mix(in srgb, var(--c) 18%, #181818); }
-.workerwin { position: absolute; left: 0; bottom: calc(100% + 8px); width: 380px; max-height: 50vh; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
+.workerwin { position: absolute; left: 0; bottom: calc(100% + 16px); width: 380px; max-height: 50vh; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
 /* while its item is edited the bar slides to the bottom middle, with room under it for its statuses */
 .stripbuttons { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
 /* docked, the bar has the shape of the item over its buttons, at the bottom of the chart and
    to the right of the panel that says what the item is. The two are one shape: the bar has no
    left edge, and the panel, which is as high as its name needs, stands over it. */
 .contextbar.docked { left: calc(50% - 130px); top: calc(100% - 300px); height: 130px; flex-direction: column; align-items: stretch; justify-content: space-between; border-left: 0; border-radius: 0 8px 8px 0; transition: left 0.3s ease, top 0.3s ease; }
-.contextbar.docked, .infopanel.docked { box-shadow: none; }
-.contextbar.docked.leaf { background-image: radial-gradient(circle at top right, rgba(30, 136, 229, 0.55), transparent 46px); }
+/* the shadow goes round the two as one: neither casts one on the other */
+.infopanel.docked { clip-path: inset(-400px 0 -400px -400px); }
+.contextbar.docked { clip-path: inset(-400px -400px -400px -1px); }
+.contextbar.docked.leaf, .infopanel.leaf { background-image: radial-gradient(circle at top right, rgba(30, 136, 229, 0.55), transparent 46px); }
 .contextbar.docked::before { content: ""; position: absolute; left: -1px; top: 0; bottom: 0; width: 1px; background: #181818; }
 .stripstage { position: relative; flex: 1; display: grid; place-items: center; --card: #181818; user-select: none; }
 .infopanel { position: absolute; left: 8px; bottom: 8px; z-index: 19; width: 270px; display: grid; align-content: start; gap: 2px; padding: 4px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); transition: left 0.3s ease, bottom 0.3s ease; }
