@@ -44,7 +44,6 @@ struct Context<'a> {
     plan: &'a Plan,
     state: Option<&'a PlanVolatileState>,
     collapsed: &'a HashSet<Uuid>,
-    depended: &'a HashSet<PlanNode>,
     targets: &'a HashSet<PlanNode>,
     children: &'a HashMap<Parent, Vec<PlanNode>>,
 }
@@ -88,12 +87,6 @@ pub fn build(
     today: NaiveDate,
 ) -> Scene {
     let nodes = model::nodes(plan);
-    let mut depended: HashSet<PlanNode> = HashSet::new();
-    for node in &nodes {
-        for dep in model::dependencies(plan, *node) {
-            depended.insert(dep);
-        }
-    }
     let targets: HashSet<PlanNode> = plan.targets().values().map(|t| t.node()).collect();
     let mut children: HashMap<Parent, Vec<PlanNode>> = HashMap::new();
     let mut unplaced = Vec::new();
@@ -120,7 +113,6 @@ pub fn build(
         plan,
         state,
         collapsed,
-        depended: &depended,
         targets: &targets,
         children: &children,
     };
@@ -179,13 +171,6 @@ impl Context<'_> {
                     span,
                     look: model::look_of(self.plan, self.state, node),
                     violated: self.state.is_some_and(|s| s.constraint_violations.contains_key(&node)),
-                    // what ends its group is not a leaf when something waits on the group
-                    leaf: !self.depended.contains(&node)
-                        && !model::ends_groups(self.plan, self.state, node)
-                            .iter()
-                            .any(|group| self.depended.contains(group)),
-                    rooted: model::parent_of(self.plan, node) == Parent::Plan
-                        && model::dependencies(self.plan, node).is_empty(),
                     pinned: matches!(node, PlanNode::PlanBuffer(id)
                         if self.plan.plan_buffers().get(&id).is_some_and(|b| b.set_start_day().is_some())),
                     target: self.targets.contains(&node),
@@ -303,7 +288,6 @@ mod tests {
         // T0 and T1 in the first lane with a day between them
         assert_eq!(scene.arrangement.placed.len(), 2);
         assert_eq!((get("T0").lane, get("T1").lane), (0, 0));
-        assert!(!get("T0").leaf && get("T1").leaf);
         assert_eq!(scene.last_day, 7.0);
         assert_eq!(scene.unplaced.len(), 1);
         assert_eq!(scene.unplaced[0].name, "T2");

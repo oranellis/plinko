@@ -71,11 +71,6 @@ impl Pen {
         }
     }
 
-    pub fn set_fill_style_canvas_gradient(&self, gradient: &CanvasGradient) {
-        self.state.borrow_mut().fill = None;
-        self.ctx.set_fill_style_canvas_gradient(gradient);
-    }
-
     pub fn set_stroke_style_canvas_gradient(&self, gradient: &CanvasGradient) {
         self.state.borrow_mut().stroke = None;
         self.ctx.set_stroke_style_canvas_gradient(gradient);

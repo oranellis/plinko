@@ -24,6 +24,8 @@ const DARK: &str = "#3a3a3e";
 /// The colour of the day an item is held to
 const PIN: &str = "#ffb300";
 const PIN_BAND: &str = "rgba(255,179,0,0.16)";
+/// How far along each edge the mark of an item that is held to a day goes
+const TAG: f64 = 9.0;
 /// The panel and the lines of the bars of buttons on the page
 const PANEL: &str = "#181818";
 const LINE: &str = "#3a3a3c";
@@ -150,6 +152,8 @@ pub struct Editing {
     pub moved: Callback<(PlanNode, Option<PlanNode>)>,
     /// Whether the item has started, so dragging it sideways changes the days it really ran
     pub dated: Callback<PlanNode, bool>,
+    /// Whether the days it really ran have an end, which its right grip then moves
+    pub ended: Callback<PlanNode, bool>,
     /// Moves the days the item really ran by `days`
     pub shift_dates: Callback<(PlanNode, i32)>,
     /// The day the item is held to in the plan
@@ -186,8 +190,6 @@ pub struct Overlay {
     pub drag: Option<DragView>,
     /// What to say above an item, when nothing is dragged
     pub note: Option<(Rect, String)>,
-    /// Where the item being edited would run, shown over it when nothing is dragged
-    pub ghost: Option<Rect>,
     /// The dot that clicks on items answer to: the right one, or the left
     pub picked: Option<bool>,
     /// The day the item is held to
@@ -261,6 +263,18 @@ impl Grips {
         Self { rect, list }
     }
 
+    /// The grips for the days a task really ran, with no others: one in its left edge for the
+    /// day it started, and one in its right for the day it ended
+    pub fn dates(rect: Rect, started: bool, ended: bool) -> Self {
+        let middle = rect.y + rect.h / 2.0;
+        let start = started.then_some((Handle::Start, (rect.x + 6.0, middle)));
+        let end = ended.then_some((Handle::Resize, (rect.x + rect.w - 6.0, middle)));
+        Self {
+            rect: Rect::default(),
+            list: start.into_iter().chain(end).collect(),
+        }
+    }
+
     /// The handle at a point, if there is one. The duration grip and the dots come first, and the
     /// move handle is everywhere else on the item.
     pub fn at(&self, x: f64, y: f64) -> Option<Handle> {
@@ -319,10 +333,6 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
         .map(|(_, at)| *at)
         .collect();
     hold_bar(ctx, &ways);
-    // under the handles, which are on it
-    if let Some(r) = overlay.ghost.filter(|_| !dragging) {
-        ghost(ctx, r, "");
-    }
     for (handle, (x, y)) in &overlay.handles.list {
         // only the grabbed one stays while dragging, drawn where the pointer is
         let lit = overlay.handles.at(overlay.pointer.0, overlay.pointer.1) == Some(*handle);
@@ -436,6 +446,21 @@ fn held_sign(ctx: &Pen, x: f64, y: f64, held: Held, scale: f64) {
             arrow(ctx, x - far, x - near, y, head);
         }
     }
+}
+
+/// The mark in the top corner of an item that is held to a day: the left corner when it is its
+/// first day that is held, the right when it is its last
+pub fn paint_tag(ctx: &Pen, rect: Rect, end: bool) {
+    let (x, into) = match end {
+        true => (rect.x + rect.w, -TAG),
+        false => (rect.x, TAG),
+    };
+    ctx.set_fill_style_str(PIN);
+    ctx.begin_path();
+    ctx.move_to(x, rect.y);
+    ctx.line_to(x + into, rect.y);
+    ctx.line_to(x, rect.y + TAG);
+    ctx.fill();
 }
 
 /// The day an item is held to: a band down the chart like the one for today, and by the item's

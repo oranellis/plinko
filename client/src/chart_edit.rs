@@ -5,7 +5,11 @@
 use chrono::{Duration, NaiveDate};
 use leptos::prelude::*;
 use plinko::{
-    common::{crud::Crud, short_id::ShortId},
+    common::{
+        crud::Crud,
+        dates::{NodeConstraint, NodeEnd},
+        short_id::ShortId,
+    },
     planner::items::{
         dependency::PlanNode,
         parent::Parent,
@@ -103,6 +107,10 @@ pub fn editing(plan: ShortId) -> Editing {
         sync.tenant
             .with_untracked(|t| f(t.as_ref()?.plans().get(&plan)?))
             .unwrap_or_default()
+    };
+    let read_one = move |f: &dyn Fn(&Plan) -> Option<bool>| {
+        sync.tenant
+            .with_untracked(|t| f(t.as_ref()?.plans().get(&plan)?))
     };
     let send = move |updates: Vec<PlanUpdate>| {
         for update in updates {
@@ -246,11 +254,34 @@ pub fn editing(plan: ShortId) -> Editing {
         })
     });
     let pin = Callback::new(move |node: PlanNode| {
-        sync.tenant
-            .with_untracked(|t| Draft::of(t.as_ref()?.plans().get(&plan)?, node)?.pin())
+        sync.tenant.with_untracked(|t| {
+            let p = t.as_ref()?.plans().get(&plan)?;
+            let held = match node {
+                PlanNode::Task(id) => p.tasks().get(&id)?.time_constraint(),
+                PlanNode::TaskGroup(id) => p.task_groups().get(&id)?.time_constraint(),
+                // a milestone is a day, held by its end
+                PlanNode::Milestone(id) => NodeConstraint {
+                    constraint: p.milestones().get(&id)?.time_constraint(),
+                    end: NodeEnd::End,
+                },
+                PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => return None,
+            };
+            Pin::of(held.constraint, held.end == NodeEnd::End)
+        })
+    });
+    let ended_at = Callback::new(move |node: PlanNode| {
+        read_one(&|p| match node {
+            PlanNode::Task(id) => p
+                .tasks()
+                .get(&id)
+                .map(|t| ended(t.persistent_state()).is_some()),
+            _ => None,
+        })
+        .unwrap_or(false)
     });
     Editing {
         pin,
+        ended: ended_at,
         // only an item being edited has a day to drag and dots to click, see `staging`
         constrain: Callback::new(|_| ()),
         hold: Callback::new(|_| ()),

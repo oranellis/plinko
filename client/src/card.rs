@@ -424,7 +424,11 @@ pub fn picked(plan: &Plan, draft: &mut Draft, node: Option<PlanNode>) -> Result<
     match (pick, node) {
         // a day is picked on the chart itself, which knows where its days are
         (Pick::Day, _) => {}
-        (Pick::Group, over) => draft.place(plan, over)?,
+        // one click says where it goes, the top level for a click on nothing
+        (Pick::Group, over) => {
+            draft.place(plan, over)?;
+            draft.pick = None;
+        }
         (_, Some(other)) => draft.toggle(plan, pick, other)?,
         (_, None) => {}
     }

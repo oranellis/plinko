@@ -86,6 +86,8 @@ pub fn ContextBar(
         <div
             class="contextbar"
             class:docked=move || docked.get()
+            // nothing waits for it: a little blue in its top right corner
+            class:leaf=move || docked.get() && draft.with(|d| d.as_ref().is_some_and(|d| d.dependents.is_empty()))
             class:fadein=node.is_none()
             style=move || match (docked.get(), at.get()) {
                 (false, Some((left, top))) => format!("left:{left}px;top:{top}px"),
@@ -247,13 +249,14 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
             let Some((t, p)) = t.as_ref().and_then(|t| Some((t, t.plans().get(&plan)?))) else {
                 return Vec::new();
             };
-            let mut lines = vec![match d.parent {
+            let group = match d.parent {
                 Parent::Plan => "Top level".to_string(),
-                Parent::Node(id) => format!("In {}", model::node_name(p, PlanNode::TaskGroup(id))),
-            }];
+                Parent::Node(id) => model::node_name(p, PlanNode::TaskGroup(id)),
+            };
+            let mut lines = vec![format!("Group: {group}")];
             lines.extend(d.duration.map(|days| match days {
-                1 => "1 day".to_string(),
-                days => format!("{days} days"),
+                1 => "Duration: 1 day".to_string(),
+                days => format!("Duration: {days} days"),
             }));
             lines.extend(d.pin().map(|pin| {
                 let held = match pin.held {
@@ -267,7 +270,7 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
                     (_, false) => " start",
                     (_, true) => " end",
                 };
-                format!("{held}{which} {}", format::day(pin.day))
+                format!("Constraint: {held}{which} {}", format::day(pin.day))
             }));
             let workers: Vec<String> = d
                 .allocations
@@ -295,11 +298,11 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
                 })
                 .collect();
             if !workers.is_empty() {
-                lines.push(workers.join(", "));
+                lines.push(format!("Workers: {}", workers.join(", ")));
             }
             let blocks = blocks_said(p, d.node);
             if !blocks.is_empty() {
-                lines.push(blocks.join(", "));
+                lines.push(format!("Data: {}", blocks.join(", ")));
             }
             lines
         })

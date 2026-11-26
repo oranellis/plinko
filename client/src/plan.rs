@@ -17,7 +17,7 @@ use crate::{
     data::DataWindow,
     draft::{Draft, Pick},
     editor, format,
-    gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene, shift},
+    gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene},
     guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     model::{self, Look, Row},
@@ -446,18 +446,12 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                             Parent::Node(id) => Some(PlanNode::TaskGroup(id)),
                                             Parent::Plan => None,
                                         };
-                                        // how far the days are from the ones the plan has
-                                        let saved = Draft::open(sync, plan, d.node, None).and_then(|s| s.duration);
-                                        let longer = d.duration.zip(saved).map_or(0, |(now, was)| now as i32 - was as i32);
-                                        let days = d.duration.zip(saved).filter(|(now, was)| now != was).map(|(now, was)| {
-                                            shift::resize_label(now as i32 - was as i32, now)
-                                        });
-                                        // and the days it really ran from the ones it has
-                                        let moved = [("start", d.moved.0), ("end", d.moved.1)]
+                                        // how far the days it really ran are from the ones it has
+                                        let said: Vec<String> = [("start", d.moved.0), ("end", d.moved.1)]
                                             .into_iter()
                                             .filter(|(_, by)| *by != 0)
-                                            .map(|(which, by)| format!("{which} {by:+}"));
-                                        let said: Vec<String> = days.into_iter().chain(moved).collect();
+                                            .map(|(which, by)| format!("{which} {by:+}"))
+                                            .collect();
                                         let days = Some(said.join("  ")).filter(|s| !s.is_empty());
                                         Staged {
                                             before: d.dependencies.clone(),
@@ -465,7 +459,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                             group,
                                             item: (!d.new).then_some(d.node),
                                             days,
-                                            edges: (d.moved.0, d.moved.1 + longer),
                                             pin: d.pin(),
                                             daying: d.pick == Some(Pick::Day),
                                             pick: match d.pick {

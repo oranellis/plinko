@@ -49,10 +49,8 @@ pub struct Staged {
     pub group: Option<Mark>,
     /// The item itself when it is on the chart, whose handles then show without shift
     pub item: Option<Mark>,
-    /// What has changed of its days, as `+2 (6d)` or `start -1`
+    /// How far the days it really ran are moved, as `start -1  end +2`
     pub days: Option<String>,
-    /// The days its left and right edges are moved by, which a ghost of it shows
-    pub edges: (i32, i32),
     /// The day it is held to, and whether a click on another day moves the day
     pub pin: Option<Pin>,
     pub daying: bool,
@@ -300,31 +298,13 @@ pub fn Gantt(
                 .or_else(|| h.headers().find(|(m, ..)| *m == mark).map(|(_, r, _)| r))
         })
     };
-    // how far the edges of the item being edited are moved, in days
-    let edges_of = move |node: PlanNode| {
-        let staged = staged.and_then(|s| {
-            s.with_untracked(|s| s.as_ref().filter(|s| s.item == Some(node)).map(|s| s.edges))
-        });
-        staged.unwrap_or_default()
-    };
-    // where an item is once what is staged of its edges is done, which is where its handles are
-    let staged_rect = move |node: PlanNode| -> Option<Rect> {
-        let (r, (left, right)) = (rect_of(node)?, edges_of(node));
-        let day = viewport.get_untracked().unwrap_or_default().day_width;
-        let (left, right) = (f64::from(left) * day, f64::from(right) * day);
-        Some(Rect {
-            x: r.x + left,
-            w: (r.w - left + right).max(layout::MIN_BAR_WIDTH),
-            ..r
-        })
-    };
     // where a pin of an item is drawn
     let pin_view = move |node: PlanNode, pin: Pin, faint: bool| -> Option<PinView> {
-        let row = staged_rect(node)?;
+        let row = rect_of(node)?;
         let vp = viewport.get_untracked().unwrap_or_default();
         let day = scene.with_untracked(|s| (pin.day - s.origin).num_days()) as f64;
         Some(PinView {
-            x: vp.x(day + if pin.end { 1.0 } else { 0.0 }),
+            x: vp.x(day + 0.5),
             row,
             cell: Rect {
                 x: vp.x(day),
@@ -347,8 +327,13 @@ pub fn Gantt(
     // while the day is picked
     let handles_of = move |node: PlanNode, gripped: bool| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
-        let mut grips = match (kind, staged_rect(node)) {
+        let mut grips = match (kind, rect_of(node)) {
             (Some(kind), Some(rect)) if gripped => Grips::of(kind, rect, editing.dated.run(node)),
+            // the days a task being edited really ran are still dragged on it, where it is
+            (Some(_), Some(rect)) => {
+                let (started, ended) = (editing.dated.run(node), editing.ended.run(node));
+                Grips::dates(rect, started, ended)
+            }
             _ => Grips::default(),
         };
         let staged = staged_of(node);
@@ -387,6 +372,17 @@ pub fn Gantt(
         Pin { day, held, end }
     };
 
+    // the items that are held to a day in the plan, and by which end
+    let tags = Memo::new(move |_| {
+        scene.with(|s| {
+            let held = |p: &arrange::Placed| Some((p.mark, editing.pin.run(p.mark)?.end));
+            s.arrangement
+                .placed
+                .iter()
+                .filter_map(held)
+                .collect::<Vec<_>>()
+        })
+    });
     // what the lines and the panel say about what is under the pointer, which only changes with
     // that, so drawing again for a pan or a nudge of the pointer does not work it out again
     let linked = Memo::new(move |_| {
@@ -538,7 +534,7 @@ pub fn Gantt(
             let strips = h.headers().map(|(_, strip, _)| strip);
             h.items().map(|(_, r)| r).chain(strips).collect()
         });
-        taken.extend(pinned.and_then(staged_rect));
+        taken.extend(pinned.and_then(rect_of));
         layers.with_value(|layers| {
             let Some(layers) = layers else {
                 return;
@@ -572,6 +568,21 @@ pub fn Gantt(
                 ..view
             }
         };
+        // a corner of every item that is held to a day is marked: the left for its first day,
+        // the right for its last
+        let staged_tag =
+            pinned.map(|node| (node, staged.as_ref().and_then(|s| s.pin).map(|p| p.end)));
+        tags.with(|tags| {
+            for (mark, end) in tags {
+                let end = match staged_tag {
+                    Some((node, held)) if node == *mark => held,
+                    _ => Some(*end),
+                };
+                if let Some((rect, end)) = rect_of(*mark).zip(end) {
+                    shift::paint_tag(ctx, rect, end);
+                }
+            }
+        });
         // the day what is looked at is held to, faintly, and that of the item being edited
         if let Some(looked) = hovered.or(picked).filter(|n| Some(*n) != pinned) {
             let pin = editing
@@ -598,10 +609,7 @@ pub fn Gantt(
                 .unwrap_or_default();
             let note = staged
                 .as_ref()
-                .and_then(|s| Some((staged_rect(s.item?)?, s.days.clone()?)));
-            let ghost = pinned
-                .filter(|node| edges_of(*node) != (0, 0))
-                .and_then(staged_rect);
+                .and_then(|s| Some((rect_of(s.item?)?, s.days.clone()?)));
             let target = |own: PlanNode| {
                 hit(at.0, at.1)
                     .map(|(m, _)| m)
@@ -660,7 +668,7 @@ pub fn Gantt(
                     } => {
                         let vp = viewport.get_untracked().unwrap_or_default();
                         let (delta, new) = shift::resized(vp.day_at(at.0), last_day, duration);
-                        let origin = staged_rect(node).unwrap_or(Rect {
+                        let origin = rect_of(node).unwrap_or(Rect {
                             x: at.0,
                             y: at.1,
                             w: 0.0,
@@ -690,7 +698,7 @@ pub fn Gantt(
                         let vp = viewport.get_untracked().unwrap_or_default();
                         let by =
                             f64::from(day_shift(viewport, at.0, first_day as f64)) * vp.day_width;
-                        let origin = staged_rect(node).unwrap_or(Rect {
+                        let origin = rect_of(node).unwrap_or(Rect {
                             x: at.0,
                             y: at.1,
                             w: 0.0,
@@ -715,7 +723,6 @@ pub fn Gantt(
                     pointer: at,
                     drag: view,
                     note,
-                    ghost,
                     pin: staged.as_ref().and_then(|s| s.pin),
                     picked: staged.as_ref().and_then(|s| s.pick),
                 },
@@ -738,6 +745,7 @@ pub fn Gantt(
             scene.track(),
             canvas.track(),
             linked.track(),
+            tags.track(),
             staged.map(|s| s.track()),
             spot.map(|s| s.track()),
         );
@@ -812,7 +820,7 @@ pub fn Gantt(
                         });
                         Drag::Start {
                             node,
-                            first_day: first.unwrap_or(0) + i64::from(edges_of(node).0),
+                            first_day: first.unwrap_or(0),
                         }
                     }
                     Handle::Resize => {
@@ -823,8 +831,7 @@ pub fn Gantt(
                                 .find(|p| p.mark == node)
                                 .map(|p| (s.origin, p.span.1))
                         });
-                        let last_day = end.map_or(0, |(start, end)| (end - start).num_days() - 1)
-                            + i64::from(edges_of(node).1);
+                        let last_day = end.map_or(0, |(start, end)| (end - start).num_days() - 1);
                         Drag::Resize {
                             node,
                             last_day,
