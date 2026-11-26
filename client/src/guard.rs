@@ -1,16 +1,9 @@
-//! Asking before an edit pane is left with changes that were not saved.
+//! Asking before what is being edited is left with changes that were not saved.
 
 // modules {{{
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
 
 use crate::ui::Modal;
-// }}}
-
-// constants {{{
-/// The elements inside a pane that change what is being edited when they are clicked
-const CHANGERS: &str = ".segmented button, .hours .cell, .popover li button, .list button, \
-                       button.add, .calendar .day, .calendar .foot button";
 // }}}
 
 #[derive(Clone, Copy)]
@@ -64,51 +57,21 @@ impl Guard {
     pub fn clean(&self) {
         self.dirty.try_set(false);
     }
-
-    /// Notes that an event in the pane may have changed what is being edited
-    pub fn touched(&self, ev: &web_sys::Event) {
-        if !self.open.get_untracked() {
-            return;
-        }
-        let target = ev
-            .target()
-            .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
-        let Some(target) = target else {
-            return;
-        };
-        // typing in a picker's search is not a change until something is picked
-        if target.matches("input.search").unwrap_or(false) {
-            return;
-        }
-        let changes = match ev.type_().as_str() {
-            "click" => target.closest(CHANGERS).ok().flatten().is_some(),
-            _ => true,
-        };
-        if changes {
-            self.dirty.set(true);
-        }
-    }
 }
 // }}}
 
 // ConfirmLeave {{{
 /// The question asked when leaving an edit with changes: save them, drop them or stay
 #[component]
-pub fn ConfirmLeave(guard: Guard) -> impl IntoView {
+pub fn ConfirmLeave(guard: Guard, on_save: Callback<()>) -> impl IntoView {
     let leave = move |save: bool| {
         let Some(then) = guard.asking.get_untracked() else {
             return;
         };
         guard.asking.set(None);
+        // saving also leaves what was being edited, before going where `then` goes
         if save {
-            // the form saves itself and closes the pane, as when its own Save is pressed
-            let form = web_sys::window()
-                .and_then(|w| w.document())
-                .and_then(|d| d.query_selector(".pane form").ok().flatten())
-                .and_then(|f| f.dyn_into::<web_sys::HtmlFormElement>().ok());
-            if let Some(form) = form {
-                let _ = form.request_submit();
-            }
+            on_save.run(());
         }
         guard.clean();
         then.run(());

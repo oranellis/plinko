@@ -1,7 +1,9 @@
 //! The bar of buttons under the item selected on the chart: its status, its data and editing it.
+//! While the item is edited the bar is at the bottom of the chart with the item's name, who works
+//! on it and saving, leaving and deleting it, which the card of a new item has too.
 
 // modules {{{
-use leptos::prelude::*;
+use leptos::{html, prelude::*};
 use plinko::{
     common::{crud::Crud, short_id::ShortId},
     planner::items::{dependency::PlanNode, plan_buffer::PlanBufferPatch, task::Status},
@@ -11,6 +13,8 @@ use uuid::Uuid;
 
 use crate::{
     data::has_data,
+    draft::Draft,
+    editor::WorkersWindow,
     icons::{Icon, IconKind},
     mine::set_status,
     model,
@@ -57,8 +61,12 @@ pub fn ContextBar(
     node: PlanNode,
     at: Memo<Option<(f64, f64)>>,
     docked: Memo<bool>,
+    draft: RwSignal<Option<Draft>>,
     on_edit: Callback<()>,
     on_data: Callback<()>,
+    on_save: Callback<()>,
+    on_cancel: Callback<()>,
+    on_delete: Callback<()>,
 ) -> impl IntoView {
     view! {
         <div
@@ -70,6 +78,9 @@ pub fn ContextBar(
             }
             on:click=|ev| ev.stop_propagation()
         >
+            <Show when=move || docked.get()>
+                <NameBox draft=draft on_save=on_save />
+            </Show>
             {match node {
                 PlanNode::Task(id) => view! { <StatusSwitch plan=plan task=id /> }.into_any(),
                 PlanNode::PlanBuffer(id) => view! { <SetStart plan=plan buffer=id /> }.into_any(),
@@ -80,10 +91,115 @@ pub fn ContextBar(
                     <Icon kind=IconKind::Data size=18 />
                 </button>
             })}
-            <button type="button" class="ctx" title="Edit" aria-label="Edit" on:click=move |_| on_edit.run(())>
+            <button type="button" class="ctx" class:on=move || docked.get() title="Edit" aria-label="Edit" on:click=move |_| on_edit.run(())>
                 <Icon kind=IconKind::Pencil size=18 />
             </button>
+            <Show when=move || docked.get()>
+                <EditButtons plan=plan draft=draft on_save=on_save on_cancel=on_cancel on_delete=on_delete />
+            </Show>
         </div>
+    }
+}
+// }}}
+
+// NameBox {{{
+/// The name of the draft, which is typed over where it stands. A buffer has none.
+#[component]
+pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl IntoView {
+    let (node, new) = draft.with_untracked(|d| {
+        (
+            d.as_ref().map(|d| d.node),
+            d.as_ref().is_some_and(|d| d.new),
+        )
+    });
+    let input = NodeRef::<html::Input>::new();
+    // the name of a new item is ready to type over
+    if new {
+        set_timeout(
+            move || {
+                if let Some(input) = input.try_get_untracked().flatten() {
+                    let _ = input.focus();
+                    input.select();
+                }
+            },
+            std::time::Duration::from_millis(80),
+        );
+    }
+    match node {
+        None | Some(PlanNode::PlanBuffer(_)) => view! { <span class="namebox fadein">"Buffer"</span> }.into_any(),
+        Some(node) => view! {
+            <input
+                type="text"
+                class="namebox fadein"
+                node_ref=input
+                title="Name"
+                aria-label="Name"
+                placeholder=if matches!(node, PlanNode::PlanDelay(_)) { "Delay" } else { "Name" }
+                prop:value=move || draft.with(|d| d.as_ref().map(|d| d.name.clone()).unwrap_or_default())
+                on:input=move |ev| {
+                    let typed = event_target_value(&ev);
+                    draft.update(|d| if let Some(d) = d { d.name = typed });
+                }
+                on:keydown=move |ev| if ev.key() == "Enter" {
+                    ev.prevent_default();
+                    on_save.run(());
+                }
+            />
+        }
+        .into_any(),
+    }
+}
+// }}}
+
+// EditButtons {{{
+/// Who works on the draft's task, and saving, leaving and for an item in the plan deleting it
+#[component]
+pub fn EditButtons(
+    plan: ShortId,
+    draft: RwSignal<Option<Draft>>,
+    on_save: Callback<()>,
+    on_cancel: Callback<()>,
+    #[prop(optional, into)] on_delete: Option<Callback<()>>,
+) -> impl IntoView {
+    let task = draft.with_untracked(|d| {
+        d.as_ref()
+            .is_some_and(|d| matches!(d.node, PlanNode::Task(_)))
+    });
+    let workers = RwSignal::new(false);
+    crate::escape::on_escape(
+        move || workers.get(),
+        Callback::new(move |()| workers.set(false)),
+    );
+    let button = move |label: &'static str,
+                       kind: IconKind,
+                       tone: &'static str,
+                       on: Callback<()>| {
+        view! {
+            <button type="button" class=format!("ctx fadein {tone}") title=label aria-label=label on:click=move |_| on.run(())>
+                <Icon kind=kind size=18 />
+            </button>
+        }
+    };
+    view! {
+        {task.then(|| view! {
+            <button
+                type="button"
+                class="ctx fadein"
+                class:on=move || workers.get()
+                title="Workers"
+                aria-label="Workers"
+                aria-expanded=move || workers.get().to_string()
+                on:click=move |_| workers.update(|w| *w = !*w)
+            >
+                <Icon kind=IconKind::Person size=18 />
+            </button>
+            <Show when=move || workers.get()>
+                <WorkersWindow plan=plan draft=draft />
+            </Show>
+        })}
+        {button("Save", IconKind::Tick, "save", on_save)}
+        {button("Cancel", IconKind::Close, "", on_cancel)}
+        {on_delete.map(|on_delete| button("Delete", IconKind::Bin, "danger", on_delete))}
     }
 }
 // }}}

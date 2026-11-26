@@ -43,9 +43,9 @@ await click(a, "New Plan"); await sleep(200);
 await a.type(".modal input[type=text]", "Collab plan");
 await a.click(".modal button[type=submit]");
 await a.waitForSelector(".plan");
-await add(a, "Add task"); await a.waitForSelector(".editor form");
-await fill(a, ".editor input[type=text]", "Design");
-await click(a, "Save"); await a.waitForFunction(() => !document.querySelector(".editor"));
+await add(a, "Add task"); await a.waitForSelector("input.namebox");
+await fill(a, "input.namebox", "Design");
+await click(a, "Save"); await a.waitForFunction(() => !document.querySelector(".namebox"));
 await sleep(1000);
 
 // tapping a row in the chart selects it, and its bar opens the editor
@@ -55,14 +55,15 @@ const box = await a.evaluate(() => { const r = document.querySelector("canvas.ga
 for (let day = 1; day < 5 && !(await a.$(".contextbar")); day++) {
   for (const lane of [0, 1]) {
     if (await a.$(".contextbar")) break;
-    await a.mouse.click(box.x + 34 * day + 17, box.y + 56 + 36 * lane + 18);
+    await a.mouse.click(box.x + 38 * day + 19, box.y + 64 + 40 * lane + 20);
     await sleep(300);
   }
 }
 expect(await a.evaluate(() => !!document.querySelector(".contextbar")), "tapping a row in the chart shows its bar");
 await click(a, "Edit");
-expect(await a.evaluate(() => !!document.querySelector(".editor")), "the bar's pencil opens the editor");
-await click(a, "Close");
+await sleep(300);
+expect(await a.evaluate(() => !!document.querySelector(".contextbar.docked input.namebox")), "the bar's pencil docks it with the name to edit");
+await click(a, "Cancel");
 // dragging pans, the wheel zooms: the day labels change
 const before = await a.screenshot({ encoding: "base64" });
 await a.mouse.move(box.x + 500, box.y + 200);
@@ -83,8 +84,8 @@ await click(b, "Show a list"); await sleep(500);
 expect((await text(b)).includes("Design"), "a second window shows the task");
 await click(a, "Show a list"); await sleep(300);
 await a.evaluate(() => [...document.querySelectorAll("button.item")][0].click());
-await a.waitForSelector(".editor form");
-await fill(a, ".editor input[type=text]", "Design v2");
+await a.waitForSelector("input.namebox");
+await fill(a, "input.namebox", "Design v2");
 await click(a, "Save"); await sleep(1500);
 expect((await text(b)).includes("Design v2"), "a rename in one window shows in the other without reloading");
 
@@ -114,7 +115,7 @@ await a.waitForSelector(".popover");
 await a.evaluate(() => [...document.querySelectorAll(".popover li button")].find((b) => b.textContent === "Design v2").click());
 await click(a, "Save Plan Settings"); await sleep(800);
 await click(a, "Back"); await sleep(400);
-await add(a, "Add task"); await a.waitForSelector(".editor form");
+await add(a, "Add task"); await a.waitForSelector("input.namebox");
 expect(await a.evaluate(() => document.querySelector(".draftcard-knob.before").getAttribute("aria-label").includes("(1 linked)")), "a new item depends on the default start node");
 
 // on a phone nothing is wider than the screen, the names are balanced against the days, the grip

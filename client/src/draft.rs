@@ -1,24 +1,27 @@
-//! An item being created or edited. What the card and the chart change about it is kept here and
-//! only reaches the plan when it is saved, so it can be discarded as a whole.
+//! An item being created or edited. Everything that is changed about it is kept here and only
+//! reaches the plan when it is saved, so it can be discarded as a whole.
 
 // modules {{{
+use std::collections::HashSet;
+
 use chrono::{Duration, NaiveDate};
 use leptos::prelude::*;
 use plinko::{
-    common::{crud::Crud, short_id::ShortId},
+    common::{crud::Crud, dates::NodeConstraint, short_id::ShortId},
     planner::items::{
         dependency::PlanNode,
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
         plan_delay::NewPlanDelay,
-        task::{NewTask, PersistentState},
+        task::{NewTask, PersistentState, Worker},
         task_group::NewTaskGroup,
     },
     planner::{plan::Plan, plan_update::PlanUpdate},
 };
+use uuid::Uuid;
 
-use crate::{model, sync::Sync};
+use crate::{forms, model, sync::Sync};
 // }}}
 
 // constants {{{
@@ -26,12 +29,20 @@ use crate::{model, sync::Sync};
 pub const NEW_DAYS: u32 = 3;
 // }}}
 
-/// What of an item is set from the card: where it is and how long it lasts
+/// An item as it would be once it is saved
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
     pub node: PlanNode,
     /// Not in the plan yet, so saving adds it
     pub new: bool,
+    /// Empty for a buffer, which has none, and for a delay that goes by its days
+    pub name: String,
+    /// The date it is held to, of which a milestone has no end to choose
+    pub constraint: NodeConstraint,
+    /// Who a task asks for and for how many hours a day
+    pub allocations: Vec<(Worker, u8)>,
+    /// The affinities of a task
+    pub affinities: HashSet<Uuid>,
     pub parent: Parent,
     pub dependencies: Vec<PlanNode>,
     /// What waits for it
@@ -56,9 +67,6 @@ pub enum Pick {
     Group,
 }
 
-/// The draft of the page, for the card, the chart and the forms to share
-#[derive(Clone, Copy)]
-pub struct Drafting(pub RwSignal<Option<Draft>>);
 // }}}
 
 // impl Draft {{{
@@ -71,9 +79,44 @@ impl Draft {
             PlanNode::PlanDelay(id) => Some(*plan.plan_delays().get(&id)?.duration()),
             PlanNode::Milestone(_) | PlanNode::TaskGroup(_) => None,
         };
+        let (name, constraint) = match node {
+            PlanNode::Task(id) => {
+                let task = plan.tasks().get(&id)?;
+                (task.name().to_string(), task.time_constraint())
+            }
+            PlanNode::Milestone(id) => {
+                let milestone = plan.milestones().get(&id)?;
+                let constraint = NodeConstraint {
+                    constraint: milestone.time_constraint(),
+                    ..NodeConstraint::default()
+                };
+                (milestone.name().to_string(), constraint)
+            }
+            PlanNode::TaskGroup(id) => {
+                let group = plan.task_groups().get(&id)?;
+                (group.name().to_string(), group.time_constraint())
+            }
+            PlanNode::PlanDelay(id) => {
+                let name = plan.plan_delays().get(&id)?.name().unwrap_or_default();
+                (name.to_string(), NodeConstraint::default())
+            }
+            PlanNode::PlanBuffer(_) => (String::new(), NodeConstraint::default()),
+        };
+        let task = match node {
+            PlanNode::Task(id) => plan.tasks().get(&id),
+            _ => None,
+        };
+        let mut allocations: Vec<(Worker, u8)> = task
+            .map(|t| t.allocations().iter().map(|(w, h)| (*w, h.get())).collect())
+            .unwrap_or_default();
+        allocations.sort_by_key(|(w, _)| forms::worker_value(*w));
         Some(Self {
             node,
             new: false,
+            name,
+            constraint,
+            allocations,
+            affinities: task.map(|t| t.affinities().clone()).unwrap_or_default(),
             parent: model::parent_of(plan, node),
             dependencies: model::dependencies(plan, node),
             dependents: model::dependents(plan, node),
@@ -91,9 +134,19 @@ impl Draft {
             PlanNode::Task(_) | PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => Some(NEW_DAYS),
             PlanNode::Milestone(_) | PlanNode::TaskGroup(_) => None,
         };
+        let name = match node {
+            PlanNode::Task(_) => "New task",
+            PlanNode::Milestone(_) => "New milestone",
+            PlanNode::TaskGroup(_) => "New group",
+            PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => "",
+        };
         Self {
             node,
             new: true,
+            name: name.to_string(),
+            constraint: NodeConstraint::default(),
+            allocations: Vec::new(),
+            affinities: HashSet::new(),
             parent,
             dependencies: start
                 .filter(|_| parent == Parent::Plan)
@@ -106,12 +159,20 @@ impl Draft {
         }
     }
 
-    /// The draft for the item whose pane opens: one being added to `new`, or one in the plan
+    /// The draft for the item that is opened: one being added to `new`, or one in the plan
     pub fn open(sync: Sync, plan: ShortId, node: PlanNode, new: Option<Parent>) -> Option<Self> {
+        // whoever adds a task does it for half a day, unless they say otherwise
+        let me = sync.me.get_untracked().map(|m| (Worker::User(m.id), 4));
         sync.tenant.with_untracked(|t| {
             let plan = t.as_ref()?.plans().get(&plan)?;
             match new {
-                Some(parent) => Some(Self::new(plan, node, parent)),
+                Some(parent) => {
+                    let mut draft = Self::new(plan, node, parent);
+                    draft
+                        .allocations
+                        .extend(me.filter(|_| matches!(node, PlanNode::Task(_))));
+                    Some(draft)
+                }
                 None => Self::of(plan, node),
             }
         })
@@ -188,7 +249,8 @@ impl Draft {
     }
 
     /// The update that adds the item, for one that is new
-    pub fn adding(&self, name: String) -> PlanUpdate {
+    pub fn adding(&self) -> PlanUpdate {
+        let name = self.name.clone();
         let (id, parent) = (self.node.id(), self.parent);
         match self.node {
             PlanNode::Task(_) => PlanUpdate::Task(Crud::Add(NewTask { id, name, parent })),
@@ -217,7 +279,7 @@ impl Draft {
     fn updates(&self, plan: &Plan) -> Vec<PlanUpdate> {
         let mut updates = Vec::new();
         if self.new {
-            updates.push(self.adding(String::new()));
+            updates.push(self.adding());
         }
         let parent = Some(self.parent).filter(|_| !self.new);
         let dependencies = Some(self.dependencies.clone());
@@ -259,7 +321,6 @@ impl Draft {
 mod tests {
     use super::*;
     use plinko::{common::short_id::ShortId, planner::plan::NewPlan};
-    use uuid::Uuid;
 
     /// A plan of three tasks where the second waits for the first, and a group
     fn plan() -> (Plan, [PlanNode; 3], Uuid) {
@@ -270,13 +331,13 @@ mod tests {
         let tasks = [1u128, 2, 3].map(|n| PlanNode::Task(Uuid::from_u128(n)));
         for task in tasks {
             let draft = Draft::new(&plan, task, Parent::Plan);
-            plan.apply_update(draft.adding("T".to_string())).unwrap();
+            plan.apply_update(draft.adding()).unwrap();
         }
         plan.apply_update(PlanUpdate::set_dependencies(tasks[1], vec![tasks[0]]))
             .unwrap();
         let group = Uuid::from_u128(9);
         let adding = Draft::new(&plan, PlanNode::TaskGroup(group), Parent::Plan);
-        plan.apply_update(adding.adding("G".to_string())).unwrap();
+        plan.apply_update(adding.adding()).unwrap();
         (plan, tasks, group)
     }
 

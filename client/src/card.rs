@@ -1,6 +1,6 @@
-//! The card at the bottom of a plan for the item being created or edited: its shape, with handles
-//! for what it waits for, what waits for it, the group it is in and how many days it lasts. What
-//! the handles change is staged in the page's `Draft` and saved with the form beside it.
+//! The card at the bottom of a plan for the item being created: its shape, with handles for what
+//! it waits for, what waits for it, the group it is in and how many days it lasts, over its name
+//! and the buttons that save it. What is changed is staged in the page's `Draft`.
 
 // modules {{{
 use leptos::{ev::PointerEvent, html, prelude::*};
@@ -12,8 +12,9 @@ use plinko::{
 use wasm_bindgen::JsCast;
 
 use crate::{
+    context::{EditButtons, NameBox},
     draft::{Draft, Pick},
-    model::{self, node_name},
+    model,
     ui::use_sync,
 };
 // }}}
@@ -137,6 +138,8 @@ pub fn Card(
     spot: RwSignal<Option<PlanNode>>,
     /// The draft was changed from the card
     on_change: Callback<()>,
+    on_save: Callback<()>,
+    on_cancel: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
     let held = RwSignal::new(None::<Held>);
@@ -277,12 +280,9 @@ pub fn Card(
         let Some(d) = draft.get() else {
             return String::new();
         };
-        match d.new {
+        match d.name.is_empty() {
             true => new_name(d.node).to_string(),
-            false => sync.tenant.with(|t| {
-                let plan = t.as_ref().and_then(|t| t.plans().get(&plan));
-                plan.map(|p| node_name(p, d.node)).unwrap_or_default()
-            }),
+            false => d.name,
         }
     };
     // what a lit handle is waiting for
@@ -410,6 +410,13 @@ pub fn Card(
                     </div>
                     {knob(Pick::After, "What waits for it: drag onto an item, or click and pick items")}
                 </div>
+                // made again for each new item, so its name is ready to type over
+                {move || node.get().map(|_| view! {
+                    <div class="draftcard-row">
+                        <NameBox draft=draft on_save=on_save />
+                        <EditButtons plan=plan draft=draft on_save=on_save on_cancel=on_cancel />
+                    </div>
+                })}
                 {move || said().map(|said| view! { <p class="draftcard-said">{said}</p> })}
             </div>
             {line}

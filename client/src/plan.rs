@@ -16,9 +16,8 @@ use crate::{
     chart_edit,
     context::ContextBar,
     data::DataWindow,
-    draft::{Draft, Drafting, Pick},
-    editor::ItemEditor,
-    format,
+    draft::{Draft, Pick},
+    editor, format,
     gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene, shift},
     guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
@@ -115,9 +114,9 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             model::nodes(p).into_iter().find(|n| n.id() == id)
         })
     });
-    // what the card and the chart change of the item whose pane is open, until it is saved
+    // the item being created or edited as it would be saved, and as it was when it was opened
     let draft = RwSignal::new(None::<Draft>);
-    provide_context(Drafting(draft));
+    let pristine = StoredValue::new(None::<Draft>);
     let probe: card::Probe = RwSignal::new(None);
     let spot = RwSignal::new(None::<PlanNode>);
     let today = Signal::derive(move || {
@@ -202,8 +201,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         adding.set(None);
         navigate(Route::Plan(plan, tab, open))
     };
-    // while an item of the plan is edited its bar is out of the way at the bottom of the chart
-    let editing_one = Memo::new(move |_| draft.with(|d| d.as_ref().is_some_and(|d| !d.new)));
+    // while an item of the plan is edited its bar is out of the way at the bottom of the chart,
+    // and is there even when the item is not on the chart
+    let edited = Memo::new(move |_| draft.with(|d| d.as_ref().filter(|d| !d.new).map(|d| d.node)));
+    let editing_one = Memo::new(move |_| edited.get().is_some());
+    let bar_of = Memo::new(move |_| edited.get().or_else(|| chosen.get()));
     let bar_shown = Memo::new(move |_| editing_one.get() || bar_at.with(Option::is_some));
     let guard = Guard::new();
     // a click while a handle of the card is lit is the card's: it links, unlinks or places the
@@ -231,16 +233,15 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         }
         used
     };
-    // an item is opened or the pane closed only after asking about changes not yet saved
+    // an item is opened for editing, on the chart, or left only after asking about changes not
+    // yet saved
     let on_open = Callback::new(move |node: PlanNode| {
         if card_click(Some(node)) {
             return;
         }
-        guard.then(Callback::new(move |()| {
-            go(tab.get_untracked(), Some(node.id()))
-        }));
+        guard.then(Callback::new(move |()| go(PlanTab::Gantt, Some(node.id()))));
     });
-    // a tap on the chart selects, and with an edit pane open that moves to the item tapped
+    // a tap on the chart selects, and with an item being edited that moves to the item tapped
     let on_tap = Callback::new(move |node: PlanNode| {
         if card_click(Some(node)) {
             return;
@@ -251,6 +252,53 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         }
     });
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
+    // the draft follows the item that is open, and what is selected follows an item of the plan
+    Effect::new(move |_| {
+        let open = node.get().filter(|_| tab.get() != PlanTab::Settings);
+        let new = adding.get_untracked().map(|(_, parent)| parent);
+        let next = open.and_then(|node| Draft::open(sync, plan, node, new));
+        match &next {
+            Some(next) => {
+                guard.opened();
+                if !next.new {
+                    selected.set(Some(next.node));
+                }
+            }
+            None => guard.closed(),
+        }
+        pristine.set_value(next.clone());
+        draft.set(next);
+    });
+    // anything of the draft that is not as it was is a change to ask about, but not a lit handle
+    Effect::new(move |_| {
+        let now = draft.with(|d| d.clone().map(|d| Draft { pick: None, ..d }));
+        match pristine.with_value(|was| *was == now) {
+            true => guard.clean(),
+            false => guard.dirtied(),
+        }
+    });
+    let leave = Callback::new(move |()| {
+        guard.clean();
+        go(tab.get_untracked(), None);
+    });
+    let on_save = Callback::new(move |()| {
+        if let Some(draft) = draft.get_untracked() {
+            editor::save(sync, plan, &draft);
+        }
+        leave.run(());
+    });
+    let on_delete = Callback::new(move |()| {
+        if let Some(node) = draft.with_untracked(|d| d.as_ref().map(|d| d.node)) {
+            editor::remove_item(sync, plan, node);
+        }
+        selected.set(None);
+        leave.run(());
+    });
+    // escape is the same as clicking off the item: it asks first when something is unsaved
+    crate::escape::on_escape(
+        move || open_node_exists.get(),
+        Callback::new(move |()| guard.then(on_close)),
+    );
     let on_blank = Callback::new(move |()| {
         if card_click(None) {
             return;
@@ -290,7 +338,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 std::time::Duration::from_millis(50),
             );
         } else {
-            go(tab.get_untracked(), Some(node.id()));
+            go(PlanTab::Gantt, Some(node.id()));
         }
     });
 
@@ -446,32 +494,29 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     }}
                     {move || {
                         // only made again for another item, so it slides when it is docked
-                        let plan_node = chosen.get()?;
+                        let plan_node = bar_of.get()?;
                         (tab.get() == PlanTab::Gantt && bar_shown.get()).then(|| view! {
                             <ContextBar
                                 plan=plan
                                 node=plan_node
                                 at=bar_at
                                 docked=editing_one
-                                on_edit=Callback::new(move |()| go(tab.get_untracked(), Some(plan_node.id())))
+                                draft=draft
+                                on_edit=Callback::new(move |()| on_open.run(plan_node))
                                 on_data=Callback::new(move |()| data_of.set(Some(plan_node)))
+                                on_save=on_save
+                                on_cancel=leave
+                                on_delete=on_delete
                             />
                         })
                     }}
                 </div>
-                <Card plan=plan draft=draft probe=probe spot=spot on_change=Callback::new(move |()| guard.dirtied()) />
+                <Card plan=plan draft=draft probe=probe spot=spot on_change=Callback::new(move |()| guard.dirtied()) on_save=on_save on_cancel=leave />
                 {move || data_of.get().map(|data_node| view! {
                     <DataWindow plan=plan node=data_node on_close=Callback::new(move |()| data_of.set(None)) />
                 })}
-                {move || {
-                    let open = node.get().filter(|_| tab.get() != PlanTab::Settings);
-                    // the draft is there before the pane, whose form starts from it
-                    let new = adding.get_untracked().map(|(_, parent)| parent);
-                    draft.set(open.and_then(|node| Draft::open(sync, plan, node, new)));
-                    open.map(|node| view! { <ItemPane plan=plan node=node guard=guard on_close=on_close /> })
-                }}
                 </div>
-                <ConfirmLeave guard=guard />
+                <ConfirmLeave guard=guard on_save=on_save />
                 <Show when=move || searching.get()>
                     <SearchWindow plan=plan on_found=on_found on_close=Callback::new(move |_| searching.set(false)) />
                 </Show>
@@ -480,7 +525,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         scene=scene
                         on_open=Callback::new(move |node: PlanNode| {
                             listing.set(false);
-                            go(tab.get_untracked(), Some(node.id()));
+                            go(PlanTab::Gantt, Some(node.id()));
                         })
                         on_close=Callback::new(move |_| listing.set(false))
                     />
@@ -569,76 +614,11 @@ pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
     ev.target()
         .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
         .is_some_and(|t| {
-            t.closest("button, a, input, select, canvas, .name, .pane, .draftcard")
+            t.closest("button, a, input, select, canvas, .name, .draftcard, .contextbar")
                 .ok()
                 .flatten()
                 .is_none()
         })
-}
-
-/// Puts the cursor in the first box of the pane's form, with what it holds selected
-fn focus_first_box() {
-    use wasm_bindgen::JsCast;
-    let input = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.query_selector(".pane form input").ok().flatten())
-        .and_then(|i| i.dyn_into::<web_sys::HtmlInputElement>().ok());
-    if let Some(input) = input {
-        let _ = input.focus();
-        input.select();
-    }
-}
-// }}}
-
-// ItemPane {{{
-/// The pane beside the chart for editing the item that is open
-#[component]
-pub fn ItemPane(
-    plan: ShortId,
-    node: PlanNode,
-    guard: Guard,
-    on_close: Callback<()>,
-) -> impl IntoView {
-    guard.opened();
-    on_cleanup(move || guard.closed());
-    // a new item has its first box ready to type in
-    let draft = expect_context::<Drafting>().0;
-    let new = draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.new));
-    if new {
-        set_timeout(focus_first_box, std::time::Duration::from_millis(80));
-    }
-    let title = match (node, new) {
-        (PlanNode::Task(_), true) => "New Task",
-        (PlanNode::Milestone(_), true) => "New Milestone",
-        (PlanNode::PlanBuffer(_), true) => "New Buffer",
-        (PlanNode::PlanDelay(_), true) => "New Delay",
-        (PlanNode::TaskGroup(_), true) => "New Task Group",
-        (PlanNode::Task(_), false) => "Edit Task",
-        (PlanNode::Milestone(_), false) => "Edit Milestone",
-        (PlanNode::PlanBuffer(_), false) => "Edit Buffer",
-        (PlanNode::PlanDelay(_), false) => "Edit Delay",
-        (PlanNode::TaskGroup(_), false) => "Edit Task Group",
-    };
-    // nothing of a new item is in the plan until it is saved, so there is nothing to undo
-    let (saved, cancel) = (on_close, on_close);
-    // escape is the same as clicking off the pane: it asks first when something is unsaved
-    crate::escape::on_escape(|| true, Callback::new(move |()| guard.then(cancel)));
-    view! {
-        <aside class="pane">
-            <header>
-                <h2>{title}</h2>
-                <button type="button" class="plain" aria-label="Close" on:click=move |_| cancel.run(())>"✕"</button>
-            </header>
-            <div
-                class="body"
-                on:input=move |ev| guard.touched(&ev)
-                on:change=move |ev| guard.touched(&ev)
-                on:click=move |ev| guard.touched(&ev)
-            >
-                <ItemEditor plan=plan node=node on_close=saved on_cancel=cancel />
-            </div>
-        </aside>
-    }
 }
 // }}}
 

@@ -3,10 +3,7 @@
 
 // modules {{{
 use chrono::NaiveDate;
-use plinko::{
-    common::dates::{NodeConstraint, NodeEnd, TimeConstraint},
-    planner::items::task::Worker,
-};
+use plinko::{common::dates::TimeConstraint, planner::items::task::Worker};
 use uuid::Uuid;
 // }}}
 
@@ -44,36 +41,6 @@ pub fn constraint_parts(constraint: TimeConstraint) -> (&'static str, Option<Nai
     }
 }
 
-pub fn constraint_from(kind: &str, day: NaiveDate) -> TimeConstraint {
-    match kind {
-        "earliest" => TimeConstraint::Earliest(day),
-        "latest" => TimeConstraint::Latest(day),
-        "fixed" => TimeConstraint::Fixed(day),
-        _ => TimeConstraint::None,
-    }
-}
-
-/// The constraint a task or group form has, which is on the first day when there is none
-pub fn node_constraint(kind: &str, day: NaiveDate, end: NodeEnd) -> NodeConstraint {
-    match constraint_from(kind, day) {
-        TimeConstraint::None => NodeConstraint::default(),
-        constraint => NodeConstraint { constraint, end },
-    }
-}
-
-pub fn end_value(end: NodeEnd) -> &'static str {
-    match end {
-        NodeEnd::Start => "start",
-        NodeEnd::End => "end",
-    }
-}
-
-pub fn parse_end(value: &str) -> NodeEnd {
-    match value {
-        "end" => NodeEnd::End,
-        _ => NodeEnd::Start,
-    }
-}
 // }}}
 
 // tests {{{
@@ -101,32 +68,6 @@ mod tests {
     fn nonsense_is_not_read() {
         assert_eq!(parse_worker(""), None);
         assert_eq!(parse_worker("user:not-an-id"), None);
-    }
-
-    #[test]
-    fn constraints_split_into_a_kind_and_a_day() {
-        let day = NaiveDate::from_ymd_opt(2024, 3, 4).unwrap();
-        for constraint in [
-            TimeConstraint::None,
-            TimeConstraint::Earliest(day),
-            TimeConstraint::Latest(day),
-            TimeConstraint::Fixed(day),
-        ] {
-            let (kind, picked) = constraint_parts(constraint);
-            assert_eq!(constraint_from(kind, picked.unwrap_or(day)), constraint);
-        }
-    }
-
-    #[test]
-    fn a_form_with_no_constraint_forgets_which_day_it_was_for() {
-        let day = NaiveDate::from_ymd_opt(2024, 3, 4).unwrap();
-        let on_end = node_constraint("latest", day, parse_end(end_value(NodeEnd::End)));
-        assert_eq!(on_end.end, NodeEnd::End);
-        assert_eq!(on_end.constraint, TimeConstraint::Latest(day));
-        assert_eq!(
-            node_constraint("none", day, NodeEnd::End),
-            NodeConstraint::default()
-        );
     }
 }
 // }}}

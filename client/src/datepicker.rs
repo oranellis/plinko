@@ -164,24 +164,6 @@ pub fn DateInput(
 }
 // }}}
 
-// OptionalDate {{{
-/// A date that can be left empty
-#[component]
-pub fn OptionalDate(
-    value: RwSignal<Option<NaiveDate>>,
-    #[prop(optional)] disabled: Option<Signal<bool>>,
-) -> impl IntoView {
-    view! {
-        <DatePicker
-            value=value
-            on_change=Callback::new(move |d| value.set(d))
-            clearable=true
-            disabled=disabled.unwrap_or_else(|| Signal::stored(false))
-        />
-    }
-}
-// }}}
-
 // tests {{{
 #[cfg(test)]
 mod tests {

@@ -157,6 +157,12 @@ pub fn Icon(
             <line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::Bin => view! {
+            <path d="M3.5 4.5H12.5M6.5 4.5V3H9.5V4.5M4.5 4.5L5.1 13H10.9L11.5 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="6.8" y1="6.8" x2="7" y2="10.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+            <line x1="9.2" y1="6.8" x2="9" y2="10.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+        }
+        .into_any(),
         IconKind::Plus => view! {
             <line x1="8" y1="3.5" x2="8" y2="12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             <line x1="3.5" y1="8" x2="12.5" y2="8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
@@ -220,6 +226,7 @@ pub enum IconKind {
     Data,
     Pencil,
     Close,
+    Bin,
     Plus,
     Play,
 }
