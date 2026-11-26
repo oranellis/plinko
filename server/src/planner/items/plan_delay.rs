@@ -1,5 +1,4 @@
 // modules {{{
-use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -43,11 +42,6 @@ impl PlanDelay {
 
     pub fn duration(&self) -> &u32 {
         &self.duration
-    }
-
-    /// Where the delay sits when its dependencies finish on `start`
-    pub fn place(&self, start: NaiveDate) -> DateRange {
-        DateRange::new(start, start + Days::new(u64::from(self.duration))).expect("forwards")
     }
 }
 
@@ -127,15 +121,6 @@ mod tests {
             parent: Parent::Plan,
             duration,
         })
-    }
-
-    #[test]
-    fn a_delay_lasts_its_calendar_days_from_where_it_starts() {
-        let start = NaiveDate::from_ymd_opt(2024, 1, 5).unwrap(); // a Friday
-        let range = delay(3).place(start);
-        assert_eq!(range.start(), start);
-        assert_eq!(range.end(), NaiveDate::from_ymd_opt(2024, 1, 8).unwrap());
-        assert_eq!(delay(0).place(start).end(), start);
     }
 
     #[test]

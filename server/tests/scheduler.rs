@@ -1117,3 +1117,32 @@ fn a_group_can_have_a_date_for_its_start_or_its_end() {
     assert_eq!(state.constraint_violations.len(), 1);
 }
 // }}}
+
+// set_buffers_keep_their_end_and_shrink_to_nothing_but_never_below {{{
+#[test]
+fn set_buffers_keep_their_end_and_shrink_to_nothing_but_never_below() {
+    let mut world = World::new();
+    let first = world.task(1, &[], &[start()]);
+    let buffer = world.buffer(5, &[after(node(first))]);
+    // set on Monday the 1st, so it ends after five working days whenever it starts
+    world.plan_update(PlanUpdate::PlanBuffer(Crud::Update(PlanBufferPatch {
+        id: buffer,
+        parent: None,
+        dependencies: None,
+        set_start_day: Some(Some(d(1))),
+        duration: None,
+    })));
+    let next = world.task(1, &[], &[after(PlanNode::PlanBuffer(buffer))]);
+    let state = world.solve();
+    let range = state.plan_buffers[&buffer].date_range;
+    assert_eq!((range.start(), range.end()), (d(2), d(6)));
+    assert_eq!(span(&state, next), (d(8), d(9)));
+
+    // the work before it overruns the buffer, which is then nothing and holds nothing back
+    world.patch(first, |p| p.duration = Some(8));
+    let state = world.solve();
+    let range = state.plan_buffers[&buffer].date_range;
+    assert_eq!((range.start(), range.end()), (d(11), d(11)));
+    assert_eq!(span(&state, next), (d(11), d(12)));
+}
+// }}}
