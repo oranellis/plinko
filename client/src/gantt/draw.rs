@@ -796,7 +796,10 @@ fn paint_bar(
 ) {
     let rect = frame.viewport.bar(from, to, p.lane);
     if p.kind == Kind::Buffer {
-        paint_buffer(ctx, frame, p, rect, marked, hits);
+        match p.mark {
+            PlanNode::PlanDelay(_) => paint_delay(ctx, frame, p, rect, marked, hits),
+            _ => paint_buffer(ctx, frame, p, rect, marked, hits),
+        }
         return;
     }
     path_round(ctx, rect, RADIUS);
@@ -856,7 +859,8 @@ fn paint_bar(
 // }}}
 
 // paint_buffer {{{
-/// A buffer is a dotted line between two dotted end bars, with its days written on it
+/// A buffer is the outline of a bar with nothing in it but its days: dotted until it has a day
+/// it is set to start on, then solid
 fn paint_buffer(
     ctx: &Pen,
     frame: &Frame,
@@ -865,12 +869,41 @@ fn paint_buffer(
     marked: &Marked,
     hits: &mut Hits,
 ) {
-    let middle = rect.y + rect.h / 2.0;
-    let reach = rect.h / 2.0;
-    // dotted until it has a day it is set to start on, then solid
     if !p.pinned {
         let _ = ctx.set_line_dash(&js_sys::Array::of2(&3.0.into(), &3.0.into()));
     }
+    ctx.set_stroke_style_str("#8a8a8a");
+    ctx.set_line_width(1.5);
+    path_round(ctx, rect, RADIUS);
+    ctx.stroke();
+    let _ = ctx.set_line_dash(&js_sys::Array::new());
+    ctx.set_line_width(1.0);
+    ctx.set_font("13px sans-serif");
+    let width = ctx.measure_text(&p.name).map_or(0.0, |m| m.width());
+    if width + 6.0 < rect.w {
+        ctx.set_text_baseline("middle");
+        text(
+            ctx,
+            "#bbb",
+            "13px sans-serif",
+            &p.name,
+            rect.x + (rect.w - width) / 2.0,
+            rect.y + rect.h / 2.0,
+        );
+        ctx.set_text_baseline("alphabetic");
+    }
+    path_round(ctx, rect, RADIUS);
+    stroke_border(ctx, border(frame, p.mark, p.target, marked));
+    hits.items.push((p.mark, rect));
+}
+// }}}
+
+// paint_delay {{{
+/// A delay is a dotted line between two dotted end bars, with its name written on it
+fn paint_delay(ctx: &Pen, frame: &Frame, p: &Placed, rect: Rect, marked: &Marked, hits: &mut Hits) {
+    let middle = rect.y + rect.h / 2.0;
+    let reach = rect.h / 2.0;
+    let _ = ctx.set_line_dash(&js_sys::Array::of2(&3.0.into(), &3.0.into()));
     ctx.set_stroke_style_str("#8a8a8a");
     ctx.set_line_width(1.5);
     ctx.begin_path();
@@ -883,7 +916,7 @@ fn paint_buffer(
     ctx.stroke();
     let _ = ctx.set_line_dash(&js_sys::Array::new());
     ctx.set_line_width(1.0);
-    // the days sit on the line, which stops for them
+    // the name sits on the line, which stops for it
     ctx.set_font("13px sans-serif");
     let width = ctx.measure_text(&p.name).map_or(0.0, |m| m.width());
     let label = Rect {
