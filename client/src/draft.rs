@@ -48,6 +48,8 @@ pub struct Draft {
     pub name: String,
     /// The date it is held to, of which a milestone has no end to choose
     pub constraint: NodeConstraint,
+    /// The day it is held to was chosen, and is not just where the schedule had it
+    pub day_set: bool,
     /// Who a task asks for and for how many hours a day
     pub allocations: Vec<(Worker, u8)>,
     /// The affinities of a task
@@ -126,6 +128,7 @@ impl Draft {
             new: false,
             name,
             constraint,
+            day_set: constraint != NodeConstraint::default(),
             allocations,
             affinities: task.map(|t| t.affinities().clone()).unwrap_or_default(),
             parent: model::parent_of(plan, node),
@@ -156,6 +159,7 @@ impl Draft {
             new: true,
             name: name.to_string(),
             constraint: NodeConstraint::default(),
+            day_set: false,
             allocations: Vec::new(),
             affinities: HashSet::new(),
             parent,
@@ -254,7 +258,8 @@ impl Draft {
     }
 
     /// Goes round what of the item is held to a day: nothing, its first day, then its last. A
-    /// milestone is one day, held or not. `first` and `last` are the days it is scheduled on.
+    /// milestone is one day, held or not. `first` and `last` are the days it is scheduled on,
+    /// which is where the day is until one is chosen: after that only the end changes.
     pub fn hold_next(&mut self, first: NaiveDate, last: NaiveDate) {
         let (start, end) = (
             Pin {
@@ -271,6 +276,7 @@ impl Draft {
         self.hold(match (self.pin(), self.node) {
             (None, PlanNode::Milestone(_)) => Some(end),
             (None, _) => Some(start),
+            (Some(pin), _) if !pin.end && self.day_set => Some(Pin { end: true, ..pin }),
             (Some(pin), _) if !pin.end => Some(end),
             (Some(_), _) => None,
         });
@@ -278,8 +284,9 @@ impl Draft {
 
     /// Holds it to a day, or to none, which leaves no day to pick
     pub fn hold(&mut self, pin: Option<Pin>) {
-        if pin.is_none() && self.pick == Some(Pick::Day) {
-            self.pick = None;
+        if pin.is_none() {
+            self.day_set = false;
+            self.pick = self.pick.filter(|p| *p != Pick::Day);
         }
         self.constraint = match pin {
             Some(pin) => NodeConstraint {

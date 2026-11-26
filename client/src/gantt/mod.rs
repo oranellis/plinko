@@ -332,6 +332,7 @@ pub fn Gantt(
                 h: layout::HEADER_HEIGHT - layout::MONTH_HEIGHT,
             },
             height: size.get_untracked().1,
+            sign_y: row.y - 9.0,
             held: pin.held,
             faint,
         })
@@ -529,12 +530,52 @@ pub fn Gantt(
                 paint_notes(ctx, &frame);
             });
         });
+        // where things are on the chart: the items, the names of groups and the words by them
+        let mut taken: Vec<Rect> = hits.with_value(|h| {
+            let strips = h.headers().map(|(_, strip, _)| strip);
+            h.items().map(|(_, r)| r).chain(strips).collect()
+        });
+        taken.extend(pinned.and_then(staged_rect));
+        layers.with_value(|layers| {
+            let Some(layers) = layers else {
+                return;
+            };
+            let at = layers.at(vp);
+            for label in &layers.labels {
+                ctx.set_font(label.font);
+                taken.push(Rect {
+                    x: label.x + at.0,
+                    y: label.y + at.1 - 9.0,
+                    w: ctx.text_width(&label.words),
+                    h: 18.0,
+                });
+            }
+        });
+        // the sign of a pin goes in the row nearest its item where none of that is in its way
+        let signed = |view: PinView| -> PinView {
+            let (left, right) = shift::sign_reach(view.held);
+            let free = |y: f64| {
+                let (x0, x1, y0, y1) = (view.x - left, view.x + right, y - 9.0, y + 9.0);
+                let clear = |r: &Rect| r.x >= x1 || r.x + r.w <= x0 || r.y >= y1 || r.y + r.h <= y0;
+                y0 > layout::HEADER_HEIGHT && y1 < height && taken.iter().all(clear)
+            };
+            let middle = view.row.y + view.row.h / 2.0;
+            let rows = (0..12).flat_map(|k| [-f64::from(k), f64::from(k)]);
+            let found = rows
+                .map(|k| middle + k * layout::ROW_HEIGHT)
+                .find(|y| free(*y));
+            PinView {
+                sign_y: found.unwrap_or(view.sign_y),
+                ..view
+            }
+        };
         // the day what is looked at is held to, faintly, and that of the item being edited
         if let Some(looked) = hovered.or(picked).filter(|n| Some(*n) != pinned) {
             let pin = editing
                 .pin
                 .run(looked)
-                .and_then(|p| pin_view(looked, p, true));
+                .and_then(|p| pin_view(looked, p, true))
+                .map(signed);
             if let Some(pin) = pin {
                 shift::paint_pin(ctx, &pin);
             }
@@ -545,7 +586,7 @@ pub fn Gantt(
             .and_then(|s| s.pin)
             .filter(|_| !flag_dragged);
         if let Some(pin) = pinned.zip(held).and_then(|(n, p)| pin_view(n, p, false)) {
-            shift::paint_pin(ctx, &pin);
+            shift::paint_pin(ctx, &signed(pin));
         }
         if editing_shift || gripped.is_some() {
             let handles = gripped.map(handles_of).unwrap_or_default();
@@ -631,7 +672,7 @@ pub fn Gantt(
                     }
                     Drag::Flag { node, end } => {
                         match pin_view(node, flagged(node, end, at.0), false) {
-                            Some(pin) => DragView::Flag(pin),
+                            Some(pin) => DragView::Flag(signed(pin)),
                             None => DragView::Link {
                                 from: at,
                                 over: None,
@@ -720,9 +761,16 @@ pub fn Gantt(
                 .get_untracked()
                 .filter(|_| ev.shift_key())
                 .or_else(pinned);
-            if let Some((node, handle)) =
-                gripped.and_then(|node| handles_of(node).at(x, y).map(|h| (node, h)))
-            {
+            let on_handle = gripped.and_then(|node| handles_of(node).at(x, y).map(|h| (node, h)));
+            // the held day of the item being edited is taken from anywhere on its band that is
+            // not on something else
+            let on_band = || {
+                let node = pinned()?;
+                let view = pin_view(node, staged_of(node)?.pin?, false)?;
+                let within = (view.cell.x..view.cell.x + view.cell.w).contains(&x);
+                (within && hit(x, y).is_none()).then_some((node, Handle::Day))
+            };
+            if let Some((node, handle)) = on_handle.or_else(on_band) {
                 if let Some(canvas) = canvas.get_untracked() {
                     let element: &web_sys::Element = canvas.as_ref();
                     let _ = element.set_pointer_capture(ev.pointer_id());

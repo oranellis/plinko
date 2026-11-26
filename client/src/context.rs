@@ -6,15 +6,22 @@
 use leptos::{html, prelude::*};
 use plinko::{
     common::{crud::Crud, short_id::ShortId},
-    planner::items::{dependency::PlanNode, plan_buffer::PlanBufferPatch, task::Status},
+    planner::items::{
+        dependency::PlanNode,
+        parent::Parent,
+        plan_buffer::PlanBufferPatch,
+        task::{Status, Worker},
+    },
     planner::plan_update::PlanUpdate,
 };
 use uuid::Uuid;
 
 use crate::{
-    data::has_data,
+    data::{blocks_said, has_data},
     draft::Draft,
     editor::WorkersWindow,
+    format,
+    gantt::shift::Held,
     icons::{Icon, IconKind},
     mine::set_status,
     model,
@@ -78,9 +85,14 @@ pub fn ContextBar(
             }
             on:click=|ev| ev.stop_propagation()
         >
+            // the name over what there is to say of the item, which with the buttons makes an L
             <Show when=move || docked.get()>
-                <NameBox draft=draft on_save=on_save />
+                <div class="stripinfo fadein">
+                    <NameBox draft=draft on_save=on_save />
+                    <Facts plan=plan draft=draft />
+                </div>
             </Show>
+            <div class="stripbuttons">
             {match node {
                 PlanNode::Task(id) => view! { <StatusSwitch plan=plan task=id /> }.into_any(),
                 PlanNode::PlanBuffer(id) => view! { <SetStart plan=plan buffer=id /> }.into_any(),
@@ -100,16 +112,18 @@ pub fn ContextBar(
                     </button>
                 }
             >
-                <EditSwitch on_save=on_save on_cancel=on_cancel on_delete=on_delete />
                 <Extras plan=plan draft=draft />
+                <EditSwitch on_save=on_save on_cancel=on_cancel on_delete=on_delete />
             </Show>
+            </div>
         </div>
     }
 }
 // }}}
 
 // NameBox {{{
-/// The name of the draft, which is typed over where it stands. A buffer has none.
+/// The name of the draft, which is typed over where it stands and takes as many lines as it
+/// needs, growing upwards. A buffer has none.
 #[component]
 pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl IntoView {
     let (node, new) = draft.with_untracked(|d| {
@@ -118,41 +132,127 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
             d.as_ref().is_some_and(|d| d.new),
         )
     });
-    let input = NodeRef::<html::Input>::new();
+    let input = NodeRef::<html::Textarea>::new();
+    // as high as what is in it
+    let fit = move || {
+        if let Some(input) = input.try_get_untracked().flatten() {
+            let _ = input.set_attribute("style", "height:auto");
+            let _ = input.set_attribute("style", &format!("height:{}px", input.scroll_height()));
+        }
+    };
     // the name of a new item is ready to type over
-    if new {
-        set_timeout(
-            move || {
-                if let Some(input) = input.try_get_untracked().flatten() {
-                    let _ = input.focus();
-                    input.select();
-                }
-            },
-            std::time::Duration::from_millis(80),
-        );
-    }
+    set_timeout(
+        move || {
+            fit();
+            if let Some(input) = input.try_get_untracked().flatten().filter(|_| new) {
+                let _ = input.focus();
+                input.select();
+            }
+        },
+        std::time::Duration::from_millis(80),
+    );
     match node {
         None | Some(PlanNode::PlanBuffer(_)) => view! { <span class="namebox fadein">"Buffer"</span> }.into_any(),
         Some(node) => view! {
-            <input
-                type="text"
+            <textarea
                 class="namebox fadein"
+                rows="1"
                 node_ref=input
                 title="Name"
                 aria-label="Name"
                 placeholder=if matches!(node, PlanNode::PlanDelay(_)) { "Delay" } else { "Name" }
                 prop:value=move || draft.with(|d| d.as_ref().map(|d| d.name.clone()).unwrap_or_default())
                 on:input=move |ev| {
-                    let typed = event_target_value(&ev);
+                    // a name is one line, however many it is shown on
+                    let typed = event_target_value(&ev).replace('\n', " ");
                     draft.update(|d| if let Some(d) = d { d.name = typed });
+                    fit();
                 }
                 on:keydown=move |ev| if ev.key() == "Enter" {
                     ev.prevent_default();
                     on_save.run(());
                 }
-            />
+            ></textarea>
         }
         .into_any(),
+    }
+}
+// }}}
+
+// Facts {{{
+/// What the draft says of its item, under its name: its group, its days, the day it is held to,
+/// who works on it and the data it holds
+#[component]
+fn Facts(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
+    let sync = use_sync();
+    let lines = move || {
+        let Some(d) = draft.get() else {
+            return Vec::new();
+        };
+        sync.tenant.with(|t| {
+            let Some((t, p)) = t.as_ref().and_then(|t| Some((t, t.plans().get(&plan)?))) else {
+                return Vec::new();
+            };
+            let mut lines = vec![match d.parent {
+                Parent::Plan => "Top level".to_string(),
+                Parent::Node(id) => format!("In {}", model::node_name(p, PlanNode::TaskGroup(id))),
+            }];
+            lines.extend(d.duration.map(|days| match days {
+                1 => "1 day".to_string(),
+                days => format!("{days} days"),
+            }));
+            lines.extend(d.pin().map(|pin| {
+                let held = match pin.held {
+                    Held::Earliest => "no earlier than",
+                    Held::Latest => "no later than",
+                    Held::Fixed => "on",
+                };
+                let which = match (d.node, pin.end) {
+                    (PlanNode::Milestone(_), _) => "Held",
+                    (_, false) => "Starts",
+                    (_, true) => "Ends",
+                };
+                format!("{which} {held} {}", format::day(pin.day))
+            }));
+            let workers: Vec<String> = d
+                .allocations
+                .iter()
+                .map(|(worker, hours)| {
+                    let name = match worker {
+                        Worker::Placeholder => "Placeholder".to_string(),
+                        Worker::User(id) => t
+                            .users()
+                            .get(id)
+                            .map_or("Someone", |u| u.name())
+                            .to_string(),
+                        Worker::Tag(id) => p
+                            .tags()
+                            .get(id)
+                            .map_or("A tag", |tag| tag.name())
+                            .to_string(),
+                        Worker::UserGroup(id) => t
+                            .user_groups()
+                            .get(id)
+                            .map_or("A group", |g| g.name())
+                            .to_string(),
+                    };
+                    format!("{name} {hours}h")
+                })
+                .collect();
+            if !workers.is_empty() {
+                lines.push(workers.join(", "));
+            }
+            let blocks = blocks_said(p, d.node);
+            if !blocks.is_empty() {
+                lines.push(blocks.join(", "));
+            }
+            lines
+        })
+    };
+    view! {
+        <ul class="stripfacts">
+            {move || lines().into_iter().map(|line| view! { <li>{line}</li> }).collect_view()}
+        </ul>
     }
 }
 // }}}
@@ -253,37 +353,27 @@ pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
 // }}}
 
 // EditSwitch {{{
-/// What to do with what is being edited, in place of the pencil: one button that saves it, with
-/// leaving it and deleting it a hover away, like the statuses of a task
+/// What to do with what is being edited, in place of the pencil: a tick that saves it, with a
+/// cross that leaves it and a bin that deletes it a hover away, like the statuses of a task
 #[component]
 pub fn EditSwitch(
     on_save: Callback<()>,
     on_cancel: Callback<()>,
     #[prop(optional, into)] on_delete: Option<Callback<()>>,
 ) -> impl IntoView {
-    // a pencil with what happens to the edit in its corner, or for deleting a bin that fills it
-    let option = |label: &'static str,
-                  class: &'static str,
-                  mark: Option<IconKind>,
-                  on: Callback<()>| {
+    let option = |label: &'static str, class: &'static str, kind: IconKind, on: Callback<()>| {
         view! {
             <button type="button" class=format!("st {class}") title=label aria-label=label on:click=move |_| on.run(())>
-                {match mark {
-                    Some(mark) => view! {
-                        <Icon kind=IconKind::Pencil size=20 />
-                        <span class="mini"><Icon kind=mark size=12 /></span>
-                    }.into_any(),
-                    None => view! { <Icon kind=IconKind::Bin size=28 /> }.into_any(),
-                }}
+                <Icon kind=kind size=if kind == IconKind::Bin { 28 } else { 22 } />
             </button>
         }
     };
     view! {
         <div class="statusswitch editswitch fadein">
             <div class="statuscol">
-                {option("Save", "next save", Some(IconKind::Tick), on_save)}
-                {option("Cancel", "cancel", Some(IconKind::Close), on_cancel)}
-                {on_delete.map(|on_delete| option("Delete", "delete", None, on_delete))}
+                {option("Save", "next save", IconKind::Tick, on_save)}
+                {option("Cancel", "cancel", IconKind::Close, on_cancel)}
+                {on_delete.map(|on_delete| option("Delete", "delete", IconKind::Bin, on_delete))}
             </div>
         </div>
     }

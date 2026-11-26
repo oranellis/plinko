@@ -43,8 +43,8 @@ await click(a, "New Plan"); await sleep(200);
 await a.type(".modal input[type=text]", "Collab plan");
 await a.click(".modal button[type=submit]");
 await a.waitForSelector(".plan");
-await add(a, "Add task"); await a.waitForSelector("input.namebox");
-await fill(a, "input.namebox", "Design");
+await add(a, "Add task"); await a.waitForSelector("textarea.namebox");
+await fill(a, "textarea.namebox", "Design");
 await click(a, "Save"); await a.waitForFunction(() => !document.querySelector(".namebox"));
 await sleep(1000);
 
@@ -62,7 +62,7 @@ for (let day = 1; day < 5 && !(await a.$(".contextbar")); day++) {
 expect(await a.evaluate(() => !!document.querySelector(".contextbar")), "tapping a row in the chart shows its bar");
 await click(a, "Edit");
 await sleep(300);
-expect(await a.evaluate(() => !!document.querySelector(".contextbar.docked input.namebox")), "the bar's pencil docks it with the name to edit");
+expect(await a.evaluate(() => !!document.querySelector(".contextbar.docked textarea.namebox")), "the bar's pencil docks it with the name to edit");
 await a.hover(".editswitch"); await sleep(200);
 await click(a, "Cancel");
 // dragging pans, the wheel zooms: the day labels change
@@ -85,8 +85,8 @@ await click(b, "Show a list"); await sleep(500);
 expect((await text(b)).includes("Design"), "a second window shows the task");
 await click(a, "Show a list"); await sleep(300);
 await a.evaluate(() => [...document.querySelectorAll("button.item")][0].click());
-await a.waitForSelector("input.namebox");
-await fill(a, "input.namebox", "Design v2");
+await a.waitForSelector("textarea.namebox");
+await fill(a, "textarea.namebox", "Design v2");
 await click(a, "Save"); await sleep(1500);
 expect((await text(b)).includes("Design v2"), "a rename in one window shows in the other without reloading");
 
@@ -116,7 +116,7 @@ await a.waitForSelector(".popover");
 await a.evaluate(() => [...document.querySelectorAll(".popover li button")].find((b) => b.textContent === "Design v2").click());
 await click(a, "Save Plan Settings"); await sleep(800);
 await click(a, "Back"); await sleep(400);
-await add(a, "Add task"); await a.waitForSelector("input.namebox");
+await add(a, "Add task"); await a.waitForSelector("textarea.namebox");
 expect(await a.evaluate(() => document.querySelector(".draftcard-knob.before").getAttribute("aria-label").includes("(1 linked)")), "a new item depends on the default start node");
 
 // on a phone nothing is wider than the screen, the names are balanced against the days, the grip

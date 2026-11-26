@@ -81,6 +81,17 @@ fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
 }
 // }}}
 
+// blocks_said {{{
+/// The kinds of data block an item holds, by what they are called
+pub fn blocks_said(plan: &Plan, node: PlanNode) -> Vec<&'static str> {
+    let blocks = data_of(plan, node)
+        .map(|(_, blocks)| blocks)
+        .unwrap_or_default();
+    let held = |kind: &str| blocks.iter().any(|b| kind_of(b.content()) == kind);
+    KINDS.iter().filter(|k| held(k.0)).map(|k| k.1).collect()
+}
+// }}}
+
 // has_data {{{
 /// Whether an item can hold data, which buffers and delays cannot
 pub fn has_data(node: PlanNode) -> bool {

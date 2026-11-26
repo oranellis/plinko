@@ -391,6 +391,7 @@ pub fn staging(
                     .pin()
                     .map_or(if end { Held::Latest } else { Held::Earliest }, |p| p.held);
                 d.hold(Some(Pin { day, held, end }));
+                d.day_set = true;
                 d.pick = d.pick.filter(|p| *p != Pick::Day);
                 Ok(())
             });

@@ -115,6 +115,15 @@ pub enum Held {
     Fixed,
 }
 
+/// How far the sign of a pin reaches each side of the edge it is on
+pub fn sign_reach(held: Held) -> (f64, f64) {
+    match held {
+        Held::Earliest => (4.0, 34.0),
+        Held::Latest => (34.0, 4.0),
+        Held::Fixed => (34.0, 34.0),
+    }
+}
+
 /// A pin as it is drawn: the edge of the day that is held, by the item's row, the day's cell in
 /// the header and how far down the chart goes
 #[derive(Clone, Copy, Debug)]
@@ -123,6 +132,8 @@ pub struct PinView {
     pub row: Rect,
     pub cell: Rect,
     pub height: f64,
+    /// How far down its sign is, which is put where nothing else is
+    pub sign_y: f64,
     pub held: Held,
     /// For an item that is only looked at, not edited
     pub faint: bool,
@@ -430,7 +441,7 @@ pub fn paint_pin(ctx: &Pen, pin: &PinView) {
     ctx.fill_rect(pin.cell.x, pin.cell.y, pin.cell.w, pin.height - pin.cell.y);
     ctx.set_stroke_style_str(PIN);
     ctx.set_line_width(2.5);
-    held_sign(ctx, pin.x, pin.row.y - 9.0, pin.held, 1.0);
+    held_sign(ctx, pin.x, pin.sign_y, pin.held, 1.0);
     ctx.restore();
 }
 
