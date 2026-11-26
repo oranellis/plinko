@@ -17,6 +17,7 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
+    card::{Card, Probe},
     data::{blocks_said, has_data},
     draft::Draft,
     editor::WorkersWindow,
@@ -61,14 +62,20 @@ fn position(status: Status) -> usize {
 // }}}
 
 // ContextBar {{{
-/// The bar, put where `at` says on the chart, or slid to the middle of its bottom when `docked`
+/// The bar of an item of the plan, put where `at` says on the chart. While its item is edited,
+/// or for an item that is being created, it is `docked`: at the bottom of the chart, with the
+/// shape of the item over the buttons, beside the `InfoPanel`.
 #[component]
 pub fn ContextBar(
     plan: ShortId,
-    node: PlanNode,
+    /// The item of the plan the bar is for, which a new item is not yet
+    node: Option<PlanNode>,
     at: Memo<Option<(f64, f64)>>,
     docked: Memo<bool>,
     draft: RwSignal<Option<Draft>>,
+    probe: Probe,
+    spot: RwSignal<Option<PlanNode>>,
+    on_change: Callback<()>,
     on_edit: Callback<()>,
     on_data: Callback<()>,
     on_save: Callback<()>,
@@ -79,26 +86,23 @@ pub fn ContextBar(
         <div
             class="contextbar"
             class:docked=move || docked.get()
+            class:fadein=node.is_none()
             style=move || match (docked.get(), at.get()) {
                 (false, Some((left, top))) => format!("left:{left}px;top:{top}px"),
                 _ => String::new(),
             }
             on:click=|ev| ev.stop_propagation()
         >
-            // the name over what there is to say of the item, which with the buttons makes an L
             <Show when=move || docked.get()>
-                <div class="stripinfo fadein">
-                    <NameBox draft=draft on_save=on_save />
-                    <Facts plan=plan draft=draft />
-                </div>
+                <Card plan=plan draft=draft probe=probe spot=spot on_change=on_change />
             </Show>
             <div class="stripbuttons">
             {match node {
-                PlanNode::Task(id) => view! { <StatusSwitch plan=plan task=id /> }.into_any(),
-                PlanNode::PlanBuffer(id) => view! { <SetStart plan=plan buffer=id /> }.into_any(),
+                Some(PlanNode::Task(id)) => view! { <StatusSwitch plan=plan task=id /> }.into_any(),
+                Some(PlanNode::PlanBuffer(id)) => view! { <SetStart plan=plan buffer=id /> }.into_any(),
                 _ => ().into_any(),
             }}
-            {has_data(node).then(|| view! {
+            {node.is_some_and(has_data).then(|| view! {
                 <button type="button" class="ctx" title="Data" aria-label="Data" on:click=move |_| on_data.run(())>
                     <Icon kind=IconKind::Data size=20 />
                 </button>
@@ -113,9 +117,59 @@ pub fn ContextBar(
                 }
             >
                 <Extras plan=plan draft=draft />
-                <EditSwitch on_save=on_save on_cancel=on_cancel on_delete=on_delete />
+                {match node {
+                    Some(_) => view! { <EditSwitch on_save=on_save on_cancel=on_cancel on_delete=on_delete /> }.into_any(),
+                    None => view! { <EditSwitch on_save=on_save on_cancel=on_cancel /> }.into_any(),
+                }}
             </Show>
             </div>
+        </div>
+    }
+}
+// }}}
+
+// InfoPanel {{{
+/// What there is to say of an item: its name over its facts. It is in the corner of the chart
+/// for the item that is looked at, and slides up beside the docked bar for the one being
+/// created or edited, whose name is then typed over where it stands.
+#[component]
+pub fn InfoPanel(
+    plan: ShortId,
+    draft: RwSignal<Option<Draft>>,
+    #[prop(into)] looked: Signal<Option<PlanNode>>,
+    on_save: Callback<()>,
+) -> impl IntoView {
+    let sync = use_sync();
+    let edited = Memo::new(move |_| draft.with(|d| d.as_ref().map(|d| d.node)));
+    // what is looked at, as it is in the plan
+    let seen = Memo::new(move |_| {
+        let node = looked.get().filter(|_| edited.get().is_none())?;
+        sync.tenant
+            .with(|t| Draft::of(t.as_ref()?.plans().get(&plan)?, node))
+    });
+    let shown = Signal::derive(move || draft.get().or_else(|| seen.get()));
+    let name = move || {
+        seen.with(|d| {
+            d.as_ref().map(|d| match (d.name.is_empty(), d.node) {
+                (false, _) => d.name.clone(),
+                (true, PlanNode::PlanBuffer(_)) => "Buffer".to_string(),
+                (true, _) => "Delay".to_string(),
+            })
+        })
+    };
+    view! {
+        <div
+            class="infopanel"
+            class:docked=move || edited.get().is_some()
+            class:gone=move || shown.with(Option::is_none)
+            on:click=|ev| ev.stop_propagation()
+        >
+            // made again for each item edited, so the name of a new one is ready to type over
+            {move || match edited.get() {
+                Some(_) => view! { <NameBox draft=draft on_save=on_save /> }.into_any(),
+                None => view! { <p class="infoname">{name}</p> }.into_any(),
+            }}
+            <Facts plan=plan of=shown />
         </div>
     }
 }
@@ -180,13 +234,13 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
 // }}}
 
 // Facts {{{
-/// What the draft says of its item, under its name: its group, its days, the day it is held to,
+/// What there is to say of an item under its name: its group, its days, the day it is held to,
 /// who works on it and the data it holds
 #[component]
-fn Facts(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
+fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
     let sync = use_sync();
     let lines = move || {
-        let Some(d) = draft.get() else {
+        let Some(d) = of.get() else {
             return Vec::new();
         };
         sync.tenant.with(|t| {
@@ -203,16 +257,17 @@ fn Facts(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
             }));
             lines.extend(d.pin().map(|pin| {
                 let held = match pin.held {
-                    Held::Earliest => "no earlier than",
-                    Held::Latest => "no later than",
-                    Held::Fixed => "on",
+                    Held::Earliest => "Earliest",
+                    Held::Latest => "Latest",
+                    Held::Fixed => "Fixed",
                 };
+                // a milestone is one day, with no end to say
                 let which = match (d.node, pin.end) {
-                    (PlanNode::Milestone(_), _) => "Held",
-                    (_, false) => "Starts",
-                    (_, true) => "Ends",
+                    (PlanNode::Milestone(_), _) => "",
+                    (_, false) => " start",
+                    (_, true) => " end",
                 };
-                format!("{which} {held} {}", format::day(pin.day))
+                format!("{held}{which} {}", format::day(pin.day))
             }));
             let workers: Vec<String> = d
                 .allocations

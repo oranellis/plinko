@@ -79,11 +79,11 @@ pub struct Frame<'a> {
     pub staged: Option<&'a super::Staged>,
     /// A task whose bar is drawn without its name, to leave its handles clear
     pub nameless: Option<Mark>,
+    /// The item being edited, which is drawn faintly: it is where it was, not where it will be
+    pub ghosted: Option<Mark>,
     pub links: &'a [Link],
     /// Something to outline in red, and how strongly
     pub flash: Option<(Mark, f64, &'static str)>,
-    /// What to say about the item under the pointer, the title first
-    pub info: &'a [String],
     /// A short note by the pointer for a violation under it, and where the pointer is
     pub tip: Option<(&'a [String], (f64, f64))>,
 }
@@ -481,9 +481,16 @@ pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
         }
         // the layer has the name on the bar, which the bar is drawn over again to be rid of
         if frame.nameless == Some(mark) && p.kind == Kind::Task {
+            let ghost = frame.ghosted == Some(mark);
             shape.trace(ctx);
+            if ghost {
+                ctx.set_fill_style_str(BACKGROUND);
+                ctx.fill();
+                ctx.set_global_alpha(0.4);
+            }
             ctx.set_fill_style_str(look_colour(p.look));
             ctx.fill();
+            ctx.set_global_alpha(1.0);
             if p.leaf {
                 leaf_wash(ctx, shape.bounds(), |c| shape.trace(c));
             }
@@ -520,9 +527,6 @@ pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
 // paint_notes {{{
 /// The panel about the item under the pointer and the note on a warning, over everything
 pub fn paint_notes(ctx: &Pen, frame: &Frame) {
-    if !frame.info.is_empty() {
-        paint_panel(ctx, frame.info, frame.height);
-    }
     if let Some((lines, pointer)) = frame.tip {
         paint_tip(ctx, lines, pointer, frame.width, frame.height);
     }
@@ -1039,70 +1043,6 @@ fn paint_milestone(
     if p.violated {
         paint_violation(ctx, p.mark, cx + r + 10.0, cy, &mut found.hits);
     }
-}
-// }}}
-
-// paint_panel {{{
-/// The panel at the bottom left that says what the item under the pointer is
-fn paint_panel(ctx: &Pen, lines: &[String], height: f64) {
-    let (pad, margin, title, body) = (10.0, 8.0, 20.0, 15.0);
-    ctx.set_font(&format!("{title}px sans-serif"));
-    let mut wide = ctx.measure_text(&lines[0]).map_or(0.0, |m| m.width());
-    ctx.set_font(&format!("{body}px sans-serif"));
-    for line in &lines[1..] {
-        wide = wide.max(ctx.measure_text(line).map_or(0.0, |m| m.width()));
-    }
-    let rows = (lines.len() - 1) as f64;
-    let h = pad * 2.0
-        + title * 1.25
-        + if rows > 0.0 {
-            4.0 + rows * (body * 1.4 + 4.0) - 4.0
-        } else {
-            0.0
-        };
-    let rect = Rect {
-        x: margin,
-        y: height - margin - h,
-        w: wide + pad * 2.0,
-        h,
-    };
-    ctx.set_fill_style_str("rgba(0,0,0,0.19)");
-    path_round(
-        ctx,
-        Rect {
-            x: rect.x + 2.0,
-            y: rect.y + 3.0,
-            ..rect
-        },
-        6.0,
-    );
-    ctx.fill();
-    path_round(ctx, rect, 6.0);
-    ctx.set_fill_style_str("rgba(30,30,30,0.86)");
-    ctx.fill();
-    ctx.set_stroke_style_str("#4a4a4a");
-    ctx.stroke();
-    ctx.set_text_baseline("top");
-    text(
-        ctx,
-        "#d4d4d4",
-        &format!("{title}px sans-serif"),
-        &lines[0],
-        rect.x + pad,
-        rect.y + pad,
-    );
-    for (i, line) in lines[1..].iter().enumerate() {
-        let y = rect.y + pad + title * 1.25 + 4.0 + i as f64 * (body * 1.4 + 4.0);
-        text(
-            ctx,
-            "#8a8a8a",
-            &format!("{body}px sans-serif"),
-            line,
-            rect.x + pad,
-            y,
-        );
-    }
-    ctx.set_text_baseline("alphabetic");
 }
 // }}}
 

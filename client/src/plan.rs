@@ -12,9 +12,8 @@ use plinko::{
 use uuid::Uuid;
 
 use crate::{
-    card::{self, Card},
-    chart_edit,
-    context::ContextBar,
+    card, chart_edit,
+    context::{ContextBar, InfoPanel},
     data::DataWindow,
     draft::{Draft, Pick},
     editor, format,
@@ -151,19 +150,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         });
         found
     });
-    let info = Callback::new(move |mark: Mark| {
-        let mut said = Vec::new();
-        with_state(&mut |state| {
-            said = sync
-                .tenant
-                .with(|t| {
-                    let t = t.as_ref()?;
-                    Some(gantt::info::info(t, t.plans().get(&plan)?, state, mark))
-                })
-                .unwrap_or_default();
-        });
-        said
-    });
     let violation = Callback::new(move |mark: Mark| {
         let mut said = Vec::new();
         with_state(&mut |state| said = gantt::info::violation(state, mark));
@@ -206,7 +192,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let edited = Memo::new(move |_| draft.with(|d| d.as_ref().filter(|d| !d.new).map(|d| d.node)));
     let editing_one = Memo::new(move |_| edited.get().is_some());
     let bar_of = Memo::new(move |_| edited.get().or_else(|| chosen.get()));
-    let bar_shown = Memo::new(move |_| editing_one.get() || bar_at.with(Option::is_some));
+    // an item being created has the bar too, docked from the start
+    let making = Memo::new(move |_| draft.with(|d| d.as_ref().is_some_and(|d| d.new)));
+    let docked = Memo::new(move |_| editing_one.get() || making.get());
+    let bar_shown = Memo::new(move |_| docked.get() || bar_at.with(Option::is_some));
+    let hovered = RwSignal::new(None::<PlanNode>);
     let guard = Guard::new();
     // a click while a handle of the card is lit is the card's: it links, unlinks or places the
     // item being edited, and is nothing else. Gives whether it was.
@@ -362,7 +352,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 Kind::Buffer => PlanNode::PlanBuffer(nil),
                 Kind::Delay => PlanNode::PlanDelay(nil),
             };
-            go(tab.get_untracked(), None);
+            go(PlanTab::Gantt, None);
             adding.set(Some((new, parent.unwrap_or(Parent::Plan))));
         }));
     };
@@ -440,7 +430,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 today=today
                                 viewport=viewport
                                 links=links
-                                info=info
                                 violation=violation
                                 on_open=on_tap
                                 on_edit=on_open
@@ -489,6 +478,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 }))
                                 spot=spot
                                 probe=probe
+                                hovered=hovered
                             />
                         }.into_any(),
                         PlanTab::List => view! { <List rows=rows on_open=on_open on_toggle=on_toggle /> }.into_any(),
@@ -496,24 +486,35 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     }}
                     {move || {
                         // only made again for another item, so it slides when it is docked
-                        let plan_node = bar_of.get()?;
-                        (tab.get() == PlanTab::Gantt && bar_shown.get()).then(|| view! {
+                        let plan_node = bar_of.get().filter(|_| !making.get());
+                        let shown = making.get() || plan_node.is_some() && bar_shown.get();
+                        (tab.get() == PlanTab::Gantt && shown).then(|| view! {
                             <ContextBar
                                 plan=plan
                                 node=plan_node
                                 at=bar_at
-                                docked=editing_one
+                                docked=docked
                                 draft=draft
-                                on_edit=Callback::new(move |()| on_open.run(plan_node))
-                                on_data=Callback::new(move |()| data_of.set(Some(plan_node)))
+                                probe=probe
+                                spot=spot
+                                on_change=Callback::new(move |()| guard.dirtied())
+                                on_edit=Callback::new(move |()| if let Some(node) = plan_node { on_open.run(node) })
+                                on_data=Callback::new(move |()| data_of.set(plan_node))
                                 on_save=on_save
                                 on_cancel=leave
                                 on_delete=on_delete
                             />
                         })
                     }}
+                    <Show when=move || tab.get() == PlanTab::Gantt>
+                        <InfoPanel
+                            plan=plan
+                            draft=draft
+                            looked=Signal::derive(move || hovered.get().or_else(|| chosen.get()))
+                            on_save=on_save
+                        />
+                    </Show>
                 </div>
-                <Card plan=plan draft=draft probe=probe spot=spot on_change=Callback::new(move |()| guard.dirtied()) on_save=on_save on_cancel=leave />
                 {move || data_of.get().map(|data_node| view! {
                     <DataWindow plan=plan node=data_node on_close=Callback::new(move |()| data_of.set(None)) />
                 })}
@@ -616,7 +617,7 @@ pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
     ev.target()
         .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
         .is_some_and(|t| {
-            t.closest("button, a, input, select, canvas, .name, .draftcard, .contextbar")
+            t.closest("button, a, input, select, canvas, .name, .contextbar, .infopanel")
                 .ok()
                 .flatten()
                 .is_none()

@@ -24,6 +24,9 @@ const DARK: &str = "#3a3a3e";
 /// The colour of the day an item is held to
 const PIN: &str = "#ffb300";
 const PIN_BAND: &str = "rgba(255,179,0,0.16)";
+/// The panel and the lines of the bars of buttons on the page
+const PANEL: &str = "#181818";
+const LINE: &str = "#3a3a3c";
 // }}}
 
 // helpers {{{
@@ -33,7 +36,6 @@ fn reach(handle: Handle) -> (f64, f64) {
     match handle {
         Handle::Move => (0.0, 0.0),
         Handle::Resize | Handle::Start => (9.0, 14.0),
-        Handle::Day => (11.0, 9.0),
         Handle::Hold(_) => (HOLD_BUTTON / 2.0, HOLD_BUTTON / 2.0),
         Handle::Link { .. } => (12.0, 12.0),
     }
@@ -45,7 +47,7 @@ fn direction(right: bool) -> &'static str {
 // }}}
 // constants {{{
 /// How wide and high a button for how a day is held is, with the room around it
-pub const HOLD_BUTTON: f64 = 28.0;
+pub const HOLD_BUTTON: f64 = 44.0;
 /// How near the edge of the chart a drag starts scrolling it
 pub const EDGE: f64 = 36.0;
 const COLOUR: &str = "#1e88e5";
@@ -62,8 +64,6 @@ pub enum Handle {
     Resize,
     /// Changes the day it really started
     Start,
-    /// The day it is held to: dragged to another, or clicked to pick one and how it is held
-    Day,
     /// A click holds it this way, or for `None` lets it go
     Hold(Option<Held>),
 }
@@ -190,9 +190,8 @@ pub struct Overlay {
     pub ghost: Option<Rect>,
     /// The dot that clicks on items answer to: the right one, or the left
     pub picked: Option<bool>,
-    /// The day the item is held to, and whether a click on another day moves it
+    /// The day the item is held to
     pub pin: Option<Pin>,
-    pub daying: bool,
 }
 
 pub enum DragView {
@@ -312,6 +311,14 @@ pub fn resize_label(delta: i32, duration: u32) -> String {
 pub fn paint(ctx: &Pen, overlay: &Overlay) {
     ctx.save();
     let dragging = overlay.drag.is_some();
+    let ways: Vec<(f64, f64)> = overlay
+        .handles
+        .list
+        .iter()
+        .filter(|(h, _)| matches!(h, Handle::Hold(_)) && !dragging)
+        .map(|(_, at)| *at)
+        .collect();
+    hold_bar(ctx, &ways);
     // under the handles, which are on it
     if let Some(r) = overlay.ghost.filter(|_| !dragging) {
         ghost(ctx, r, "");
@@ -326,7 +333,6 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
         ctx.begin_path();
         match handle {
             Handle::Resize | Handle::Start => slot(ctx, *x, *y, lit),
-            Handle::Day => day_handle(ctx, *x, *y, lit || overlay.daying),
             Handle::Hold(held) => {
                 let active = held.is_some() && overlay.pin.map(|p| p.held) == *held;
                 hold_button(ctx, *x, *y, *held, active, lit);
@@ -445,48 +451,70 @@ pub fn paint_pin(ctx: &Pen, pin: &PinView) {
     ctx.restore();
 }
 
-/// The handle of the held day, in its cell of the header: dragged to another day, or clicked
-/// to pick one and how it is held
-fn day_handle(ctx: &Pen, x: f64, y: f64, lit: bool) {
-    ctx.set_fill_style_str(PIN);
+/// A rectangle with round corners, as a path
+fn round(ctx: &Pen, r: Rect, radius: f64) {
+    let (x, y, right, bottom) = (r.x, r.y, r.x + r.w, r.y + r.h);
     ctx.begin_path();
-    let _ = ctx.arc(x, y, 5.0, 0.0, std::f64::consts::TAU);
-    ctx.fill();
-    if lit {
-        ctx.set_stroke_style_str(LIT);
-        ctx.set_line_width(2.0);
-        ctx.stroke();
-    }
+    ctx.move_to(x + radius, y);
+    let _ = ctx.arc_to(right, y, right, bottom, radius);
+    let _ = ctx.arc_to(right, bottom, x, bottom, radius);
+    let _ = ctx.arc_to(x, bottom, x, y, radius);
+    let _ = ctx.arc_to(x, y, right, y, radius);
+    ctx.close_path();
 }
 
-/// A button under the held day for a way to hold it, or to let it go
+/// The bar the ways to hold a day are on, like the bar of buttons under an item
+fn hold_bar(ctx: &Pen, buttons: &[(f64, f64)]) {
+    let (Some(first), Some(last)) = (buttons.first(), buttons.last()) else {
+        return;
+    };
+    let half = HOLD_BUTTON / 2.0 + 2.0;
+    let bar = Rect {
+        x: first.0 - half,
+        y: first.1 - half,
+        w: last.0 - first.0 + 2.0 * half,
+        h: 2.0 * half,
+    };
+    round(ctx, bar, 8.0);
+    ctx.set_fill_style_str(PANEL);
+    ctx.fill();
+    ctx.set_stroke_style_str(LINE);
+    ctx.set_line_width(1.0);
+    ctx.stroke();
+}
+
+/// A button for a way to hold a day, or to let it go, like the buttons of the bar under an item
 fn hold_button(ctx: &Pen, x: f64, y: f64, held: Option<Held>, active: bool, lit: bool) {
     let half = HOLD_BUTTON / 2.0 - 2.0;
-    ctx.set_fill_style_str("#181818");
-    ctx.fill_rect(x - half, y - half, half * 2.0, half * 2.0);
+    let colour = match (active, lit) {
+        (true, _) => PIN,
+        (false, true) => "#d4d4d4",
+        (false, false) => "#888",
+    };
+    let frame = Rect {
+        x: x - half,
+        y: y - half,
+        w: half * 2.0,
+        h: half * 2.0,
+    };
+    round(ctx, frame, 8.0);
     ctx.set_line_width(1.5);
-    ctx.set_stroke_style_str(if active {
-        PIN
-    } else if lit {
-        LIT
-    } else {
-        "#4a4a50"
-    });
-    ctx.stroke_rect(x - half, y - half, half * 2.0, half * 2.0);
-    ctx.set_stroke_style_str(if active { PIN } else { LIGHT });
-    ctx.set_line_width(1.8);
+    ctx.set_stroke_style_str(if active || lit { colour } else { LINE });
+    ctx.stroke();
+    ctx.set_stroke_style_str(colour);
+    ctx.set_line_width(2.0);
     ctx.set_line_cap("round");
     match held {
         // the sign sits in the middle of the button, which its arrows are to one side of
-        Some(Held::Earliest) => held_sign(ctx, x - 6.0, y, Held::Earliest, 0.42),
-        Some(Held::Latest) => held_sign(ctx, x + 6.0, y, Held::Latest, 0.42),
-        Some(Held::Fixed) => held_sign(ctx, x, y, Held::Fixed, 0.3),
+        Some(Held::Earliest) => held_sign(ctx, x - 9.0, y, Held::Earliest, 0.6),
+        Some(Held::Latest) => held_sign(ctx, x + 9.0, y, Held::Latest, 0.6),
+        Some(Held::Fixed) => held_sign(ctx, x, y, Held::Fixed, 0.45),
         None => {
             ctx.begin_path();
-            ctx.move_to(x - 4.5, y - 4.5);
-            ctx.line_to(x + 4.5, y + 4.5);
-            ctx.move_to(x + 4.5, y - 4.5);
-            ctx.line_to(x - 4.5, y + 4.5);
+            ctx.move_to(x - 6.0, y - 6.0);
+            ctx.line_to(x + 6.0, y + 6.0);
+            ctx.move_to(x + 6.0, y - 6.0);
+            ctx.line_to(x - 6.0, y + 6.0);
             ctx.stroke();
         }
     }

@@ -198,9 +198,9 @@ pub fn render(
         selected: None,
         staged: None,
         nameless: None,
+        ghosted: None,
         links: &[],
         flash: None,
-        info: &[],
         tip: None,
     };
     let mut found = Found::default();

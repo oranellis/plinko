@@ -62,7 +62,7 @@ for (let day = 1; day < 5 && !(await a.$(".contextbar")); day++) {
 expect(await a.evaluate(() => !!document.querySelector(".contextbar")), "tapping a row in the chart shows its bar");
 await click(a, "Edit");
 await sleep(300);
-expect(await a.evaluate(() => !!document.querySelector(".contextbar.docked textarea.namebox")), "the bar's pencil docks it with the name to edit");
+expect(await a.evaluate(() => !!document.querySelector(".infopanel.docked textarea.namebox")), "the bar's pencil docks it with the name to edit");
 await a.hover(".editswitch"); await sleep(200);
 await click(a, "Cancel");
 // dragging pans, the wheel zooms: the day labels change

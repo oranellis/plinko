@@ -85,8 +85,9 @@ pub fn Gantt(
     /// Where the chart is scrolled, `None` until it has been put on today
     viewport: RwSignal<Option<Viewport>>,
     links: Callback<Mark, Vec<Link>>,
-    /// What to say about an item: its name and then its details
-    info: Callback<Mark, Vec<String>>,
+    /// Set to the item the pointer is on
+    #[prop(optional)]
+    hovered: Option<RwSignal<Option<Mark>>>,
     /// What went wrong for an item that misses its date
     violation: Callback<Mark, Vec<String>>,
     on_open: Callback<PlanNode>,
@@ -341,21 +342,20 @@ pub fn Gantt(
     let staged_of = move |node: PlanNode| {
         staged.and_then(|s| s.with_untracked(|s| s.clone().filter(|s| s.item == Some(node))))
     };
-    // the handles of the item the pointer is near. The one being edited has a handle on the day
-    // it is held to, in the header, and under that while it is picked the ways to hold it.
-    let handles_of = move |node: PlanNode| {
+    // the handles of an item: its grips, which show with shift for the item the pointer is near,
+    // and for the one being edited the ways to hold its day, under the top of the day's band
+    // while the day is picked
+    let handles_of = move |node: PlanNode, gripped: bool| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
-        let (Some(kind), Some(rect)) = (kind, staged_rect(node)) else {
-            return Grips::default();
+        let mut grips = match (kind, staged_rect(node)) {
+            (Some(kind), Some(rect)) if gripped => Grips::of(kind, rect, editing.dated.run(node)),
+            _ => Grips::default(),
         };
-        let mut grips = Grips::of(kind, rect, editing.dated.run(node));
         let staged = staged_of(node);
         let held = staged.as_ref().and_then(|s| s.pin);
         let daying = staged.is_some_and(|s| s.daying);
         if let Some(view) = held.and_then(|p| pin_view(node, p, false)) {
             let x = view.cell.x + view.cell.w / 2.0;
-            let day = (x, layout::HEADER_HEIGHT - 7.0);
-            grips.list.push((Handle::Day, day));
             let ways = [
                 Some(Held::Earliest),
                 Some(Held::Fixed),
@@ -367,7 +367,7 @@ pub fn Gantt(
                 let (reach, wide) = (shift::HOLD_BUTTON * 2.0, size.get_untracked().0);
                 let x = x.clamp(reach, (wide - reach).max(reach));
                 let along = (i as f64 - 1.5) * shift::HOLD_BUTTON;
-                let under = layout::HEADER_HEIGHT + shift::HOLD_BUTTON / 2.0 + 4.0;
+                let under = layout::HEADER_HEIGHT + shift::HOLD_BUTTON / 2.0 + 8.0;
                 grips.list.push((Handle::Hold(way), (x + along, under)));
             }
         }
@@ -402,7 +402,10 @@ pub fn Gantt(
             chain
         }
     });
-    let said = Memo::new(move |_| hover.get().map(|m| info.run(m)).unwrap_or_default());
+    // what the pointer is on, for the page to say more about
+    if let Some(out) = hovered {
+        Effect::new(move |_| out.set(hover.get()));
+    }
 
     let layers = StoredValue::new_local(None::<layers::Layers>);
     let scene_gen = StoredValue::new_local(0u64);
@@ -473,7 +476,7 @@ pub fn Gantt(
             }
         };
         let ctx: &pen::Pen = &ctx;
-        let (linked, info) = (linked.get(), said.get());
+        let linked = linked.get();
         let generation = scene_gen.get_value();
         // the layers are drawn again only when the chart itself changes or it is scrolled far
         let fresh = layers.with_value(|l| {
@@ -515,9 +518,9 @@ pub fn Gantt(
                     selected: picked,
                     staged: staged.as_ref(),
                     nameless: gripped,
+                    ghosted: pinned,
                     links: &linked,
                     flash: flashed,
-                    info: if over_violation.is_some() { &[] } else { &info },
                     tip: tip.as_deref().map(|lines| (lines, pointer_at)),
                 };
                 // behind the items, what the pointer is on shows its lines, then the items over
@@ -589,7 +592,10 @@ pub fn Gantt(
             shift::paint_pin(ctx, &signed(pin));
         }
         if editing_shift || gripped.is_some() {
-            let handles = gripped.map(handles_of).unwrap_or_default();
+            let shifted = editing_shift && near.is_some();
+            let handles = gripped
+                .map(|node| handles_of(node, shifted))
+                .unwrap_or_default();
             let note = staged
                 .as_ref()
                 .and_then(|s| Some((staged_rect(s.item?)?, s.days.clone()?)));
@@ -711,7 +717,6 @@ pub fn Gantt(
                     note,
                     ghost,
                     pin: staged.as_ref().and_then(|s| s.pin),
-                    daying: staged.as_ref().is_some_and(|s| s.daying),
                     picked: staged.as_ref().and_then(|s| s.pick),
                 },
             );
@@ -733,7 +738,6 @@ pub fn Gantt(
             scene.track(),
             canvas.track(),
             linked.track(),
-            said.track(),
             staged.map(|s| s.track()),
             spot.map(|s| s.track()),
         );
@@ -753,6 +757,16 @@ pub fn Gantt(
         }
     });
 
+    // the held day of the item being edited is taken from anywhere on its band that is not on
+    // something else, where the pointer shows it can be
+    let band_at = move |x: f64, y: f64| {
+        let node = pinned()?;
+        let view = pin_view(node, staged_of(node)?.pin?, false)?;
+        let within = (view.cell.x..view.cell.x + view.cell.w).contains(&x);
+        let free = hit(x, y).is_none() && handles_of(node, false).at(x, y).is_none();
+        (within && free).then_some(node)
+    };
+    let banded = RwSignal::new(false);
     let down = move |ev: PointerEvent| {
         // a handle starts editing instead of panning: with shift, or of the item being edited
         if ev.pointer_type() == "mouse" {
@@ -761,16 +775,21 @@ pub fn Gantt(
                 .get_untracked()
                 .filter(|_| ev.shift_key())
                 .or_else(pinned);
-            let on_handle = gripped.and_then(|node| handles_of(node).at(x, y).map(|h| (node, h)));
-            // the held day of the item being edited is taken from anywhere on its band that is
-            // not on something else
-            let on_band = || {
-                let node = pinned()?;
-                let view = pin_view(node, staged_of(node)?.pin?, false)?;
-                let within = (view.cell.x..view.cell.x + view.cell.w).contains(&x);
-                (within && hit(x, y).is_none()).then_some((node, Handle::Day))
-            };
-            if let Some((node, handle)) = on_handle.or_else(on_band) {
+            let shifted = ev.shift_key() && nearby.get_untracked().is_some();
+            let on_handle =
+                gripped.and_then(|node| handles_of(node, shifted).at(x, y).map(|h| (node, h)));
+            if let Some(node) = band_at(x, y).filter(|_| on_handle.is_none()) {
+                if let Some(canvas) = canvas.get_untracked() {
+                    let element: &web_sys::Element = canvas.as_ref();
+                    let _ = element.set_pointer_capture(ev.pointer_id());
+                }
+                grabbed_at.set_value((x, y));
+                let end = staged_of(node).and_then(|s| s.pin).is_some_and(|p| p.end);
+                drag.set(Some(Drag::Flag { node, end }));
+                edge_scroll(viewport, bounds, pointer, drag);
+                return;
+            }
+            if let Some((node, handle)) = on_handle {
                 if let Some(canvas) = canvas.get_untracked() {
                     let element: &web_sys::Element = canvas.as_ref();
                     let _ = element.set_pointer_capture(ev.pointer_id());
@@ -786,10 +805,6 @@ pub fn Gantt(
                 drag.set(Some(match handle {
                     Handle::Link { right } => Drag::Link { node, right },
                     Handle::Move => Drag::Move(node),
-                    Handle::Day => Drag::Flag {
-                        node,
-                        end: staged_of(node).and_then(|s| s.pin).is_some_and(|p| p.end),
-                    },
                     Handle::Hold(_) => Drag::Press { node, handle },
                     Handle::Start => {
                         let first = scene.with_untracked(|s| {
@@ -847,11 +862,15 @@ pub fn Gantt(
         if drag.get_untracked().is_some() {
             return;
         }
+        let on_band = ev.pointer_type() == "mouse" && band_at(x, y).is_some();
+        if banded.get_untracked() != on_band {
+            banded.set(on_band);
+        }
         if ev.shift_key() {
             // handles show for the item the pointer is near, and stay while it is on one
             let on_handle = nearby
                 .get_untracked()
-                .is_some_and(|n| handles_of(n).at(x, y).is_some());
+                .is_some_and(|n| handles_of(n, true).at(x, y).is_some());
             if !on_handle {
                 let found = hits.with_value(|h| {
                     h.items()
@@ -951,7 +970,7 @@ pub fn Gantt(
             let (from_x, from_y) = grabbed_at.get_value();
             if let Drag::Press { node, handle } = done {
                 match handle {
-                    _ if handles_of(node).at(x, y) != Some(handle) => {}
+                    _ if handles_of(node, false).at(x, y) != Some(handle) => {}
                     Handle::Hold(way) => editing.hold.run((node, way)),
                     _ => {}
                 }
@@ -1079,7 +1098,11 @@ pub fn Gantt(
         <canvas
             class="gantt"
             node_ref=canvas
-            style:cursor=move || if hover.get().is_some() { "pointer" } else { "default" }
+            style:cursor=move || match (banded.get(), hover.get()) {
+                (true, _) => "ew-resize",
+                (false, Some(_)) => "pointer",
+                (false, None) => "default",
+            }
             on:pointerdown=down
             on:pointermove=moved
             on:pointerup=up

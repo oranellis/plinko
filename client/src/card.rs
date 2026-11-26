@@ -1,6 +1,6 @@
-//! The card at the bottom of a plan for the item being created: its shape, with handles for what
-//! it waits for, what waits for it, the group it is in and how many days it lasts, over its name
-//! and the buttons that save it. What is changed is staged in the page's `Draft`.
+//! The shape of the item being created or edited, over the buttons at the bottom of a plan, with
+//! handles for what it waits for, what waits for it, the group it is in and how many days it
+//! lasts. What is changed is staged in the page's `Draft`.
 
 // modules {{{
 use leptos::{ev::PointerEvent, html, prelude::*};
@@ -12,7 +12,6 @@ use plinko::{
 use wasm_bindgen::JsCast;
 
 use crate::{
-    context::{EditSwitch, Extras, NameBox},
     draft::{Draft, Pick},
     model,
     ui::use_sync,
@@ -127,9 +126,8 @@ fn new_name(node: PlanNode) -> &'static str {
 // }}}
 
 // Card {{{
-/// The card for the page's draft, shown while it is of an item not in the plan yet: one that is
-/// has its handles on the chart. `probe` is how drops and `spot` how the item under a drag reach
-/// the chart.
+/// The shape of the page's draft with its handles. `probe` is how drops and `spot` how the item
+/// under a drag reach the chart.
 #[component]
 pub fn Card(
     plan: ShortId,
@@ -138,8 +136,6 @@ pub fn Card(
     spot: RwSignal<Option<PlanNode>>,
     /// The draft was changed from the card
     on_change: Callback<()>,
-    on_save: Callback<()>,
-    on_cancel: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
     let held = RwSignal::new(None::<Held>);
@@ -339,8 +335,7 @@ pub fn Card(
     };
 
     view! {
-        <Show when=move || draft.with(|d| d.as_ref().is_some_and(|d| d.new))>
-            <div class="draftcard" on:click=|ev| ev.stop_propagation()>
+            <div class="stripstage fadein">
                 <div class="draftcard-stage">
                     {knob(Pick::Before, "What it waits for: drag onto an item, or click and pick items")}
                     <div class=move || format!("draftcard-shape {}", node.get().map_or("", kind_class))>
@@ -411,18 +406,9 @@ pub fn Card(
                     </div>
                     {knob(Pick::After, "What waits for it: drag onto an item, or click and pick items")}
                 </div>
-                // made again for each new item, so its name is ready to type over
-                {move || node.get().map(|_| view! {
-                    <div class="draftcard-row">
-                        <NameBox draft=draft on_save=on_save />
-                        <Extras plan=plan draft=draft />
-                        <EditSwitch on_save=on_save on_cancel=on_cancel />
-                    </div>
-                })}
                 {move || said().map(|said| view! { <p class="draftcard-said">{said}</p> })}
             </div>
             {line}
-        </Show>
     }
 }
 // }}}
