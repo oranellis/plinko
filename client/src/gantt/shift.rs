@@ -124,7 +124,7 @@ pub fn sign_reach(held: Held) -> (f64, f64) {
     match held {
         Held::Earliest => (4.0, 34.0),
         Held::Latest => (34.0, 4.0),
-        Held::Fixed => (34.0, 34.0),
+        Held::Fixed => (14.0, 14.0),
     }
 }
 
@@ -430,23 +430,35 @@ fn arrow(ctx: &Pen, from: f64, to: f64, y: f64, head: f64) {
     ctx.stroke();
 }
 
-/// The edge of a held day as a tick, with arrows that say which way the item may still go: on
-/// from it for an earliest day, back from it for a latest, and both at it for a fixed one
+/// How an item is held to a day. No earlier: an arrow on from a tick. No later: an arrow up to a
+/// tick. Exactly: a lock.
 fn held_sign(ctx: &Pen, x: f64, y: f64, held: Held, scale: f64) {
     let (tick, near, far, head) = (7.0 * scale, 6.0 * scale, 30.0 * scale, 7.0 * scale);
     ctx.set_line_cap("round");
     ctx.set_line_join("round");
+    if held == Held::Fixed {
+        // a body with a bow over it that stands clear of it, and a keyhole
+        let (wide, top, bow) = (8.0 * scale, y - scale, 5.0 * scale);
+        ctx.begin_path();
+        ctx.move_to(x - bow, top);
+        ctx.line_to(x - bow, top - 4.0 * scale);
+        let _ = ctx.arc(x, top - 4.0 * scale, bow, std::f64::consts::PI, 0.0);
+        ctx.line_to(x + bow, top);
+        ctx.stroke();
+        ctx.stroke_rect(x - wide, top, 2.0 * wide, 11.0 * scale);
+        ctx.begin_path();
+        ctx.move_to(x, top + 4.5 * scale);
+        ctx.line_to(x, top + 6.5 * scale);
+        ctx.stroke();
+        return;
+    }
     ctx.begin_path();
     ctx.move_to(x, y - tick);
     ctx.line_to(x, y + tick);
     ctx.stroke();
     match held {
         Held::Earliest => arrow(ctx, x + near, x + far, y, head),
-        Held::Latest => arrow(ctx, x - near, x - far, y, head),
-        Held::Fixed => {
-            arrow(ctx, x + far, x + near, y, head);
-            arrow(ctx, x - far, x - near, y, head);
-        }
+        _ => arrow(ctx, x - far, x - near, y, head),
     }
 }
 
@@ -540,7 +552,7 @@ fn hold_button(ctx: &Pen, x: f64, y: f64, held: Held, active: bool, lit: bool) {
         // the sign sits in the middle of the button, which its arrows are to one side of
         Held::Earliest => held_sign(ctx, x - 9.0, y, held, 0.6),
         Held::Latest => held_sign(ctx, x + 9.0, y, held, 0.6),
-        Held::Fixed => held_sign(ctx, x, y, held, 0.45),
+        Held::Fixed => held_sign(ctx, x, y + 1.0, held, 0.85),
     }
 }
 

@@ -479,9 +479,15 @@ button.ctx.held-end { box-shadow: inset -4px 0 0 #c8e63c; }
 .contextbar.docked.leaf, .infopanel.leaf { background-image: radial-gradient(circle at top right, rgba(30, 136, 229, 0.55), transparent 46px); }
 .contextbar.docked::before { content: ""; position: absolute; left: -1px; top: 0; bottom: 0; width: 1px; background: #181818; }
 .stripstage { position: relative; flex: 1; display: grid; place-items: center; --card: #181818; user-select: none; }
-.infopanel { position: absolute; left: 8px; bottom: 8px; z-index: 19; width: 270px; display: grid; align-content: start; gap: 2px; padding: 4px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); transition: left 0.3s ease, bottom 0.3s ease; }
+.infopanel { position: absolute; left: 8px; bottom: 8px; z-index: 19; width: 270px; display: grid; align-content: start; gap: 2px; padding: 4px 10px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); transition: left 0.3s ease, bottom 0.3s ease; }
 .infopanel.gone { display: none; }
 .infopanel.docked { left: calc(50% - 300px); bottom: 170px; min-height: 130px; border-radius: 8px 0 0 8px; }
+/* on a narrow screen the panel stands on the bar and not beside it */
+@media (max-width: 640px) {
+  .infopanel.docked { left: calc(50% - 165px); bottom: 300px; width: 330px; min-height: 0; border-radius: 8px 8px 0 0; clip-path: inset(-400px -400px 0 -400px); }
+  .contextbar.docked { left: calc(50% - 165px); border-left: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; clip-path: inset(-1px -400px -400px -400px); }
+  .contextbar.docked::before { left: 0; right: 0; top: -1px; bottom: auto; width: auto; height: 1px; }
+}
 .infoname { margin: 0; padding: 9px 8px; font-size: 17px; line-height: 22px; color: var(--title); overflow-wrap: anywhere; }
 .stripfacts { margin: 0; padding: 0 8px 6px; list-style: none; display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
 .stripfacts li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
