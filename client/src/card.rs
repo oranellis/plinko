@@ -376,6 +376,11 @@ pub fn Card(
                                             <span>{move || format!("{}d", days().unwrap_or(0))}</span>
                                             <i></i>
                                         </button>
+                                        // while it is dragged, how far the days have moved
+                                        {move || held.get().filter(|h| h.grab == Grab::Days && h.dragged()).map(|h| {
+                                            let by = i64::from(days().unwrap_or(h.days)) - i64::from(h.days);
+                                            view! { <span class="draftcard-drag">{format!("\u{2039} {by:+} \u{203a}")}</span> }
+                                        })}
                                     }
                                 >
                                     <input
