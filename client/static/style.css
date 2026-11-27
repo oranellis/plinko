@@ -159,7 +159,8 @@ input.search { width: 100%; margin-bottom: 10px; }
 input.search.nothing { border-color: var(--danger); }
 .results { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
 .results li button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; padding: 8px 4px; border-bottom: 1px solid var(--soft); border-radius: 0; font-size: 13px; flex-wrap: wrap; }
-.results li button:hover { background: var(--raised); }
+.results li button:hover, .results li button.at { background: var(--raised); }
+.results li button.at { box-shadow: inset 3px 0 0 var(--accent); }
 .results .glyph { color: var(--muted); }
 .results .none { color: var(--faint); text-align: center; padding: 12px 0; font-size: 13px; }
 

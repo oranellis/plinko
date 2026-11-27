@@ -420,9 +420,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             }
         });
     });
-    // what a search picked: on the chart scroll to it and flash it, else open it
+    // what a search picked is selected, and on the chart scrolled to and flashed
     let on_found = Callback::new(move |node: PlanNode| {
         searching.set(false);
+        selected.set(Some(node));
         let placed = scene.with_untracked(|s| s.arrangement.placed.iter().any(|p| p.mark == node));
         if tab.get_untracked() == PlanTab::Gantt && placed {
             focus.set(Some(node));
@@ -440,7 +441,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 std::time::Duration::from_millis(50),
             );
         } else {
-            go(PlanTab::Gantt, Some(node.id()));
+            go(PlanTab::Gantt, None);
+            set_timeout(
+                move || focus.set(Some(node)),
+                std::time::Duration::from_millis(50),
+            );
         }
     });
 
@@ -979,6 +984,8 @@ fn SearchWindow(
             let _ = input.focus();
         }
     });
+    // the row that enter takes, which the arrows move, and which a new filter puts back on top
+    let at = RwSignal::new(0usize);
     let results = Memo::new(move |_| {
         let wanted = filter.get().to_lowercase();
         sync.tenant
@@ -1003,13 +1010,37 @@ fn SearchWindow(
                 placeholder="Filter tasks and milestones…"
                 prop:value=move || filter.get()
                 class:nothing=move || !filter.with(String::is_empty) && results.with(Vec::is_empty)
-                on:input=move |ev| filter.set(event_target_value(&ev))
+                on:input=move |ev| {
+                    at.set(0);
+                    filter.set(event_target_value(&ev));
+                }
+                on:keydown=move |ev| {
+                    let count = results.with(Vec::len);
+                    match ev.key().as_str() {
+                        "ArrowDown" if count > 0 => {
+                            ev.prevent_default();
+                            at.update(|a| *a = (*a + 1).min(count - 1));
+                        }
+                        "ArrowUp" => {
+                            ev.prevent_default();
+                            at.update(|a| *a = a.saturating_sub(1));
+                        }
+                        "Enter" => {
+                            ev.prevent_default();
+                            let picked = results.with(|r| r.get(at.get_untracked()).map(|(n, _)| *n));
+                            if let Some(node) = picked {
+                                on_found.run(node);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             />
             <ul class="results">
                 <Show when=move || results.with(Vec::is_empty)>
                     <li class="none">"No results"</li>
                 </Show>
-                <For each=move || results.get() key=|r| r.clone() children=move |(node, name)| {
+                <For each=move || results.get().into_iter().enumerate() key=|r| r.clone() children=move |(i, (node, name))| {
                     let glyph = match node {
                         PlanNode::Task(_) => "▬",
                         PlanNode::Milestone(_) => "◇",
@@ -1018,7 +1049,12 @@ fn SearchWindow(
                     };
                     view! {
                         <li>
-                            <button type="button" on:click=move |_| on_found.run(node)>
+                            <button
+                                type="button"
+                                class:at=move || at.get() == i
+                                on:click=move |_| on_found.run(node)
+                                on:pointerenter=move |_| at.set(i)
+                            >
                                 <span class="glyph">{glyph}</span>
                                 {name}
                             </button>
