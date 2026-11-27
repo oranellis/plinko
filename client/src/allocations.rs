@@ -98,7 +98,8 @@ fn colour_of(task: Uuid) -> &'static str {
 // HourPie {{{
 /// A day as a pie of eight slices, one to an hour, with the hours booked filled in. A day with
 /// nothing booked has no pie. The slices are green when the hours booked are all the hours the
-/// person has, orange while there are still hours left, and red when they are overbooked.
+/// person has, orange while there are still hours left, and red when they are overbooked. Hours
+/// past the eight go round a ring outside it.
 #[component]
 fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoView {
     let colour = if booked > u32::from(capacity) {
@@ -118,26 +119,47 @@ fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoV
             view! { <path d=slice(i) fill=fill stroke=fill stroke-width="0.8" stroke-linejoin="round" /> }
         })
         .collect_view();
+    // the hours past a full pie go round a ring outside it, which the pie shrinks to make room for
+    let over = booked
+        .saturating_sub(u32::from(FULL_DAY))
+        .min(u32::from(FULL_DAY)) as u8;
+    let ring = (over > 0).then(|| {
+        let arcs = (0..over)
+            .map(|i| view! { <path d=arc(i, 12.0) fill="none" stroke=colour stroke-width="2" /> })
+            .collect_view();
+        view! { <circle cx="13" cy="13" r="12" fill="none" stroke="#2f2f31" stroke-width="2" />{arcs} }
+    });
+    let shrink = (over > 0).then_some("translate(13 13) scale(0.8) translate(-13 -13)");
     view! {
         <svg class="pie" width="26" height="26" viewBox="0 0 26 26">
             <title>{title}</title>
-            {slices}
+            <g transform=shrink>{slices}</g>
+            {ring}
         </svg>
     }
+}
+// }}}
+
+// arc {{{
+/// The edge of slice `i` of eight on a circle of `radius`, for the ring of hours overbooked
+fn arc(i: u8, radius: f64) -> String {
+    let ((x0, y0), (x1, y1)) = (point(i, radius), point(i + 1, radius));
+    format!("M{x0:.2} {y0:.2} A{radius} {radius} 0 0 1 {x1:.2} {y1:.2}")
+}
+
+/// Where the edge between slices `i - 1` and `i` meets a circle of `radius`
+fn point(i: u8, radius: f64) -> (f64, f64) {
+    let centre = 13.0_f64;
+    let angle =
+        (f64::from(i) / f64::from(FULL_DAY)) * std::f64::consts::TAU - std::f64::consts::FRAC_PI_2;
+    (centre + radius * angle.cos(), centre + radius * angle.sin())
 }
 // }}}
 
 // slice {{{
 /// The path of slice `i` of eight, which starts at the top and goes round clockwise
 fn slice(i: u8) -> String {
-    let (centre, radius) = (13.0_f64, 11.0_f64);
-    let at = |turn: f64| {
-        let angle =
-            (turn / f64::from(FULL_DAY)) * std::f64::consts::TAU - std::f64::consts::FRAC_PI_2;
-        (centre + radius * angle.cos(), centre + radius * angle.sin())
-    };
-    let ((x0, y0), (x1, y1)) = (at(f64::from(i)), at(f64::from(i) + 1.0));
-    format!("M{centre} {centre} L{x0:.2} {y0:.2} A{radius} {radius} 0 0 1 {x1:.2} {y1:.2} Z")
+    format!("M13 13 L{} Z", arc(i, 11.0).trim_start_matches('M'))
 }
 // }}}
 
