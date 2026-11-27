@@ -264,6 +264,10 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .helppage { flex: 1; overflow-y: auto; padding: 16px 24px 24px; }
 .helppage h3 { margin: 0 0 4px; font-size: 18px; color: var(--title); }
 .helppage h4 { margin: 18px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.helppage h4 { display: flex; align-items: center; gap: 8px; }
+.helppage .modebox { width: 26px; height: 26px; display: grid; place-items: center; flex: none; background: #181818; border: 1.5px solid var(--accent); border-radius: 7px; color: var(--text); }
+.helppage .modebox.before { color: #fc1ef1; }
+.helppage .modebox.day { color: #c8e63c; }
 table.keys { width: 100%; border-collapse: collapse; }
 table.keys td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--soft); vertical-align: top; font-size: 14px; }
 table.keys td:first-child { width: 140px; white-space: nowrap; }

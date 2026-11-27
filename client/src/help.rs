@@ -14,8 +14,10 @@ use crate::{
 // constants {{{
 /// Keys, and what they do
 type Keys = &'static [(&'static [&'static str], &'static str)];
-/// A mode with its keys, a heading with its modes, and a page with its headings
-type Mode = (&'static str, Keys);
+/// The box a mode has at the top left of the chart: its icon, and the colour it is in
+type Shown = Option<(IconKind, &'static str)>;
+/// A mode with its box and its keys, a heading with its modes, and a page with its headings
+type Mode = (Shown, &'static str, Keys);
 type Heading = (&'static str, &'static [Mode]);
 type Page = (&'static str, &'static [Heading]);
 
@@ -26,6 +28,7 @@ const PAGES: &[Page] = &[(
         "Gantt",
         &[
             (
+                None,
                 "Anywhere on the chart",
                 &[
                     (
@@ -42,6 +45,7 @@ const PAGES: &[Page] = &[(
                 ],
             ),
             (
+                None,
                 "With an item selected",
                 &[
                     (&["e"], "Edit it"),
@@ -62,6 +66,7 @@ const PAGES: &[Page] = &[(
                 ],
             ),
             (
+                Some((IconKind::Pencil, "")),
                 "Creating or editing",
                 &[
                     (&["n"], "Type in its name, at the end"),
@@ -90,6 +95,30 @@ const PAGES: &[Page] = &[(
                 ],
             ),
             (
+                Some((IconKind::Plus, "")),
+                "Choosing what to add",
+                &[
+                    (
+                        &["t", "m", "g", "b", "d"],
+                        "A task, milestone, group, buffer or delay",
+                    ),
+                    (&["escape"], "Add nothing"),
+                ],
+            ),
+            (
+                Some((IconKind::Circle, "before")),
+                "Picking what it waits for, what waits for it, or its group",
+                &[
+                    (
+                        &["click"],
+                        "Link it, or take the link away; a group puts it in it",
+                    ),
+                    (&["/"], "Search for one to pick, enter picking it"),
+                    (&["escape"], "Stop picking, as a click on nothing does"),
+                ],
+            ),
+            (
+                Some((IconKind::Timer, "day")),
                 "With its day taken hold of",
                 &[
                     (
@@ -97,12 +126,16 @@ const PAGES: &[Page] = &[(
                         "Move the day a day either way, as h and l do, or move the pointer",
                     ),
                     (&["enter"], "Put it there, as a click on a day does"),
-                    (&["e", "f", "d"], "Hold it no earlier, exactly, or no later (a deadline)"),
+                    (
+                        &["e", "f", "d"],
+                        "Hold it no earlier, exactly, or no later (a deadline)",
+                    ),
                     (&["c"], "Go round holding its start, its end, or nothing"),
                     (&["escape"], "Leave it where it was"),
                 ],
             ),
             (
+                Some((IconKind::Move, "")),
                 "Moving its days",
                 &[
                     (&["←", "→"], "A day either way, as h and l do"),
@@ -115,6 +148,7 @@ const PAGES: &[Page] = &[(
                 ],
             ),
             (
+                Some((IconKind::Play, "")),
                 "With the statuses listed",
                 &[
                     (&["s"], "The next status, as the button shows"),
@@ -126,6 +160,7 @@ const PAGES: &[Page] = &[(
                 ],
             ),
             (
+                Some((IconKind::Person, "")),
                 "On the workers",
                 &[
                     (&["↑", "↓"], "Move along them, as k and j do"),
@@ -138,6 +173,7 @@ const PAGES: &[Page] = &[(
                 ],
             ),
             (
+                None,
                 "In the search",
                 &[
                     (&["↑", "↓"], "Move down the list"),
@@ -149,6 +185,7 @@ const PAGES: &[Page] = &[(
                 ],
             ),
             (
+                None,
                 "In a question",
                 &[
                     (&["enter"], "Yes: save, or delete"),
@@ -227,8 +264,14 @@ fn HelpWindow(on_close: Callback<()>) -> impl IntoView {
                 <div class="helppage">
                     {move || PAGES[page.get()].1.iter().map(|(heading, modes)| view! {
                         <h3>{*heading}</h3>
-                        {modes.iter().map(|(mode, keys)| view! {
-                            <h4>{*mode}</h4>
+                        {modes.iter().map(|(shown, mode, keys)| view! {
+                            <h4>
+                                // the box the mode has at the top left of the chart
+                                {shown.map(|(icon, tone)| view! {
+                                    <span class=format!("modebox {tone}")><Icon kind=icon size=16 /></span>
+                                })}
+                                {*mode}
+                            </h4>
                             <table class="keys">
                                 {keys.iter().map(|(pressed, does)| view! {
                                     <tr>
