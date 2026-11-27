@@ -484,17 +484,15 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         })
     });
     let on_found = Callback::new(move |node: PlanNode| {
-        // while something is being picked it is a pick, as a click on the item would be: the
-        // search stays for picking more, and a group, which is one, ends it
+        // while something is being picked it is a pick, as a click on the item would be, and
+        // the search closes: it opens again empty for another
         let picking = draft
             .with_untracked(|d| d.as_ref().and_then(|d| d.pick))
             .or(live.with_untracked(|l| l.map(|l| l.1)));
-        if let Some(pick @ (Pick::Before | Pick::After | Pick::Group)) = picking
+        if let Some(Pick::Before | Pick::After | Pick::Group) = picking
             && (live_click(Some(node)) || card_click(Some(node)))
         {
-            if pick == Pick::Group {
-                searching.set(false);
-            }
+            searching.set(false);
             return;
         }
         searching.set(false);
