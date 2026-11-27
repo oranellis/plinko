@@ -132,8 +132,13 @@ pub fn Picker(
     #[prop(into)] choices: Signal<Vec<Choice>>,
     on_change: Callback<String>,
     #[prop(optional, into)] placeholder: String,
+    /// Opens the list when it becomes true, as a click on the button does
+    #[prop(optional, into)]
+    opener: Option<Signal<bool>>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
+    // the choice that enter takes, which the arrows move
+    let at = RwSignal::new(0usize);
     crate::escape::on_escape(move || open.get(), Callback::new(move |()| open.set(false)));
     let filter = RwSignal::new(String::new());
     let anchor = RwSignal::new((0.0, 0.0, 0.0));
@@ -143,12 +148,13 @@ pub fn Picker(
         let v = value.get();
         choices.with(|all| all.iter().find(|c| c.value == v).cloned())
     });
-    let show = move |_| {
+    let show = move || {
         if let Some(b) = button.get_untracked() {
             let r = b.get_bounding_client_rect();
             anchor.set((r.left(), r.bottom() + 2.0, r.width()));
         }
         filter.set(String::new());
+        at.set(0);
         open.set(true);
         set_timeout(
             move || {
@@ -159,17 +165,34 @@ pub fn Picker(
             std::time::Duration::from_millis(0),
         );
     };
+    if let Some(opener) = opener {
+        Effect::new(move |_| {
+            if opener.get() {
+                show();
+            }
+        });
+    }
+    // the best matches first, as in the search of a plan
     let shown = Memo::new(move |_| {
-        let wanted = filter.get().to_lowercase();
+        let wanted = filter.get();
         choices.with(|all| {
-            all.iter()
-                .filter(|c| wanted.is_empty() || c.label.to_lowercase().contains(&wanted))
-                .cloned()
+            let mut found: Vec<(i32, &Choice)> = all
+                .iter()
+                .filter_map(|c| Some((crate::fuzzy::score(&wanted, &c.label)?, c)))
+                .collect();
+            found.sort_by_key(|f| std::cmp::Reverse(f.0));
+            found
+                .into_iter()
+                .map(|(_, c)| c.clone())
                 .collect::<Vec<_>>()
         })
     });
+    let take = move |value: String| {
+        open.set(false);
+        on_change.run(value);
+    };
     view! {
-        <button type="button" class="picker" node_ref=button on:click=show>
+        <button type="button" class="picker" node_ref=button on:click=move |_| show()>
             {move || match current.get() {
                 Some(c) => view! { <span class=c.tone>{c.label}</span> }.into_any(),
                 None => view! { <span class="muted">{placeholder.clone()}</span> }.into_any(),
@@ -190,17 +213,44 @@ pub fn Picker(
                     node_ref=search
                     placeholder="Search…"
                     prop:value=move || filter.get()
-                    on:input=move |ev| filter.set(event_target_value(&ev))
-                    on:keydown=move |ev| if ev.key() == "Escape" { open.set(false) }
+                    on:input=move |ev| {
+                        at.set(0);
+                        filter.set(event_target_value(&ev));
+                    }
+                    on:keydown=move |ev| {
+                        let count = shown.with(Vec::len);
+                        match ev.key().as_str() {
+                            "Escape" => open.set(false),
+                            "ArrowDown" if count > 0 => {
+                                ev.prevent_default();
+                                at.update(|a| *a = (*a + 1).min(count - 1));
+                            }
+                            "ArrowUp" => {
+                                ev.prevent_default();
+                                at.update(|a| *a = a.saturating_sub(1));
+                            }
+                            "Enter" => {
+                                ev.prevent_default();
+                                ev.stop_propagation();
+                                if let Some(c) = shown.with(|s| s.get(at.get_untracked()).cloned()) {
+                                    take(c.value);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 />
                 <ul>
-                    <For each=move || shown.get() key=|c| c.value.clone() children=move |c| {
+                    <For each=move || shown.get().into_iter().enumerate() key=|(i, c)| (*i, c.value.clone()) children=move |(i, c)| {
                         let pick = c.value.clone();
                         view! {
-                            <li><button type="button" class=c.tone on:click=move |_| {
-                                open.set(false);
-                                on_change.run(pick.clone());
-                            }>{c.label}</button></li>
+                            <li><button
+                                type="button"
+                                class=c.tone
+                                class:at=move || at.get() == i
+                                on:click=move |_| take(pick.clone())
+                                on:pointerenter=move |_| at.set(i)
+                            >{c.label}</button></li>
                         }
                     } />
                     <Show when=move || shown.with(Vec::is_empty)><li class="none">"No results"</li></Show>

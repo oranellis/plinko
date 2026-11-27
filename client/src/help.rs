@@ -56,7 +56,7 @@ const PAGES: &[Page] = &[(
                         "Pick its group: click a group, or nothing for the top level",
                     ),
                     (&["c"], "Edit it and take hold of the day it is held to"),
-                    (&["delete"], "Delete it, after asking"),
+                    (&["delete"], "Delete it, after asking, as backspace does"),
                     (&["escape"], "End a pick"),
                 ],
             ),
@@ -66,6 +66,7 @@ const PAGES: &[Page] = &[(
                     (&["n"], "Type in its name, at the end"),
                     (&["tab"], "Leave the name for these keys"),
                     (&["l"], "Type its days"),
+                    (&["w"], "Put the keys on its workers (a task)"),
                     (
                         &["d", "f", "g"],
                         "Pick what it waits for, what waits for it, or its group",
@@ -83,7 +84,7 @@ const PAGES: &[Page] = &[(
                         &["escape"],
                         "End a pick, then leave it, asking first when there are changes",
                     ),
-                    (&["delete"], "Delete it, after asking"),
+                    (&["delete"], "Delete it, after asking, as backspace does"),
                 ],
             ),
             (
@@ -108,6 +109,18 @@ const PAGES: &[Page] = &[(
                         "Not started, in progress, on hold, complete, dropped",
                     ),
                     (&["escape"], "Close them"),
+                ],
+            ),
+            (
+                "On the workers",
+                &[
+                    (&["↑", "↓"], "Move along them, as k and j do"),
+                    (&["←", "→"], "Fewer or more hours a day, as h and l do"),
+                    (&["a"], "Add one, its list open to search"),
+                    (&["c"], "Change who the marked one is, from its list"),
+                    (&["p"], "Add a placeholder"),
+                    (&["delete"], "Take the marked one away, as backspace does"),
+                    (&["w"], "Leave them, as escape does"),
                 ],
             ),
             (

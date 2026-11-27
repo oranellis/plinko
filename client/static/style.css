@@ -221,6 +221,7 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .popover input.search { width: 100%; margin: 0; }
 .popover ul { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
 .popover li button { width: 100%; text-align: left; background: none; border-radius: 3px; padding: 5px 8px; min-height: 0; font-size: 13px; color: inherit; }
+.popover li button.at { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); }
 .popover li button.start { color: #a78bfa; } .popover li button.target { color: #ffd600; }
 .popover li button:hover { background: var(--raised); }
 .popover li.none { color: var(--faint); padding: 6px 8px; font-size: 13px; }
@@ -494,6 +495,9 @@ button.ctx.swap:hover .over { display: grid; }
    the middle of it so that it is clear of the bar at the bottom. It is put there without a
    transform, which the lists that drop from its pickers would be placed against. */
 .workerwin { position: absolute; right: 12px; bottom: calc(50% + 12px); z-index: 19; width: 380px; max-width: calc(100% - 24px); max-height: 45%; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
+/* the workers card while the keys are on it: lit, with the row they are on marked */
+.workerwin.keys { border-color: var(--accent); }
+.workerwin .row.cursor { box-shadow: inset 3px 0 0 var(--accent); background: var(--raised); border-radius: 6px; }
 /* what to do about unsaved changes: three buttons twice the size of the bar's, in a window no
    bigger than they need */
 .modal:has(.choices) { width: auto; }

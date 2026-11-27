@@ -114,7 +114,7 @@ The question mark at the top right, or `?` anywhere, opens a help window (`help.
 | Key | Does |
 | --- | --- |
 | `a` | lists what can be added, where `t` `m` `g` `b` `d` then add a task, milestone, group, buffer or delay |
-| `/` | opens the search, which matches loosely (`fuzzy.rs`: the letters typed in order, in any case, best where they are together or start words), where the arrows move down the list, and enter or a click selects the item and shows it on the chart; while what an item waits for, what waits for it or its group is being picked, it picks the item instead and closes, with what is picked ticked in it |
+| `/` | opens the search, which matches loosely, as every list that is searched does (`fuzzy.rs`: the letters typed in order, in any case, best where they are together or start words), where the arrows move down the list, and enter or a click selects the item and shows it on the chart; while what an item waits for, what waits for it or its group is being picked, it picks the item instead and closes, with what is picked ticked in it |
 | `t` | jumps to today |
 | `e` | edits the selected item |
 | `s` | lists the statuses of the selected or edited task, where `s` again moves it on to the next and `n` `i` `o` `c` `d` put it not started, in progress, on hold, complete or dropped; for a buffer it pins or unpins the start |
@@ -122,10 +122,11 @@ The question mark at the top right, or `?` anywhere, opens a help window (`help.
 | `c` | takes hold of the day the item is held to, editing it first if it is only selected and holding it first if it is not held, and again goes round its first day, its last and not held; `e` `f` `l` then hold it no earlier, exactly, no later |
 | `l` | puts the cursor on the days of the item being created or edited |
 | `n` | puts the cursor at the end of the name of the item being created or edited |
+| `w` | puts the keys on the workers of the task being created or edited, its card lit and the top row marked: up and down (or `k` `j`) move along them, left and right (or `h` `l`) give fewer or more hours, `a` adds one with its list open to search, `c` opens the list of the marked one, `p` adds a placeholder, delete or backspace takes the marked one away, and `w` or escape leaves them |
 | tab | in the name, leaves it for the page, where these keys are |
 | enter | saves the edit, or answers a question with yes |
 | escape | ends a pick, then leaves the edit, asking first; in that question it discards |
-| delete | asks to delete the selected or edited item |
+| delete, backspace | asks to delete the selected or edited item |
 
 ### Shift editing
 

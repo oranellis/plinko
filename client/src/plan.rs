@@ -6,7 +6,11 @@ use std::collections::HashSet;
 use leptos::prelude::*;
 use plinko::{
     common::short_id::ShortId,
-    planner::items::{dependency::PlanNode, parent::Parent, task::Status},
+    planner::items::{
+        dependency::PlanNode,
+        parent::Parent,
+        task::{Status, Worker},
+    },
     scheduler::state::PlanVolatileState,
 };
 use uuid::Uuid;
@@ -29,6 +33,9 @@ use crate::{
 // }}}
 
 // types {{{
+/// A change the keys make to who works on a task, and to the row they are on
+type Staffing<'a> = dyn Fn(&mut Vec<(Worker, u8)>, &mut usize) + 'a;
+
 /// The kinds of item the add menu makes
 #[derive(Clone, Copy)]
 enum Kind {
@@ -403,11 +410,73 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             leave.run(());
         }
     });
-    on_key(
-        "Delete",
-        move || bar_of.try_get_untracked().flatten().is_some() && !window_open(),
-        Callback::new(move |()| deleting.set(bar_of.get_untracked())),
+    // the row of the workers card the keys are on, while they are on it, and a row whose list of
+    // who it can be is to open
+    let workers = RwSignal::new(None::<usize>);
+    let open_row = RwSignal::new(None::<usize>);
+    Effect::new(move |_| {
+        if !draft.with(|d| {
+            d.as_ref()
+                .is_some_and(|d| matches!(d.node, PlanNode::Task(_)))
+        }) {
+            workers.set(None);
+        }
+    });
+    crate::escape::on_escape(
+        move || workers.with(Option::is_some),
+        Callback::new(move |()| workers.set(None)),
     );
+    // what the keys do to the workers: up and down a row, fewer or more hours, add, or take away
+    let staff = move |f: &Staffing<'_>| {
+        let Some(mut at) = workers.get_untracked() else {
+            return;
+        };
+        draft.update(|d| {
+            if let Some(d) = d {
+                f(&mut d.allocations, &mut at);
+                at = at.min(d.allocations.len().saturating_sub(1));
+            }
+        });
+        workers.set(Some(at));
+    };
+    // with the keys on the workers the arrows move along them and delete takes one away, and
+    // else delete, or backspace, asks to delete the item
+    let on_workers = move || workers.try_get_untracked().flatten().is_some() && !window_open();
+    let worker_key = |f: fn(&mut Vec<(Worker, u8)>, &mut usize)| Callback::new(move |()| staff(&f));
+    on_key("ArrowDown", on_workers, worker_key(|_, at| *at += 1));
+    on_key(
+        "ArrowUp",
+        on_workers,
+        worker_key(|_, at| *at = at.saturating_sub(1)),
+    );
+    on_key(
+        "ArrowLeft",
+        on_workers,
+        worker_key(|a, at| hours_by(a, *at, -1)),
+    );
+    on_key(
+        "ArrowRight",
+        on_workers,
+        worker_key(|a, at| hours_by(a, *at, 1)),
+    );
+    for key in ["Delete", "Backspace"] {
+        on_key(
+            key,
+            on_workers,
+            worker_key(|a, at| {
+                if *at < a.len() {
+                    a.remove(*at);
+                }
+            }),
+        );
+        on_key(
+            key,
+            move || {
+                bar_of.try_get_untracked().flatten().is_some() && !window_open() && !on_workers()
+            },
+            Callback::new(move |()| deleting.set(bar_of.get_untracked())),
+        );
+    }
     on_key(
         "Enter",
         move || deleting.try_get_untracked().flatten().is_some(),
@@ -566,6 +635,43 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         if window_open() || tab.try_get_untracked() != Some(PlanTab::Gantt) {
             return false;
         }
+        // with the keys on the workers, letters are for them, with vim's for the arrows
+        if workers.get_untracked().is_some() {
+            match key {
+                'j' => staff(&|_, at| *at += 1),
+                'k' => staff(&|_, at| *at = at.saturating_sub(1)),
+                'h' => staff(&|a, at| hours_by(a, *at, -1)),
+                'l' => staff(&|a, at| hours_by(a, *at, 1)),
+                'a' => {
+                    let next = draft.with_untracked(|d| {
+                        let asked = d
+                            .as_ref()
+                            .map(|d| d.allocations.clone())
+                            .unwrap_or_default();
+                        editor::next_worker(sync, plan, &asked).unwrap_or(Worker::Placeholder)
+                    });
+                    staff(&|a, at| {
+                        a.push((next, 4));
+                        *at = a.len() - 1;
+                    });
+                    open_row.set(workers.get_untracked());
+                }
+                'p' => staff(
+                    &|a, at| match a.iter().position(|(w, _)| *w == Worker::Placeholder) {
+                        Some(there) => *at = there,
+                        None => {
+                            a.push((Worker::Placeholder, 4));
+                            *at = a.len() - 1;
+                        }
+                    },
+                ),
+                // who the worker is, from its list with the cursor in its search
+                'c' => open_row.set(workers.get_untracked()),
+                'w' => workers.set(None),
+                _ => return false,
+            }
+            return true;
+        }
         let item = bar_of.get_untracked();
         if let (true, Some(PlanNode::Task(task))) = (statuses.get_untracked(), item) {
             let now = sync.tenant.with_untracked(|t| {
@@ -650,6 +756,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             ('g', Some(_), _) => light(Pick::Group),
             ('l', Some(_), _) if lasts => typing.set(true),
             ('n', Some(_), _) => name_box_end(),
+            ('w', Some(_), _) if staffed.get_untracked().is_some() => workers.set(Some(0)),
             // the day of the item is taken hold of, held first if it is not
             ('c', Some((_, _, held)), _) if held_kind => {
                 if !held {
@@ -829,7 +936,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     // made again for each task, as it starts from what the task has
                     {move || {
                         let task = staffed.get().filter(|_| tab.get() == PlanTab::Gantt);
-                        task.map(|_| view! { <WorkersWindow plan=plan draft=draft /> })
+                        task.map(|_| view! { <WorkersWindow plan=plan draft=draft cursor=workers open_row=open_row /> })
                     }}
                     <Show when=move || tab.get() == PlanTab::Gantt>
                         <card::Hint draft=draft live=Signal::derive(move || live.get().map(|l| l.1)) />
@@ -960,6 +1067,13 @@ fn AddMenu(
 // }}}
 
 // helpers {{{
+/// Gives the worker at `at` `by` more hours a day, from none to a whole day
+fn hours_by(asked: &mut [(Worker, u8)], at: usize, by: i8) {
+    if let Some((_, hours)) = asked.get_mut(at) {
+        *hours = hours.saturating_add_signed(by).min(8);
+    }
+}
+
 /// Puts the cursor at the end of the name of what is being created or edited
 fn name_box_end() {
     use wasm_bindgen::JsCast;

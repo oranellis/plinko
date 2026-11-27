@@ -216,7 +216,14 @@ pub fn remove_item(sync: Sync, plan: ShortId, node: PlanNode) {
 /// Who works on the task of the draft and for how long a day, and the days it can be worked on:
 /// a card at the right of the chart for as long as the task is created or edited
 #[component]
-pub fn WorkersWindow(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
+pub fn WorkersWindow(
+    plan: ShortId,
+    draft: RwSignal<Option<Draft>>,
+    /// The row the keys are on, while they are on the card
+    cursor: RwSignal<Option<usize>>,
+    /// A row whose list of who it can be is to open
+    open_row: RwSignal<Option<usize>>,
+) -> impl IntoView {
     let start = draft.get_untracked();
     let allocations = RwSignal::new(
         start
@@ -225,6 +232,13 @@ pub fn WorkersWindow(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl Into
             .unwrap_or_default(),
     );
     let affinities = RwSignal::new(start.map(|d| d.affinities).unwrap_or_default());
+    // what the keys change of the draft is shown here
+    Effect::new(move |_| {
+        let asked = draft.with(|d| d.as_ref().map(|d| d.allocations.clone()));
+        if let Some(asked) = asked.filter(|a| allocations.with_untracked(|was| was != a)) {
+            allocations.set(asked);
+        }
+    });
     // what is picked here is the draft's
     Effect::new(move |_| {
         let (asked, allowed) = (allocations.get(), affinities.get());
@@ -241,50 +255,94 @@ pub fn WorkersWindow(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl Into
         }
     });
     view! {
-        <div class="workerwin fadein" on:click=|ev| ev.stop_propagation()>
-            <Workers plan=plan allocations=allocations />
+        <div class="workerwin fadein" class:keys=move || cursor.with(Option::is_some) on:click=|ev| ev.stop_propagation()>
+            <Workers plan=plan allocations=allocations cursor=cursor open_row=open_row />
             <Affinities plan=plan chosen=affinities />
         </div>
     }
+}
+
+/// Who to ask next for work on a task asking `asked`: yourself when you are in the plan, then
+/// the first person, tag or group not asked yet
+pub fn next_worker(sync: Sync, plan: ShortId, asked: &[(Worker, u8)]) -> Option<Worker> {
+    let me = sync.me.get_untracked().map(|m| Worker::User(m.id));
+    let options = sync
+        .tenant
+        .with_untracked(|t| Some(worker_options_of(t.as_ref()?, plan)))
+        .unwrap_or_default();
+    let people: Vec<Worker> = options
+        .into_iter()
+        .filter_map(|(v, _)| forms::parse_worker(&v))
+        .filter(|w| *w != Worker::Placeholder)
+        .collect();
+    let taken = |w: &Worker| asked.iter().any(|(x, _)| x == w);
+    me.filter(|m| people.contains(m))
+        .into_iter()
+        .chain(people.iter().copied())
+        .find(|w| !taken(w))
 }
 
 /// The people and groups work can be asked of in this plan
 fn worker_options(plan: ShortId) -> Signal<Vec<(String, String)>> {
     let sync = use_sync();
     Signal::derive(move || {
-        let mut options = vec![("placeholder".to_string(), "Placeholder".to_string())];
-        let names = sync.tenant.with(|t| {
-            let t = t.as_ref()?;
-            let p = t.plans().get(&plan)?;
-            let mut named: Vec<(String, String)> = Vec::new();
-            for id in p.users().keys() {
-                let name = t.users().get(id).map_or("Someone", |u| u.name());
-                named.push((forms::worker_value(Worker::User(*id)), name.to_string()));
-            }
-            for (id, tag) in p.tags() {
-                named.push((
-                    forms::worker_value(Worker::Tag(*id)),
-                    format!("Anyone tagged {}", tag.name()),
-                ));
-            }
-            for id in p.user_groups().keys() {
-                let name = t.user_groups().get(id).map_or("A group", |g| g.name());
-                named.push((
-                    forms::worker_value(Worker::UserGroup(*id)),
-                    format!("Anyone in {name}"),
-                ));
-            }
-            named.sort_by(|a, b| a.1.cmp(&b.1));
-            Some(named)
-        });
-        options.extend(names.unwrap_or_default());
-        options
+        sync.tenant
+            .with(|t| t.as_ref().map(|t| worker_options_of(t, plan)))
+            .unwrap_or_default()
     })
 }
 
+/// The same from the tenant, read once
+fn worker_options_of(
+    t: &plinko::multitenancy::tenant::Tenant,
+    plan: ShortId,
+) -> Vec<(String, String)> {
+    let mut options = vec![("placeholder".to_string(), "Placeholder".to_string())];
+    let Some(p) = t.plans().get(&plan) else {
+        return options;
+    };
+    let mut named: Vec<(String, String)> = Vec::new();
+    for id in p.users().keys() {
+        let name = t.users().get(id).map_or("Someone", |u| u.name());
+        named.push((forms::worker_value(Worker::User(*id)), name.to_string()));
+    }
+    for (id, tag) in p.tags() {
+        named.push((
+            forms::worker_value(Worker::Tag(*id)),
+            format!("Anyone tagged {}", tag.name()),
+        ));
+    }
+    for id in p.user_groups().keys() {
+        let name = t.user_groups().get(id).map_or("A group", |g| g.name());
+        named.push((
+            forms::worker_value(Worker::UserGroup(*id)),
+            format!("Anyone in {name}"),
+        ));
+    }
+    named.sort_by(|a, b| a.1.cmp(&b.1));
+    options.extend(named);
+    options
+}
+
 #[component]
-fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl IntoView {
+fn Workers(
+    plan: ShortId,
+    allocations: RwSignal<Vec<(Worker, u8)>>,
+    cursor: RwSignal<Option<usize>>,
+    open_row: RwSignal<Option<usize>>,
+) -> impl IntoView {
     let named = worker_options(plan);
+    // a row asked to open has done so once its list has seen it
+    Effect::new(move |_| {
+        if open_row.get().is_some() {
+            set_timeout(
+                move || {
+                    open_row.try_set(None);
+                },
+                std::time::Duration::from_millis(50),
+            );
+        }
+    });
     let choices = Signal::derive(move || {
         named
             .get()
@@ -303,21 +361,7 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
             add="Add Worker"
             count=Signal::derive(move || allocations.with(Vec::len))
             on_add=Callback::new(move |()| {
-                // the first person, tag or group not yet asked for, which the row's picker changes
-                let me = use_sync().me.get_untracked().map(|m| Worker::User(m.id));
-                let taken = move |w: &Worker| allocations.with_untracked(|a| a.iter().any(|(x, _)| x == w));
-                let others = named
-                    .get_untracked()
-                    .into_iter()
-                    .filter_map(|(v, _)| forms::parse_worker(&v))
-                    .filter(|w| *w != Worker::Placeholder);
-                // yourself first when you are in the plan, then whoever is next
-                let people: Vec<Worker> = others.collect();
-                let next = me
-                    .filter(|m| people.contains(m))
-                    .into_iter()
-                    .chain(people.iter().copied())
-                    .find(|w| !taken(w));
+                let next = allocations.with_untracked(|a| next_worker(use_sync(), plan, a));
                 if let Some(worker) = next {
                     allocations.update(|a| a.push((worker, 4)));
                 }
@@ -342,11 +386,12 @@ fn Workers(plan: ShortId, allocations: RwSignal<Vec<(Worker, u8)>>) -> impl Into
                     allocations.with(|a| a.get(i).map_or(0, |(_, h)| i64::from(*h)))
                 });
                 view! {
-                    <div class="row">
+                    <div class="row" class:cursor=move || cursor.get() == Some(i)>
                         <Picker
                             value=worker
                             choices=choices
                             placeholder="Select worker…"
+                            opener=Signal::derive(move || open_row.get() == Some(i))
                             on_change=Callback::new(move |v: String| {
                                 if let Some(w) = forms::parse_worker(&v) {
                                     allocations.update(|a| if let Some(a) = a.get_mut(i) { a.0 = w });
