@@ -75,6 +75,7 @@ pub fn ContextBar(
     draft: RwSignal<Option<Draft>>,
     probe: Probe,
     spot: RwSignal<Option<PlanNode>>,
+    typing: RwSignal<bool>,
     on_change: Callback<()>,
     on_edit: Callback<()>,
     on_data: Callback<()>,
@@ -96,7 +97,7 @@ pub fn ContextBar(
             on:click=|ev| ev.stop_propagation()
         >
             <Show when=move || docked.get()>
-                <Card plan=plan draft=draft probe=probe spot=spot on_change=on_change />
+                <Card plan=plan draft=draft probe=probe spot=spot typing=typing on_change=on_change />
             </Show>
             <div class="stripbuttons">
             {match node {
@@ -226,9 +227,19 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
                     draft.update(|d| if let Some(d) = d { d.name = typed });
                     fit();
                 }
-                on:keydown=move |ev| if ev.key() == "Enter" {
-                    ev.prevent_default();
-                    on_save.run(());
+                on:keydown=move |ev| match ev.key().as_str() {
+                    "Enter" => {
+                        ev.prevent_default();
+                        on_save.run(());
+                    }
+                    // tab leaves the name for the page, where the keys are
+                    "Tab" => {
+                        ev.prevent_default();
+                        if let Some(input) = input.get_untracked() {
+                            let _ = input.blur();
+                        }
+                    }
+                    _ => {}
                 }
             ></textarea>
         }

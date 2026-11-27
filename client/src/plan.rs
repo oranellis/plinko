@@ -289,6 +289,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
     // whether the item that is opened next is opened for the day it is held to
     let grabbing = StoredValue::new(false);
+    // whether the days of the item being created or edited are being typed
+    let typing = RwSignal::new(false);
     // the draft follows the item that is open, and what is selected follows an item of the plan
     Effect::new(move |_| {
         let open = node.get().filter(|_| tab.get() != PlanTab::Settings);
@@ -303,6 +305,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             }
             None => guard.closed(),
         }
+        typing.set(false);
         let grab = grabbing.get_value() && next.as_ref().is_some_and(|d| !d.new);
         grabbing.set_value(false);
         pristine.set_value(next.clone());
@@ -519,6 +522,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         let holds =
             |node: PlanNode| !matches!(node, PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_));
         let held_kind = draft.with_untracked(|d| d.as_ref().is_some_and(|d| holds(d.node)));
+        let lasts = draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.duration.is_some()));
         match (key, editing, chosen.get_untracked()) {
             ('a', _, _) => menu.set(true),
             ('s', _, _) => searching.set(true),
@@ -526,6 +530,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             ('d', Some(_), _) => light(Pick::Before),
             ('f', Some(_), _) => light(Pick::After),
             ('g', Some(_), _) => light(Pick::Group),
+            ('l', Some(_), _) if lasts => typing.set(true),
             // the day of an item of the plan is taken hold of, held first if it is not
             ('c', Some((false, _, held)), _) if held_kind => {
                 if !held {
@@ -690,6 +695,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 draft=draft
                                 probe=probe
                                 spot=spot
+                                typing=typing
                                 on_change=Callback::new(move |()| guard.dirtied())
                                 on_edit=Callback::new(move |()| if let Some(node) = plan_node { on_open.run(node) })
                                 on_data=Callback::new(move |()| data_of.set(plan_node))

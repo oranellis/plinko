@@ -119,6 +119,8 @@ On the chart, typed at the page and not into a box:
 | `e` | edits the selected item |
 | `d` `f` `g` | pick what the item waits for, what waits for it, or its group: for the item being edited by lighting that handle of its shape, and for one that is only selected at once in the plan, with its shift handles shown |
 | `c` | takes hold of the day the item is held to, editing it first if it is only selected and holding it first if it is not held, and again goes round its first day, its last and not held; `e` `f` `l` then hold it no earlier, exactly, no later |
+| `l` | puts the cursor on the days of the item being created or edited |
+| tab | in the name, leaves it for the page, where these keys are |
 | enter | saves the edit, or answers a question with yes |
 | escape | ends a pick, then leaves the edit, asking first; in that question it discards |
 | delete | asks to delete the selected or edited item |

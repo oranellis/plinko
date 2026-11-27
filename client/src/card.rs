@@ -157,12 +157,13 @@ pub fn Card(
     draft: RwSignal<Option<Draft>>,
     probe: Probe,
     spot: RwSignal<Option<PlanNode>>,
+    /// Whether its days are being typed, which a key can start too
+    typing: RwSignal<bool>,
     /// The draft was changed from the card
     on_change: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
     let held = RwSignal::new(None::<Held>);
-    let typing = RwSignal::new(false);
     let days_box = NodeRef::<html::Input>::new();
     let with_plan = move |f: &mut dyn FnMut(&Plan)| {
         sync.tenant.with_untracked(|t| {
