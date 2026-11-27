@@ -610,3 +610,5 @@ button.ctx:disabled { opacity: 0.35; cursor: default; }
 .draftcard-line line { stroke: #1e88e5; stroke-width: 2.5; stroke-dasharray: 6 4; stroke-linecap: round; }
 .draftcard-line line.before { stroke: #fc1ef1; }
 .draftcard-line line.after { stroke: #07fcd7; }
+/* a window takes the keyboard when it opens, which needs no ring around it */
+.modal:focus { outline: none; }

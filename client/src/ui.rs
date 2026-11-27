@@ -73,6 +73,37 @@ pub fn Modal(
     let pressed = StoredValue::new(false);
     let on_backdrop =
         |ev: &web_sys::Event| ev.target().is_some() && ev.target() == ev.current_target();
+    // the keyboard goes into the window, unless something in it took it already, and back to
+    // where it was when the window closes
+    let modal = NodeRef::<html::Div>::new();
+    let focused = || web_sys::window()?.document()?.active_element();
+    let before = StoredValue::new_local(focused());
+    Effect::new(move |_| {
+        if modal.get().is_none() {
+            return;
+        }
+        set_timeout(
+            move || {
+                let Some(Some(modal)) = modal.try_get_untracked() else {
+                    return;
+                };
+                let inside = focused().is_some_and(|f| modal.contains(Some(&f)));
+                if !inside {
+                    let _ = modal.focus();
+                }
+            },
+            std::time::Duration::ZERO,
+        );
+    });
+    on_cleanup(move || {
+        use wasm_bindgen::JsCast;
+        let back = before.try_get_value().flatten();
+        if let Some(back) = back.and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok())
+            && back.is_connected()
+        {
+            let _ = back.focus();
+        }
+    });
     view! {
         <div
             class="backdrop"
@@ -83,7 +114,16 @@ pub fn Modal(
                 }
             }
         >
-            <div class="modal" class:wide=wide role="dialog" aria-label=label on:click=|ev| ev.stop_propagation()>
+            <div
+                class="modal"
+                class:wide=wide
+                role="dialog"
+                aria-modal="true"
+                aria-label=label
+                tabindex="-1"
+                node_ref=modal
+                on:click=|ev| ev.stop_propagation()
+            >
                 <header>
                     <h2>{move || title.get()}</h2>
                     <IconButton kind=IconKind::Close label="Close" on_click=on_close />
