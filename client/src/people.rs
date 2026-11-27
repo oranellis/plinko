@@ -196,6 +196,8 @@ fn PersonForm(
     let busy = RwSignal::new(false);
     // a new person once they are added, while their password is still being set
     let added = RwSignal::new(None::<Uuid>);
+    // the server wants the current password for your own, which Preferences asks for
+    let yourself = which.is_some() && which == sync.me.with_untracked(|m| m.as_ref().map(|m| m.id));
     let title = if existing.is_some() {
         "Edit User"
     } else {
@@ -293,9 +295,21 @@ fn PersonForm(
                     <input type="checkbox" prop:checked=move || admin.get() on:change=move |ev| admin.set(event_target_checked(&ev)) />
                     "Admin (can manage people and see every plan)"
                 </label>
-                <Field label=if which.is_some() { "New password, leave empty to keep" } else { "Password, at least 8 characters" }>
-                    <Text value=password on_input=Callback::new(move |v| password.set(v)) kind="password" />
-                </Field>
+                {if yourself {
+                    view! {
+                        <p class="small">
+                            "Your own password is changed in "
+                            <a href=Route::Preferences.path() on:click=move |_| on_close.run(())>"Preferences"</a>
+                            ", given the current one"
+                        </p>
+                    }.into_any()
+                } else {
+                    view! {
+                        <Field label=if which.is_some() { "New password, leave empty to keep" } else { "Password, at least 8 characters" }>
+                            <Text value=password on_input=Callback::new(move |v| password.set(v)) kind="password" />
+                        </Field>
+                    }.into_any()
+                }}
                 <Show when=move || failure.get().is_some()><p class="error">{move || failure.get()}</p></Show>
                 <Actions on_cancel=on_close />
             </form>
