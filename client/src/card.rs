@@ -146,7 +146,7 @@ pub fn Hint(
         Some(pick).map(|pick| match pick {
             Pick::Before => "Select preceding nodes",
             Pick::After => "Select succeeding nodes",
-            Pick::Group => "Click a group to put it in, or nothing for the top level",
+            Pick::Group => "Click a group to put it in, or nothing (t) for the top level",
             Pick::Day => "Click the day to hold it to",
         })
     };

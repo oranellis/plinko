@@ -816,6 +816,15 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             add(kind);
             return true;
         }
+        // picking a group, t is the top level, as a click on nothing is
+        let card_pick = draft.with_untracked(|d| d.as_ref().and_then(|d| d.pick));
+        let live_pick = live.with_untracked(|l| l.map(|l| l.1));
+        if key == 't' && (card_pick == Some(Pick::Group) || live_pick == Some(Pick::Group)) {
+            if !live_click(None) {
+                card_click(None);
+            }
+            return true;
+        }
         let editing =
             draft.with_untracked(|d| d.as_ref().map(|d| (d.new, d.pick, d.pin().is_some())));
         if let Some((_, Some(Pick::Day), _)) = editing {

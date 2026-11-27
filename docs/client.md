@@ -118,7 +118,7 @@ The question mark at the top right, or `?` anywhere, opens a help window (`help.
 | `t` | jumps to today |
 | `e` | edits the selected item |
 | `s` | lists the statuses of the selected or edited task, where `s` again moves it on to the next and `n` `i` `o` `c` `d` put it not started, in progress, on hold, complete or dropped; for a buffer it pins or unpins the start |
-| `d` `f` `g` | pick what the item waits for, what waits for it, or its group: for the item being edited by lighting that handle of its shape, and for one that is only selected at once in the plan, with its shift handles shown |
+| `d` `f` `g` | pick what the item waits for, what waits for it, or its group: for the item being edited by lighting that handle of its shape, and for one that is only selected at once in the plan, with its shift handles shown; picking its group, `t` is the top level |
 | `c` | takes hold of the day the item is held to, editing it first if it is only selected and holding it first if it is not held, and again goes round its first day, its last and not held; `h` `l` or the arrows then move it a day and `e` `f` `d` hold it no earlier, exactly, or no later (a deadline) |
 | `m` | moves the days of the selected or edited item, at once or staged: left and right (or `h` `l`) a day either way, `s` and `e` its start or its end and `m` all of them; a started task's days, or how long anything lasts by its end, with the ends that move lit and nothing done for the rest; enter or escape stops |
 | `l` | puts the cursor on the days of the item being created or edited |

@@ -114,6 +114,7 @@ const PAGES: &[Page] = &[(
                         "Link it, or take the link away; a group puts it in it",
                     ),
                     (&["/"], "Search for one to pick, enter picking it"),
+                    (&["t"], "Picking its group, the top level"),
                     (&["escape"], "Stop picking, as a click on nothing does"),
                 ],
             ),
