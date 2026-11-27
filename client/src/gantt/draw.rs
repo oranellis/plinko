@@ -277,28 +277,31 @@ impl Marked {
 // }}}
 
 // border {{{
-fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(String, f64)> {
+/// The outline of an item: its colour, how wide it is, and whether it has a glow in the colour
+/// of a target round it, which a target has when something else is its outline
+fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(String, f64, bool)> {
     match frame.flash {
         Some((flashed, alpha, rgb)) if flashed == mark => {
-            return Some((format!("rgba({rgb},{alpha})"), 4.0));
+            return Some((format!("rgba({rgb},{alpha})"), 4.0, false));
         }
         _ => {}
     }
-    if marked.chain.contains(&mark) {
-        Some((CHAIN.to_string(), 3.5))
-    } else if target {
-        Some((TARGET.to_string(), 3.0))
+    let (colour, width) = if marked.chain.contains(&mark) {
+        (CHAIN, 3.5)
     } else if frame.hover == Some(mark) || frame.selected == Some(mark) {
-        Some((HOVERED.to_string(), 3.5))
+        (HOVERED, 3.5)
     } else if marked.inside.contains(&mark) || marked.holds == Some(mark) {
-        Some((INSIDE.to_string(), 3.0))
+        (INSIDE, 3.0)
     } else if marked.before.contains(&mark) {
-        Some((BEFORE.to_string(), 3.0))
+        (BEFORE, 3.0)
     } else if marked.after.contains(&mark) {
-        Some((AFTER.to_string(), 3.0))
+        (AFTER, 3.0)
+    } else if target {
+        return Some((TARGET.to_string(), 3.0, false));
     } else {
-        None
-    }
+        return None;
+    };
+    Some((colour.to_string(), width, target))
 }
 // }}}
 
@@ -601,11 +604,9 @@ fn paint_group(
     path_round(ctx, rect, 8.0);
     ctx.set_fill_style_str(GROUP_FILL);
     ctx.fill();
-    let outline = border(frame, p.mark, p.target, marked);
-    ctx.set_stroke_style_str(outline.as_ref().map_or(GROUP_LINE, |(c, _)| c.as_str()));
-    ctx.set_line_width(outline.as_ref().map_or(1.0, |(_, w)| *w));
-    ctx.stroke();
-    ctx.set_line_width(1.0);
+    // a group always has a line round it, which an outline takes the place of
+    let line = Some((GROUP_LINE.to_string(), 1.0, false));
+    stroke_border(ctx, border(frame, p.mark, p.target, marked).or(line));
 
     // the name along the top lane of the group, with the arrow that folds it
     let lane_top = frame.viewport.lane_top(p.lane);
@@ -763,8 +764,15 @@ fn faded(hex: &str) -> String {
     format!("rgba({},{},{},0)", channel(1), channel(3), channel(5))
 }
 
-fn stroke_border(ctx: &Pen, outline: Option<(String, f64)>) {
-    if let Some((colour, width)) = outline {
+fn stroke_border(ctx: &Pen, outline: Option<(String, f64, bool)>) {
+    if let Some((colour, width, glow)) = outline {
+        if glow {
+            ctx.set_global_alpha(0.55);
+            ctx.set_stroke_style_str(TARGET);
+            ctx.set_line_width(width + 6.0);
+            ctx.stroke();
+            ctx.set_global_alpha(1.0);
+        }
         ctx.set_stroke_style_str(&colour);
         ctx.set_line_width(width);
         ctx.stroke();
