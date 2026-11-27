@@ -196,8 +196,9 @@ impl Sync {
                         then(None);
                     }
                 });
-                // a session that has ended means logging in again, not trying again
-                if crate::api::me().await.is_none() {
+                // a session that has ended means logging in again, not trying again, but a
+                // server that cannot be reached is tried again
+                if matches!(crate::api::me().await, Ok(None)) {
                     sync.me.set(None);
                     sync.tenant.set(None);
                     return;

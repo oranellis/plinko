@@ -35,10 +35,14 @@ pub async fn login(email: &str, password: &str) -> Result<Profile, String> {
     }
 }
 
-pub async fn me() -> Option<Profile> {
-    let response = Request::get("/api/me").send().await.ok()?;
-    response.ok().then_some(())?;
-    response.json().await.ok()
+/// Who is logged in: `Ok(None)` if no one is, `Err` if the server could not be asked
+pub async fn me() -> Result<Option<Profile>, ()> {
+    let response = Request::get("/api/me").send().await.map_err(|_| ())?;
+    match response.status() {
+        200 => response.json().await.map(Some).map_err(|_| ()),
+        401 | 403 => Ok(None),
+        _ => Err(()),
+    }
 }
 
 pub async fn logout() {

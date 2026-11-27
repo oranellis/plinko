@@ -47,7 +47,8 @@ fn App() -> impl IntoView {
     format::provide_preferences();
     let booted = RwSignal::new(false);
     spawn_local(async move {
-        if let Some(profile) = api::me().await {
+        // a server that cannot be reached shows the login, which says so
+        if let Ok(Some(profile)) = api::me().await {
             sync.me.set(Some(profile));
             sync.connect();
         }
