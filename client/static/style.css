@@ -295,7 +295,7 @@ kbd { display: inline-block; min-width: 24px; margin-right: 4px; padding: 1px 7p
 .home h2 { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
 ul.work { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .row-task { display: flex; gap: 10px; align-items: center; }
-.row-task .item { padding: 6px 12px; border-radius: var(--radius); flex: 1; text-decoration: none; color: var(--text); }
+.row-task .item { padding: 6px 12px; border-radius: var(--radius); flex: 1; text-decoration: none; color: var(--text); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
 .dates.late { color: var(--danger-text); }
 /* the upcoming work lays out a column of --cell for each of the next days, the start button sits in
    its day's column and the bar follows it, its text fading out at the right edge */
@@ -490,7 +490,7 @@ textarea.description { min-height: 90px; }
 .contextbar { align-items: center; }
 .fadein { animation: fadein 0.3s ease 0.1s both; }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
-.namebox { width: 100%; min-width: 190px; height: 40px; min-height: 0; padding: 8px 7px; resize: none; overflow: hidden; line-height: 22px; font-family: inherit; background: none; border: 1.5px solid transparent; border-radius: 8px; color: var(--title); font-size: 17px; user-select: text; }
+.namebox { width: 100%; min-width: 190px; height: 45px; min-height: 0; padding: 8px 7px; resize: none; overflow: hidden; line-height: 26px; font-family: inherit; background: none; border: 1.5px solid transparent; border-radius: 8px; color: var(--title); font-size: 20px; user-select: text; }
 textarea.namebox:hover { border-color: var(--line); }
 textarea.namebox:focus { border-color: var(--accent); outline: none; }
 span.namebox { display: flex; align-items: center; color: var(--muted); }
@@ -546,7 +546,7 @@ button.ctx.swap:hover .over { display: grid; }
   .contextbar.docked { left: calc(50% - 165px); border-left: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; clip-path: inset(-1px -400px -400px -400px); }
   .contextbar.docked::before { left: 0; right: 0; top: -1px; bottom: auto; width: auto; height: 1px; }
 }
-.infoname { margin: 0; padding: 9px 8px; font-size: 17px; line-height: 22px; color: var(--title); overflow-wrap: anywhere; }
+.infoname { margin: 0; padding: 9px 8px; font-size: 20px; line-height: 26px; color: var(--title); overflow-wrap: anywhere; }
 .stripfacts { margin: 0; padding: 0 8px 6px; list-style: none; display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
 .stripfacts li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.ctx, .statusswitch .st { width: 40px; height: 40px; min-height: 0; padding: 0; display: grid; place-items: center; background: none; border: 1.5px solid var(--line); border-radius: 8px; color: var(--muted); flex: none; }
