@@ -164,6 +164,8 @@ pub struct Editing {
     pub pin: Callback<PlanNode, Option<Pin>>,
     /// `(node, end, day)`: holds the first day of the item to a day, or its last for `end`
     pub constrain: Callback<(PlanNode, bool, NaiveDate)>,
+    /// While the day an item is held to is picked, the day the pointer is on
+    pub aim: Callback<(PlanNode, NaiveDate)>,
     /// How the item is held to its day
     pub hold: Callback<(PlanNode, Held)>,
     /// A click on the held day, after which a click on another day moves it there

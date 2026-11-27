@@ -65,6 +65,8 @@ pub struct Draft {
     pub moved: (i32, i32),
     /// The handle of the card that is lit, which clicks on the chart then answer to
     pub pick: Option<Pick>,
+    /// While its day is picked, the day it would be put on, when that is not where it is
+    pub aim: Option<NaiveDate>,
 }
 
 // Draft supporting types {{{
@@ -141,6 +143,7 @@ impl Draft {
             duration,
             moved: (0, 0),
             pick: None,
+            aim: None,
         })
     }
 
@@ -175,6 +178,7 @@ impl Draft {
             duration,
             moved: (0, 0),
             pick: None,
+            aim: None,
         }
     }
 
@@ -311,6 +315,26 @@ impl Draft {
     /// Lights a handle for clicks to answer to, or puts it out if it is the one that is lit
     pub fn pick(&mut self, pick: Pick) {
         self.pick = Some(pick).filter(|p| self.pick != Some(*p));
+        self.aim = None;
+    }
+
+    /// Moves the day that would be picked by `days`, from where it was or where it is
+    pub fn aim_by(&mut self, days: i64) {
+        if let Some(pin) = self.pin() {
+            let from = self.aim.unwrap_or(pin.day);
+            self.aim = from.checked_add_signed(Duration::days(days)).or(Some(from));
+        }
+    }
+
+    /// Puts the day it is held to where it was picked to be, which ends the picking
+    pub fn aimed(&mut self) {
+        if let Some(pin) = self.pin() {
+            let day = self.aim.unwrap_or(pin.day);
+            self.hold(Some(Pin { day, ..pin }));
+            self.chosen = self.pin();
+        }
+        self.pick = None;
+        self.aim = None;
     }
 
     /// Holds it to a day, or to none, which leaves no day to pick

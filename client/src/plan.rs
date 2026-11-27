@@ -317,14 +317,20 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             }
             draft.update(|d| {
                 if let Some(d) = d {
-                    d.pick = Some(Pick::Day)
+                    d.pick(Pick::Day)
                 }
             });
         }
     });
     // anything of the draft that is not as it was is a change to ask about, but not a lit handle
     Effect::new(move |_| {
-        let now = draft.with(|d| d.clone().map(|d| Draft { pick: None, ..d }));
+        let now = draft.with(|d| {
+            d.clone().map(|d| Draft {
+                pick: None,
+                aim: None,
+                ..d
+            })
+        });
         match pristine.with_value(|was| *was == now) {
             true => guard.clean(),
             false => guard.dirtied(),
@@ -348,10 +354,41 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         leave.run(());
     });
     guard.watch_clicks();
+    let daying = move || {
+        draft
+            .try_with_untracked(|d| d.as_ref().is_some_and(|d| d.pick == Some(Pick::Day)))
+            .unwrap_or(false)
+    };
     on_key(
         "Enter",
-        move || open_node_exists.try_get_untracked().unwrap_or(false) && !window_open(),
+        move || {
+            open_node_exists.try_get_untracked().unwrap_or(false) && !window_open() && !daying()
+        },
         on_save,
+    );
+    // while the day an item is held to is picked, the arrows move it a day and enter puts it
+    // there, as a click would
+    let aim = move |days: i64| {
+        Callback::new(move |()| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.aim_by(days)
+                }
+            })
+        })
+    };
+    on_key("ArrowLeft", move || daying() && !window_open(), aim(-1));
+    on_key("ArrowRight", move || daying() && !window_open(), aim(1));
+    on_key(
+        "Enter",
+        move || daying() && !window_open(),
+        Callback::new(move |()| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.aimed()
+                }
+            })
+        }),
     );
     // the delete key asks to delete the item that is selected or edited, and enter then does
     let deleting = RwSignal::new(None::<PlanNode>);
@@ -397,6 +434,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             draft.update(|d| {
                 if let Some(d) = d {
                     d.pick = None;
+                    d.aim = None;
                 }
             })
         }),
@@ -741,6 +779,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                             days,
                                             pin: d.pin(),
                                             daying: d.pick == Some(Pick::Day),
+                                            aim: d.aim,
                                             pick: match d.pick {
                                                 Some(Pick::Before) => Some(false),
                                                 Some(Pick::After) => Some(true),

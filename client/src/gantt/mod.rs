@@ -54,9 +54,11 @@ pub struct Staged {
     pub item: Option<Mark>,
     /// How far the days it really ran are moved, as `start -1  end +2`
     pub days: Option<String>,
-    /// The day it is held to, and whether a click on another day moves the day
+    /// The day it is held to, whether it is being picked, and while it is the day it would be
+    /// put on, which the pointer or the keys move
     pub pin: Option<Pin>,
     pub daying: bool,
+    pub aim: Option<chrono::NaiveDate>,
     /// The dot of the item that clicks on others answer to: the right one, or the left
     pub pick: Option<bool>,
 }
@@ -616,11 +618,11 @@ pub fn Gantt(
             .filter(|_| !flag_dragged);
         // while the day is being picked the band goes with the pointer, to the day a click
         // would put it on
-        let picking = staged.as_ref().is_some_and(|s| s.daying) && pointer_at != (0.0, 0.0);
-        let held = match (pinned, held) {
-            (Some(node), Some(pin)) if picking => Some(flagged(node, pin.end, pointer_at.0)),
-            _ => held,
-        };
+        let aim = staged.as_ref().and_then(|s| s.aim.filter(|_| s.daying));
+        let held = held.map(|pin| Pin {
+            day: aim.unwrap_or(pin.day),
+            ..pin
+        });
         if let Some(pin) = pinned.zip(held).and_then(|(n, p)| pin_view(n, p, false)) {
             shift::paint_pin(ctx, &signed(pin));
         }
@@ -895,6 +897,14 @@ pub fn Gantt(
         shift.set(ev.shift_key());
         if drag.get_untracked().is_some() {
             return;
+        }
+        // while the day of the item being edited is picked, moving the pointer aims it
+        let aiming = pinned().and_then(|node| {
+            let staged = staged_of(node).filter(|s| s.daying)?;
+            Some((node, staged.pin?))
+        });
+        if let Some((node, pin)) = aiming.filter(|_| ev.pointer_type() == "mouse") {
+            editing.aim.run((node, flagged(node, pin.end, x).day));
         }
         let on_band = ev.pointer_type() == "mouse" && band_at(x, y).is_some();
         if banded.get_untracked() != on_band {

@@ -289,6 +289,7 @@ pub fn editing(plan: ShortId) -> Editing {
         ended: ended_at,
         // only an item being edited has a day to drag and dots to click, see `staging`
         constrain: Callback::new(|_| ()),
+        aim: Callback::new(|_| ()),
         hold: Callback::new(|_| ()),
         daying: Callback::new(|_| ()),
         pick: Callback::new(|_| ()),
@@ -428,6 +429,7 @@ pub fn staging(
                 d.hold(Some(Pin { day, held, end }));
                 d.chosen = d.pin();
                 d.pick = d.pick.filter(|p| *p != Pick::Day);
+                d.aim = None;
                 Ok(())
             });
         }
@@ -444,13 +446,28 @@ pub fn staging(
         if ours(node) {
             draft.update(|d| {
                 if let Some(d) = d.as_mut().filter(|d| d.pin().is_some()) {
-                    d.pick = Some(Pick::Day).filter(|p| d.pick != Some(*p));
+                    d.pick(Pick::Day);
+                }
+            });
+        }
+    });
+    // while its day is picked, the pointer says where it would go
+    let aim = Callback::new(move |(node, day): (PlanNode, NaiveDate)| {
+        let moved = draft.with_untracked(|d| {
+            d.as_ref()
+                .is_some_and(|d| d.node == node && d.aim != Some(day))
+        });
+        if moved {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.aim = Some(day);
                 }
             });
         }
     });
     Editing {
         constrain,
+        aim,
         hold,
         daying,
         pick,
