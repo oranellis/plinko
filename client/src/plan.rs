@@ -649,6 +649,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             ('f', Some(_), _) => light(Pick::After),
             ('g', Some(_), _) => light(Pick::Group),
             ('l', Some(_), _) if lasts => typing.set(true),
+            ('n', Some(_), _) => name_box_end(),
             // the day of the item is taken hold of, held first if it is not
             ('c', Some((_, _, held)), _) if held_kind => {
                 if !held {
@@ -959,6 +960,20 @@ fn AddMenu(
 // }}}
 
 // helpers {{{
+/// Puts the cursor at the end of the name of what is being created or edited
+fn name_box_end() {
+    use wasm_bindgen::JsCast;
+    let input = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector("textarea.namebox").ok().flatten())
+        .and_then(|i| i.dyn_into::<web_sys::HtmlTextAreaElement>().ok());
+    if let Some(input) = input {
+        let _ = input.focus();
+        let end = input.value().encode_utf16().count() as u32;
+        let _ = input.set_selection_range(end, end);
+    }
+}
+
 /// Whether a window is open over the page
 fn window_open() -> bool {
     web_sys::window()
