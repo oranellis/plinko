@@ -420,7 +420,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             }
         });
     });
-    // what a search picked is selected, and on the chart scrolled to and flashed
+    // what a search picked is selected, and put in the middle of the chart
     let on_found = Callback::new(move |node: PlanNode| {
         searching.set(false);
         selected.set(Some(node));

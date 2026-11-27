@@ -108,7 +108,7 @@ pub fn Gantt(
     on_blank: Option<Callback<()>>,
     /// Counts up each time to jump to today
     jump: RwSignal<u32>,
-    /// An item to scroll to and flash
+    /// An item to put in the middle
     focus: RwSignal<Option<Mark>>,
     /// An item to put in the middle, with a light outline that fades away
     #[prop(optional)]
@@ -231,7 +231,7 @@ pub fn Gantt(
         count
     });
 
-    // search: scroll to the item and flash it three times, then let it fade
+    // search: put the item in the middle
     Effect::new(move |_| {
         let Some(mark) = focus.get() else {
             return;
@@ -248,7 +248,6 @@ pub fn Gantt(
         vp.centre_on_day(found.0, b);
         vp.centre_on_lane(found.1, b);
         viewport.set(Some(vp));
-        flash_item(flash, mark);
     });
 
     // coming from elsewhere: once the chart has its size, centre the item and fade an outline
@@ -1245,8 +1244,7 @@ fn flick(
 // }}}
 
 // constants {{{
-/// The colours an outline can flash in, as red green blue
-const RED: &str = "229,57,53";
+/// The colour of an outline that fades, as red green blue
 const LIGHT: &str = "200,200,205";
 // }}}
 
@@ -1269,21 +1267,5 @@ fn fade_item(flash: Flash, mark: Mark, rgb: &'static str) {
         );
     }
     fade(flash, mark, rgb, 1.0);
-}
-
-/// Flashes an outline on and off, three times, then lets it fade away
-fn flash_item(flash: Flash, mark: Mark) {
-    fn step(flash: Flash, mark: Mark, count: u32) {
-        if count < 5 {
-            flash.try_set(count.is_multiple_of(2).then_some((mark, 1.0, RED)));
-            set_timeout(
-                move || step(flash, mark, count + 1),
-                Duration::from_millis(500),
-            );
-        } else {
-            fade_item(flash, mark, RED);
-        }
-    }
-    set_timeout(move || step(flash, mark, 0), Duration::from_millis(300));
 }
 // }}}
