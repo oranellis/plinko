@@ -286,9 +286,33 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         leave.run(());
     });
     guard.watch_clicks();
-    on_enter(
-        move || open_node_exists.try_get_untracked().unwrap_or(false),
+    on_key(
+        "Enter",
+        move || open_node_exists.try_get_untracked().unwrap_or(false) && !window_open(),
         on_save,
+    );
+    // the delete key asks to delete the item that is selected or edited, and enter then does
+    let deleting = RwSignal::new(None::<PlanNode>);
+    let delete = Callback::new(move |()| {
+        let Some(node) = deleting.get_untracked() else {
+            return;
+        };
+        deleting.set(None);
+        editor::remove_item(sync, plan, node);
+        selected.set(None);
+        if draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.node == node)) {
+            leave.run(());
+        }
+    });
+    on_key(
+        "Delete",
+        move || bar_of.try_get_untracked().flatten().is_some() && !window_open(),
+        Callback::new(move |()| deleting.set(bar_of.get_untracked())),
+    );
+    on_key(
+        "Enter",
+        move || deleting.try_get_untracked().flatten().is_some(),
+        delete,
     );
     // the task being created or edited, which has a card for who works on it
     let staffed = Memo::new(move |_| {
@@ -533,6 +557,26 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 })}
                 </div>
                 <ConfirmLeave guard=guard on_save=on_save />
+                {move || deleting.get().map(|node| {
+                    let name = sync.tenant.with_untracked(|t| {
+                        let plan = t.as_ref().and_then(|t| t.plans().get(&plan));
+                        plan.map(|p| model::node_name(p, node)).unwrap_or_default()
+                    });
+                    let keep = Callback::new(move |()| deleting.set(None));
+                    // a click off it, or escape, is to keep it
+                    view! {
+                        <Modal title=format!("Delete {name}?") on_close=keep>
+                            <div class="choices">
+                                <button type="button" class="ctx" title="Keep it" aria-label="Keep it" on:click=move |_| keep.run(())>
+                                    <Icon kind=IconKind::Close size=40 />
+                                </button>
+                                <button type="button" class="ctx cancel" title="Delete it" aria-label="Delete it" on:click=move |_| delete.run(())>
+                                    <Icon kind=IconKind::Bin size=48 />
+                                </button>
+                            </div>
+                        </Modal>
+                    }
+                })}
                 <Show when=move || searching.get()>
                     <SearchWindow plan=plan on_found=on_found on_close=Callback::new(move |_| searching.set(false)) />
                 </Show>
@@ -624,32 +668,35 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
 // }}}
 
 // helpers {{{
-/// Enter saves what is being edited, from anywhere it is not something else: typed into a box,
-/// or pressed on a button outside the bar, or with a window open
-fn on_enter(active: impl Fn() -> bool + 'static, save: Callback<()>) {
+/// Whether a window is open over the page
+fn window_open() -> bool {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector(".modal").ok().flatten())
+        .is_some()
+}
+
+/// A key that does something to the page while `active`, from anywhere it is not something
+/// else: typed into a box, or pressed on a button outside the bar
+fn on_key(key: &'static str, active: impl Fn() -> bool + 'static, run: Callback<()>) {
     use wasm_bindgen::{JsCast, closure::Closure};
     let on_key =
         Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
-            if ev.key() != "Enter" || ev.default_prevented() || !active() {
+            if ev.key() != key || ev.default_prevented() || !active() {
                 return;
             }
             let target = ev
                 .target()
                 .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
             // a button of the bar that was last clicked still has the keyboard, and is not what
-            // enter is for: it would be pressed again
+            // the key is for: enter would press it again
             let taken = target.is_some_and(|t| {
                 let within = |what: &str| t.closest(what).ok().flatten().is_some();
-                within("input, textarea, select, a, .modal")
-                    || within("button") && !within(".contextbar")
+                within("input, textarea, select, a") || within("button") && !within(".contextbar")
             });
-            let window_open = web_sys::window()
-                .and_then(|w| w.document())
-                .and_then(|d| d.query_selector(".modal").ok().flatten())
-                .is_some();
-            if !taken && !window_open {
+            if !taken {
                 ev.prevent_default();
-                save.run(());
+                run.run(());
             }
         });
     if let Some(window) = web_sys::window() {

@@ -23,11 +23,9 @@ use crate::{
 const CLICK: f64 = 5.0;
 
 /// How far the days handle is dragged for each day
-const DAY_STEP: f64 = 14.0;
+const DAY_STEP: f64 = 28.0;
 /// The days from which a drag changes them at the full rate
 const EASED: i64 = 6;
-/// The most boxes shown for the days while they are dragged
-const MOST_BOXES: u32 = 30;
 
 /// The most days an item can be given
 pub const MOST_DAYS: i64 = 3650;
@@ -381,7 +379,7 @@ pub fn Card(
                                         // while it is dragged, a box a day: the ones added lit, the ones taken away empty
                                         {move || held.get().filter(|h| h.grab == Grab::Days && h.dragged()).map(|h| {
                                             let now = days().unwrap_or(h.days);
-                                            let boxes = (0..now.max(h.days).min(MOST_BOXES)).map(|i| {
+                                            let boxes = (0..now.max(h.days)).map(|i| {
                                                 let class = match (i < h.days, i < now) {
                                                     (true, true) => "",
                                                     (false, _) => "added",
