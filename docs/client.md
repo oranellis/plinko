@@ -94,7 +94,7 @@ Tapping an item selects it: its dependency lines stay on show and a bar opens be
 
 ### Creating and editing
 
-Everything set of an item while it is created or edited is staged in a `Draft` (`draft.rs`) and reaches the plan only on save; a new item is not in the plan until then. Redundant links are dropped by the server on save. Enter saves from anywhere that does not take it. Leaving with changes asks first (`guard.rs`): escape, a click on the chart, or a click on any link or button outside what is being edited, which is made again once the answer is to save or to discard. The question is three large buttons: keep editing, which a click off it also is, save and close, and discard changes.
+Everything set of an item while it is created or edited is staged in a `Draft` (`draft.rs`) and reaches the plan only on save; a new item is not in the plan until then. Redundant links are dropped by the server on save. Enter saves from anywhere that does not take it. Leaving with changes asks first (`guard.rs`): escape, a click on the chart, or a click on any link or button outside what is being edited, which is made again once the answer is to save or to discard. The question is three large buttons: keep editing, which a click off it also is, save and close, and discard changes. Enter saves and escape discards, so escape twice leaves without saving.
 
 Both are done in the same place, at the bottom of the chart (`context.rs`). An item of the plan has its bar slide there from under it; a new item's is there from the start.
 

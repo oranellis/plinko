@@ -108,8 +108,18 @@ impl Guard {
 }
 // }}}
 
+// Discards {{{
+/// Inside the question, makes escape the answer to discard: it is what asked, so twice is to
+/// leave without saving. It is asked for after the window is, whose own escape it is then over.
+#[component]
+fn Discards(discard: Callback<()>) -> impl IntoView {
+    crate::escape::on_escape(|| true, discard);
+}
+// }}}
+
 // ConfirmLeave {{{
-/// The question asked when leaving an edit with changes: save them, drop them or stay
+/// The question asked when leaving an edit with changes: save them, drop them or stay. Enter
+/// saves and escape drops them; a click off it is to stay.
 #[component]
 pub fn ConfirmLeave(guard: Guard, on_save: Callback<()>) -> impl IntoView {
     let leave = move |save: bool| {
@@ -125,6 +135,22 @@ pub fn ConfirmLeave(guard: Guard, on_save: Callback<()>) -> impl IntoView {
         then.run(());
     };
     let stay = Callback::new(move |()| guard.asking.set(None));
+    // enter saves, so that it is the same key as saves an edit
+    let on_key =
+        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+            let asked = guard
+                .asking
+                .try_with_untracked(Option::is_some)
+                .unwrap_or(false);
+            if asked && ev.key() == "Enter" {
+                ev.prevent_default();
+                leave(true);
+            }
+        });
+    if let Some(window) = web_sys::window() {
+        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
+    }
+    on_key.forget();
     let choice = move |label: &'static str,
                        class: &'static str,
                        kind: IconKind,
@@ -139,6 +165,7 @@ pub fn ConfirmLeave(guard: Guard, on_save: Callback<()>) -> impl IntoView {
         <Show when=move || guard.asking.with(Option::is_some)>
             // a click off it is to go on editing
             <Modal title="Unsaved Changes" on_close=stay>
+                <Discards discard=Callback::new(move |()| leave(false)) />
                 <div class="choices">
                     {choice("Keep editing", "", IconKind::Pencil, stay)}
                     {choice("Save and close", "save", IconKind::Tick, Callback::new(move |()| leave(true)))}
