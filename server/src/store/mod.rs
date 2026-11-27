@@ -186,18 +186,24 @@ impl Store {
 
     /// Applies the update to the tenant and, only if it is allowed, saves it as the next update,
     /// returning its number. A snapshot follows the update that moves the tenant to a new day.
+    /// The tenant only changes once that is saved, so on any failure it is as it was.
     pub fn commit(&self, tenant: &mut Tenant, seq: u64, update: TenantUpdate) -> PlinkoResult<u64> {
         let bytes = codec::encode(&update)?;
         let new_day = matches!(update.update_type, TenantUpdateType::SetToday(_));
-        tenant.apply_update(update)?;
+        let mut next = tenant.clone();
+        next.apply_update(update)?;
         let seq = seq + 1;
-        self.db().execute(
+        let mut db = self.db();
+        let saving = db.transaction()?;
+        saving.execute(
             "INSERT INTO log (seq, update_bytes) VALUES (?1, ?2)",
             params![seq, bytes],
         )?;
         if new_day {
-            self.snapshot(seq, tenant)?;
+            insert_snapshot(&saving, seq, &next)?;
         }
+        saving.commit()?;
+        *tenant = next;
         Ok(seq)
     }
 
@@ -218,13 +224,18 @@ impl Store {
     }
 
     pub fn snapshot(&self, seq: u64, tenant: &Tenant) -> PlinkoResult<()> {
-        let bytes = codec::encode(tenant)?;
-        self.db().execute(
-            "INSERT OR REPLACE INTO snapshots (seq, tenant) VALUES (?1, ?2)",
-            params![seq, bytes],
-        )?;
-        Ok(())
+        insert_snapshot(&self.db(), seq, tenant)
     }
+}
+// }}}
+
+// insert_snapshot {{{
+fn insert_snapshot(db: &Connection, seq: u64, tenant: &Tenant) -> PlinkoResult<()> {
+    db.execute(
+        "INSERT OR REPLACE INTO snapshots (seq, tenant) VALUES (?1, ?2)",
+        params![seq, codec::encode(tenant)?],
+    )?;
+    Ok(())
 }
 // }}}
 

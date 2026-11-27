@@ -117,6 +117,37 @@ fn refused_updates_are_not_saved() {
 }
 // }}}
 
+// an_update_that_is_not_saved_leaves_the_tenant_as_it_was {{{
+#[test]
+fn an_update_that_is_not_saved_leaves_the_tenant_as_it_was() {
+    let (store, mut tenant, root) = setup();
+    let before = tenant.clone();
+    send(
+        &store,
+        &mut tenant.clone(),
+        0,
+        root,
+        TenantUpdateType::SetToday(day(2)),
+    );
+    // update 1 is taken, so saving another as 1 fails
+    let new = NewPlan {
+        id: ShortId::new(),
+        name: "Plan".to_string(),
+    };
+    for update in [
+        TenantUpdateType::Plan(PlanTenantUpdate::Add(new)),
+        TenantUpdateType::SetToday(day(3)),
+    ] {
+        let update = tenant.stage(time(), root, update);
+        assert!(store.commit(&mut tenant, 0, update).is_err());
+    }
+    assert!(tenant.plans().is_empty());
+    assert_eq!(tenant.today(), before.today());
+    assert_eq!(store.since(0).unwrap().len(), 1);
+    assert_eq!(store.load().unwrap().0.today(), day(2));
+}
+// }}}
+
 // a_snapshot_is_taken_when_the_day_changes {{{
 #[test]
 fn a_snapshot_is_taken_when_the_day_changes() {
