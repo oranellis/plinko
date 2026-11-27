@@ -354,6 +354,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     // the draft follows the item that is open, and what is selected follows an item of the plan
     Effect::new(move |_| {
         added.track();
+        // the item being edited going while it is still open is someone else deleting it
+        let edited = draft.with_untracked(|d| d.as_ref().filter(|d| !d.new).map(|d| d.node));
+        if edited.is_some_and(|e| node.get().is_none() && open.get() == Some(e.id())) {
+            sync.notice.set(Some(
+                "What was being edited was deleted, so the edit is gone".to_string(),
+            ));
+        }
         let open = node.get().filter(|_| tab.get() != PlanTab::Settings);
         let new = adding.get_untracked().map(|(_, parent)| parent);
         let next = open.and_then(|node| Draft::open(sync, plan, node, new));
