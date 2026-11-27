@@ -385,11 +385,24 @@ fn Workers(
                 let hours = Signal::derive(move || {
                     allocations.with(|a| a.get(i).map_or(0, |(_, h)| i64::from(*h)))
                 });
+                // who is asked for on the other rows is not listed again
+                let open = Signal::derive(move || {
+                    let taken: Vec<String> = allocations.with(|a| {
+                        a.iter()
+                            .enumerate()
+                            .filter(|(j, _)| *j != i)
+                            .map(|(_, (w, _))| forms::worker_value(*w))
+                            .collect()
+                    });
+                    choices.with(|all| {
+                        all.iter().filter(|c| !taken.contains(&c.value)).cloned().collect::<Vec<_>>()
+                    })
+                });
                 view! {
                     <div class="row" class:cursor=move || cursor.get() == Some(i)>
                         <Picker
                             value=worker
-                            choices=choices
+                            choices=open
                             placeholder="Select worker…"
                             opener=Signal::derive(move || open_row.get() == Some(i))
                             on_change=Callback::new(move |v: String| {

@@ -497,7 +497,8 @@ button.ctx.swap:hover .over { display: grid; }
 .workerwin { position: absolute; right: 12px; bottom: calc(50% + 12px); z-index: 19; width: 380px; max-width: calc(100% - 24px); max-height: 45%; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
 /* the workers card while the keys are on it: lit, with the row they are on marked */
 .workerwin.keys { border-color: var(--accent); }
-.workerwin .row.cursor { box-shadow: inset 3px 0 0 var(--accent); background: var(--raised); border-radius: 6px; }
+.workerwin .row { position: relative; }
+.workerwin .row.cursor::before { content: ""; position: absolute; left: -6px; top: 0; bottom: 0; width: 4px; border-radius: 2px; background: var(--accent); }
 /* what to do about unsaved changes: three buttons twice the size of the bar's, in a window no
    bigger than they need */
 .modal:has(.choices) { width: auto; }

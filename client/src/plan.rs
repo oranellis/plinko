@@ -648,8 +648,14 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                             .as_ref()
                             .map(|d| d.allocations.clone())
                             .unwrap_or_default();
-                        editor::next_worker(sync, plan, &asked).unwrap_or(Worker::Placeholder)
+                        editor::next_worker(sync, plan, &asked)
                     });
+                    // with everyone asked for already there is nobody to add
+                    let Some(next) = next else {
+                        sync.notice
+                            .set(Some("Everyone in the plan already works on it".to_string()));
+                        return true;
+                    };
                     staff(&|a, at| {
                         a.push((next, 4));
                         *at = a.len() - 1;
