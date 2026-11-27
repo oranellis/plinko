@@ -287,6 +287,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         }
     });
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
+    // whether the item that is opened next is opened for the day it is held to
+    let grabbing = StoredValue::new(false);
     // the draft follows the item that is open, and what is selected follows an item of the plan
     Effect::new(move |_| {
         let open = node.get().filter(|_| tab.get() != PlanTab::Settings);
@@ -301,8 +303,21 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             }
             None => guard.closed(),
         }
+        let grab = grabbing.get_value() && next.as_ref().is_some_and(|d| !d.new);
+        grabbing.set_value(false);
         pristine.set_value(next.clone());
         draft.set(next);
+        // it was opened to take hold of the day it is held to, which it is first if it is not
+        if grab {
+            if draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.pin().is_none())) {
+                crate::context::hold_next(sync, plan, draft);
+            }
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick = Some(Pick::Day)
+                }
+            });
+        }
     });
     // anything of the draft that is not as it was is a change to ask about, but not a lit handle
     Effect::new(move |_| {
@@ -467,6 +482,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 'e' => Held::Earliest,
                 'f' => Held::Fixed,
                 'l' => Held::Latest,
+                // again, it goes round: the other end, then not held, which lets go of it
+                'c' => {
+                    crate::context::hold_next(sync, plan, draft);
+                    return true;
+                }
                 _ => return false,
             };
             draft.update(|d| {
@@ -483,6 +503,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 }
             })
         };
+        // only these can be held to a day
+        let holds =
+            |node: PlanNode| !matches!(node, PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_));
+        let held_kind = draft.with_untracked(|d| d.as_ref().is_some_and(|d| holds(d.node)));
         match (key, editing, chosen.get_untracked()) {
             ('a', _, _) => menu.set(true),
             ('s', _, _) => searching.set(true),
@@ -491,13 +515,17 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             ('f', Some(_), _) => light(Pick::After),
             ('g', Some(_), _) => light(Pick::Group),
             // the day of an item of the plan is taken hold of, held first if it is not
-            ('c', Some((false, _, held)), _) => {
+            ('c', Some((false, _, held)), _) if held_kind => {
                 if !held {
                     crate::context::hold_next(sync, plan, draft);
                 }
                 light(Pick::Day);
             }
             ('e', None, Some(node)) => on_open.run(node),
+            ('c', None, Some(node)) if holds(node) => {
+                grabbing.set_value(true);
+                on_open.run(node);
+            }
             ('d' | 'f' | 'g', None, Some(node)) => {
                 let pick = match key {
                     'd' => Pick::Before,
