@@ -625,7 +625,7 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
 
 // helpers {{{
 /// Enter saves what is being edited, from anywhere it is not something else: typed into a box,
-/// or pressed on a button, or with a window open
+/// or pressed on a button outside the bar, or with a window open
 fn on_enter(active: impl Fn() -> bool + 'static, save: Callback<()>) {
     use wasm_bindgen::{JsCast, closure::Closure};
     let on_key =
@@ -636,11 +636,12 @@ fn on_enter(active: impl Fn() -> bool + 'static, save: Callback<()>) {
             let target = ev
                 .target()
                 .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+            // a button of the bar that was last clicked still has the keyboard, and is not what
+            // enter is for: it would be pressed again
             let taken = target.is_some_and(|t| {
-                t.closest("input, textarea, select, button, a, .modal")
-                    .ok()
-                    .flatten()
-                    .is_some()
+                let within = |what: &str| t.closest(what).ok().flatten().is_some();
+                within("input, textarea, select, a, .modal")
+                    || within("button") && !within(".contextbar")
             });
             let window_open = web_sys::window()
                 .and_then(|w| w.document())
