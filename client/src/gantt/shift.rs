@@ -155,7 +155,8 @@ pub struct Editing {
     pub moved: Callback<(PlanNode, Option<PlanNode>)>,
     /// Whether the item has started, so dragging it sideways changes the days it really ran
     pub dated: Callback<PlanNode, bool>,
-    /// Whether the days it really ran have an end, which its right grip then moves
+    /// Whether it has an end that is dragged where it is while it is edited: the day a task
+    /// really ended, or the last day of a buffer whose start is set
     pub ended: Callback<PlanNode, bool>,
     /// Moves the days the item really ran by `days`
     pub shift_dates: Callback<(PlanNode, i32)>,
@@ -266,8 +267,8 @@ impl Grips {
         Self { rect, list }
     }
 
-    /// The grips for the days a task really ran, with no others: one in its left edge for the
-    /// day it started, and one in its right for the day it ended
+    /// The grips of an item being edited, with no others: one in its left edge for the day a
+    /// task really started, and one in its right for the day it ended or a set buffer ends
     pub fn dates(rect: Rect, started: bool, ended: bool) -> Self {
         let middle = rect.y + rect.h / 2.0;
         let start = started.then_some((Handle::Start, (rect.x + 6.0, middle)));

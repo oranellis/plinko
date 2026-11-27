@@ -269,12 +269,15 @@ pub fn editing(plan: ShortId) -> Editing {
             Pin::of(held.constraint, held.end == NodeEnd::End)
         })
     });
+    // what has an end to drag where it is on the chart: a task that has ended, by the day it
+    // did, and a buffer whose start is set, by its days
     let ended_at = Callback::new(move |node: PlanNode| {
         read_one(&|p| match node {
-            PlanNode::Task(id) => p
-                .tasks()
-                .get(&id)
-                .map(|t| ended(t.persistent_state()).is_some()),
+            PlanNode::Task(id) => {
+                let task = p.tasks().get(&id)?;
+                Some(ended(task.persistent_state()).is_some())
+            }
+            PlanNode::PlanBuffer(id) => Some(p.plan_buffers().get(&id)?.set_start_day().is_some()),
             _ => None,
         })
         .unwrap_or(false)
