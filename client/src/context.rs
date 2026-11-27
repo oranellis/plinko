@@ -456,7 +456,8 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
 // }}}
 
 // SetStart {{{
-/// The buffer's set start: set it to where it is scheduled, set it again, or nothing when it is right
+/// The buffer's set start: set it to where it is scheduled, set it again, or nothing when it is
+/// right, and let it go
 #[component]
 fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
     let sync = use_sync();
@@ -500,28 +501,44 @@ fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
             }
         },
     );
+    let set = move |start: Option<chrono::NaiveDate>| {
+        let patch = PlanBufferPatch {
+            id: buffer,
+            parent: None,
+            dependencies: None,
+            set_start_day: Some(start),
+            duration: None,
+        };
+        sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
+    };
+    // like the statuses of a task: the button, and for a start that is set a way to let it go
+    // under it, a hover away
     view! {
-        <button
-            type="button"
-            class="ctx"
-            title=label
-            aria-label=label
-            disabled=correct
-            on:click=move |_| {
-                if let Some(start) = days.get_untracked().1 {
-                    let patch = PlanBufferPatch {
-                        id: buffer,
-                        parent: None,
-                        dependencies: None,
-                        set_start_day: Some(Some(start)),
-                        duration: None,
-                    };
-                    sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
-                }
-            }
-        >
-            {move || view! { <Icon kind=kind() size=20 /> }}
-        </button>
+        <div class="statusswitch setstart">
+            <div class="statuscol">
+                <button
+                    type="button"
+                    class="st next"
+                    title=label
+                    aria-label=label
+                    disabled=correct
+                    on:click=move |_| if let Some(start) = days.get_untracked().1 { set(Some(start)) }
+                >
+                    {move || view! { <Icon kind=kind() size=20 /> }}
+                </button>
+                <Show when=move || days.get().0.is_some()>
+                    <button
+                        type="button"
+                        class="st unset"
+                        title="Let its start go"
+                        aria-label="Let its start go"
+                        on:click=move |_| set(None)
+                    >
+                        <Icon kind=IconKind::Close size=20 />
+                    </button>
+                </Show>
+            </div>
+        </div>
     }
 }
 // }}}
