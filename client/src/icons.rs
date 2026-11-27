@@ -168,6 +168,12 @@ pub fn Icon(
             <line x1="9.2" y1="6.8" x2="9" y2="10.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::Help => view! {
+            <circle cx="8" cy="8" r="6.3" stroke="currentColor" stroke-width="1.2" fill="none" />
+            <path d="M6.2 6.3C6.2 5.2 7 4.6 8 4.6C9 4.6 9.8 5.3 9.8 6.2C9.8 7.4 8 7.5 8 8.9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none" />
+            <circle cx="8" cy="11.1" r="0.75" fill="currentColor" />
+        }
+        .into_any(),
         IconKind::Timer => view! {
             <circle cx="8" cy="9" r="4.7" stroke="currentColor" stroke-width="1.2" fill="none" />
             <path d="M8 6.4V9H10M6.6 2.4H9.4M8 2.4V4.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
@@ -239,6 +245,7 @@ pub enum IconKind {
     Close,
     Bin,
     Timer,
+    Help,
     Plus,
     Play,
 }

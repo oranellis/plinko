@@ -244,6 +244,25 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .calendar .foot { display: flex; justify-content: space-between; }
 
 /* the account menu */
+.helpbutton { padding: 2px; min-height: 0; border-radius: 50%; display: flex; color: var(--muted); }
+.helpbutton:hover { color: var(--text); }
+/* the help window: its pages down the left, and what each says to the right */
+.help { display: flex; flex: 1; min-height: 0; }
+.helptabs { display: flex; flex-direction: column; gap: 2px; width: 180px; flex: none; padding: 12px 8px; border-right: 1px solid var(--line); }
+.helptabs button { text-align: left; background: none; padding: 8px 10px; border-radius: 6px; color: var(--muted); }
+.helptabs button:hover { color: var(--text); background: var(--raised); }
+.helptabs button.active { color: var(--title); background: var(--raised); }
+.helppage { flex: 1; overflow-y: auto; padding: 16px 24px 24px; }
+.helppage h3 { margin: 0 0 4px; font-size: 18px; color: var(--title); }
+.helppage h4 { margin: 18px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+table.keys { width: 100%; border-collapse: collapse; }
+table.keys td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--soft); vertical-align: top; font-size: 14px; }
+table.keys td:first-child { width: 140px; white-space: nowrap; }
+kbd { display: inline-block; min-width: 24px; margin-right: 4px; padding: 1px 7px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: #181818; color: var(--title); font: 13px/20px ui-monospace, monospace; text-align: center; }
+@media (max-width: 640px) {
+  .help { flex-direction: column; }
+  .helptabs { flex-direction: row; width: auto; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+}
 .user-menu { position: relative; }
 .user-menu .avatar { padding: 2px; min-height: 0; border-radius: 50%; display: flex; }
 .menu-backdrop { position: fixed; inset: 0; z-index: 40; }

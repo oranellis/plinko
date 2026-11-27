@@ -1,0 +1,193 @@
+//! The help window from the top right of every page: what each page does with the keyboard, a
+//! page of it each, listed down the left.
+
+// modules {{{
+use leptos::prelude::*;
+
+use crate::{
+    icons::{Icon, IconKind},
+    ui::Modal,
+};
+// }}}
+
+// constants {{{
+/// Keys, and what they do
+type Keys = &'static [(&'static [&'static str], &'static str)];
+/// A mode with its keys, a heading with its modes, and a page with its headings
+type Mode = (&'static str, Keys);
+type Heading = (&'static str, &'static [Mode]);
+type Page = (&'static str, &'static [Heading]);
+
+/// The pages of the help: each has headings, and under those what the keys do in each mode
+const PAGES: &[Page] = &[(
+    "Plan view",
+    &[(
+        "Gantt",
+        &[
+            (
+                "Anywhere on the chart",
+                &[
+                    (
+                        &["a"],
+                        "Add an item: then t task, m milestone, g group, b buffer, d delay",
+                    ),
+                    (&["/"], "Search the plan"),
+                    (&["t"], "Jump to today"),
+                    (
+                        &["shift"],
+                        "Hold to show the handles of the item the pointer is near",
+                    ),
+                ],
+            ),
+            (
+                "With an item selected",
+                &[
+                    (&["e"], "Edit it"),
+                    (
+                        &["s"],
+                        "List its statuses (a task), or pin or unpin its start (a buffer)",
+                    ),
+                    (&["d"], "Pick what it waits for, with clicks or the search"),
+                    (&["f"], "Pick what waits for it"),
+                    (
+                        &["g"],
+                        "Pick its group: click a group, or nothing for the top level",
+                    ),
+                    (&["c"], "Edit it and take hold of the day it is held to"),
+                    (&["delete"], "Delete it, after asking"),
+                    (&["escape"], "End a pick"),
+                ],
+            ),
+            (
+                "Creating or editing",
+                &[
+                    (&["n"], "Type in its name, at the end"),
+                    (&["tab"], "Leave the name for these keys"),
+                    (&["l"], "Type its days"),
+                    (
+                        &["d", "f", "g"],
+                        "Pick what it waits for, what waits for it, or its group",
+                    ),
+                    (
+                        &["c"],
+                        "Take hold of its day, holding it first; again goes round start, end and none",
+                    ),
+                    (
+                        &["s"],
+                        "List its statuses (a task), or pin or unpin its start (a buffer)",
+                    ),
+                    (&["enter"], "Save it"),
+                    (
+                        &["escape"],
+                        "End a pick, then leave it, asking first when there are changes",
+                    ),
+                    (&["delete"], "Delete it, after asking"),
+                ],
+            ),
+            (
+                "With its day taken hold of",
+                &[
+                    (
+                        &["←", "→"],
+                        "Move the day a day either way, or move the pointer",
+                    ),
+                    (&["enter"], "Put it there, as a click on a day does"),
+                    (&["e", "f", "l"], "Hold it no earlier, exactly, or no later"),
+                    (&["c"], "Go round holding its start, its end, or nothing"),
+                    (&["escape"], "Leave it where it was"),
+                ],
+            ),
+            (
+                "With the statuses listed",
+                &[
+                    (&["s"], "The next status, as the button shows"),
+                    (
+                        &["n", "i", "o", "c", "d"],
+                        "Not started, in progress, on hold, complete, dropped",
+                    ),
+                    (&["escape"], "Close them"),
+                ],
+            ),
+            (
+                "In the search",
+                &[
+                    (&["↑", "↓"], "Move down the list"),
+                    (
+                        &["enter"],
+                        "Select it and show it, or while picking, pick it",
+                    ),
+                    (&["escape"], "Close it"),
+                ],
+            ),
+            (
+                "In a question",
+                &[
+                    (&["enter"], "Yes: save, or delete"),
+                    (
+                        &["escape"],
+                        "Unsaved changes: discard them. Deleting: keep it",
+                    ),
+                ],
+            ),
+        ],
+    )],
+)];
+// }}}
+
+// HelpButton {{{
+/// The question mark at the top right, and the window it opens
+#[component]
+pub fn HelpButton() -> impl IntoView {
+    let open = RwSignal::new(false);
+    view! {
+        <button
+            type="button"
+            class="plain helpbutton"
+            title="Help"
+            aria-label="Help"
+            on:click=move |_| open.set(true)
+        >
+            <Icon kind=IconKind::Help size=24 />
+        </button>
+        <Show when=move || open.get()>
+            <HelpWindow on_close=Callback::new(move |()| open.set(false)) />
+        </Show>
+    }
+}
+// }}}
+
+// HelpWindow {{{
+#[component]
+fn HelpWindow(on_close: Callback<()>) -> impl IntoView {
+    let page = RwSignal::new(0usize);
+    view! {
+        <Modal title="Help" on_close=on_close wide=true>
+            <div class="help">
+                <nav class="helptabs">
+                    {PAGES.iter().enumerate().map(|(i, (title, _))| view! {
+                        <button type="button" class:active=move || page.get() == i on:click=move |_| page.set(i)>
+                            {*title}
+                        </button>
+                    }).collect_view()}
+                </nav>
+                <div class="helppage">
+                    {move || PAGES[page.get()].1.iter().map(|(heading, modes)| view! {
+                        <h3>{*heading}</h3>
+                        {modes.iter().map(|(mode, keys)| view! {
+                            <h4>{*mode}</h4>
+                            <table class="keys">
+                                {keys.iter().map(|(pressed, does)| view! {
+                                    <tr>
+                                        <td>{pressed.iter().map(|k| view! { <kbd>{*k}</kbd> }).collect_view()}</td>
+                                        <td>{*does}</td>
+                                    </tr>
+                                }).collect_view()}
+                            </table>
+                        }).collect_view()}
+                    }).collect_view()}
+                </div>
+            </div>
+        </Modal>
+    }
+}
+// }}}

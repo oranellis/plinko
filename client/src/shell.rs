@@ -8,6 +8,7 @@ use crate::{
     allocations::Allocations,
     api,
     availability::Availability as AvailabilityPage,
+    help::HelpButton,
     home::Home,
     icons::{Icon, IconKind},
     nav::Availability,
@@ -93,6 +94,7 @@ pub fn Shell() -> impl IntoView {
                     <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
                 </nav>
                 <Status />
+                <HelpButton />
                 <UserMenu on_logout=Callback::new(logout) />
             </header>
             <Show when=move || sync.notice.with(Option::is_some)>

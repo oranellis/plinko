@@ -14,6 +14,7 @@ mod forms;
 mod gantt;
 mod glide;
 mod guard;
+mod help;
 mod home;
 mod icons;
 mod login;
