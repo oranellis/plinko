@@ -178,11 +178,18 @@ impl Sync {
                     .users()
                     .get(&user)
                     .is_some_and(|u| u.role() == Role::Admin);
-                self.me.set(name.map(|name| Profile {
+                // someone removed has nothing more to see
+                let Some(name) = name else {
+                    self.end();
+                    return;
+                };
+                self.me.set(Some(Profile {
                     id: user,
                     name,
                     admin,
                 }));
+                // the schedule that follows is for this snapshot
+                self.schedule.set(None);
                 self.tenant.set(Some(*tenant));
                 self.seq.set(seq);
                 self.link.set(Link::Live);
