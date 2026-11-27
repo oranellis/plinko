@@ -193,6 +193,9 @@ fn PersonForm(
     let admin = RwSignal::new(existing.as_ref().is_some_and(|p| p.admin));
     let password = RwSignal::new(String::new());
     let failure = RwSignal::new(None::<String>);
+    let busy = RwSignal::new(false);
+    // a new person once they are added, while their password is still being set
+    let added = RwSignal::new(None::<Uuid>);
     let title = if existing.is_some() {
         "Edit User"
     } else {
@@ -206,6 +209,18 @@ fn PersonForm(
             Role::Member
         };
         let secret = password.get_untracked();
+        // as the server has it, so a new person is not added without one
+        let short = secret.chars().count() < 8;
+        if short && (existing.is_none() || !secret.is_empty()) {
+            failure.set(Some(
+                "The password must be at least 8 characters".to_string(),
+            ));
+            return;
+        }
+        if busy.get_untracked() {
+            return;
+        }
+        failure.set(None);
         match &existing {
             Some(old) => {
                 let patch = TenantLoginUserPatch {
@@ -220,11 +235,13 @@ fn PersonForm(
                     return;
                 }
                 let id = old.id;
+                busy.set(true);
                 spawn_local(async move {
                     match api::change_password(Some(id), None, &secret).await {
-                        Ok(()) => on_close.run(()),
-                        Err(why) => failure.set(Some(why)),
+                        Ok(()) => _ = on_close.try_run(()),
+                        Err(why) => _ = failure.try_set(Some(why)),
                     }
+                    busy.try_set(false);
                 });
             }
             None => {
@@ -234,19 +251,36 @@ fn PersonForm(
                     email: email.get_untracked(),
                     role,
                 };
+                // the form stays open until the password is set too
+                busy.set(true);
+                let set_password = move |id: Uuid, secret: String| {
+                    spawn_local(async move {
+                        match api::change_password(Some(id), None, &secret).await {
+                            Ok(()) => _ = on_close.try_run(()),
+                            Err(why) => {
+                                let why = format!("The person was added without a password: {why}");
+                                if failure.try_set(Some(why.clone())).is_some() {
+                                    sync.notice.set(Some(why));
+                                }
+                            }
+                        }
+                        busy.try_set(false);
+                    });
+                };
+                // saving again after that only tries the password again
+                if let Some(id) = added.get_untracked() {
+                    set_password(id, secret);
+                    return;
+                }
                 sync.send_then(TenantUpdateType::User(Crud::Add(new)), move |created| {
                     let Some(Created::Item(id)) = created else {
+                        failure.try_set(Some("The person could not be added".to_string()));
+                        busy.try_set(false);
                         return;
                     };
-                    spawn_local(async move {
-                        if let Err(why) = api::change_password(Some(id), None, &secret).await {
-                            sync.notice.set(Some(format!(
-                                "The person was added without a password: {why}"
-                            )));
-                        }
-                    });
+                    added.try_set(Some(id));
+                    set_password(id, secret);
                 });
-                on_close.run(());
             }
         }
     };
