@@ -99,7 +99,7 @@ fn push_late(
         return i64::MAX;
     };
     let stay = i64::from(placed.start.0);
-    let length = placed.end.0 - placed.start.0;
+    let length = placed.end.0.saturating_sub(placed.start.0);
     let work = match &ctx.net.arc(id).kind {
         ArcKind::Buffer(buffer) => {
             let start = match buffer.until {

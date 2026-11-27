@@ -565,7 +565,8 @@ impl Pass {
     }
 
     /// Work in progress has its hours on every day it could be worked from when it began up to
-    /// today, today too if that is free, and then what is left of its days in one run
+    /// today, today (or the day it began, if later) too if that is free, and then what is left of
+    /// its days in one run
     fn active(
         &mut self,
         ctx: &Context,
@@ -580,15 +581,16 @@ impl Pass {
         let (asks, valid) = ctx.valid(id, work, &rows);
         let mut days: Vec<Day> = valid.days(begun, today).collect();
         let left = work.days.saturating_sub(days.len() as u32);
-        let mut end = today.next();
+        // it lasts through today, or the day it began if that is later
+        let mut end = from.next();
         if left > 0 {
             let Some((start, to, _)) = self.fit(rules, work, &asks, &valid, from, left) else {
                 return Err(self.short(&valid));
             };
             days.extend(valid.days(start, to));
             end = end.max(to);
-        } else if let Some((start, to, _)) = self.fit(rules, work, &asks, &valid, today, 1)
-            && start == today
+        } else if let Some((start, to, _)) = self.fit(rules, work, &asks, &valid, from, 1)
+            && start == from
         {
             days.extend(valid.days(start, to));
         }
@@ -684,6 +686,14 @@ mod tests {
         };
         let pass = one_task(done, 40);
         assert!(pass.placed[0].is_some() && !pass.overflow);
+    }
+
+    #[test]
+    fn work_in_progress_that_began_after_today_lasts_from_that_day() {
+        let pass = one_task(Progress::Active { begun: Day(5) }, 0);
+        let placed = pass.placed[0].as_ref().unwrap();
+        assert_eq!((placed.start, placed.end), (Day(5), Day(6)));
+        assert_eq!(placed.days, [Day(5)]);
     }
 }
 // }}}
