@@ -160,6 +160,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     });
     // an item being added, which is not in the plan until it is saved, and the group it goes in
     let adding = RwSignal::new(None::<(PlanNode, Parent)>);
+    // one more each time one is added, so adding the kind being added starts it again
+    let added = RwSignal::new(0u32);
     let node = Memo::new(move |_| {
         if let Some((node, _)) = adding.get() {
             return Some(node);
@@ -351,6 +353,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let typing = RwSignal::new(false);
     // the draft follows the item that is open, and what is selected follows an item of the plan
     Effect::new(move |_| {
+        added.track();
         let open = node.get().filter(|_| tab.get() != PlanTab::Settings);
         let new = adding.get_untracked().map(|(_, parent)| parent);
         let next = open.and_then(|node| Draft::open(sync, plan, node, new));
@@ -402,13 +405,6 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         if let Some(draft) = draft.get_untracked() {
             editor::save(sync, plan, &draft);
         }
-        leave.run(());
-    });
-    let on_delete = Callback::new(move |()| {
-        if let Some(node) = draft.with_untracked(|d| d.as_ref().map(|d| d.node)) {
-            editor::remove_item(sync, plan, node);
-        }
-        selected.set(None);
         leave.run(());
     });
     guard.watch_clicks();
@@ -501,6 +497,14 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             leave.run(());
         }
     });
+    // the bin asks first, as the key does, and for an item not yet added it is to drop it
+    let on_delete = Callback::new(move |()| {
+        match draft.with_untracked(|d| d.as_ref().map(|d| (d.node, d.new))) {
+            Some((node, false)) => deleting.set(Some(node)),
+            Some((_, true)) => leave.run(()),
+            None => {}
+        }
+    });
     // the row of the workers card the keys are on, while they are on it, and a row whose list of
     // who it can be is to open
     let workers = RwSignal::new(None::<usize>);
@@ -563,7 +567,12 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         on_key(
             key,
             move || {
-                bar_of.try_get_untracked().flatten().is_some() && !window_open() && !on_workers()
+                // while one is being created the bar is not for what is selected
+                let creating = making.try_get_untracked().unwrap_or(false);
+                bar_of.try_get_untracked().flatten().is_some()
+                    && !creating
+                    && !window_open()
+                    && !on_workers()
             },
             Callback::new(move |()| deleting.set(bar_of.get_untracked())),
         );
@@ -704,6 +713,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             };
             go(PlanTab::Gantt, None);
             adding.set(Some((new, parent.unwrap_or(Parent::Plan))));
+            added.update(|n| *n += 1);
         }));
     };
 
