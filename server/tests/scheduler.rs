@@ -207,11 +207,15 @@ impl World {
     }
 
     fn milestone(&mut self, on: &[Dep]) -> Uuid {
+        self.milestone_in(Parent::Plan, on)
+    }
+
+    fn milestone_in(&mut self, parent: Parent, on: &[Dep]) -> Uuid {
         let id = self.id();
         let new = NewMilestone {
             id,
             name: "Milestone".to_string(),
-            parent: Parent::Plan,
+            parent,
         };
         self.plan_update(PlanUpdate::Milestone(Crud::Add(new)));
         let patch = MilestonePatch {
@@ -578,6 +582,32 @@ fn milestone_statuses_follow_what_they_depend_on() {
     // finished work stays where it happened, the rest cannot be in the past
     assert_eq!(state.milestones[&complete].date, d(1));
     assert!(state.milestones[&waiting].date >= today());
+}
+// }}}
+
+// a_milestone_that_happened_is_on_the_last_day_of_the_work_before_it {{{
+#[test]
+fn a_milestone_that_happened_is_on_the_last_day_of_the_work_before_it() {
+    let mut world = World::new();
+    let done = world.task(2, &[], &[]);
+    world.set_state(done, Status::Completed, Some(2), Some(3));
+    let dropped = world.task(1, &[], &[]);
+    world.set_state(dropped, Status::Dropped, None, None);
+    let group = world.group(&[]);
+    let grouped = world.milestone_in(Parent::Node(group), &[after(node(done))]);
+    let both = world.milestone(&[after(node(done)), after(node(dropped))]);
+    let only_dropped = world.milestone(&[after(node(dropped))]);
+    let later = world.group(&[]);
+    constrain_group(&mut world, later, TimeConstraint::Earliest(d(4)).into());
+    let empty = world.milestone_in(Parent::Node(later), &[]);
+    world.apply(TenantUpdateType::SetToday(d(10)));
+    let state = world.solve();
+    // the start of today does not count as something that happened
+    assert_eq!(state.milestones[&grouped].date, d(3));
+    assert_eq!(state.milestones[&both].date, d(3));
+    // with no work that happened before it, it is today
+    assert_eq!(state.milestones[&only_dropped].date, d(10));
+    assert_eq!(state.milestones[&empty].date, d(10));
 }
 // }}}
 

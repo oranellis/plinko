@@ -268,8 +268,7 @@ impl Lowering<'_> {
     }
 
     /// A milestone is the vertex after what it depends on, never before the start of today unless
-    /// it has already happened. It is shown on the day before the vertex, or today if that is
-    /// the start of today.
+    /// it has already happened. The day it is shown on is worked out in `write`.
     fn milestone(&mut self, milestone: &Milestone, start: VertexId, end: VertexId) {
         let happened = self.statuses[milestone.id()] == DerivedStatus::Completed;
         let now = (!happened || start == self.net.root).then_some(self.now());

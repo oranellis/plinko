@@ -41,9 +41,9 @@ Written: `TenantVolatileState { plans, users }` (`scheduler/state.rs`).
 - An item's dependencies are the nodes whose end it waits for. Besides them, an item in a group
   waits for the group to start, and a top level item with no dependencies starts with the plan,
   today. Neither is listed.
-- A milestone is shown on the last day of what it depends on, never before today unless work
-  that happened reached it. What follows it starts the day after, or today if nothing has to
-  happen first.
+- A milestone is shown on the last day of what it depends on, never before today. Once all of
+  that has happened it is on the last day of the work that happened before it, or today if none
+  did. What follows it starts the day after, or today if nothing has to happen first.
 - A time constraint on a task or group is for its first or its last day (`NodeConstraint`). A
   milestone's is for its one day.
 

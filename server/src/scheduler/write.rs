@@ -1,5 +1,5 @@
 // modules {{{
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 use uuid::Uuid;
@@ -42,12 +42,28 @@ use crate::{
 pub fn write(ctx: &Context, tenant: &Tenant, earliest: &Pass, pass: &Pass) -> TenantVolatileState {
     let mut plans = HashMap::new();
     for (index, info) in ctx.net.plans.iter().enumerate() {
+        let plan = &tenant.plans()[&info.id];
+        let statuses = milestone_statuses(plan);
+        let open = statuses
+            .iter()
+            .filter(|(_, s)| **s != DerivedStatus::Completed);
+        let lowered = |id: &Uuid| {
+            ctx.net
+                .lowered
+                .get(&(index as u32, PlanNode::Milestone(*id)))
+        };
+        let pending = open
+            .filter_map(|(id, _)| lowered(id))
+            .map(|l| l.end)
+            .collect();
         let writer = Writer {
             ctx,
-            plan: &tenant.plans()[&info.id],
+            plan,
             index: index as u32,
             earliest,
             pass,
+            statuses,
+            pending,
         };
         plans.insert(info.id, writer.plan());
     }
@@ -68,6 +84,9 @@ struct Writer<'a> {
     index: u32,
     earliest: &'a Pass,
     pass: &'a Pass,
+    statuses: HashMap<Uuid, DerivedStatus>,
+    /// The vertices of milestones that have not happened
+    pending: HashSet<VertexId>,
 }
 
 // impl Writer {{{
@@ -87,6 +106,40 @@ impl Writer<'_> {
 
     fn at(&self, pass: &Pass, v: VertexId) -> Option<Day> {
         pass.time[v.0 as usize]
+    }
+
+    /// The day what ends on a vertex is shown on: the day before it, but never before today
+    /// unless work that happened decides it, then the last day of that work
+    fn shown(&self, pass: &Pass, v: VertexId) -> Option<NaiveDate> {
+        let (at, today) = (self.at(pass, v)?, self.ctx.table.today);
+        let end = match at > today {
+            true => Some(at),
+            false => self.happened(pass, v),
+        };
+        Some(end.map_or(self.date(today), |end| self.day_before(end)))
+    }
+
+    /// The end of the latest work that happened before a vertex, through what it waits on. The
+    /// start of today is not work, and a milestone that has not happened is today at the soonest.
+    fn happened(&self, pass: &Pass, v: VertexId) -> Option<Day> {
+        let (mut stack, mut seen, mut last) = (vec![v], HashSet::new(), None);
+        while let Some(v) = stack.pop() {
+            if !seen.insert(v) {
+                continue;
+            }
+            if self.pending.contains(&v) {
+                last = last.max(Some(self.ctx.table.today.next()));
+                continue;
+            }
+            let vertex = self.ctx.net.vertex(v);
+            let ends = vertex
+                .incoming
+                .iter()
+                .filter_map(|a| pass.placed[a.0 as usize].as_ref());
+            last = last.max(ends.map(|p| p.end).max());
+            stack.extend(vertex.before());
+        }
+        last
     }
 
     fn placed<'p>(&self, pass: &'p Pass, node: PlanNode) -> Option<&'p Placed> {
@@ -125,23 +178,15 @@ impl Writer<'_> {
                 None => drop(out.unscheduled.insert(node, self.reason(node))),
             }
         }
-        let statuses = milestone_statuses(plan);
         for (id, item) in plan.milestones() {
             let node = PlanNode::Milestone(*id);
-            let lowered = self.lowered(node);
-            let at = lowered.and_then(|l| self.at(self.pass, l.end));
-            // only one reached by work that happened can be before today
-            let root = self.ctx.net.root;
-            let waited = lowered.is_some_and(|l| self.ctx.net.vertex(l.end).after != [root]);
-            let happened = waited && statuses[id] == DerivedStatus::Completed;
-            match at {
-                Some(at) => {
-                    let mut date = self.day_before(at);
-                    if !happened {
-                        date = date.max(self.date(self.ctx.table.today));
-                    }
+            let shown = self
+                .lowered(node)
+                .and_then(|l| self.shown(self.pass, l.end));
+            match shown {
+                Some(date) => {
                     let state = milestone::VolatileState {
-                        derived_status: statuses[id],
+                        derived_status: self.statuses[id],
                         date,
                     };
                     let range = DateRange::new(date, state.end());
