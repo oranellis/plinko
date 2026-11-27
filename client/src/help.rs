@@ -3,11 +3,11 @@
 
 // modules {{{
 use leptos::prelude::*;
-use wasm_bindgen::{JsCast, closure::Closure};
+use wasm_bindgen::JsCast;
 
 use crate::{
     icons::{Icon, IconKind},
-    ui::Modal,
+    ui::{Modal, window_listener},
 };
 // }}}
 
@@ -211,30 +211,25 @@ const PAGES: &[Page] = &[(
 #[component]
 pub fn HelpButton() -> impl IntoView {
     let open = RwSignal::new(false);
-    let on_key =
-        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
-            let target = ev
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
-            let typing = target.is_some_and(|t| {
-                t.closest("input, textarea, select")
-                    .ok()
-                    .flatten()
-                    .is_some()
-            });
-            let window_open = web_sys::window()
-                .and_then(|w| w.document())
-                .and_then(|d| d.query_selector(".modal").ok().flatten())
-                .is_some();
-            if ev.key() == "?" && !typing && !window_open && !ev.default_prevented() {
-                ev.prevent_default();
-                open.try_set(true);
-            }
+    window_listener("keydown", move |ev: web_sys::KeyboardEvent| {
+        let target = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+        let typing = target.is_some_and(|t| {
+            t.closest("input, textarea, select")
+                .ok()
+                .flatten()
+                .is_some()
         });
-    if let Some(window) = web_sys::window() {
-        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
-    }
-    on_key.forget();
+        let window_open = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.query_selector(".modal").ok().flatten())
+            .is_some();
+        if ev.key() == "?" && !typing && !window_open && !ev.default_prevented() {
+            ev.prevent_default();
+            open.try_set(true);
+        }
+    });
     view! {
         <button
             type="button"

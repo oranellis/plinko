@@ -5,7 +5,6 @@
 use leptos::prelude::*;
 use plinko::common::short_id::ShortId;
 use uuid::Uuid;
-use wasm_bindgen::{JsCast, closure::Closure};
 // }}}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,12 +129,7 @@ pub fn use_route() -> RwSignal<Route> {
         Route::parse(&hash.unwrap_or_default())
     };
     let route = RwSignal::new(read());
-    let listener = Closure::<dyn FnMut()>::new(move || route.set(read()));
-    if let Some(window) = web_sys::window() {
-        let _ = window
-            .add_event_listener_with_callback("hashchange", listener.as_ref().unchecked_ref());
-    }
-    listener.forget();
+    crate::ui::window_listener("hashchange", move |_: web_sys::Event| route.set(read()));
     route
 }
 // }}}

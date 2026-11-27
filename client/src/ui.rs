@@ -453,6 +453,31 @@ pub fn Status() -> impl IntoView {
 }
 // }}}
 
+// window_listener {{{
+/// Listens to `event` on the window until the current owner is cleaned up
+pub fn window_listener<E>(event: &'static str, handler: impl FnMut(E) + 'static)
+where
+    E: wasm_bindgen::convert::FromWasmAbi + 'static,
+{
+    use wasm_bindgen::{JsCast, closure::Closure};
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let closure = Closure::<dyn FnMut(E)>::new(handler);
+    let _ = window.add_event_listener_with_callback(event, closure.as_ref().unchecked_ref());
+    let closure = StoredValue::new_local(closure);
+    // the window is not Send, so it is looked up again
+    on_cleanup(move || {
+        if let Some(window) = web_sys::window() {
+            closure.try_with_value(|c| {
+                let _ =
+                    window.remove_event_listener_with_callback(event, c.as_ref().unchecked_ref());
+            });
+        }
+    });
+}
+// }}}
+
 // hashed {{{
 /// A cheap key for a list entry that is drawn again whenever anything in it changes
 pub fn hashed<T: std::hash::Hash>(item: &T) -> u64 {
