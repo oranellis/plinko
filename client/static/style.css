@@ -515,8 +515,8 @@ button.ctx:disabled { opacity: 0.35; cursor: default; }
 .statusswitch .st { background: #181818; }
 .statusswitch .st:hover { border-color: var(--c); color: var(--c); background: #181818; }
 .statusswitch .st.current { background: color-mix(in srgb, var(--c) 18%, #181818); }
-.statusswitch:not(:hover) .st:not(.next) { display: none; }
-.statusswitch:hover .statuscol { top: var(--shift); }
+.statusswitch:not(:hover):not(.open) .st:not(.next) { display: none; }
+.statusswitch:hover .statuscol, .statusswitch.open .statuscol { top: var(--shift); }
 
 /* the card over the bottom of the chart for the item being created or edited: its shape, with a
    circle each side for what it waits for and what waits for it, a grip for its group and a bar

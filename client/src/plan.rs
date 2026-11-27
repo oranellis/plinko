@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use leptos::prelude::*;
 use plinko::{
     common::short_id::ShortId,
-    planner::items::{dependency::PlanNode, parent::Parent},
+    planner::items::{dependency::PlanNode, parent::Parent, task::Status},
     scheduler::state::PlanVolatileState,
 };
 use uuid::Uuid;
@@ -473,9 +473,40 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     // with the day an item is held to picked they are how it is held, with an item edited they
     // light its handles, and with one only selected they edit it or pick for it at once.
     let menu = RwSignal::new(false);
+    // the statuses of the task that is selected or edited, listed by a key: it is closed again
+    // by another item, by escape, or by one of them being picked
+    let statuses = RwSignal::new(false);
+    Effect::new(move |_| {
+        bar_of.track();
+        statuses.set(false);
+    });
+    crate::escape::on_escape(
+        move || statuses.get(),
+        Callback::new(move |()| statuses.set(false)),
+    );
     on_letter(move |key: char| {
         if window_open() || tab.try_get_untracked() != Some(PlanTab::Gantt) {
             return false;
+        }
+        let item = bar_of.get_untracked();
+        if let (true, Some(PlanNode::Task(task))) = (statuses.get_untracked(), item) {
+            let now = sync.tenant.with_untracked(|t| {
+                let task = t.as_ref()?.plans().get(&plan)?.tasks().get(&task)?;
+                Some(task.persistent_state().status)
+            });
+            let to = match key {
+                'n' => now.map(crate::context::next),
+                'i' => Some(Status::InProgress),
+                'o' => Some(Status::OnHold),
+                'c' => Some(Status::Completed),
+                'd' => Some(Status::Dropped),
+                _ => return false,
+            };
+            statuses.set(false);
+            if let Some(to) = to {
+                crate::mine::set_status_with(sync, plan, task, to);
+            }
+            return true;
         }
         if menu.get_untracked() {
             let kind = match key {
@@ -525,6 +556,14 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         let lasts = draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.duration.is_some()));
         match (key, editing, chosen.get_untracked()) {
             ('a', _, _) => menu.set(true),
+            // the next status of a task is one more press away, and a buffer is pinned
+            ('n', _, _) => match item {
+                Some(PlanNode::Task(_)) => statuses.set(true),
+                Some(PlanNode::PlanBuffer(buffer)) => {
+                    crate::context::toggle_pin(sync, plan, buffer)
+                }
+                _ => return false,
+            },
             ('s', _, _) => searching.set(true),
             ('t', _, _) => jump.update(|n| *n += 1),
             ('d', Some(_), _) => light(Pick::Before),
@@ -696,6 +735,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 probe=probe
                                 spot=spot
                                 typing=typing
+                                statuses=statuses
                                 on_change=Callback::new(move |()| guard.dirtied())
                                 on_edit=Callback::new(move |()| if let Some(node) = plan_node { on_open.run(node) })
                                 on_data=Callback::new(move |()| data_of.set(plan_node))

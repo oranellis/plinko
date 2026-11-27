@@ -48,7 +48,7 @@ const STATUSES: [(Status, &str, IconKind, &str); 5] = [
 
 // helpers {{{
 /// Where a click on the status button takes a task: on towards done
-fn next(status: Status) -> Status {
+pub fn next(status: Status) -> Status {
     match status {
         Status::NotStarted | Status::OnHold => Status::InProgress,
         Status::InProgress | Status::Completed => Status::Completed,
@@ -77,6 +77,8 @@ pub fn ContextBar(
     spot: RwSignal<Option<PlanNode>>,
     typing: RwSignal<bool>,
     on_change: Callback<()>,
+    /// Whether the statuses of a task are listed, which a key can make them too
+    statuses: RwSignal<bool>,
     on_edit: Callback<()>,
     on_data: Callback<()>,
     on_save: Callback<()>,
@@ -101,7 +103,7 @@ pub fn ContextBar(
             </Show>
             <div class="stripbuttons">
             {match node {
-                Some(PlanNode::Task(id)) => view! { <StatusSwitch plan=plan task=id /> }.into_any(),
+                Some(PlanNode::Task(id)) => view! { <StatusSwitch plan=plan task=id open=statuses /> }.into_any(),
                 Some(PlanNode::PlanBuffer(id)) => view! { <SetStart plan=plan buffer=id /> }.into_any(),
                 _ => ().into_any(),
             }}
@@ -429,7 +431,7 @@ pub fn EditSwitch(
 // StatusSwitch {{{
 /// One button showing where the task goes next, with the others a hover away
 #[component]
-fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
+fn StatusSwitch(plan: ShortId, task: Uuid, open: RwSignal<bool>) -> impl IntoView {
     let sync = use_sync();
     let status = Memo::new(move |_| {
         sync.tenant
@@ -440,7 +442,11 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
             .unwrap_or_default()
     });
     view! {
-        <div class="statusswitch" style=move || format!("--shift:{}px", -(position(next(status.get())) as i32) * 40)>
+        <div
+            class="statusswitch"
+            class:open=move || open.get()
+            style=move || format!("--shift:{}px", -(position(next(status.get())) as i32) * 40)
+        >
             <div class="statuscol">
                 {STATUSES
                     .into_iter()
@@ -454,7 +460,10 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
                                 style=format!("--c:{colour}")
                                 title=label
                                 aria-label=label
-                                on:click=move |_| set_status(plan, task, to)
+                                on:click=move |_| {
+                                    open.set(false);
+                                    set_status(plan, task, to);
+                                }
                             >
                                 <Icon kind=icon size=20 />
                             </button>
@@ -463,6 +472,39 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
                     .collect_view()}
             </div>
         </div>
+    }
+}
+// }}}
+
+// toggle_pin {{{
+/// Pins the start of a buffer to where it is scheduled, or lets go of one that is pinned
+pub fn toggle_pin(sync: Sync, plan: ShortId, buffer: Uuid) {
+    let set = sync.tenant.with_untracked(|t| {
+        let buffer = t
+            .as_ref()?
+            .plans()
+            .get(&plan)?
+            .plan_buffers()
+            .get(&buffer)?;
+        Some(*buffer.set_start_day())
+    });
+    let scheduled = sync.schedule.with_untracked(|s| {
+        let state = s.as_ref().and_then(|(_, s)| s.plans.get(&plan));
+        model::span_of(state, PlanNode::PlanBuffer(buffer)).map(|s| s.0)
+    });
+    let to = match set.flatten() {
+        Some(_) => None,
+        None => scheduled,
+    };
+    if set.flatten().is_some() || to.is_some() {
+        let patch = PlanBufferPatch {
+            id: buffer,
+            parent: None,
+            dependencies: None,
+            set_start_day: Some(to),
+            duration: None,
+        };
+        sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
     }
 }
 // }}}
@@ -493,23 +535,7 @@ fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
         true => "Unpin its start",
         false => "Pin its start where it is",
     };
-    let toggle = move || {
-        let (set, scheduled) = days.get_untracked();
-        let to = match set {
-            Some(_) => None,
-            None => scheduled,
-        };
-        if set.is_some() || to.is_some() {
-            let patch = PlanBufferPatch {
-                id: buffer,
-                parent: None,
-                dependencies: None,
-                set_start_day: Some(to),
-                duration: None,
-            };
-            sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
-        }
-    };
+    let toggle = move || toggle_pin(sync, plan, buffer);
     // the button shows how it is, and under the pointer how a click would leave it: an empty
     // pin becomes a full one, and a full one is struck through
     view! {

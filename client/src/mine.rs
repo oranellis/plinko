@@ -91,7 +91,11 @@ pub fn use_tasks_of(who: Option<Uuid>) -> Memo<Vec<MyTask>> {
 // set_status {{{
 /// Moves a task to a new status, the server fills in the dates that goes with it
 pub fn set_status(plan: ShortId, task: Uuid, status: Status) {
-    let sync = use_sync();
+    set_status_with(use_sync(), plan, task, status);
+}
+
+/// The same from where there is no page to ask for the connection, like a key that is pressed
+pub fn set_status_with(sync: crate::sync::Sync, plan: ShortId, task: Uuid, status: Status) {
     let Some(was) = sync.tenant.with_untracked(|t| {
         Some(
             t.as_ref()?
