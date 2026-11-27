@@ -428,28 +428,29 @@ impl Pass {
         from.max(start.unwrap_or(from))
     }
 
-    /// Where the run of days goes from `from` for these people, without taking anything
+    /// Where the run of days goes from `from` for these people, without taking anything, none
+    /// if it does not fit before the table ends
     fn fit(
-        &mut self,
+        &self,
         rules: &Rules,
         work: &Work,
         asks: &[Ask],
         valid: &Valid,
         from: Day,
         days: u32,
-    ) -> Result<Fit, Reason> {
+    ) -> Option<Fit> {
         let from = Self::floor(work, valid, from);
         let window = match rules.unlimited {
             true => self.ledger.window(valid, &[], from, days),
             false => self.ledger.window(valid, asks, from, days),
         };
-        match window {
-            Some(w) => Ok((w.start, w.end, w.blocker)),
-            None => {
-                self.overflow |= valid.count() > 0;
-                Err(Reason::NoCapacity)
-            }
-        }
+        window.map(|w| (w.start, w.end, w.blocker))
+    }
+
+    /// Work did not fit, which more days might change if it has days it could go on at all
+    fn short(&mut self, valid: &Valid) -> Reason {
+        self.overflow |= valid.count() > 0;
+        Reason::NoCapacity
     }
 
     /// The person for each slot. A slot with one candidate has that one. For the others it is
@@ -485,8 +486,11 @@ impl Pass {
                 (false, None) => {
                     let free = slot.candidates.iter().filter(|row| !used(row));
                     let mut ends: Vec<(Day, u64, RowId)> = Vec::new();
+                    // whether someone ran out of days that more days could give them
+                    let mut short = false;
                     for row in free {
-                        if slot.hours == 0 {
+                        // finished work holds no hours, so anyone will do
+                        if slot.hours == 0 || matches!(work.progress, Progress::Done { .. }) {
                             ends.push((from, 0, *row));
                             continue;
                         }
@@ -502,17 +506,22 @@ impl Pass {
                         };
                         let asks = asks(&partial, &rows);
                         let valid = ctx.table.valid(&asks, work.mask, work.calendar);
-                        if let Ok((_, end, _)) =
-                            self.fit(rules, work, &asks, &valid, from, work.days)
-                        {
-                            ends.push((end, self.demand[row.0 as usize], *row));
+                        match self.fit(rules, work, &asks, &valid, from, work.days) {
+                            Some((_, end, _)) => {
+                                ends.push((end, self.demand[row.0 as usize], *row))
+                            }
+                            None => short |= valid.count() > 0,
                         }
                     }
                     ends.sort();
                     if let [_, second, ..] = ends.as_slice() {
                         *other = Some((i, second.2));
                     }
-                    ends.first().ok_or(Reason::NoCapacity)?.2
+                    let Some(first) = ends.first() else {
+                        self.overflow |= short;
+                        return Err(Reason::NoCapacity);
+                    };
+                    first.2
                 }
             };
             chosen.push((i, row));
@@ -538,7 +547,10 @@ impl Pass {
             return Err(Reason::NoCapacity);
         }
         let ready = Self::floor(work, &valid, from);
-        let (start, end, blocker) = self.fit(rules, work, &asks, &valid, from, work.days)?;
+        let Some((start, end, blocker)) = self.fit(rules, work, &asks, &valid, from, work.days)
+        else {
+            return Err(self.short(&valid));
+        };
         let days: Vec<Day> = valid.days(start, end).collect();
         self.take(rules, &asks, &days, id);
         let holder = |(row, day)| Some((row, self.ledger.holder(row, day)?));
@@ -568,10 +580,12 @@ impl Pass {
         let left = work.days.saturating_sub(days.len() as u32);
         let mut end = today.next();
         if left > 0 {
-            let (start, to, _) = self.fit(rules, work, &asks, &valid, from, left)?;
+            let Some((start, to, _)) = self.fit(rules, work, &asks, &valid, from, left) else {
+                return Err(self.short(&valid));
+            };
             days.extend(valid.days(start, to));
             end = end.max(to);
-        } else if let Ok((start, to, _)) = self.fit(rules, work, &asks, &valid, today, 1)
+        } else if let Some((start, to, _)) = self.fit(rules, work, &asks, &valid, today, 1)
             && start == today
         {
             days.extend(valid.days(start, to));
@@ -592,6 +606,82 @@ fn placed(start: Day, end: Day, rows: Vec<RowId>, days: Vec<Day>) -> Placed {
         days,
         blocker: None,
         other: None,
+    }
+}
+// }}}
+
+// tests {{{
+#[cfg(test)]
+mod tests {
+    use chrono::{Days, NaiveDate};
+    use uuid::Uuid;
+
+    use super::*;
+    use crate::{
+        availability::workload::Workload,
+        planner::items::{dependency::PlanNode, task::Worker},
+        scheduler::{
+            arc::{Arc, Slot},
+            network::Vertex,
+            table::RowKey,
+        },
+    };
+
+    /// A pass over one task that alice or bob can work, bob only for the first two of 30 days
+    fn one_task(progress: Progress, days: u32) -> Pass {
+        let origin = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let mut table = Table::new(origin, 30, origin);
+        let person = |n| RowKey::User(Uuid::from_u128(n));
+        let alice = table.insert(person(1), |_| Workload::MAX);
+        let gone = origin + Days::new(2);
+        let bob = table.insert(person(2), |d| match d < gone {
+            true => Workload::MAX,
+            false => Workload::MIN,
+        });
+        let mut net = Network::default();
+        net.root = net.add_vertex(Vertex {
+            pinned: Some(table.today),
+            ..Vertex::default()
+        });
+        let end = net.add_vertex(Vertex::default());
+        let mut work = Work::wait(days, table.full());
+        work.progress = progress;
+        work.slots = vec![Slot {
+            worker: Worker::Placeholder,
+            hours: 8,
+            candidates: vec![alice, bob],
+        }];
+        let kind = ArcKind::Work(work);
+        let (node, start) = (PlanNode::Task(Uuid::nil()), net.root);
+        net.add_arc(Arc {
+            node,
+            plan: 0,
+            start,
+            end,
+            kind,
+        });
+        net.link();
+        let ctx = Context::new(&net, &table);
+        let mut pass = Pass::new(&ctx, &Rules::default());
+        pass.run(&ctx, &Rules::default(), None);
+        pass
+    }
+
+    #[test]
+    fn only_work_nobody_can_fit_asks_for_more_days() {
+        // bob never fits, but alice does
+        let pass = one_task(Progress::Open, 5);
+        assert_eq!(pass.placed[0].as_ref().unwrap().rows, [RowId(1)]);
+        assert!(!pass.overflow);
+        let pass = one_task(Progress::Open, 40);
+        assert!(pass.placed[0].is_none() && pass.overflow);
+        // finished work holds no hours, so it has a person whatever its days
+        let done = Progress::Done {
+            begun: Day(0),
+            ended: Day(40),
+        };
+        let pass = one_task(done, 40);
+        assert!(pass.placed[0].is_some() && !pass.overflow);
     }
 }
 // }}}
