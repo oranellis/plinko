@@ -543,6 +543,14 @@ button.ctx:disabled { opacity: 0.35; cursor: default; }
 .draftcard-daycount i { align-self: stretch; width: 7px; background: #e8e8e8; border-radius: 0 4px 4px 0; }
 .draftcard-daycount:hover, .draftcard-days.held .draftcard-daycount { --edge: var(--accent); background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(to right, transparent, var(--edge)) border-box; color: #fff; }
 .draftcard-daycount:hover i, .draftcard-days.held .draftcard-daycount i { background: var(--accent); }
+/* a delay is lines, and so is the handle for its days: the count sits on the line as its name
+   does, and the bar at its end is what is dragged */
+.draftcard-shape.delay .draftcard-days { right: -1.5px; }
+.draftcard-shape.delay .draftcard-daycount, .draftcard-shape.delay .draftcard-daycount:hover, .draftcard-shape.delay .draftcard-days.held .draftcard-daycount { padding: 0; gap: 8px; background: none; border: 0; border-radius: 0; color: #bbb; }
+.draftcard-shape.delay .draftcard-daycount span { padding: 0 4px; background: var(--card); }
+.draftcard-shape.delay .draftcard-daycount i, .draftcard-shape.delay .draftcard-daycount:hover i, .draftcard-shape.delay .draftcard-days.held .draftcard-daycount i { width: 0; background: none; border-radius: 0; border-right: 1.5px dashed #8a8a8a; }
+.draftcard-shape.delay .draftcard-daycount:hover, .draftcard-shape.delay .draftcard-days.held .draftcard-daycount { color: #fff; }
+.draftcard-shape.delay .draftcard-daycount:hover i, .draftcard-shape.delay .draftcard-days.held .draftcard-daycount i { border-right: 2.5px solid var(--accent); }
 .draftcard-daybox { width: 78px; text-align: right; }
 .draftcard-drag { position: absolute; right: 0; bottom: calc(100% + 7px); display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: 3px; width: 200px; pointer-events: none; }
 .draftcard-drag i { width: 10px; height: 10px; border-radius: 2px; background: #8a8a8a; border: 1.5px solid #8a8a8a; }
