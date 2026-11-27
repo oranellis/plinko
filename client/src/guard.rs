@@ -2,7 +2,7 @@
 
 // modules {{{
 use leptos::prelude::*;
-use wasm_bindgen::{JsCast, closure::Closure};
+use wasm_bindgen::JsCast;
 
 use crate::{
     icons::{Icon, IconKind},
@@ -71,40 +71,34 @@ impl Guard {
     /// From here on a click on a link or a button outside what is being edited asks first when
     /// there are unsaved changes, and is made again once they are saved or dropped
     pub fn watch_clicks(self) {
-        let on_click =
-            Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |ev: web_sys::MouseEvent| {
-                if !self.dirty.try_get_untracked().unwrap_or(false) {
-                    return;
-                }
-                let target = ev
-                    .target()
-                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
-                // a link goes somewhere else wherever it is, as one in the search does
-                let control = target.and_then(|t| {
-                    let within = |at: &str| t.closest(at).ok().flatten().is_some();
-                    let control = t.closest("a[href], button").ok().flatten()?;
-                    let link = control.tag_name().eq_ignore_ascii_case("a");
-                    (link || !(within(EDITING) || within(KEEPS))).then_some(control)
-                });
-                let Some(control) = control.and_then(|c| c.dyn_into::<web_sys::HtmlElement>().ok())
-                else {
-                    return;
-                };
-                ev.prevent_default();
-                ev.stop_propagation();
-                self.clicked.set_value(Some(control));
-                self.asking.set(Some(Callback::new(move |()| {
-                    if let Some(control) = self.clicked.try_update_value(Option::take).flatten() {
-                        control.click();
-                    }
-                })));
-            });
         // before anything the click is on hears of it
-        if let Some(document) = web_sys::window().and_then(|w| w.document()) {
-            let heard = on_click.as_ref().unchecked_ref();
-            let _ = document.add_event_listener_with_callback_and_bool("click", heard, true);
-        }
-        on_click.forget();
+        crate::ui::window_capture("click", move |ev: web_sys::MouseEvent| {
+            if !self.dirty.try_get_untracked().unwrap_or(false) {
+                return;
+            }
+            let target = ev
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+            // a link goes somewhere else wherever it is, as one in the search does
+            let control = target.and_then(|t| {
+                let within = |at: &str| t.closest(at).ok().flatten().is_some();
+                let control = t.closest("a[href], button").ok().flatten()?;
+                let link = control.tag_name().eq_ignore_ascii_case("a");
+                (link || !(within(EDITING) || within(KEEPS))).then_some(control)
+            });
+            let Some(control) = control.and_then(|c| c.dyn_into::<web_sys::HtmlElement>().ok())
+            else {
+                return;
+            };
+            ev.prevent_default();
+            ev.stop_propagation();
+            self.clicked.set_value(Some(control));
+            self.asking.set(Some(Callback::new(move |()| {
+                if let Some(control) = self.clicked.try_update_value(Option::take).flatten() {
+                    control.click();
+                }
+            })));
+        });
     }
 
     pub fn clean(&self) {
@@ -143,27 +137,21 @@ pub fn ConfirmLeave(guard: Guard, on_save: Callback<()>) -> impl IntoView {
     // enter saves, so that it is the same key as saves an edit. It is heard before anything else
     // is, so the name box under the question does not save as well, except on one of its
     // buttons, where enter is that button
-    let on_key =
-        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
-            let asked = guard
-                .asking
-                .try_with_untracked(Option::is_some)
-                .unwrap_or(false);
-            let on_button = ev
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-                .is_some_and(|t| t.closest(".modal button").ok().flatten().is_some());
-            if asked && ev.key() == "Enter" && !on_button {
-                ev.prevent_default();
-                ev.stop_propagation();
-                leave(true);
-            }
-        });
-    if let Some(window) = web_sys::window() {
-        let heard = on_key.as_ref().unchecked_ref();
-        let _ = window.add_event_listener_with_callback_and_bool("keydown", heard, true);
-    }
-    on_key.forget();
+    crate::ui::window_capture("keydown", move |ev: web_sys::KeyboardEvent| {
+        let asked = guard
+            .asking
+            .try_with_untracked(Option::is_some)
+            .unwrap_or(false);
+        let on_button = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+            .is_some_and(|t| t.closest(".modal button").ok().flatten().is_some());
+        if asked && ev.key() == "Enter" && !on_button {
+            ev.prevent_default();
+            ev.stop_propagation();
+            leave(true);
+        }
+    });
     let choice = move |label: &'static str,
                        class: &'static str,
                        kind: IconKind,

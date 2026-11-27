@@ -521,19 +521,35 @@ pub fn window_listener<E>(event: &'static str, handler: impl FnMut(E) + 'static)
 where
     E: wasm_bindgen::convert::FromWasmAbi + 'static,
 {
+    listen(event, false, handler);
+}
+
+/// As `window_listener`, but heard before anything on the page is
+pub fn window_capture<E>(event: &'static str, handler: impl FnMut(E) + 'static)
+where
+    E: wasm_bindgen::convert::FromWasmAbi + 'static,
+{
+    listen(event, true, handler);
+}
+
+fn listen<E>(event: &'static str, capture: bool, handler: impl FnMut(E) + 'static)
+where
+    E: wasm_bindgen::convert::FromWasmAbi + 'static,
+{
     use wasm_bindgen::{JsCast, closure::Closure};
     let Some(window) = web_sys::window() else {
         return;
     };
     let closure = Closure::<dyn FnMut(E)>::new(handler);
-    let _ = window.add_event_listener_with_callback(event, closure.as_ref().unchecked_ref());
+    let heard = closure.as_ref().unchecked_ref();
+    let _ = window.add_event_listener_with_callback_and_bool(event, heard, capture);
     let closure = StoredValue::new_local(closure);
     // the window is not Send, so it is looked up again
     on_cleanup(move || {
         if let Some(window) = web_sys::window() {
             closure.try_with_value(|c| {
-                let _ =
-                    window.remove_event_listener_with_callback(event, c.as_ref().unchecked_ref());
+                let heard = c.as_ref().unchecked_ref();
+                let _ = window.remove_event_listener_with_callback_and_bool(event, heard, capture);
             });
         }
     });

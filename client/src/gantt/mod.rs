@@ -173,42 +173,31 @@ pub fn Gantt(
             }
         }
     };
-    let on_resize = Closure::<dyn FnMut()>::new(measure);
-    if let Some(window) = web_sys::window() {
-        let _ =
-            window.add_event_listener_with_callback("resize", on_resize.as_ref().unchecked_ref());
-    }
-    on_resize.forget();
-    if let Some(window) = web_sys::window() {
-        for (event, down) in [("keydown", true), ("keyup", false)] {
-            let key = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(
-                move |ev: web_sys::KeyboardEvent| {
-                    if ev.key() == "Shift" {
-                        shift.try_set(down);
-                        if !down {
-                            drag.try_set(None);
-                        }
-                    }
-                },
-            );
-            let _ = window.add_event_listener_with_callback(event, key.as_ref().unchecked_ref());
-            key.forget();
-        }
-        let blur = Closure::<dyn FnMut()>::new(move || {
-            shift.try_set(false);
-            drag.try_set(None);
+    crate::ui::window_listener("resize", move |_: web_sys::Event| measure());
+    for (event, down) in [("keydown", true), ("keyup", false)] {
+        crate::ui::window_listener(event, move |ev: web_sys::KeyboardEvent| {
+            if ev.key() == "Shift" {
+                shift.try_set(down);
+                if !down {
+                    drag.try_set(None);
+                }
+            }
         });
-        let _ = window.add_event_listener_with_callback("blur", blur.as_ref().unchecked_ref());
-        blur.forget();
     }
+    crate::ui::window_listener("blur", move |_: web_sys::Event| {
+        shift.try_set(false);
+        drag.try_set(None);
+    });
     Effect::new(move |_| {
         if let Some(element) = canvas.get() {
             // the chart changes size when the pane beside it opens or closes
             let watch = Closure::<dyn FnMut()>::new(measure);
             if let Ok(observer) = web_sys::ResizeObserver::new(watch.as_ref().unchecked_ref()) {
                 observer.observe(element.as_ref());
+                // it stops watching when the chart goes, and the closure goes with it
+                let kept = StoredValue::new_local((observer, watch));
+                on_cleanup(move || kept.try_with_value(|(o, _)| o.disconnect()).unwrap_or(()));
             }
-            watch.forget();
             measure();
             // the page may still be settling into its place
             set_timeout(measure, Duration::from_millis(60));

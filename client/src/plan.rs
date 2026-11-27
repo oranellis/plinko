@@ -1328,63 +1328,53 @@ fn window_open() -> bool {
 /// A key that does something to the page while `active`, from anywhere it is not something
 /// else: typed into a box, or pressed on a button outside the bar
 fn on_key(key: &'static str, active: impl Fn() -> bool + 'static, run: Callback<()>) {
-    use wasm_bindgen::{JsCast, closure::Closure};
-    let on_key =
-        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
-            if ev.key() != key || ev.default_prevented() || !active() {
-                return;
-            }
-            let target = ev
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
-            // a button of the bar that was last clicked still has the keyboard, and is not what
-            // the key is for: enter would press it again
-            let taken = target.is_some_and(|t| {
-                let within = |what: &str| t.closest(what).ok().flatten().is_some();
-                within("input, textarea, select, a") || within("button") && !within(".contextbar")
-            });
-            if !taken {
-                ev.prevent_default();
-                run.run(());
-            }
+    use wasm_bindgen::JsCast;
+    crate::ui::window_listener("keydown", move |ev: web_sys::KeyboardEvent| {
+        if ev.key() != key || ev.default_prevented() || !active() {
+            return;
+        }
+        let target = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+        // a button of the bar that was last clicked still has the keyboard, and is not what
+        // the key is for: enter would press it again
+        let taken = target.is_some_and(|t| {
+            let within = |what: &str| t.closest(what).ok().flatten().is_some();
+            within("input, textarea, select, a") || within("button") && !within(".contextbar")
         });
-    if let Some(window) = web_sys::window() {
-        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
-    }
-    on_key.forget();
+        if !taken {
+            ev.prevent_default();
+            run.run(());
+        }
+    });
 }
 
 /// A letter typed at the page and not into anything, with nothing held down with it. `run`
 /// gives whether it was for something.
 fn on_letter(run: impl Fn(char) -> bool + 'static) {
-    use wasm_bindgen::{JsCast, closure::Closure};
-    let on_key =
-        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
-            let held = ev.ctrl_key() || ev.meta_key() || ev.alt_key();
-            let key = ev.key();
-            let mut letters = key.chars();
-            let (Some(letter), None, false) = (letters.next(), letters.next(), held) else {
-                return;
-            };
-            let target = ev
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
-            let typing = target.is_some_and(|t| {
-                t.closest("input, textarea, select")
-                    .ok()
-                    .flatten()
-                    .is_some()
-            });
-            // a capital is shift held, which is for the handles of the chart
-            let capital = letter.is_ascii_uppercase() && ev.shift_key();
-            if !typing && !capital && !ev.default_prevented() && run(letter.to_ascii_lowercase()) {
-                ev.prevent_default();
-            }
+    use wasm_bindgen::JsCast;
+    crate::ui::window_listener("keydown", move |ev: web_sys::KeyboardEvent| {
+        let held = ev.ctrl_key() || ev.meta_key() || ev.alt_key();
+        let key = ev.key();
+        let mut letters = key.chars();
+        let (Some(letter), None, false) = (letters.next(), letters.next(), held) else {
+            return;
+        };
+        let target = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+        let typing = target.is_some_and(|t| {
+            t.closest("input, textarea, select")
+                .ok()
+                .flatten()
+                .is_some()
         });
-    if let Some(window) = web_sys::window() {
-        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
-    }
-    on_key.forget();
+        // a capital is shift held, which is for the handles of the chart
+        let capital = letter.is_ascii_uppercase() && ev.shift_key();
+        if !typing && !capital && !ev.default_prevented() && run(letter.to_ascii_lowercase()) {
+            ev.prevent_default();
+        }
+    });
 }
 
 /// Whether a click landed on nothing in particular, rather than on something that does its own thing

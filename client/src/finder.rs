@@ -2,7 +2,7 @@
 
 // modules {{{
 use leptos::prelude::*;
-use wasm_bindgen::{JsCast, closure::Closure};
+use wasm_bindgen::JsCast;
 
 use crate::{
     icons::{Icon, IconKind},
@@ -24,17 +24,12 @@ struct Place {
 #[component]
 pub fn Finder() -> impl IntoView {
     let open = RwSignal::new(false);
-    let on_key =
-        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
-            if (ev.ctrl_key() || ev.meta_key()) && ev.key().eq_ignore_ascii_case("k") {
-                ev.prevent_default();
-                open.try_update(|o| *o = !*o);
-            }
-        });
-    if let Some(window) = web_sys::window() {
-        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
-    }
-    on_key.forget();
+    crate::ui::window_listener("keydown", move |ev: web_sys::KeyboardEvent| {
+        if (ev.ctrl_key() || ev.meta_key()) && ev.key().eq_ignore_ascii_case("k") {
+            ev.prevent_default();
+            open.try_update(|o| *o = !*o);
+        }
+    });
     view! {
         <Show when=move || open.get()>
             <FinderWindow on_close=Callback::new(move |()| open.set(false)) />
