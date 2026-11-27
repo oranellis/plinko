@@ -165,7 +165,7 @@ impl Actor {
                 } => self.update(subscriber, request, update),
                 Command::UserByEmail { email, reply } => {
                     let mut users = self.tenant.users().values();
-                    let found = users.find(|u| u.email().eq_ignore_ascii_case(&email));
+                    let found = users.find(|u| u.has_email(&email));
                     let _ = reply.send(found.map(|u| *u.id()));
                 }
                 Command::Profile { user, reply } => {

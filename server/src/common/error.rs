@@ -18,6 +18,7 @@ pub enum PlinkoError {
     ItemInUse(Uuid),
     InvalidRule(Uuid),
     LastAdmin,
+    EmailTaken(String),
     UnknownWorkerSlot(Uuid),
     InvalidDuration,
     Forbidden(Uuid),
@@ -58,6 +59,7 @@ impl std::fmt::Display for PlinkoError {
             }
             PlinkoError::InvalidDuration => write!(f, "a duration must be at least 1 day"),
             PlinkoError::LastAdmin => write!(f, "the tenant must keep an admin"),
+            PlinkoError::EmailTaken(email) => write!(f, "someone already has the email {}", email),
             PlinkoError::InvalidRule(id) => {
                 write!(f, "availability rule {} is invalid", id)
             }

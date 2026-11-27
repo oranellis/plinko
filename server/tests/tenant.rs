@@ -53,7 +53,7 @@ fn add_user(tenant: &mut Tenant, actor: Uuid, role: Role) -> Uuid {
     let new = NewTenantLoginUser {
         id,
         name: "User".to_string(),
-        email: "user@example.com".to_string(),
+        email: format!("{id}@example.com"),
         role,
     };
     apply(tenant, actor, TenantUpdateType::User(Crud::Add(new))).unwrap();
@@ -486,6 +486,40 @@ fn the_last_admin_cannot_be_demoted_or_removed() {
     apply(&mut tenant, root, role(root, Role::Member)).unwrap();
     let remove = TenantUpdateType::User(Crud::Remove(root));
     apply(&mut tenant, alice, remove).unwrap();
+}
+// }}}
+
+// no_two_users_have_the_same_email {{{
+#[test]
+fn no_two_users_have_the_same_email() {
+    let (mut tenant, root) = new_tenant();
+    let alice = add_user(&mut tenant, root, Role::Member);
+    let email = |id, email: &str| {
+        TenantUpdateType::User(Crud::Update(TenantLoginUserPatch {
+            id,
+            name: None,
+            email: Some(email.to_string()),
+            role: None,
+        }))
+    };
+    // a member cannot take the admin's email, however it is written
+    let taken = email(alice, " ROOT@localhost ");
+    assert!(apply(&mut tenant, alice, taken).is_err());
+    assert_eq!(
+        tenant.users()[&alice].email(),
+        format!("{alice}@example.com")
+    );
+    let new = NewTenantLoginUser {
+        id: Uuid::new_v4(),
+        name: "Bob".to_string(),
+        email: "Root@Localhost".to_string(),
+        role: Role::Member,
+    };
+    assert!(apply(&mut tenant, root, TenantUpdateType::User(Crud::Add(new))).is_err());
+    assert_eq!(tenant.users().len(), 2);
+    // keeping your own email, or changing its case, is fine
+    apply(&mut tenant, root, email(root, "Root@localhost")).unwrap();
+    apply(&mut tenant, alice, email(alice, "alice@example.com")).unwrap();
 }
 // }}}
 

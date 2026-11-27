@@ -63,6 +63,11 @@ impl TenantLoginUser {
         &self.email
     }
 
+    /// Whether the user logs in with `email`, which ignores case and spaces around it
+    pub fn has_email(&self, email: &str) -> bool {
+        self.email.trim().eq_ignore_ascii_case(email.trim())
+    }
+
     pub fn role(&self) -> Role {
         self.role
     }
