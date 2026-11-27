@@ -6,8 +6,14 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use futures_channel::mpsc::{UnboundedSender, unbounded};
-use futures_util::{SinkExt, StreamExt};
+use futures_channel::{
+    mpsc::{UnboundedSender, unbounded},
+    oneshot,
+};
+use futures_util::{
+    SinkExt, StreamExt,
+    future::{Either, select},
+};
 use gloo_net::websocket::{Message, futures::WebSocket};
 use leptos::{prelude::*, task::spawn_local};
 use plinko::{
@@ -49,6 +55,10 @@ pub struct Sync {
     next_request: StoredValue<u32>,
     /// Set to drop the connection and start again from a snapshot
     resync: StoredValue<bool>,
+    /// Which connection loop is the current one; any other stops
+    epoch: StoredValue<u64>,
+    /// Dropped to close the open socket
+    stop: StoredValue<Option<oneshot::Sender<()>>>,
 }
 // }}}
 
@@ -66,6 +76,34 @@ impl Sync {
             pending: StoredValue::new_local(HashMap::new()),
             next_request: StoredValue::new(0),
             resync: StoredValue::new(false),
+            epoch: StoredValue::new(0),
+            stop: StoredValue::new(None),
+        }
+    }
+
+    /// Closes the connection for good and forgets the session, on logging out
+    pub fn end(&self) {
+        self.halt();
+        self.me.set(None);
+        self.tenant.set(None);
+    }
+
+    /// Stops the connection loop and closes its socket, returning the epoch for a new one
+    fn halt(&self) -> u64 {
+        let epoch = self.epoch.get_value() + 1;
+        self.epoch.set_value(epoch);
+        self.stop.set_value(None);
+        self.outbox.set_value(None);
+        self.resync.set_value(false);
+        self.fail_pending();
+        epoch
+    }
+
+    /// Tells everything waiting on an answer that it will not come
+    fn fail_pending(&self) {
+        let pending = self.pending.try_update_value(std::mem::take);
+        for (_, then) in pending.into_iter().flatten() {
+            then(None);
         }
     }
 
@@ -180,27 +218,32 @@ impl Sync {
         }
     }
 
-    /// Keeps a connection open, starting again from a snapshot whenever it drops
+    /// Keeps a connection open, starting again from a snapshot whenever it drops. Any loop
+    /// already running stops, so there is only ever one.
     pub fn connect(&self) {
         let sync = *self;
+        let epoch = sync.halt();
+        let current = move || sync.epoch.get_value() == epoch;
         spawn_local(async move {
-            loop {
+            while current() {
                 sync.link.set(Link::Connecting);
                 if let Ok(socket) = WebSocket::open(&socket_url()) {
-                    sync.run(socket).await;
+                    sync.run(socket, epoch).await;
+                }
+                if !current() {
+                    return;
                 }
                 sync.link.set(Link::Down);
                 sync.outbox.set_value(None);
-                sync.pending.update_value(|p| {
-                    for (_, then) in p.drain() {
-                        then(None);
-                    }
-                });
+                sync.fail_pending();
                 // a session that has ended means logging in again, not trying again, but a
                 // server that cannot be reached is tried again
-                if matches!(crate::api::me().await, Ok(None)) {
-                    sync.me.set(None);
-                    sync.tenant.set(None);
+                let ended = matches!(crate::api::me().await, Ok(None));
+                if !current() {
+                    return;
+                }
+                if ended {
+                    sync.end();
                     return;
                 }
                 gloo_timers::future::sleep(Duration::from_secs(2)).await;
@@ -208,10 +251,12 @@ impl Sync {
         });
     }
 
-    async fn run(&self, socket: WebSocket) {
+    async fn run(&self, socket: WebSocket, epoch: u64) {
         let (mut write, mut read) = socket.split();
         let (outbox, mut queue) = unbounded::<ClientMessage>();
+        let (stop, mut stopped) = oneshot::channel();
         self.outbox.set_value(Some(outbox));
+        self.stop.set_value(Some(stop));
         self.resync.set_value(false);
         spawn_local(async move {
             while let Some(message) = queue.next().await {
@@ -223,7 +268,13 @@ impl Sync {
                 }
             }
         });
-        while let Some(Ok(Message::Bytes(bytes))) = read.next().await {
+        // dropping both halves closes the socket
+        while let Either::Left((Some(Ok(Message::Bytes(bytes))), _)) =
+            select(read.next(), &mut stopped).await
+        {
+            if self.epoch.get_value() != epoch {
+                break;
+            }
             if let Ok(message) = codec::decode::<ServerMessage>(&bytes) {
                 self.handle(message);
             }

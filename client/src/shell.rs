@@ -59,8 +59,7 @@ pub fn Shell() -> impl IntoView {
     let logout = move |()| {
         spawn_local(async move {
             api::logout().await;
-            sync.me.set(None);
-            sync.tenant.set(None);
+            sync.end();
         });
     };
     let link = move |label: &'static str, icon: IconKind, to: Route, active: Signal<bool>| {
