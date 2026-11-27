@@ -84,8 +84,12 @@ impl Sync {
     /// Closes the connection for good and forgets the session, on logging out
     pub fn end(&self) {
         self.halt();
-        self.me.set(None);
         self.tenant.set(None);
+        self.schedule.set(None);
+        self.seq.set(0);
+        self.me.set(None);
+        self.link.set(Link::Connecting);
+        self.notice.set(None);
     }
 
     /// Stops the connection loop and closes its socket, returning the epoch for a new one
