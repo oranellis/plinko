@@ -1161,6 +1161,28 @@ fn a_date_the_work_before_it_cannot_meet_is_not_counted_as_avoidable() {
 }
 // }}}
 
+// a_date_already_missed_counts_as_missed_however_long_ago {{{
+#[test]
+fn a_date_already_missed_counts_as_missed_however_long_ago() {
+    let mut world = World::new();
+    let alice = world.user();
+    let missed = world.task(1, &[(user(alice), 8)], &[]);
+    world.patch(missed, |p| {
+        p.time_constraint = Some(TimeConstraint::Latest(d(1)).into())
+    });
+    let due = world.task(1, &[(user(alice), 8)], &[]);
+    world.patch(due, |p| {
+        p.time_constraint = Some(TimeConstraint::Latest(d(10)).into())
+    });
+    world.apply(TenantUpdateType::SetToday(d(10)));
+    let state = world.solve();
+    // the one missed already is missed either way, so the other keeps its date
+    assert_eq!(span(&state, due), (d(10), d(11)));
+    assert_eq!(span(&state, missed), (d(11), d(12)));
+    assert_eq!(state.constraint_violations.len(), 1);
+}
+// }}}
+
 // on_end {{{
 /// A constraint on the last day
 fn on_end(constraint: TimeConstraint) -> NodeConstraint {

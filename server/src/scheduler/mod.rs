@@ -4,7 +4,7 @@
 //! and the best schedule is kept. See `docs/scheduler.md`.
 
 // modules {{{
-use chrono::Days;
+use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -124,7 +124,11 @@ fn over(tenant: &mut Tenant, place: impl Fn(&Context, &Pass) -> (Pass, Hints)) -
     let today = tenant.today();
     let tasks = || tenant.plans().values().flat_map(|p| p.tasks().values());
     let history = tasks().filter_map(|t| t.persistent_state().actual_start_date);
-    let origin = history.chain([today]).min().unwrap_or(today);
+    // a hard date before the first day reads as that day, which has to be before today for it
+    // to be missed, and is the day itself for recent ones
+    let soonest = today.checked_sub_days(Days::new(u64::from(HORIZON.0)));
+    let hard = hard_dates(tenant).map(|d| d.max(soonest.unwrap_or(today)));
+    let origin = history.chain(hard).chain([today]).min().unwrap_or(today);
     let waits = tenant.plans().values().flat_map(|p| {
         let delays = p.plan_delays().values().map(|d| *d.duration());
         delays.chain(p.plan_buffers().values().map(|b| *b.duration()))
@@ -151,6 +155,22 @@ fn over(tenant: &mut Tenant, place: impl Fn(&Context, &Pass) -> (Pass, Hints)) -
             solution: Solution::of(&ctx, &pass, hints),
         };
     }
+}
+
+/// The latest dates of every task, group and milestone
+fn hard_dates(tenant: &Tenant) -> impl Iterator<Item = NaiveDate> + '_ {
+    tenant.plans().values().flat_map(|p| {
+        let tasks = p.tasks().values().map(|t| t.time_constraint().constraint);
+        let groups = p
+            .task_groups()
+            .values()
+            .map(|g| g.time_constraint().constraint);
+        let milestones = p.milestones().values().map(|m| m.time_constraint());
+        tasks
+            .chain(groups)
+            .chain(milestones)
+            .filter_map(|c| c.bounds().1)
+    })
 }
 // }}}
 

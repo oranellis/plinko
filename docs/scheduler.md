@@ -95,9 +95,10 @@ Written: `TenantVolatileState { plans, users }` (`scheduler/state.rs`).
 - An **arc** takes days between two vertices. `Work` is `days` days that every slot has its hours
   on, with floors and hard dates for its start and end. A delay is work with no slots on the full
   calendar. `Buffer` is the one arc whose length is not fixed.
-- Days are offsets from the table's first day (`Day`), and a vertex time `d` is the boundary
-  before day `d`: a constraint on a first day is the boundary before it, on a last day the
-  boundary after.
+- Days are offsets from the table's first day (`Day`): the earliest of today, any actual start
+  and any hard date, a hard date counting as no more than 120 days ago. A date before the first
+  day reads as it, so a missed one is still missed. A vertex time `d` is the boundary before day
+  `d`: a constraint on a first day is the boundary before it, on a last day the boundary after.
 
 `table.rs` holds hours per day for every person, plan default and the full calendar, and the days
 each set of affinities allows. `Table::valid` gives the days work can be done on as a bit set that
