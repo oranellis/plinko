@@ -11,6 +11,7 @@ mod editor;
 mod escape;
 mod format;
 mod forms;
+mod fuzzy;
 mod gantt;
 mod glide;
 mod guard;

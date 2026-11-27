@@ -114,7 +114,7 @@ The question mark at the top right, or `?` anywhere, opens a help window (`help.
 | Key | Does |
 | --- | --- |
 | `a` | lists what can be added, where `t` `m` `g` `b` `d` then add a task, milestone, group, buffer or delay |
-| `/` | opens the search, where the arrows move down the list, and enter or a click selects the item and shows it on the chart; while what an item waits for, what waits for it or its group is being picked, it picks the item instead and closes, with what is picked ticked in it |
+| `/` | opens the search, which matches loosely (`fuzzy.rs`: the letters typed in order, in any case, best where they are together or start words), where the arrows move down the list, and enter or a click selects the item and shows it on the chart; while what an item waits for, what waits for it or its group is being picked, it picks the item instead and closes, with what is picked ticked in it |
 | `t` | jumps to today |
 | `e` | edits the selected item |
 | `s` | lists the statuses of the selected or edited task, where `s` again moves it on to the next and `n` `i` `o` `c` `d` put it not started, in progress, on hold, complete or dropped; for a buffer it pins or unpins the start |

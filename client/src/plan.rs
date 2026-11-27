@@ -1079,17 +1079,24 @@ fn SearchWindow(
     // the row that enter takes, which the arrows move, and which a new filter puts back on top
     let at = RwSignal::new(0usize);
     let results = Memo::new(move |_| {
-        let wanted = filter.get().to_lowercase();
+        let wanted = filter.get();
         sync.tenant
             .with(|t| {
                 let p = t.as_ref()?.plans().get(&plan)?;
-                let mut found: Vec<(PlanNode, String)> = model::nodes(p)
+                // the best matches first, and those that match as well by name
+                let mut found: Vec<(i32, PlanNode, String)> = model::nodes(p)
                     .into_iter()
-                    .map(|n| (n, model::node_name(p, n)))
-                    .filter(|(_, name)| wanted.is_empty() || name.to_lowercase().contains(&wanted))
+                    .filter_map(|n| {
+                        let name = model::node_name(p, n);
+                        Some((crate::fuzzy::score(&wanted, &name)?, n, name))
+                    })
                     .collect();
-                found.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.id().cmp(&b.0.id())));
-                Some(found)
+                found.sort_by(|a, b| {
+                    b.0.cmp(&a.0)
+                        .then(a.2.cmp(&b.2))
+                        .then(a.1.id().cmp(&b.1.id()))
+                });
+                Some(found.into_iter().map(|(_, n, name)| (n, name)).collect())
             })
             .unwrap_or_default()
     });
