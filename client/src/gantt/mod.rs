@@ -573,8 +573,15 @@ pub fn Gantt(
                     Some((node, held)) if node == *mark => held,
                     _ => Some(*end),
                 };
-                if let Some((rect, end)) = rect_of(*mark).zip(end) {
-                    shift::paint_tag(ctx, rect, end);
+                // a milestone has no corner to speak of, and is marked with a dot by it
+                let dot = scene.with_untracked(|s| {
+                    s.placed(*mark)
+                        .is_some_and(|p| p.kind == arrange::Kind::Milestone)
+                });
+                match rect_of(*mark).zip(end) {
+                    Some((rect, _)) if dot => shift::paint_dot(ctx, rect),
+                    Some((rect, end)) => shift::paint_tag(ctx, rect, end),
+                    None => {}
                 }
             }
         });

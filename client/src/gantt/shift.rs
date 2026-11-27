@@ -485,6 +485,20 @@ pub fn paint_tag(ctx: &Pen, rect: Rect, end: bool) {
     ctx.stroke();
 }
 
+/// The mark of a milestone that is held to a day: a small dot off its top right
+pub fn paint_dot(ctx: &Pen, rect: Rect) {
+    ctx.set_fill_style_str(PIN);
+    ctx.begin_path();
+    let _ = ctx.arc(
+        rect.x + rect.w - 1.0,
+        rect.y + 2.0,
+        3.5,
+        0.0,
+        std::f64::consts::TAU,
+    );
+    ctx.fill();
+}
+
 /// The day an item is held to: a band down the chart like the one for today, and by the item's
 /// row the sign of how it is held, on the edge of the day that is
 pub fn paint_pin(ctx: &Pen, pin: &PinView) {

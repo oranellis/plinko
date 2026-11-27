@@ -549,7 +549,7 @@ button.ctx:disabled { opacity: 0.35; cursor: default; }
 .draftcard-drag i.added { background: var(--accent); border-color: var(--accent); }
 .draftcard-drag i.taken { background: none; border-style: dashed; }
 /* what a click will do while something is being picked, at the bottom of the chart */
-.hint { position: absolute; left: 50%; bottom: 96px; translate: -50% 0; z-index: 21; margin: 0; padding: 10px 20px; background: var(--accent); border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); color: #fff; font-size: 15px; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.hint { position: absolute; left: 50%; bottom: 8px; translate: -50% 0; z-index: 21; margin: 0; padding: 10px 20px; background: #181818; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); color: var(--muted); font-size: 15px; white-space: nowrap; pointer-events: none; }
 .draftcard-line { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2000; }
 .draftcard-line line { stroke: #1e88e5; stroke-width: 2.5; stroke-dasharray: 6 4; stroke-linecap: round; }
 .draftcard-line line.before { stroke: #fc1ef1; }
