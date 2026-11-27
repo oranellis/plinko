@@ -400,14 +400,16 @@ impl Pass {
         }
     }
 
-    fn buffer(&self, ctx: &Context, buffer: &Buffer, start: Day) -> Result<Placed, Reason> {
+    fn buffer(&mut self, ctx: &Context, buffer: &Buffer, start: Day) -> Result<Placed, Reason> {
         let working = ctx.table.valid(&[], None, buffer.calendar);
         let after = |days: u32| match days {
             0 => Some(start),
             _ => working.nth_from(start, days).map(Day::next),
         };
-        let end = buffer.end(start, after).ok_or(Reason::NoCapacity)?;
-        Ok(placed(start, end, Vec::new(), Vec::new()))
+        match buffer.end(start, after) {
+            Some(end) => Ok(placed(start, end, Vec::new(), Vec::new())),
+            None => Err(self.short(&working)),
+        }
     }
 
     fn take(&mut self, rules: &Rules, asks: &[Ask], days: &[Day], arc: ArcId) {

@@ -1245,6 +1245,30 @@ fn a_group_can_have_a_date_for_its_start_or_its_end() {
 }
 // }}}
 
+// a_buffer_longer_than_the_days_looked_at_gets_more_days {{{
+#[test]
+fn a_buffer_longer_than_the_days_looked_at_gets_more_days() {
+    let mut world = World::new();
+    // the plan works Mondays only, so 40 working days take 40 weeks
+    let kind = RuleKind::Weekly(WeeklySchedule::new([8, 0, 0, 0, 0, 0, 0].map(h)));
+    let new = NewRule {
+        name: String::new(),
+        stop_day: None,
+        id: world.id(),
+        start_day: NaiveDate::from_ymd_opt(2000, 1, 3).unwrap(),
+        kind,
+    };
+    world.plan_update(PlanUpdate::Availability(RuleSetUpdate::Rule(Crud::Add(
+        new,
+    ))));
+    let buffer = world.buffer(40, &[]);
+    let state = world.solve();
+    let last = d(1) + chrono::Days::new(39 * 7);
+    let end = state.plan_buffers[&buffer].date_range.end();
+    assert_eq!(end, last.succ_opt().unwrap());
+}
+// }}}
+
 // set_buffers_keep_their_end_and_shrink_to_nothing_but_never_below {{{
 #[test]
 fn set_buffers_keep_their_end_and_shrink_to_nothing_but_never_below() {
