@@ -124,9 +124,14 @@ pub fn Icon(
             <path d="M8 14V9.4M5.4 3.4H10.6L10 8.4H6Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" />
         }
         .into_any(),
-        IconKind::Reset => view! {
-            <path d="M12.8 8A4.8 4.8 0 1 1 11.4 4.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            <polyline points="12.2,2.2 12.2,5 9.4,5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        IconKind::Pinned => view! {
+            <path d="M8 14V9.4M5.4 3.4H10.6L10 8.4H6Z" stroke="currentColor" fill="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" />
+        }
+        .into_any(),
+        IconKind::Unpin => view! {
+            <path d="M8 14V9.4M5.4 3.4H10.6L10 8.4H6Z" stroke="currentColor" fill="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" />
+            <line x1="3" y1="13" x2="13" y2="3" stroke="#181818" stroke-width="3.2" stroke-linecap="round" />
+            <line x1="3" y1="13" x2="13" y2="3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
         }
         .into_any(),
         IconKind::Data => view! {
@@ -227,7 +232,8 @@ pub enum IconKind {
     Pause,
     Drop,
     Pin,
-    Reset,
+    Pinned,
+    Unpin,
     Data,
     Pencil,
     Close,

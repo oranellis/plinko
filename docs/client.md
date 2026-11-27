@@ -90,7 +90,7 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 
 ## Gantt selection
 
-The delete key asks to delete the item that is selected or edited (enter deletes, escape or a click off keeps it). Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, with one that lets the start go under it a hover away, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane. While the item is edited the bar slides to the bottom middle of the chart, out of the way of the handles.
+The delete key asks to delete the item that is selected or edited (enter deletes, escape or a click off keeps it). Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a pin for their start, which shows under the pointer what a click would leave it as: full for one that is not set, struck through for one that is, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane. While the item is edited the bar slides to the bottom middle of the chart, out of the way of the handles.
 
 ### Creating and editing
 

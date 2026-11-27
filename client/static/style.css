@@ -462,10 +462,10 @@ button.ctx.held-start, button.ctx.held-end { border-color: #c8e63c; color: #c8e6
 button.ctx.held-start { box-shadow: inset 4px 0 0 #c8e63c; }
 button.ctx.held-end { box-shadow: inset -4px 0 0 #c8e63c; }
 /* what to do with an edit: saving it is the button, leaving and deleting it a hover away. */
-/* the set start of a buffer: the tick is plain when it is right, and letting it go is red */
-.setstart .st { --c: var(--text); }
-.setstart .st.unset { --c: #e53935; }
-.setstart .st:disabled { opacity: 1; color: #43c463; cursor: default; }
+/* a button that shows under the pointer what a click would leave it as */
+button.ctx.swap .rest, button.ctx.swap .over { display: grid; }
+button.ctx.swap .over, button.ctx.swap:hover .rest { display: none; }
+button.ctx.swap:hover .over { display: grid; }
 .editswitch .st { --c: #e53935; }
 .editswitch .st.save { --c: #43c463; }
 .editswitch .st.delete:hover { color: var(--c); background: color-mix(in srgb, var(--c) 18%, #181818); }

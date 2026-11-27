@@ -456,8 +456,7 @@ fn StatusSwitch(plan: ShortId, task: Uuid) -> impl IntoView {
 // }}}
 
 // SetStart {{{
-/// The buffer's set start: set it to where it is scheduled, set it again, or nothing when it is
-/// right, and let it go
+/// The buffer's set start: pinned to where it is scheduled, or let go
 #[component]
 fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
     let sync = use_sync();
@@ -477,68 +476,43 @@ fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
         let scheduled = model::span_of(state.as_ref(), PlanNode::PlanBuffer(buffer)).map(|s| s.0);
         (set.flatten(), scheduled)
     });
-    let correct = move || {
-        let (set, scheduled) = days.get();
-        set.is_some() && set == scheduled
+    let pinned = move || days.get().0.is_some();
+    let label = move || match pinned() {
+        true => "Unpin its start",
+        false => "Pin its start where it is",
     };
-    let (kind, label) = (
-        move || {
-            if correct() {
-                IconKind::Tick
-            } else if days.get().0.is_some() {
-                IconKind::Reset
-            } else {
-                IconKind::Pin
-            }
-        },
-        move || {
-            if correct() {
-                "Set to where it is"
-            } else if days.get().0.is_some() {
-                "Reset to where it is"
-            } else {
-                "Set to where it is"
-            }
-        },
-    );
-    let set = move |start: Option<chrono::NaiveDate>| {
-        let patch = PlanBufferPatch {
-            id: buffer,
-            parent: None,
-            dependencies: None,
-            set_start_day: Some(start),
-            duration: None,
+    let toggle = move || {
+        let (set, scheduled) = days.get_untracked();
+        let to = match set {
+            Some(_) => None,
+            None => scheduled,
         };
-        sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
+        if set.is_some() || to.is_some() {
+            let patch = PlanBufferPatch {
+                id: buffer,
+                parent: None,
+                dependencies: None,
+                set_start_day: Some(to),
+                duration: None,
+            };
+            sync.plan(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)));
+        }
     };
-    // like the statuses of a task: the button, and for a start that is set a way to let it go
-    // under it, a hover away
+    // the button shows how it is, and under the pointer how a click would leave it: an empty
+    // pin becomes a full one, and a full one is struck through
     view! {
-        <div class="statusswitch setstart">
-            <div class="statuscol">
-                <button
-                    type="button"
-                    class="st next"
-                    title=label
-                    aria-label=label
-                    disabled=correct
-                    on:click=move |_| if let Some(start) = days.get_untracked().1 { set(Some(start)) }
-                >
-                    {move || view! { <Icon kind=kind() size=20 /> }}
-                </button>
-                <Show when=move || days.get().0.is_some()>
-                    <button
-                        type="button"
-                        class="st unset"
-                        title="Let its start go"
-                        aria-label="Let its start go"
-                        on:click=move |_| set(None)
-                    >
-                        <Icon kind=IconKind::Close size=20 />
-                    </button>
-                </Show>
-            </div>
-        </div>
+        <button type="button" class="ctx swap" title=label aria-label=label on:click=move |_| toggle()>
+            {move || {
+                let (rest, over) = match pinned() {
+                    true => (IconKind::Pinned, IconKind::Unpin),
+                    false => (IconKind::Pin, IconKind::Pinned),
+                };
+                view! {
+                    <span class="rest"><Icon kind=rest size=20 /></span>
+                    <span class="over"><Icon kind=over size=20 /></span>
+                }
+            }}
+        </button>
     }
 }
 // }}}
