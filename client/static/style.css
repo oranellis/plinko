@@ -78,7 +78,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .top .status { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
 .top .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
 .top .status.warn::before { background: #ff9800; }
-.notice { background: #2a2a3e; color: #a0c4ff; border-bottom: 1px solid #4a6fa5; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.toast { position: fixed; right: 16px; bottom: 16px; z-index: 3000; max-width: min(420px, calc(100vw - 32px)); padding: 10px 16px; background: #2a2a3e; color: #a0c4ff; border: 1px solid #4a6fa5; border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); font-size: 14px; cursor: pointer; animation: toast 5s ease forwards; }
+@keyframes toast { 0% { opacity: 0; translate: 0 8px; } 5%, 85% { opacity: 1; translate: 0 0; } 100% { opacity: 0; } }
 .page { overflow: auto; padding: 16px; min-height: 0; flex: 1; }
 .page:has(.plan) { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .page:has(.calpage) { display: flex; flex-direction: column; overflow: hidden; }

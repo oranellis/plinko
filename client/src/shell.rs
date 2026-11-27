@@ -97,12 +97,7 @@ pub fn Shell() -> impl IntoView {
                 <HelpButton />
                 <UserMenu on_logout=Callback::new(logout) />
             </header>
-            <Show when=move || sync.notice.with(Option::is_some)>
-                <div class="notice" role="alert">
-                    {move || sync.notice.get()}
-                    <button type="button" class="plain" on:click=move |_| sync.notice.set(None)>"Dismiss"</button>
-                </div>
-            </Show>
+            <Toast />
             <main class="page">
                 {move || match page.get() {
                     Page::Home => view! { <Home /> }.into_any(),
@@ -195,5 +190,39 @@ fn account_names(sync: crate::sync::Sync) -> (Signal<String>, Signal<String>) {
 // open_plan {{{
 pub fn open_plan(plan: plinko::common::short_id::ShortId) {
     navigate(Route::Plan(plan, crate::nav::PlanTab::Gantt, None));
+}
+// }}}
+
+// Toast {{{
+/// How long the last thing that went wrong stays at the bottom of the screen
+const TOAST_FOR: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The last thing that went wrong, at the bottom of the screen until it fades or is clicked
+#[component]
+fn Toast() -> impl IntoView {
+    let sync = use_sync();
+    let shown = StoredValue::new(0u32);
+    Effect::new(move |_| {
+        if sync.notice.with(Option::is_none) {
+            return;
+        }
+        let now = shown.get_value() + 1;
+        shown.set_value(now);
+        let fade = move || {
+            if shown.try_get_value() == Some(now) {
+                sync.notice.try_set(None);
+            }
+        };
+        set_timeout(fade, TOAST_FOR);
+    });
+    move || {
+        sync.notice.get().map(|said| {
+            view! {
+                <div class="toast" role="alert" title="Dismiss" on:click=move |_| sync.notice.set(None)>
+                    {said}
+                </div>
+            }
+        })
+    }
 }
 // }}}
