@@ -69,8 +69,20 @@ pub fn Modal(
 ) -> impl IntoView {
     let label = move || title.get();
     crate::escape::on_escape(|| true, on_close);
+    // a press that starts in a field and lets go over the backdrop is not a click off it
+    let pressed = StoredValue::new(false);
+    let on_backdrop =
+        |ev: &web_sys::Event| ev.target().is_some() && ev.target() == ev.current_target();
     view! {
-        <div class="backdrop" on:click=move |_| on_close.run(())>
+        <div
+            class="backdrop"
+            on:pointerdown=move |ev| pressed.set_value(on_backdrop(&ev))
+            on:click=move |ev| {
+                if pressed.get_value() && on_backdrop(&ev) {
+                    on_close.run(());
+                }
+            }
+        >
             <div class="modal" class:wide=wide role="dialog" aria-label=label on:click=|ev| ev.stop_propagation()>
                 <header>
                     <h2>{move || title.get()}</h2>
