@@ -162,6 +162,7 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     }
     if let Some(token) = token(&headers) {
         let _ = state.handle.store.end_session(&token);
+        let _ = state.handle.commands.send(Command::SessionEnded(token));
     }
     ([session_cookie(&state, "", 0)], StatusCode::NO_CONTENT).into_response()
 }
@@ -216,6 +217,7 @@ async fn password(
     if set.is_none() {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
+    let _ = state.handle.commands.send(Command::SessionsOfEnded(target));
     if target != me {
         return StatusCode::NO_CONTENT.into_response();
     }
@@ -239,32 +241,41 @@ async fn socket(
     if !same_origin(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let Some(user) = user_of(&state, &headers).await else {
+    let (Some(token), Some(user)) = (token(&headers), user_of(&state, &headers).await) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    upgrade.on_upgrade(move |socket| serve(state.handle, user, socket))
+    upgrade.on_upgrade(move |socket| serve(state.handle, user, token, socket))
 }
 // }}}
 
 // serve {{{
-/// Sends a client what the actor says and gives the actor what the client asks for
-async fn serve(handle: Handle, user: Uuid, socket: WebSocket) {
+/// Sends a client what the actor says and gives the actor what the client asks for, until either
+/// side closes: the actor does when the session ends
+async fn serve(handle: Handle, user: Uuid, token: String, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
     let (out, mut outgoing) = mpsc::unbounded_channel();
-    let Some(subscriber) = handle.subscribe(user, out).await else {
+    let Some(subscriber) = handle.subscribe(user, token, out).await else {
         return;
     };
-    let sending = tokio::spawn(async move {
+    let mut sending = tokio::spawn(async move {
         while let Some(message) = outgoing.recv().await {
             let Ok(bytes) = codec::encode(&message) else {
                 continue;
             };
             if sink.send(Message::Binary(bytes.into())).await.is_err() {
-                break;
+                return;
             }
         }
+        let _ = sink.send(Message::Close(None)).await;
     });
-    while let Some(Ok(message)) = stream.next().await {
+    loop {
+        let message = tokio::select! {
+            message = stream.next() => message,
+            _ = &mut sending => break,
+        };
+        let Some(Ok(message)) = message else {
+            break;
+        };
         match message {
             Message::Binary(bytes) => {
                 let Ok(ClientMessage::Update { request, update }) = codec::decode(&bytes) else {

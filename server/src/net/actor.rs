@@ -9,7 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::{
-    common::short_id::ShortId,
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
@@ -23,13 +23,19 @@ use crate::{
 // }}}
 
 pub enum Command {
-    /// A client connected as `user`. The answer is `None` if there is no such user.
+    /// A client connected as `user` with the session `token`. The answer is `None` if there is no
+    /// such user.
     Subscribe {
         user: Uuid,
+        token: String,
         out: mpsc::UnboundedSender<ServerMessage>,
         reply: oneshot::Sender<Option<Subscriber>>,
     },
     Unsubscribe(Subscriber),
+    /// A session ended, so its connections close
+    SessionEnded(String),
+    /// Every session of a user ended, so all their connections close
+    SessionsOfEnded(Uuid),
     Update {
         subscriber: Subscriber,
         request: u32,
@@ -83,19 +89,26 @@ impl Handle {
     pub async fn subscribe(
         &self,
         user: Uuid,
+        token: String,
         out: mpsc::UnboundedSender<ServerMessage>,
     ) -> Option<Subscriber> {
         let (reply, answer) = oneshot::channel();
-        self.commands
-            .send(Command::Subscribe { user, out, reply })
-            .ok()?;
+        let subscribe = Command::Subscribe {
+            user,
+            token,
+            out,
+            reply,
+        };
+        self.commands.send(subscribe).ok()?;
         answer.await.ok()?
     }
 }
 // }}}
 
+/// A client's socket, which closes once the actor drops `out`
 struct Connection {
     user: Uuid,
+    token: String,
     out: mpsc::UnboundedSender<ServerMessage>,
 }
 
@@ -152,11 +165,22 @@ impl Actor {
     async fn run(mut self, mut commands: mpsc::UnboundedReceiver<Command>) {
         while let Some(command) = commands.recv().await {
             match command {
-                Command::Subscribe { user, out, reply } => {
-                    let _ = reply.send(self.subscribe(user, out));
+                Command::Subscribe {
+                    user,
+                    token,
+                    out,
+                    reply,
+                } => {
+                    let _ = reply.send(self.subscribe(user, token, out));
                 }
                 Command::Unsubscribe(id) => {
                     self.connections.remove(&id);
+                }
+                Command::SessionEnded(token) => {
+                    self.connections.retain(|_, c| c.token != token);
+                }
+                Command::SessionsOfEnded(user) => {
+                    self.connections.retain(|_, c| c.user != user);
                 }
                 Command::Update {
                     subscriber,
@@ -210,12 +234,16 @@ impl Actor {
     fn subscribe(
         &mut self,
         user: Uuid,
+        token: String,
         out: mpsc::UnboundedSender<ServerMessage>,
     ) -> Option<Subscriber> {
         self.tenant.users().get(&user)?;
+        // the session may have ended since the socket was asked for
+        let live = self.store.session_user(&token).ok().flatten() == Some(user);
+        live.then_some(())?;
         let id = self.next_connection;
         self.next_connection += 1;
-        let connection = Connection { user, out };
+        let connection = Connection { user, token, out };
         let _ = connection.out.send(self.snapshot(user));
         self.send_schedule(&connection);
         self.connections.insert(id, connection);
@@ -264,6 +292,13 @@ impl Actor {
             .commit(&mut self.tenant, self.seq, staged)
             .map_err(|e| e.to_string())?;
         self.seq = seq;
+        // someone removed is logged out everywhere
+        if let TenantUpdateType::User(Crud::Remove(removed)) = copy.update_type {
+            if let Err(error) = self.store.end_sessions_of(removed) {
+                eprintln!("the sessions of a removed user did not end: {error}");
+            }
+            self.connections.retain(|_, c| c.user != removed);
+        }
         for (id, connection) in &self.connections {
             let visible = self.tenant.visible_plans(&connection.user);
             let message = if visible != before[id] {

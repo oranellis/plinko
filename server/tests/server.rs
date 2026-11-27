@@ -265,6 +265,18 @@ async fn quiet(socket: &mut Socket) -> bool {
         .is_err()
 }
 
+/// Whether the server closes the socket before long, after whatever else it sends
+async fn closes(socket: &mut Socket) -> bool {
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), socket.next()).await {
+            Err(_) => return false,
+            Ok(Some(Ok(tungstenite::Message::Binary(_)))) => {}
+            Ok(Some(Ok(tungstenite::Message::Close(_))) | None | Some(Err(_))) => return true,
+            Ok(Some(Ok(_))) => {}
+        }
+    }
+}
+
 async fn send(socket: &mut Socket, request: u32, update: TenantUpdateType) {
     let bytes = codec::encode(&ClientMessage::Update { request, update }).unwrap();
     socket
@@ -456,6 +468,74 @@ async fn starring_a_plan_is_only_shared_with_those_who_may_see_it() {
             _ => panic!("the member was sent the star or a snapshot"),
         }
     }
+}
+// }}}
+
+// logging_out_closes_the_sockets_of_that_session {{{
+#[tokio::test]
+async fn logging_out_closes_the_sockets_of_that_session() {
+    let server = server().await;
+    let address = listen(&server).await;
+    let login = post("/api/login", "")
+        .body(login_body("admin@example.com", PASSWORD))
+        .unwrap();
+    let cookie = cookie_of(&call(&server.app, login).await.1);
+    let token = cookie.strip_prefix("plinko_session=").unwrap();
+    let mut socket = connect(address, token).await.unwrap();
+    let other = server.handle.store.start_session(server.admin).unwrap();
+    let mut elsewhere = connect(address, &other).await.unwrap();
+    assert!(matches!(
+        next(&mut socket).await,
+        ServerMessage::Snapshot { .. }
+    ));
+    let logout = Request::post("/api/logout")
+        .header(header::COOKIE, &cookie)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(call(&server.app, logout).await.0, StatusCode::NO_CONTENT);
+    assert!(closes(&mut socket).await);
+    // another session of the same person stays
+    assert!(matches!(
+        next(&mut elsewhere).await,
+        ServerMessage::Snapshot { .. }
+    ));
+    send(&mut elsewhere, 1, TenantUpdateType::SetToday(today())).await;
+    assert!(answer(&mut elsewhere, 1).await.0.is_err());
+}
+// }}}
+
+// removing_someone_ends_their_sessions_and_closes_their_sockets {{{
+#[tokio::test]
+async fn removing_someone_ends_their_sessions_and_closes_their_sockets() {
+    let server = server().await;
+    let address = listen(&server).await;
+    let token = server.handle.store.start_session(server.admin).unwrap();
+    let mut admin = connect(address, &token).await.unwrap();
+    let new = NewTenantLoginUser {
+        id: Uuid::nil(),
+        name: "Member".to_string(),
+        email: "member@example.com".to_string(),
+        role: Role::Member,
+    };
+    send(&mut admin, 1, TenantUpdateType::User(Crud::Add(new))).await;
+    assert_eq!(answer(&mut admin, 1).await.0, Ok(1));
+    let member = server
+        .handle
+        .user_by_email("member@example.com".to_string())
+        .await
+        .unwrap();
+    let member_token = server.handle.store.start_session(member).unwrap();
+    let mut other = connect(address, &member_token).await.unwrap();
+    assert!(matches!(
+        next(&mut other).await,
+        ServerMessage::Snapshot { .. }
+    ));
+
+    send(&mut admin, 2, TenantUpdateType::User(Crud::Remove(member))).await;
+    assert_eq!(answer(&mut admin, 2).await.0, Ok(2));
+    assert!(closes(&mut other).await);
+    let session = server.handle.store.session_user(&member_token).unwrap();
+    assert_eq!(session, None);
 }
 // }}}
 
