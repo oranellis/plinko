@@ -107,6 +107,22 @@ On the chart what is staged shows as the usual magenta and cyan outlines and a b
 
 A task, group or milestone in the plan can be held to a day. The timer goes round nothing, its first day and its last (a milestone is one day, held or not). The day starts where the item is scheduled and follows the end round, until one is chosen: the day it had in the plan, or one it is moved to. From then on, for as long as it is edited, going round only changes the end, and holding it again goes back to that day held that way. The held day has a band down the chart like today's, in its own colour. While the item is edited three buttons are on the band, half way down the chart, for no earlier, exactly and no later, with the one it is lit. The band is dragged to another day from anywhere on it that nothing else is, and a click on it picks the day, which a click on any day then moves. An item that is hovered or selected shows the band faintly, with a sign in the middle of it, in the row nearest the item where nothing is in their way: on from the tick for no earlier, up to it for no later, and a lock for exactly. Every item that is held has a top corner of its border in the colour, fading out along the edges, always: the left for its first day, the right for its last. A milestone has a small dot off its top right instead.
 
+### Keys
+
+On the chart, typed at the page and not into a box:
+
+| Key | Does |
+| --- | --- |
+| `a` | lists what can be added, where `t` `m` `g` `b` `d` then add a task, milestone, group, buffer or delay |
+| `s` | opens the search |
+| `t` | jumps to today |
+| `e` | edits the selected item |
+| `d` `f` `g` | pick what the item waits for, what waits for it, or its group: for the item being edited by lighting that handle of its shape, and for one that is only selected at once in the plan, with its shift handles shown |
+| `c` | takes hold of the day the edited item is held to, holding it first if it is not; `e` `f` `l` then hold it no earlier, exactly, no later |
+| enter | saves the edit, or answers a question with yes |
+| escape | ends a pick, then leaves the edit, asking first; in that question it discards |
+| delete | asks to delete the selected or edited item |
+
 ### Shift editing
 
 Plan settings name a default start node (a picker with search) that new top level items depend on to begin with; the plan has no start date to set.

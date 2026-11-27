@@ -126,12 +126,18 @@ fn new_name(node: PlanNode) -> &'static str {
 // }}}
 
 // Hint {{{
-/// What a click will do while something of the draft is being picked, said at the bottom of the
-/// chart for as long as it is
+/// What a click will do while something is being picked, said at the bottom of the chart for
+/// as long as it is
 #[component]
-pub fn Hint(draft: RwSignal<Option<Draft>>) -> impl IntoView {
+pub fn Hint(
+    draft: RwSignal<Option<Draft>>,
+    /// What is being picked for an item that is only selected
+    #[prop(into)]
+    live: Signal<Option<Pick>>,
+) -> impl IntoView {
     let said = move || {
-        draft.with(|d| d.as_ref()?.pick).map(|pick| match pick {
+        let pick = draft.with(|d| d.as_ref()?.pick).or_else(|| live.get());
+        pick.map(|pick| match pick {
             Pick::Before => "Select preceding nodes",
             Pick::After => "Select succeeding nodes",
             Pick::Group => "Click a group to put it in, or nothing for the top level",

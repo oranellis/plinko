@@ -18,7 +18,7 @@ use crate::{
     draft::{Draft, Pick},
     editor::{self, WorkersWindow},
     format,
-    gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene},
+    gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene, shift::Held},
     guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     model::{self, Look, Row},
@@ -224,6 +224,50 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         }
         used
     };
+    // what is being picked with the keyboard for an item that is only selected, which clicks
+    // then change in the plan at once: what it waits for, what waits for it, or its group
+    let live = RwSignal::new(None::<(PlanNode, Pick)>);
+    let at_once = chart_edit::editing(plan);
+    Effect::new(move |_| {
+        let still = selected
+            .get()
+            .is_some_and(|s| live.with_untracked(|l| l.is_some_and(|l| l.0 == s)));
+        if !still || draft.with(Option::is_some) {
+            live.set(None);
+        }
+    });
+    crate::escape::on_escape(
+        move || live.with(Option::is_some),
+        Callback::new(move |()| live.set(None)),
+    );
+    // a click while that is being picked is for it, and a click on nothing ends it. Gives
+    // whether it was.
+    let live_click = move |clicked: Option<PlanNode>| {
+        let Some((own, pick)) = live.get_untracked() else {
+            return false;
+        };
+        match (pick, clicked) {
+            (Pick::Group, over) => {
+                at_once.moved.run((own, over));
+                live.set(None);
+            }
+            (_, None) => live.set(None),
+            (_, Some(other)) if other == own => {}
+            (_, Some(other)) => {
+                let right = pick == Pick::After;
+                let (waiting, before) = if right { (other, own) } else { (own, other) };
+                let linked = sync.tenant.with_untracked(|t| {
+                    let plan = t.as_ref().and_then(|t| t.plans().get(&plan));
+                    plan.is_some_and(|p| model::dependencies(p, waiting).contains(&before))
+                });
+                match linked {
+                    true => at_once.unlink.run((own, other)),
+                    false => at_once.link.run((own, other, right)),
+                }
+            }
+        }
+        true
+    };
     // an item is opened for editing, on the chart, or left only after asking about changes not
     // yet saved
     let on_open = Callback::new(move |node: PlanNode| {
@@ -234,7 +278,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     });
     // a tap on the chart selects, and with an item being edited that moves to the item tapped
     let on_tap = Callback::new(move |node: PlanNode| {
-        if card_click(Some(node)) {
+        if live_click(Some(node)) || card_click(Some(node)) {
             return;
         }
         selected.set(Some(node));
@@ -328,7 +372,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         Callback::new(move |()| guard.then(on_close)),
     );
     let on_blank = Callback::new(move |()| {
-        if card_click(None) {
+        if live_click(None) || card_click(None) {
             return;
         }
         selected.set(None);
@@ -337,7 +381,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         }
     });
     let on_toggle = Callback::new(move |node: PlanNode| {
-        if card_click(Some(node)) {
+        if live_click(Some(node)) || card_click(Some(node)) {
             return;
         }
         collapsed.update(|c| {
@@ -395,6 +439,77 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         }));
     };
 
+    // letters, for what the buttons do. With the add menu listed they are the kinds of item,
+    // with the day an item is held to picked they are how it is held, with an item edited they
+    // light its handles, and with one only selected they edit it or pick for it at once.
+    let menu = RwSignal::new(false);
+    on_letter(move |key: char| {
+        if window_open() || tab.try_get_untracked() != Some(PlanTab::Gantt) {
+            return false;
+        }
+        if menu.get_untracked() {
+            let kind = match key {
+                't' => Kind::Task,
+                'm' => Kind::Milestone,
+                'g' => Kind::Group,
+                'b' => Kind::Buffer,
+                'd' => Kind::Delay,
+                _ => return false,
+            };
+            menu.set(false);
+            add(kind);
+            return true;
+        }
+        let editing =
+            draft.with_untracked(|d| d.as_ref().map(|d| (d.new, d.pick, d.pin().is_some())));
+        if let Some((_, Some(Pick::Day), _)) = editing {
+            let held = match key {
+                'e' => Held::Earliest,
+                'f' => Held::Fixed,
+                'l' => Held::Latest,
+                _ => return false,
+            };
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.hold_as(held)
+                }
+            });
+            return true;
+        }
+        let light = |pick: Pick| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick(pick)
+                }
+            })
+        };
+        match (key, editing, chosen.get_untracked()) {
+            ('a', _, _) => menu.set(true),
+            ('s', _, _) => searching.set(true),
+            ('t', _, _) => jump.update(|n| *n += 1),
+            ('d', Some(_), _) => light(Pick::Before),
+            ('f', Some(_), _) => light(Pick::After),
+            ('g', Some(_), _) => light(Pick::Group),
+            // the day of an item of the plan is taken hold of, held first if it is not
+            ('c', Some((false, _, held)), _) => {
+                if !held {
+                    crate::context::hold_next(sync, plan, draft);
+                }
+                light(Pick::Day);
+            }
+            ('e', None, Some(node)) => on_open.run(node),
+            ('d' | 'f' | 'g', None, Some(node)) => {
+                let pick = match key {
+                    'd' => Pick::Before,
+                    'f' => Pick::After,
+                    _ => Pick::Group,
+                };
+                live.update(|l| *l = Some((node, pick)).filter(|next| *l != Some(*next)));
+            }
+            _ => return false,
+        }
+        true
+    });
     let icon_button = move |label: &'static str, kind: IconKind, on: Callback<()>| {
         view! {
             <button type="button" class="toolbar-btn" title=label aria-label=label on:click=move |_| on.run(())>
@@ -418,7 +533,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                             <Show when=move || tab.get() == PlanTab::Gantt>
                                 {icon_button("Jump to today", IconKind::Today, Callback::new(move |_| jump.update(|n| *n += 1)))}
                             </Show>
-                            <AddMenu on_add=Callback::new(move |kind: Kind| add(kind)) />
+                            <AddMenu on_add=Callback::new(move |kind: Kind| add(kind)) pinned=menu />
                             {icon_button("Search", IconKind::Search, Callback::new(move |_| searching.set(true)))}
                         </Show>
                     </div>
@@ -510,6 +625,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 spot=spot
                                 probe=probe
                                 hovered=hovered
+                                gripped=Signal::derive(move || live.get().map(|(node, pick)| {
+                                    (node, match pick {
+                                        Pick::Before => Some(false),
+                                        Pick::After => Some(true),
+                                        _ => None,
+                                    })
+                                }))
                             />
                         }.into_any(),
                         PlanTab::List => view! { <List rows=rows on_open=on_open on_toggle=on_toggle /> }.into_any(),
@@ -543,7 +665,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         task.map(|_| view! { <WorkersWindow plan=plan draft=draft /> })
                     }}
                     <Show when=move || tab.get() == PlanTab::Gantt>
-                        <card::Hint draft=draft />
+                        <card::Hint draft=draft live=Signal::derive(move || live.get().map(|l| l.1)) />
                         <InfoPanel
                             plan=plan
                             draft=draft
@@ -600,9 +722,12 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
 /// The plus button of the toolbar, which lists what can be added when the pointer is over it and
 /// stays listed once it has been clicked
 #[component]
-fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
+fn AddMenu(
+    on_add: Callback<Kind>,
+    /// Whether it stays listed, which a key can make it too
+    pinned: RwSignal<bool>,
+) -> impl IntoView {
     let over = RwSignal::new(false);
-    let pinned = RwSignal::new(false);
     crate::escape::on_escape(
         move || pinned.get() || over.get(),
         Callback::new(move |()| {
@@ -697,6 +822,37 @@ fn on_key(key: &'static str, active: impl Fn() -> bool + 'static, run: Callback<
             if !taken {
                 ev.prevent_default();
                 run.run(());
+            }
+        });
+    if let Some(window) = web_sys::window() {
+        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
+    }
+    on_key.forget();
+}
+
+/// A letter typed at the page and not into anything, with nothing held down with it. `run`
+/// gives whether it was for something.
+fn on_letter(run: impl Fn(char) -> bool + 'static) {
+    use wasm_bindgen::{JsCast, closure::Closure};
+    let on_key =
+        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+            let held = ev.ctrl_key() || ev.meta_key() || ev.alt_key();
+            let key = ev.key();
+            let mut letters = key.chars();
+            let (Some(letter), None, false) = (letters.next(), letters.next(), held) else {
+                return;
+            };
+            let target = ev
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+            let typing = target.is_some_and(|t| {
+                t.closest("input, textarea, select")
+                    .ok()
+                    .flatten()
+                    .is_some()
+            });
+            if !typing && !ev.default_prevented() && run(letter.to_ascii_lowercase()) {
+                ev.prevent_default();
             }
         });
     if let Some(window) = web_sys::window() {

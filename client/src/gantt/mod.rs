@@ -39,6 +39,9 @@ const TAP_TOUCH: f64 = 10.0;
 const FRICTION: f64 = 0.85;
 // }}}
 
+/// An item whose handles show, and the dot of it that is picked: the right one, or the left
+pub type Gripped = (Mark, Option<bool>);
+
 /// What is not saved yet of the item being created or edited
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Staged {
@@ -86,6 +89,10 @@ pub fn Gantt(
     /// Set to the item the pointer is on
     #[prop(optional)]
     hovered: Option<RwSignal<Option<Mark>>>,
+    /// An item whose handles show as they do with shift, and the dot of it that clicks on
+    /// items answer to: the right one, or the left
+    #[prop(optional, into)]
+    gripped: Option<Signal<Option<Gripped>>>,
     /// What went wrong for an item that misses its date
     violation: Callback<Mark, Vec<String>>,
     on_open: Callback<PlanNode>,
@@ -118,6 +125,7 @@ pub fn Gantt(
     probe: Option<crate::card::Probe>,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
+    let held_out = gripped;
     let size = RwSignal::new((800.0, 600.0));
     let hover = RwSignal::new(None::<Mark>);
     let pointer = RwSignal::new((0.0, 0.0));
@@ -434,7 +442,11 @@ pub fn Gantt(
         let (editing_shift, near, dragged) = (shift.get(), nearby.get(), drag.get());
         // the item being edited keeps its handles, shift shows those of the item the pointer is near
         let pinned = staged.as_ref().and_then(|s| s.item);
-        let gripped = near.filter(|_| editing_shift).or(pinned);
+        let live = held_out.and_then(|h| h.get());
+        let gripped = near
+            .filter(|_| editing_shift)
+            .or(live.map(|l| l.0))
+            .or(pinned);
         let Some(canvas) = canvas.get() else {
             return;
         };
@@ -605,7 +617,7 @@ pub fn Gantt(
             shift::paint_pin(ctx, &signed(pin));
         }
         if editing_shift || gripped.is_some() {
-            let shifted = editing_shift && near.is_some();
+            let shifted = editing_shift && near.is_some() || live.is_some();
             let handles = gripped
                 .map(|node| handles_of(node, shifted))
                 .unwrap_or_default();
@@ -726,7 +738,9 @@ pub fn Gantt(
                     drag: view,
                     note,
                     pin: staged.as_ref().and_then(|s| s.pin),
-                    picked: staged.as_ref().and_then(|s| s.pick),
+                    picked: live
+                        .and_then(|l| l.1)
+                        .or(staged.as_ref().and_then(|s| s.pick)),
                 },
             );
         }
@@ -750,6 +764,7 @@ pub fn Gantt(
             tags.track(),
             staged.map(|s| s.track()),
             spot.map(|s| s.track()),
+            held_out.map(|h| h.track()),
         );
         // the pointer matters while something follows it: a drag, the handles, a note on a warning
         let warns = hovered
@@ -781,11 +796,13 @@ pub fn Gantt(
         // a handle starts editing instead of panning: with shift, or of the item being edited
         if ev.pointer_type() == "mouse" {
             let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
+            let held = held_out.and_then(|h| h.get_untracked()).map(|h| h.0);
             let gripped = nearby
                 .get_untracked()
                 .filter(|_| ev.shift_key())
+                .or(held)
                 .or_else(pinned);
-            let shifted = ev.shift_key() && nearby.get_untracked().is_some();
+            let shifted = ev.shift_key() && nearby.get_untracked().is_some() || held.is_some();
             let on_handle =
                 gripped.and_then(|node| handles_of(node, shifted).at(x, y).map(|h| (node, h)));
             if let Some(node) = band_at(x, y).filter(|_| on_handle.is_none()) {

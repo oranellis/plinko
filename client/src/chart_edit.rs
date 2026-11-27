@@ -434,11 +434,7 @@ pub fn staging(
     let hold = Callback::new(move |(node, held): (PlanNode, Held)| {
         if ours(node) {
             stage(&|_, d| {
-                if let Some(pin) = d.pin() {
-                    d.hold(Some(Pin { held, ..pin }));
-                    // how a chosen day is held is remembered with it
-                    d.chosen = d.chosen.map(|chosen| Pin { held, ..chosen });
-                }
+                d.hold_as(held);
                 Ok(())
             });
         }

@@ -25,6 +25,7 @@ use crate::{
     icons::{Icon, IconKind},
     mine::set_status,
     model,
+    sync::Sync,
     ui::use_sync,
 };
 // }}}
@@ -316,6 +317,34 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
 }
 // }}}
 
+// hold_next {{{
+/// Goes round which end of the draft's item is held to a day, starting from the days the
+/// schedule has it on
+pub fn hold_next(sync: Sync, plan: ShortId, draft: RwSignal<Option<Draft>>) {
+    let today = sync
+        .tenant
+        .with_untracked(|t| t.as_ref().map(|t| t.today()));
+    draft.update(|d| {
+        let Some(d) = d else {
+            return;
+        };
+        let span = sync.schedule.with_untracked(|s| {
+            let state = s.as_ref().and_then(|(_, s)| s.plans.get(&plan));
+            model::span_of(state, d.node)
+        });
+        let last = |(first, after): (chrono::NaiveDate, chrono::NaiveDate)| {
+            (
+                first,
+                after.pred_opt().map_or(first, |last| last.max(first)),
+            )
+        };
+        if let Some((first, last)) = span.map(last).or(today.map(|day| (day, day))) {
+            d.hold_next(first, last);
+        }
+    });
+}
+// }}}
+
 // Extras {{{
 /// For an item in the plan, which of its ends is held to a day
 #[component]
@@ -342,32 +371,7 @@ pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
         (Some(false), _) => "Its first day is held: hold its last day instead",
         (Some(true), _) => "Held to a day: let it go",
     };
-    // the days the schedule has it on, which is where a day is first held
-    let hold_next = move || {
-        let today = sync
-            .tenant
-            .with_untracked(|t| t.as_ref().map(|t| t.today()));
-        draft.update(|d| {
-            let Some(d) = d else {
-                return;
-            };
-            let span = sync.schedule.with_untracked(|s| {
-                let state = s.as_ref().and_then(|(_, s)| s.plans.get(&plan));
-                model::span_of(state, d.node)
-            });
-            let days = span
-                .map(|(first, after)| {
-                    (
-                        first,
-                        after.pred_opt().map_or(first, |last| last.max(first)),
-                    )
-                })
-                .or(today.map(|day| (day, day)));
-            if let Some((first, last)) = days {
-                d.hold_next(first, last);
-            }
-        });
-    };
+    let hold_next = move || hold_next(sync, plan, draft);
     view! {
         {holds.then(|| view! {
             <button

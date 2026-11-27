@@ -300,6 +300,19 @@ impl Draft {
         });
     }
 
+    /// Changes how it is held to its day, which is remembered with a day that was chosen
+    pub fn hold_as(&mut self, held: Held) {
+        if let Some(pin) = self.pin() {
+            self.hold(Some(Pin { held, ..pin }));
+            self.chosen = self.chosen.map(|chosen| Pin { held, ..chosen });
+        }
+    }
+
+    /// Lights a handle for clicks to answer to, or puts it out if it is the one that is lit
+    pub fn pick(&mut self, pick: Pick) {
+        self.pick = Some(pick).filter(|p| self.pick != Some(*p));
+    }
+
     /// Holds it to a day, or to none, which leaves no day to pick
     pub fn hold(&mut self, pin: Option<Pin>) {
         if pin.is_none() {
