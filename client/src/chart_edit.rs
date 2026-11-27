@@ -313,9 +313,8 @@ pub fn staging(
     guard: Guard,
 ) -> Editing {
     let sync = use_sync();
-    let ours = move |node: PlanNode| {
-        draft.with_untracked(|d| d.as_ref().is_some_and(|d| !d.new && d.node == node))
-    };
+    let ours =
+        move |node: PlanNode| draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.node == node));
     let stage = move |f: &dyn Fn(&Plan, &mut Draft) -> Result<(), String>| {
         let mut said = None;
         sync.tenant.with_untracked(|t| {

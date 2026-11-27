@@ -531,8 +531,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             ('f', Some(_), _) => light(Pick::After),
             ('g', Some(_), _) => light(Pick::Group),
             ('l', Some(_), _) if lasts => typing.set(true),
-            // the day of an item of the plan is taken hold of, held first if it is not
-            ('c', Some((false, _, held)), _) if held_kind => {
+            // the day of the item is taken hold of, held first if it is not
+            ('c', Some((_, _, held)), _) if held_kind => {
                 if !held {
                     crate::context::hold_next(sync, plan, draft);
                 }
@@ -655,7 +655,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                             before: d.dependencies.clone(),
                                             after: d.dependents.clone(),
                                             group,
-                                            item: (!d.new).then_some(d.node),
+                                            item: Some(d.node),
                                             days,
                                             pin: d.pin(),
                                             daying: d.pick == Some(Pick::Day),

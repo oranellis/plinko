@@ -357,17 +357,14 @@ pub fn hold_next(sync: Sync, plan: ShortId, draft: RwSignal<Option<Draft>>) {
 // }}}
 
 // Extras {{{
-/// For an item in the plan, which of its ends is held to a day
+/// Which end of an item is held to a day, for the kinds that can be
 #[component]
 pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let sync = use_sync();
     let holds = draft.with_untracked(|d| {
         matches!(
-            d.as_ref().map(|d| (d.node, d.new)),
-            Some((
-                PlanNode::Task(_) | PlanNode::TaskGroup(_) | PlanNode::Milestone(_),
-                false
-            ))
+            d.as_ref().map(|d| d.node),
+            Some(PlanNode::Task(_) | PlanNode::TaskGroup(_) | PlanNode::Milestone(_))
         )
     });
     // which end is held: its first day, or its last, which is the only one a milestone has

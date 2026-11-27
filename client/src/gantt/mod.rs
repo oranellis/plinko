@@ -50,7 +50,7 @@ pub struct Staged {
     pub after: Vec<Mark>,
     /// The group it is in
     pub group: Option<Mark>,
-    /// The item itself when it is on the chart, whose handles then show without shift
+    /// The item itself, which has no place on the chart while it is new
     pub item: Option<Mark>,
     /// How far the days it really ran are moved, as `start -1  end +2`
     pub days: Option<String>,
@@ -308,7 +308,8 @@ pub fn Gantt(
     };
     // where a pin of an item is drawn
     let pin_view = move |node: PlanNode, pin: Pin, faint: bool| -> Option<PinView> {
-        let row = rect_of(node)?;
+        // an item that is not on the chart yet has a day it is held to all the same
+        let row = rect_of(node).unwrap_or_default();
         let vp = viewport.get_untracked().unwrap_or_default();
         let day = scene.with_untracked(|s| (pin.day - s.origin).num_days()) as f64;
         Some(PinView {
