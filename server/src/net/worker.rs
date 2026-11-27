@@ -75,7 +75,7 @@ pub fn start(
             };
             for applied in std::iter::once(first).chain(receiver.try_iter()) {
                 // the actor accepted it, so it applies here unless the copies have diverged
-                if let Err(error) = tenant.apply_update(applied.update) {
+                if let Err(error) = tenant.apply_logged(applied.update) {
                     let seq = applied.seq;
                     eprintln!("update {seq} did not apply to the scheduler's copy: {error}");
                 }

@@ -244,6 +244,37 @@ fn dates_and_durations_out_of_range_are_refused() {
 }
 // }}}
 
+// an_update_saved_before_a_check_existed_still_loads {{{
+#[test]
+fn an_update_saved_before_a_check_existed_still_loads() {
+    let mut s = setup();
+    let far_ahead = TimeConstraint::Latest(NaiveDate::from_ymd_opt(2100, 1, 1).unwrap());
+    let mut patch = TaskPatch {
+        id: s.task,
+        name: None,
+        parent: None,
+        duration: None,
+        time_constraint: Some(far_ahead.into()),
+        dependencies: None,
+        allocations: None,
+        affinities: None,
+        actual_workers: None,
+        persistent_state: None,
+    };
+    patch.duration = Some(MAX_DURATION + 1);
+    let update = PlanUpdate::Task(Crud::Update(patch));
+    let update = TenantUpdate {
+        time: DateTime::from_timestamp(978307200, 0).unwrap(),
+        actor: s.root,
+        update_type: TenantUpdateType::Plan(PlanTenantUpdate::Update(s.plan, Box::new(update))),
+    };
+    assert!(s.tenant.clone().apply_update(update.clone()).is_err());
+    s.tenant.apply_logged(update).unwrap();
+    // and the check is back for what comes next
+    assert!(patch_task(&mut s, |p| p.duration = Some(MAX_DURATION + 1)).is_err());
+}
+// }}}
+
 // the_clock_moves_by_update {{{
 #[test]
 fn the_clock_moves_by_update() {

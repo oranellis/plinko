@@ -34,7 +34,7 @@ impl Entity<Tenant> for TenantLoginUser {
         }
         let email = tenant.users[&id].email();
         let mut others = tenant.users.values().filter(|u| *u.id() != id);
-        match others.any(|u| u.has_email(email)) {
+        match !tenant.logged && others.any(|u| u.has_email(email)) {
             true => Err(PlinkoError::EmailTaken(email.trim().to_string())),
             false => Ok(()),
         }

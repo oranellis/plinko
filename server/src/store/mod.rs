@@ -131,7 +131,7 @@ impl Store {
             rows.collect::<Result<Vec<_>, _>>()?
         };
         for (next, bytes) in updates {
-            tenant.apply_update(codec::decode(&bytes)?)?;
+            tenant.apply_logged(codec::decode(&bytes)?)?;
             seq = next;
         }
         Ok((tenant, seq))

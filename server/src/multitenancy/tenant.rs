@@ -53,6 +53,10 @@ pub struct Tenant {
     plan_calendars: HashMap<ShortId, Calendar<Workload>>,
     #[serde(skip)]
     schedule: Option<TenantVolatileState>,
+    /// While updates already saved are applied again, which were checked by the rules of their
+    /// day, so a check added since does not refuse them
+    #[serde(skip)]
+    pub(super) logged: bool,
     /// What the last search found, for the next to start from
     #[serde(skip)]
     hints: Hints,
@@ -94,6 +98,7 @@ impl Tenant {
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),
             schedule: None,
+            logged: false,
             hints: Hints::default(),
             plans: HashMap::new(),
             default_schedule: RuleSet::default(),
@@ -157,6 +162,14 @@ impl Tenant {
     /// The choices the last search found better made the other way, which updates leave alone
     pub fn hints(&self) -> &Hints {
         &self.hints
+    }
+
+    /// Applies an update that was already accepted and saved, as on loading
+    pub fn apply_logged(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
+        self.logged = true;
+        let result = self.apply_update(u);
+        self.logged = false;
+        result
     }
 
     pub fn apply_update(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
@@ -317,6 +330,9 @@ impl Tenant {
     /// which keeps the days the scheduler looks at a sane number, and a task cannot end before
     /// it starts
     fn check_ranges(&self, update: &PlanUpdate) -> PlinkoResult<()> {
+        if self.logged {
+            return Ok(());
+        }
         let constraint = |c: Option<TimeConstraint>| {
             let (from, until) = c.map(TimeConstraint::bounds).unwrap_or_default();
             from.into_iter().chain(until)
@@ -414,6 +430,7 @@ impl Tenant {
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),
             schedule: None,
+            logged: false,
             hints: Hints::default(),
             plans: self
                 .plans
