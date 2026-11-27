@@ -24,6 +24,8 @@ const CLICK: f64 = 5.0;
 
 /// How far the days handle is dragged for each day
 const DAY_STEP: f64 = 28.0;
+/// The most boxes shown for the days while they are dragged: four rows of fifteen
+const MOST_BOXES: u32 = 60;
 /// The days from which a drag changes them at the full rate
 const EASED: i64 = 6;
 
@@ -379,7 +381,8 @@ pub fn Card(
                                         // while it is dragged, a box a day: the ones added lit, the ones taken away empty
                                         {move || held.get().filter(|h| h.grab == Grab::Days && h.dragged()).map(|h| {
                                             let now = days().unwrap_or(h.days);
-                                            let boxes = (0..now.max(h.days)).map(|i| {
+                                            let all = now.max(h.days);
+                                            let boxes = (0..all.min(MOST_BOXES)).map(|i| {
                                                 let class = match (i < h.days, i < now) {
                                                     (true, true) => "",
                                                     (false, _) => "added",
@@ -387,7 +390,9 @@ pub fn Card(
                                                 };
                                                 view! { <i class=class></i> }
                                             }).collect_view();
-                                            view! { <span class="draftcard-drag">{boxes}</span> }
+                                            // four rows of them, and then only that there are more
+                                            let more = (all > MOST_BOXES).then(|| view! { <b>"\u{2026}"</b> });
+                                            view! { <span class="draftcard-drag">{boxes}{more}</span> }
                                         })}
                                     }
                                 >
