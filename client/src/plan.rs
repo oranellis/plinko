@@ -402,7 +402,15 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         go(tab.get_untracked(), None);
     });
     let on_save = Callback::new(move |()| {
-        if let Some(draft) = draft.get_untracked() {
+        if let Some(mut draft) = draft.get_untracked() {
+            // what others changed while it was edited is kept, only what was changed here goes
+            let was = pristine.get_value();
+            let now = (!draft.new)
+                .then(|| Draft::open(sync, plan, draft.node, None))
+                .flatten();
+            if let (Some(was), Some(now)) = (was, now) {
+                draft = draft.onto(&was, now);
+            }
             editor::save(sync, plan, &draft);
         }
         leave.run(());

@@ -408,6 +408,37 @@ impl Draft {
         updates
     }
 
+    /// The draft as `self` changed `was` (as it was opened), on top of `now` (the item as it is
+    /// now), so what someone else changed meanwhile stays: a field is the one asked for only if
+    /// it was changed, and a list keeps what others added or took away
+    pub fn onto(&self, was: &Draft, now: Draft) -> Draft {
+        fn pick<T: PartialEq + Clone>(mine: &T, was: &T, now: T) -> T {
+            if mine == was { now } else { mine.clone() }
+        }
+        fn merge<T: PartialEq + Clone>(mine: &[T], was: &[T], mut now: Vec<T>) -> Vec<T> {
+            now.retain(|n| mine.contains(n) || !was.contains(n));
+            let added = mine.iter().filter(|m| !was.contains(m) && !now.contains(m));
+            let added: Vec<T> = added.cloned().collect();
+            now.extend(added);
+            now
+        }
+        let affinities = |d: &Draft| d.affinities.iter().copied().collect::<Vec<_>>();
+        let merged = merge(&affinities(self), &affinities(was), affinities(&now));
+        Draft {
+            name: pick(&self.name, &was.name, now.name),
+            constraint: pick(&self.constraint, &was.constraint, now.constraint),
+            chosen: pick(&self.chosen, &was.chosen, now.chosen),
+            allocations: pick(&self.allocations, &was.allocations, now.allocations),
+            affinities: merged.into_iter().collect(),
+            parent: pick(&self.parent, &was.parent, now.parent),
+            dependencies: merge(&self.dependencies, &was.dependencies, now.dependencies),
+            dependents: merge(&self.dependents, &was.dependents, now.dependents),
+            duration: pick(&self.duration, &was.duration, now.duration),
+            moved: self.moved,
+            ..now
+        }
+    }
+
     /// The updates to what waits for the item, or no longer does, once the item is `node` in
     /// the plan
     pub fn dependent_updates(&self, plan: &Plan, node: PlanNode) -> Vec<PlanUpdate> {
@@ -507,6 +538,24 @@ mod tests {
         draft.toggle(&plan, Pick::After, c).unwrap();
         draft.toggle(&plan, Pick::After, b).unwrap();
         assert_eq!(draft.dependent_updates(&plan, a).len(), 2);
+    }
+
+    #[test]
+    fn saving_keeps_what_others_changed_meanwhile() {
+        let (plan, [a, b, c], _) = plan();
+        let was = Draft::of(&plan, c).unwrap();
+        // here the name was changed and b was linked
+        let mut mine = was.clone();
+        mine.name = "Mine".to_string();
+        mine.dependencies.push(b);
+        // someone else gave it days and linked a
+        let mut now = was.clone();
+        now.duration = Some(9);
+        now.dependencies.push(a);
+        let saved = mine.onto(&was, now);
+        assert_eq!(saved.name, "Mine");
+        assert_eq!(saved.duration, Some(9));
+        assert_eq!(saved.dependencies, vec![a, b]);
     }
 }
 // }}}
