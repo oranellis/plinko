@@ -1,9 +1,9 @@
 // modules {{{
 use chrono::{DateTime, NaiveDate};
 use plinko::{
-    common::{crud::Crud, error::PlinkoResult, short_id::ShortId},
+    common::{crud::Crud, dates::TimeConstraint, error::PlinkoResult, short_id::ShortId},
     multitenancy::{
-        tenant::Tenant,
+        tenant::{MAX_DURATION, Tenant},
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
     },
     planner::items::{
@@ -68,8 +68,8 @@ fn set_today(setup: &mut Setup, day: u32) {
     apply(setup, TenantUpdateType::SetToday(d(day))).unwrap();
 }
 
-fn set_state(setup: &mut Setup, state: PersistentState) {
-    let patch = TaskPatch {
+fn patch_task(setup: &mut Setup, change: impl FnOnce(&mut TaskPatch)) -> PlinkoResult<()> {
+    let mut patch = TaskPatch {
         id: setup.task,
         name: None,
         parent: None,
@@ -79,11 +79,16 @@ fn set_state(setup: &mut Setup, state: PersistentState) {
         allocations: None,
         affinities: None,
         actual_workers: None,
-        persistent_state: Some(state),
+        persistent_state: None,
     };
+    change(&mut patch);
     let update = PlanUpdate::Task(Crud::Update(patch));
     let update = PlanTenantUpdate::Update(setup.plan, Box::new(update));
-    apply(setup, TenantUpdateType::Plan(update)).unwrap();
+    apply(setup, TenantUpdateType::Plan(update))
+}
+
+fn set_state(setup: &mut Setup, state: PersistentState) {
+    patch_task(setup, |p| p.persistent_state = Some(state)).unwrap();
 }
 
 fn state(setup: &Setup) -> PersistentState {
@@ -204,6 +209,38 @@ fn a_completed_task_put_on_hold_ends_today_unless_given_a_new_end() {
     // a different end date is one the user picked
     set_state(&mut s, with(Status::Completed, Some(2), Some(5)));
     assert_eq!(state(&s), with(Status::Completed, Some(2), Some(5)));
+}
+// }}}
+
+// dates_and_durations_out_of_range_are_refused {{{
+#[test]
+fn dates_and_durations_out_of_range_are_refused() {
+    let mut s = setup();
+    let far_back = PersistentState {
+        status: Status::InProgress,
+        actual_start_date: Some(NaiveDate::MIN),
+        actual_end_date: None,
+    };
+    assert!(patch_task(&mut s, |p| p.persistent_state = Some(far_back)).is_err());
+    let backwards = with(Status::Completed, Some(5), Some(4));
+    assert!(patch_task(&mut s, |p| p.persistent_state = Some(backwards)).is_err());
+    assert_eq!(state(&s), PersistentState::default());
+
+    let far_ahead = TimeConstraint::Latest(NaiveDate::from_ymd_opt(2100, 1, 1).unwrap());
+    assert!(patch_task(&mut s, |p| p.time_constraint = Some(far_ahead.into())).is_err());
+    assert!(patch_task(&mut s, |p| p.duration = Some(MAX_DURATION + 1)).is_err());
+
+    // a year either way and a long task are fine
+    let late = TimeConstraint::Latest(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
+    patch_task(&mut s, |p| p.time_constraint = Some(late.into())).unwrap();
+    patch_task(&mut s, |p| p.duration = Some(MAX_DURATION)).unwrap();
+    let last_year = PersistentState {
+        status: Status::Completed,
+        actual_start_date: NaiveDate::from_ymd_opt(2023, 1, 1),
+        actual_end_date: Some(d(1)),
+    };
+    set_state(&mut s, last_year);
+    assert_eq!(state(&s), last_year);
 }
 // }}}
 

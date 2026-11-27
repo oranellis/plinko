@@ -9,6 +9,7 @@ use crate::{
     availability::{calendar::Calendar, rule_set::RuleSet, workload::Workload},
     common::{
         crud::Crud,
+        dates::TimeConstraint,
         error::{PlinkoError, PlinkoResult},
         short_id::ShortId,
     },
@@ -26,6 +27,14 @@ use crate::{
     scheduler::{self, Hints, state::TenantVolatileState},
     traits::entity::Entity,
 };
+// }}}
+
+// constants {{{
+/// How far before or after today a date in a plan may be
+pub const MAX_DAYS_FROM_TODAY: i64 = 10 * 366;
+
+/// The longest a task, buffer or delay may last, in days
+pub const MAX_DURATION: u32 = 10 * 366;
 // }}}
 
 /// Everything a tenant is, and so what a snapshot holds. The caches and the schedule are
@@ -256,6 +265,7 @@ impl Tenant {
                 self.ensure_plan_refs_exist(&update)?;
                 let mut update = *update;
                 self.set_status_dates(&id, &mut update);
+                self.check_ranges(&update)?;
                 let changes_availability = matches!(update, PlanUpdate::Availability(_));
                 self.plans
                     .get_mut(&id)
@@ -301,6 +311,60 @@ impl Tenant {
             _ if same => given.or(was.actual_end_date).or(Some(self.today)),
             _ => given.or(Some(self.today)),
         };
+    }
+
+    /// Dates must be within `MAX_DAYS_FROM_TODAY` of today and durations at most `MAX_DURATION`,
+    /// which keeps the days the scheduler looks at a sane number, and a task cannot end before
+    /// it starts
+    fn check_ranges(&self, update: &PlanUpdate) -> PlinkoResult<()> {
+        let constraint = |c: Option<TimeConstraint>| {
+            let (from, until) = c.map(TimeConstraint::bounds).unwrap_or_default();
+            from.into_iter().chain(until)
+        };
+        let (dates, durations): (Vec<NaiveDate>, Vec<u32>) = match update {
+            PlanUpdate::Task(Crud::Update(p)) => {
+                let state = p.persistent_state.unwrap_or_default();
+                let (start, end) = (state.actual_start_date, state.actual_end_date);
+                if start.zip(end).is_some_and(|(start, end)| end < start) {
+                    let why = "a task cannot end before it starts".to_string();
+                    return Err(PlinkoError::OutOfRange(why));
+                }
+                let constrained = constraint(p.time_constraint.map(|c| c.constraint));
+                let dates = constrained.chain(start).chain(end).collect();
+                (dates, p.duration.into_iter().collect())
+            }
+            PlanUpdate::TaskGroup(Crud::Update(p)) => (
+                constraint(p.time_constraint.map(|c| c.constraint)).collect(),
+                Vec::new(),
+            ),
+            PlanUpdate::Milestone(Crud::Update(p)) => {
+                let actual = p.persistent_state.as_ref().and_then(|s| s.actual_date);
+                (
+                    constraint(p.time_constraint).chain(actual).collect(),
+                    Vec::new(),
+                )
+            }
+            PlanUpdate::PlanBuffer(Crud::Add(new)) => (Vec::new(), vec![new.duration]),
+            PlanUpdate::PlanBuffer(Crud::Update(p)) => (
+                p.set_start_day.flatten().into_iter().collect(),
+                p.duration.into_iter().collect(),
+            ),
+            PlanUpdate::PlanDelay(Crud::Add(new)) => (Vec::new(), vec![new.duration]),
+            PlanUpdate::PlanDelay(Crud::Update(p)) => {
+                (Vec::new(), p.duration.into_iter().collect())
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        let far = |date: &NaiveDate| (*date - self.today).num_days().abs() > MAX_DAYS_FROM_TODAY;
+        if let Some(date) = dates.iter().find(|d| far(d)) {
+            let why = format!("{date} is more than {MAX_DAYS_FROM_TODAY} days from today");
+            return Err(PlinkoError::OutOfRange(why));
+        }
+        if let Some(days) = durations.iter().find(|d| **d > MAX_DURATION) {
+            let why = format!("{days} days is longer than the {MAX_DURATION} a duration may be");
+            return Err(PlinkoError::OutOfRange(why));
+        }
+        Ok(())
     }
 
     /// Admins and anyone in the plan, directly or through an assigned group, may change a plan
