@@ -8,6 +8,7 @@ use crate::{
     allocations::Allocations,
     api,
     availability::Availability as AvailabilityPage,
+    finder::Finder,
     help::HelpButton,
     home::Home,
     icons::{Icon, IconKind},
@@ -98,6 +99,7 @@ pub fn Shell() -> impl IntoView {
                 <UserMenu on_logout=Callback::new(logout) />
             </header>
             <Toast />
+            <Finder />
             <main class="page">
                 {move || match page.get() {
                     Page::Home => view! { <Home /> }.into_any(),

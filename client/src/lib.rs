@@ -9,6 +9,7 @@ mod datepicker;
 mod draft;
 mod editor;
 mod escape;
+mod finder;
 mod format;
 mod forms;
 mod fuzzy;

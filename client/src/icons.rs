@@ -11,6 +11,10 @@ pub fn Icon(
     #[prop(default = 24)] size: u32,
 ) -> impl IntoView {
     let body = match kind {
+        IconKind::Home => view! {
+            <path d="M2.8,7.4 L8,3 L13.2,7.4 M4.4,6.2 V13 H11.6 V6.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        }
+        .into_any(),
         IconKind::Back => view! {
             <polyline points="8.6,4.6 5.2,8 8.6,11.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
         }
@@ -219,6 +223,7 @@ pub fn Icon(
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IconKind {
+    Home,
     Back,
     Gantt,
     List,

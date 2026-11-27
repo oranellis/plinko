@@ -170,6 +170,10 @@ input.search.nothing { border-color: var(--danger); }
 .results li button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; padding: 8px 4px; border-bottom: 1px solid var(--soft); border-radius: 0; font-size: 13px; flex-wrap: wrap; }
 .results li button:hover, .results li button.at { background: var(--raised); }
 .results li button.at { box-shadow: inset 3px 0 0 var(--accent); }
+.results li a { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border-bottom: 1px solid var(--soft); color: var(--text); text-decoration: none; font-size: 13px; }
+.results li a:hover, .results li a.at { background: var(--raised); }
+.results li a.at { box-shadow: inset 3px 0 0 var(--accent); }
+.results .glyph { display: inline-flex; }
 .results .glyph { color: var(--muted); }
 .results .picked { margin-left: auto; color: var(--accent); }
 .results .none { color: var(--faint); text-align: center; padding: 12px 0; font-size: 13px; }

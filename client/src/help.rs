@@ -42,6 +42,7 @@ const PAGES: &[Page] = &[(
                         "Hold to show the handles of the item the pointer is near",
                     ),
                     (&["?"], "This help"),
+                    (&["ctrl", "k"], "Go to a page or plan, from anywhere in the app"),
                 ],
             ),
             (
