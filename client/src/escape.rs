@@ -34,10 +34,12 @@ pub fn listen() {
     on_key.forget();
 }
 
-/// While `active`, escape runs `close` unless something opened later is on top of it
-pub fn on_escape(active: impl Fn() -> bool + 'static, close: Callback<()>) {
+/// While `active`, escape runs `close` unless something opened later is on top of it. What it
+/// reads changing without it opening or closing keeps its place.
+pub fn on_escape(active: impl Fn() -> bool + Send + Sync + 'static, close: Callback<()>) {
+    let active = Memo::new(move |_| active());
     Effect::new(move |_| {
-        if active() {
+        if active.get() {
             let id = NEXT.with(|n| {
                 n.set(n.get() + 1);
                 n.get()
