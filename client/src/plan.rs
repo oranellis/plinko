@@ -1375,7 +1375,9 @@ fn on_letter(run: impl Fn(char) -> bool + 'static) {
                     .flatten()
                     .is_some()
             });
-            if !typing && !ev.default_prevented() && run(letter.to_ascii_lowercase()) {
+            // a capital is shift held, which is for the handles of the chart
+            let capital = letter.is_ascii_uppercase() && ev.shift_key();
+            if !typing && !capital && !ev.default_prevented() && run(letter.to_ascii_lowercase()) {
                 ev.prevent_default();
             }
         });
