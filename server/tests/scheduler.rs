@@ -611,6 +611,34 @@ fn a_milestone_that_happened_is_on_the_last_day_of_the_work_before_it() {
 }
 // }}}
 
+// a_milestone_is_forecast_and_judged_on_the_day_it_is_shown {{{
+#[test]
+fn a_milestone_is_forecast_and_judged_on_the_day_it_is_shown() {
+    let mut world = World::new();
+    let marker = world.milestone(&[]);
+    world.plan_update(PlanUpdate::Milestone(Crud::Update(MilestonePatch {
+        id: marker,
+        name: None,
+        parent: None,
+        time_constraint: Some(TimeConstraint::Latest(d(2))),
+        dependencies: None,
+        persistent_state: None,
+    })));
+    let target = world.target(PlanNode::Milestone(marker));
+    world.apply(TenantUpdateType::SetToday(d(3)));
+    let state = world.solve();
+    assert_eq!(state.milestones[&marker].date, d(3));
+    let violation = state.constraint_violations[&PlanNode::Milestone(marker)];
+    assert_eq!(
+        (violation.scheduled, violation.earliest),
+        (d(3), Some(d(3)))
+    );
+    let forecast = state.targets[&target];
+    assert_eq!((forecast.forecast, forecast.baseline), (d(3), d(3)));
+    assert_eq!(state.plan_end.unwrap().forecast, d(3));
+}
+// }}}
+
 // dropped_tasks_are_transparent_and_on_hold_tasks_end_when_held {{{
 #[test]
 fn dropped_tasks_are_transparent_and_on_hold_tasks_end_when_held() {

@@ -26,7 +26,8 @@ Written: `TenantVolatileState { plans, users }` (`scheduler/state.rs`).
   `task_groups`, `milestones` (date, derived status), `plan_buffers`, `plan_delays`, `unscheduled`
   with a reason, `constraint_violations`, `targets` and `plan_end` forecasts.
 - `TargetForecast { forecast, baseline }`: the baseline is the earliest the goal could be if nobody
-  ever ran out of hours (section 5), `delay()` the days after it.
+  ever ran out of hours (section 5), `delay()` the days after it. Both are days as a milestone
+  on the goal would be shown (date conventions below), as is a milestone's `earliest`.
 - `ConstraintViolation { constraint, end, scheduled, earliest }`: `end` says whether it is about the
   first or the last day. A miss no later than `earliest` could not have been avoided.
 - `users[user]`: their work across plans and `bottleneck`, booked hours over available hours from

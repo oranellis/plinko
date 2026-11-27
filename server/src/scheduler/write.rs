@@ -280,10 +280,8 @@ impl Writer<'_> {
         // the soonest it could have been with everyone free, by the same reading of its day
         let soonest = match (node, end) {
             (PlanNode::Milestone(_), _) => {
-                let at = self
-                    .lowered(node)
-                    .and_then(|l| self.at(self.earliest, l.end));
-                at.map(|at| self.day_before(at))
+                let lowered = self.lowered(node);
+                lowered.and_then(|l| self.shown(self.earliest, l.end))
             }
             (_, NodeEnd::Start) => self.placed(self.earliest, node).map(|p| self.date(p.start)),
             (_, NodeEnd::End) => self
@@ -354,8 +352,8 @@ impl Writer<'_> {
         let info = &self.ctx.net.plans[self.index as usize];
         let forecast = |v: VertexId| {
             Some(TargetForecast {
-                forecast: self.day_before(self.at(self.pass, v)?),
-                baseline: self.day_before(self.at(self.earliest, v)?),
+                forecast: self.shown(self.pass, v)?,
+                baseline: self.shown(self.earliest, v)?,
             })
         };
         for target in &info.targets {
