@@ -130,6 +130,21 @@ fn putting_a_task_on_hold_ends_it_today_and_resuming_clears_the_end() {
 }
 // }}}
 
+// a_task_put_back_to_not_started_forgets_its_days {{{
+#[test]
+fn a_task_put_back_to_not_started_forgets_its_days() {
+    let mut s = setup();
+    set_today(&mut s, 3);
+    set_state(&mut s, with(Status::InProgress, None, None));
+    // the dates it had come with the update, as the client sends what it has
+    set_state(&mut s, with(Status::NotStarted, Some(3), None));
+    assert_eq!(state(&s), with(Status::NotStarted, None, None));
+    set_today(&mut s, 6);
+    set_state(&mut s, with(Status::InProgress, None, None));
+    assert_eq!(state(&s), with(Status::InProgress, Some(6), None));
+}
+// }}}
+
 // started_and_completed_tasks_default_their_dates_to_today {{{
 #[test]
 fn started_and_completed_tasks_default_their_dates_to_today() {
