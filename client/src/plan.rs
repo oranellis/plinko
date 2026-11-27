@@ -33,6 +33,24 @@ use crate::{
 // }}}
 
 // types {{{
+/// What of the days of an item the keys move
+#[derive(Clone, Copy, PartialEq)]
+enum Moving {
+    All,
+    Start,
+    End,
+}
+
+impl Moving {
+    fn said(self) -> &'static str {
+        match self {
+            Moving::All => "Moving its days: ← → or h l, then s for its start, e for its end",
+            Moving::Start => "Moving its start: ← → or h l, m for all of it, e for its end",
+            Moving::End => "Moving its end: ← → or h l, m for all of it, s for its start",
+        }
+    }
+}
+
 /// A change the keys make to who works on a task, and to the row they are on
 type Staffing<'a> = dyn Fn(&mut Vec<(Worker, u8)>, &mut usize) + 'a;
 
@@ -235,6 +253,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     // then change in the plan at once: what it waits for, what waits for it, or its group
     let live = RwSignal::new(None::<(PlanNode, Pick)>);
     let at_once = chart_edit::editing(plan);
+    // what the chart does to the plan: to the item being edited it is staged, to others at once
+    let edits = chart_edit::staging(at_once, plan, draft, guard);
     Effect::new(move |_| {
         let still = selected
             .get()
@@ -361,6 +381,45 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         leave.run(());
     });
     guard.watch_clicks();
+    // the days of the item that is selected or edited being moved by the keys: all of them, or
+    // its start or its end
+    let moving = RwSignal::new(None::<(PlanNode, Moving)>);
+    Effect::new(move |_| {
+        let item = bar_of.get();
+        if moving.with_untracked(|m| m.is_some_and(|m| Some(m.0) != item)) {
+            moving.set(None);
+        }
+    });
+    crate::escape::on_escape(
+        move || moving.with(Option::is_some),
+        Callback::new(move |()| moving.set(None)),
+    );
+    // a day either way, of what can be moved: the days a started task ran, all or one end of
+    // them, and the end of anything that lasts, which is how long it lasts
+    let move_by = move |days: i32| {
+        let Some((node, how)) = moving.get_untracked() else {
+            return;
+        };
+        let started = edits.dated.run(node);
+        match how {
+            Moving::All if started => edits.shift_dates.run((node, days)),
+            Moving::Start if started => edits.restart.run((node, days)),
+            Moving::End => edits.resize.run((node, days)),
+            _ => sync.notice.set(Some(
+                "Only the days a task has really run can be moved, the schedule places the rest"
+                    .to_string(),
+            )),
+        }
+    };
+    let on_moving =
+        move || moving.try_with_untracked(Option::is_some).unwrap_or(false) && !window_open();
+    on_key("ArrowLeft", on_moving, Callback::new(move |()| move_by(-1)));
+    on_key("ArrowRight", on_moving, Callback::new(move |()| move_by(1)));
+    on_key(
+        "Enter",
+        on_moving,
+        Callback::new(move |()| moving.set(None)),
+    );
     let daying = move || {
         draft
             .try_with_untracked(|d| d.as_ref().is_some_and(|d| d.pick == Some(Pick::Day)))
@@ -369,7 +428,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     on_key(
         "Enter",
         move || {
-            open_node_exists.try_get_untracked().unwrap_or(false) && !window_open() && !daying()
+            open_node_exists.try_get_untracked().unwrap_or(false)
+                && !window_open()
+                && !daying()
+                && !on_moving()
         },
         on_save,
     );
@@ -635,6 +697,19 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         if window_open() || tab.try_get_untracked() != Some(PlanTab::Gantt) {
             return false;
         }
+        // moving, the letters say what is moved and vim's move it
+        if moving.get_untracked().is_some() {
+            let set = |how: Moving| moving.update(|m| *m = m.map(|(node, _)| (node, how)));
+            match key {
+                'm' => set(Moving::All),
+                's' => set(Moving::Start),
+                'e' => set(Moving::End),
+                'h' => move_by(-1),
+                'l' => move_by(1),
+                _ => return false,
+            }
+            return true;
+        }
         // with the keys on the workers, letters are for them, with vim's for the arrows
         if workers.get_untracked().is_some() {
             match key {
@@ -771,6 +846,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 light(Pick::Day);
             }
             ('e', None, Some(node)) => on_open.run(node),
+            ('m', _, _) => match item {
+                Some(node) => moving.set(Some((node, Moving::All))),
+                None => return false,
+            },
             ('c', None, Some(node)) if holds(node) => {
                 grabbing.set_value(true);
                 on_open.run(node);
@@ -863,7 +942,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 violation=violation
                                 on_open=on_tap
                                 on_edit=on_open
-                                editing=chart_edit::staging(chart_edit::editing(plan), plan, draft, guard)
+                                editing=edits
                                 selected=Signal::derive(move || chosen.get())
                                 on_toggle=on_toggle
                                 on_blank=on_blank
@@ -945,7 +1024,11 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         task.map(|_| view! { <WorkersWindow plan=plan draft=draft cursor=workers open_row=open_row /> })
                     }}
                     <Show when=move || tab.get() == PlanTab::Gantt>
-                        <card::Hint draft=draft live=Signal::derive(move || live.get().map(|l| l.1)) />
+                        <card::Hint
+                            draft=draft
+                            live=Signal::derive(move || live.get().map(|l| l.1))
+                            note=Signal::derive(move || moving.get().map(|(_, how)| how.said()))
+                        />
                         <InfoPanel
                             plan=plan
                             draft=draft

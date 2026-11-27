@@ -134,10 +134,16 @@ pub fn Hint(
     /// What is being picked for an item that is only selected
     #[prop(into)]
     live: Signal<Option<Pick>>,
+    /// What the keys are doing when nothing is being picked
+    #[prop(into)]
+    note: Signal<Option<&'static str>>,
 ) -> impl IntoView {
     let said = move || {
         let pick = draft.with(|d| d.as_ref()?.pick).or_else(|| live.get());
-        pick.map(|pick| match pick {
+        let Some(pick) = pick else {
+            return note.get();
+        };
+        Some(pick).map(|pick| match pick {
             Pick::Before => "Select preceding nodes",
             Pick::After => "Select succeeding nodes",
             Pick::Group => "Click a group to put it in, or nothing for the top level",

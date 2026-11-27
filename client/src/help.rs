@@ -56,6 +56,7 @@ const PAGES: &[Page] = &[(
                         "Pick its group: click a group, or nothing for the top level",
                     ),
                     (&["c"], "Edit it and take hold of the day it is held to"),
+                    (&["m"], "Move its days, then s its start, e its end"),
                     (&["delete"], "Delete it, after asking, as backspace does"),
                     (&["escape"], "End a pick"),
                 ],
@@ -66,6 +67,7 @@ const PAGES: &[Page] = &[(
                     (&["n"], "Type in its name, at the end"),
                     (&["tab"], "Leave the name for these keys"),
                     (&["l"], "Type its days"),
+                    (&["m"], "Move its days, then s its start, e its end"),
                     (&["w"], "Put the keys on its workers (a task)"),
                     (
                         &["d", "f", "g"],
@@ -98,6 +100,18 @@ const PAGES: &[Page] = &[(
                     (&["e", "f", "l"], "Hold it no earlier, exactly, or no later"),
                     (&["c"], "Go round holding its start, its end, or nothing"),
                     (&["escape"], "Leave it where it was"),
+                ],
+            ),
+            (
+                "Moving its days",
+                &[
+                    (&["←", "→"], "A day either way, as h and l do"),
+                    (
+                        &["s", "e"],
+                        "Its start, or its end, which for one not started is how long it lasts",
+                    ),
+                    (&["m"], "All of its days, for a task that has started"),
+                    (&["enter"], "Stop, as escape does"),
                 ],
             ),
             (
