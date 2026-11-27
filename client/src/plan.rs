@@ -386,6 +386,18 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         move || open_node_exists.get(),
         Callback::new(move |()| guard.then(on_close)),
     );
+    // but first it ends a pick, leaving what was picked for as it was
+    let lit = Memo::new(move |_| draft.with(|d| d.as_ref().is_some_and(|d| d.pick.is_some())));
+    crate::escape::on_escape(
+        move || lit.get(),
+        Callback::new(move |()| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick = None;
+                }
+            })
+        }),
+    );
     let on_blank = Callback::new(move |()| {
         if live_click(None) || card_click(None) {
             return;

@@ -614,6 +614,13 @@ pub fn Gantt(
             .as_ref()
             .and_then(|s| s.pin)
             .filter(|_| !flag_dragged);
+        // while the day is being picked the band goes with the pointer, to the day a click
+        // would put it on
+        let picking = staged.as_ref().is_some_and(|s| s.daying) && pointer_at != (0.0, 0.0);
+        let held = match (pinned, held) {
+            (Some(node), Some(pin)) if picking => Some(flagged(node, pin.end, pointer_at.0)),
+            _ => held,
+        };
         if let Some(pin) = pinned.zip(held).and_then(|(n, p)| pin_view(n, p, false)) {
             shift::paint_pin(ctx, &signed(pin));
         }
