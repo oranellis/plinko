@@ -15,6 +15,7 @@ use crate::{
     nav::Availability,
     nav::{Route, navigate, use_route},
     people::People,
+    person::{PersonWindowView, provide_person_window},
     plan::PlanPage,
     plans::Plans,
     preferences::Preferences,
@@ -27,7 +28,7 @@ enum Page {
     Home,
     Plans,
     Plan(plinko::common::short_id::ShortId),
-    Allocations(Option<uuid::Uuid>),
+    Allocations(uuid::Uuid),
     People,
     Preferences,
     Availability(crate::nav::Availability),
@@ -39,14 +40,19 @@ pub fn Shell() -> impl IntoView {
     let sync = use_sync();
     let route = use_route();
     provide_context(route);
+    // a person's window over the page goes when the page changes
+    let person = provide_person_window();
+    Effect::new(move |_| {
+        route.track();
+        person.set(None);
+    });
     // changing tab or opening an item stays on the same page, so its state is kept
     let page = Memo::new(move |_| match route.get() {
         Route::Home => Page::Home,
         Route::Plans => Page::Plans,
         Route::Plan(plan, _, _) => Page::Plan(plan),
-        Route::Allocations => Page::Allocations(None),
-        Route::UserAllocations(user) => Page::Allocations(Some(user)),
         Route::People => Page::People,
+        Route::Allocations(user) => Page::Allocations(user),
         Route::Preferences => Page::Preferences,
         Route::Availability(of) => Page::Availability(of),
     });
@@ -55,15 +61,13 @@ pub fn Shell() -> impl IntoView {
             .with(|t| t.as_ref().map(|t| t.name().to_string()).unwrap_or_default())
     };
     let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
-    // the pages of people other than you are only for admins, wherever the address says to go
+    // everyone sees everyone, but only an admin changes the hours of other people and the
+    // default ones, wherever the address says to go
     let allowed = Memo::new(move |_| {
         let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
-        let theirs = |user| Some(user) != me;
         let admins = match page.get() {
-            Page::People | Page::Availability(Availability::Default) => true,
-            Page::Allocations(Some(user)) | Page::Availability(Availability::User(user)) => {
-                theirs(user)
-            }
+            Page::Availability(Availability::Default) => true,
+            Page::Availability(Availability::User(user)) => Some(user) != me,
             _ => false,
         };
         !admins || admin()
@@ -86,21 +90,16 @@ pub fn Shell() -> impl IntoView {
         };
     let on_home = Signal::derive(move || route.get() == Route::Home);
     let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
-    let on_allocations = Signal::derive(move || route.get() == Route::Allocations);
-    // whoever is logged in now
-    let mine = Signal::derive(move || {
-        let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
-        Route::Availability(Availability::User(me.unwrap_or_default()))
+    let (plans, people) = (Signal::stored(Route::Plans), Signal::stored(Route::People));
+    // a person's allocations and hours are reached from the people page, so that stays lit
+    let on_people = Signal::derive(move || {
+        matches!(
+            route.get(),
+            Route::People
+                | Route::Allocations(_)
+                | Route::Availability(Availability::User(_) | Availability::Default)
+        )
     });
-    let (plans, allocations, people) = (
-        Signal::stored(Route::Plans),
-        Signal::stored(Route::Allocations),
-        Signal::stored(Route::People),
-    );
-    let on_availability = Signal::derive(move || matches!(route.get(), Route::Availability(_)));
-    // a person's allocations are looked at from the people page, so that stays lit
-    let on_people =
-        Signal::derive(move || matches!(route.get(), Route::People | Route::UserAllocations(_)));
     view! {
         <div class="shell">
             <header class="top">
@@ -111,9 +110,7 @@ pub fn Shell() -> impl IntoView {
                 <span class="tenant">{name}</span>
                 <nav class="tabs" aria-label="Main">
                 {link("Plans", IconKind::Gantt, plans, on_plans)}
-                    {link("Allocations", IconKind::Allocation, allocations, on_allocations)}
-                    {link("Availability", IconKind::Resources, mine, on_availability)}
-                    <Show when=admin>{link("People", IconKind::Users, people, on_people)}</Show>
+                    {link("People", IconKind::Users, people, on_people)}
                 </nav>
                 <Status />
                 <HelpButton />
@@ -121,6 +118,7 @@ pub fn Shell() -> impl IntoView {
             </header>
             <Toast />
             <Finder />
+            <PersonWindowView />
             <main class="page">
                 {move || match page.get() {
                     _ if !allowed.get() => view! { <p>"Only admins can see this."</p> }.into_any(),
@@ -135,9 +133,7 @@ pub fn Shell() -> impl IntoView {
             </main>
             <nav class="bottom" aria-label="Main">
                 {link("Plans", IconKind::Gantt, plans, on_plans)}
-                {link("Allocations", IconKind::Allocation, allocations, on_allocations)}
-                {link("Availability", IconKind::Resources, mine, on_availability)}
-                <Show when=admin>{link("People", IconKind::Users, people, on_people)}</Show>
+                {link("People", IconKind::Users, people, on_people)}
             </nav>
         </div>
     }

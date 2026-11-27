@@ -108,12 +108,10 @@ if (list) {
 }
 
 // allocations and the calendar of availability
-for (const [name, hash] of [["allocations", "#/allocations/user/00000000-0000-0000-0000-000000000001"], ["availability", "#/availability/user/me"]]) {
-  if (name === "availability") {
-    await page.evaluate(() => [...document.querySelectorAll("a")].find((a) => a.href.includes("#/availability")).click());
-  } else {
-    await page.evaluate((h) => { location.hash = h; }, hash);
-  }
+// both reached from your own part of the people page
+for (const [name, end] of [["allocations", "/allocations"], ["availability", "/hours"]]) {
+  await page.evaluate(() => { location.hash = "#/people"; }); await sleep(800);
+  await page.evaluate((end) => [...document.querySelectorAll(".me a")].find((a) => a.href.endsWith(end)).click(), end);
   await sleep(2500);
   await page.evaluate(() => document.querySelectorAll("[data-bench]").forEach((e) => e.removeAttribute("data-bench")));
   const area = await scrollable();

@@ -53,10 +53,14 @@ fn hours_of(
 fn title_of(of: Of) -> Signal<String> {
     let sync = use_sync();
     Signal::derive(move || {
+        let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
         sync.tenant
             .with(|t| {
                 let t = t.as_ref()?;
                 Some(match of {
+                    Of::User(id) if t.users().contains_key(&id) && Some(id) == me => {
+                        "My Hours".to_string()
+                    }
                     Of::User(id) => format!("Hours of {}", t.users().get(&id)?.name()),
                     Of::Plan(id) => {
                         format!("Default Availability of {}", t.plans().get(&id)?.name())
@@ -74,13 +78,10 @@ fn title_of(of: Of) -> Signal<String> {
 #[component]
 pub fn Availability(of: Of) -> impl IntoView {
     let (rules, send) = hours_of(of);
-    let me = use_sync().me.get_untracked().map(|m| m.id);
-    // your own hours are a main page, other people's and a plan's are reached from somewhere else
+    // people's hours are reached from the people page, a plan's from its settings
     let back = match of {
-        Of::User(id) if Some(id) == me => None,
-        Of::User(_) => Some(Route::People),
+        Of::User(_) | Of::Default => Some(Route::People),
         Of::Plan(id) => Some(Route::Plan(id, PlanTab::Settings, None)),
-        Of::Default => Some(Route::People),
     };
     view! {
         <div class="calpage">

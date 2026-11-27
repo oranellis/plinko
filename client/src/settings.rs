@@ -324,7 +324,7 @@ fn People(plan: ShortId) -> impl IntoView {
             <For each=move || members.get() key=|m| format!("{m:?}") children=move |(id, name, tagged)| {
                 view! {
                     <div class="row">
-                        <strong>{name}</strong>
+                        <strong><crate::person::PersonButton id=id name=name /></strong>
                         {move || tags.get().into_iter().map(|(tag, tag_name)| {
                             let on = tagged.contains(&tag);
                             let tagged = tagged.clone();

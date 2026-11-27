@@ -149,13 +149,6 @@ pub fn Icon(
             <path d="M3.2 13.2C3.6 10.8 5.4 9.6 8 9.6S12.4 10.8 12.8 13.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-dasharray="1.4 1.6" />
         }
         .into_any(),
-        IconKind::Calendar => view! {
-            <rect x="2.2" y="3.2" width="11.6" height="10.6" rx="1.6" stroke="currentColor" stroke-width="1.2" />
-            <line x1="2.2" y1="6.6" x2="13.8" y2="6.6" stroke="currentColor" stroke-width="1.2" />
-            <line x1="5.4" y1="1.8" x2="5.4" y2="4.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-            <line x1="10.6" y1="1.8" x2="10.6" y2="4.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-        }
-        .into_any(),
         IconKind::Pencil => view! {
             <path d="M2.6 13.4L3.2 10.4L10.6 3L13 5.4L5.6 12.8Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" />
             <line x1="9.2" y1="4.4" x2="11.6" y2="6.8" stroke="currentColor" stroke-width="1.2" />
@@ -241,7 +234,6 @@ pub enum IconKind {
     Alert,
     Person,
     Tick,
-    Calendar,
     Placeholder,
     Circle,
     Pause,

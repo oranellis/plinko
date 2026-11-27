@@ -24,6 +24,7 @@ mod mine;
 mod model;
 mod nav;
 mod people;
+mod person;
 mod plan;
 mod plans;
 mod preferences;

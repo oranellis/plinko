@@ -1,4 +1,5 @@
-//! Managing the tenant: who has a login and the groups they are in. For admins.
+//! Everyone in the tenant: you at the top, with your work and hours, then everyone else as
+//! cards, and the groups they are in. Everyone can look; admins change other people.
 
 // modules {{{
 use std::collections::HashSet;
@@ -17,10 +18,12 @@ use uuid::Uuid;
 
 use crate::{
     api,
-    availability::AvailabilityWindow,
     icons::IconKind,
-    nav::{Availability, Route, navigate},
-    ui::{Actions, Block, Choice, Field, IconButton, Modal, Picker, Select, Text, use_sync},
+    nav::{Availability, Route},
+    person::{AHEAD, Face, HourCells, PersonView, busy, hours_from, use_load, use_open_person},
+    ui::{
+        Actions, Block, Choice, Field, IconButton, Modal, Picker, Select, Text, use_sync, use_today,
+    },
 };
 // }}}
 
@@ -28,8 +31,6 @@ use crate::{
 struct Person {
     id: Uuid,
     name: String,
-    email: String,
-    admin: bool,
 }
 
 // Person supporting types {{{
@@ -40,12 +41,24 @@ struct Group {
     parent: Option<Uuid>,
     members: Vec<Uuid>,
 }
+
+/// What the form for a person changes
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormMode {
+    /// Someone new, with a password to start with
+    New,
+    /// Name, email and whether they are an admin
+    Details,
+    Password,
+}
 // }}}
 
 // People {{{
 #[component]
 pub fn People() -> impl IntoView {
     let sync = use_sync();
+    let me = move || sync.me.with(|m| m.as_ref().map(|m| m.id));
+    let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
     let people = Memo::new(move |_| {
         sync.tenant.with(|t| {
             let mut all: Vec<Person> = t
@@ -56,14 +69,21 @@ pub fn People() -> impl IntoView {
                         .map(|(id, u)| Person {
                             id: *id,
                             name: u.name().to_string(),
-                            email: u.email().to_string(),
-                            admin: u.role() == Role::Admin,
                         })
                         .collect()
                 })
                 .unwrap_or_default();
             all.sort_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)));
             all
+        })
+    });
+    let others = Memo::new(move |_| {
+        let me = me();
+        people.with(|p| {
+            p.iter()
+                .filter(|p| Some(p.id) != me)
+                .cloned()
+                .collect::<Vec<_>>()
         })
     });
     let groups = Memo::new(move |_| {
@@ -90,77 +110,73 @@ pub fn People() -> impl IntoView {
             all
         })
     });
-    let editing = RwSignal::new(None::<Option<Uuid>>);
+    let adding = RwSignal::new(false);
     let editing_group = RwSignal::new(None::<Option<Uuid>>);
-    let hours = RwSignal::new(None::<Uuid>);
-    let default_hours = RwSignal::new(false);
     view! {
         <div class="people">
-            <div class="bar"><h1>"People"</h1></div>
-            <section>
+            <h1>"People"</h1>
+            {move || me().map(|me| view! { <section class="me"><PersonView who=me /></section> })}
+            <section class="everyone">
                 <div class="bar">
-                    <h2>"Users"</h2>
-                    <button type="button" on:click=move |_| default_hours.set(true)>"Default Hours"</button>
-                    <button type="button" class="primary" on:click=move |_| editing.set(Some(None))>"New User"</button>
+                    <h2>"Everyone"</h2>
+                    <Show when=admin>
+                        <button type="button" class="primary" on:click=move |_| adding.set(true)>"New User"</button>
+                    </Show>
                 </div>
-                <ul class="items">
-                    <For each=move || people.get() key=|p| format!("{p:?}") children=move |p| {
-                        let id = p.id;
-                        view! {
-                            <li class="row line">
-                                <strong>{p.name.clone()}</strong>
-                                <span class="small">{p.email.clone()}{if p.admin { " · admin" } else { "" }}</span>
-                                <span class="actions-right">
-                                    <IconButton kind=IconKind::Calendar label="Availability" on_click=Callback::new(move |()| hours.set(Some(id))) />
-                                    <IconButton kind=IconKind::Allocation label="Allocations" on_click=Callback::new(move |()| navigate(Route::UserAllocations(id))) />
-                                    <IconButton kind=IconKind::Pencil label="Edit" on_click=Callback::new(move |()| editing.set(Some(Some(id)))) />
-                                    <Show
-                                        when=move || sync.me.with(|m| m.as_ref().map(|m| m.id)) != Some(id)
-                                        fallback=|| view! { <span class="icon spacer"></span> }
-                                    >
-                                        <IconButton kind=IconKind::Close label="Remove" on_click=Callback::new(move |()| {
-                                            sync.send(TenantUpdateType::User(Crud::Remove(id)));
-                                        }) />
-                                    </Show>
-                                </span>
-                            </li>
-                        }
+                <ul class="personcards">
+                    <For each=move || others.get() key=|p| (p.id, p.name.clone()) children=move |p| view! {
+                        <li><PersonCard id=p.id name=p.name /></li>
                     } />
+                    <li><NewStarters /></li>
                 </ul>
             </section>
-            <section>
+            <section class="groups">
                 <div class="bar">
                     <h2>"Groups"</h2>
-                    <button type="button" on:click=move |_| editing_group.set(Some(None))>"New Group"</button>
+                    <Show when=admin>
+                        <button type="button" on:click=move |_| editing_group.set(Some(None))>"New Group"</button>
+                    </Show>
                 </div>
+                <Show when=move || groups.with(Vec::is_empty)>
+                    <p class="small">"No groups yet."</p>
+                </Show>
                 <ul class="items">
                     <For each=move || groups.get() key=|g| format!("{g:?}") children=move |g| {
                         let id = g.id;
+                        let open = use_open_person();
+                        let inside = g.parent.and_then(|p| groups.with_untracked(|all| all.iter().find(|x| x.id == p).map(|x| x.name.clone())));
+                        let faces = g.members.iter().filter_map(|m| {
+                            let name = people.with_untracked(|p| p.iter().find(|p| p.id == *m).map(|p| p.name.clone()))?;
+                            let m = *m;
+                            let title = name.clone();
+                            Some(view! {
+                                <button type="button" class="facebtn" title=title on:click=move |_| open.run(m)>
+                                    <Face id=m name=name size=26 />
+                                </button>
+                            })
+                        }).collect_view();
                         view! {
-                            <li class="row line">
+                            <li class="row line group">
                                 <strong>{g.name.clone()}</strong>
-                                <span class="small">{format!("{} people", g.members.len())}</span>
-                                <span class="actions-right">
-                                    <IconButton kind=IconKind::Pencil label="Edit" on_click=Callback::new(move |()| editing_group.set(Some(Some(id)))) />
-                                    <IconButton kind=IconKind::Close label="Remove" on_click=Callback::new(move |()| {
-                                        sync.send(TenantUpdateType::UserGroup(Crud::Remove(id)));
-                                    }) />
-                                </span>
+                                {inside.map(|i| view! { <span class="small">{format!("in {i}")}</span> })}
+                                <span class="faces">{faces}</span>
+                                <Show when=admin>
+                                    <span class="actions-right">
+                                        <IconButton kind=IconKind::Pencil label="Edit" on_click=Callback::new(move |()| editing_group.set(Some(Some(id)))) />
+                                        <IconButton kind=IconKind::Close label="Remove" on_click=Callback::new(move |()| {
+                                            sync.send(TenantUpdateType::UserGroup(Crud::Remove(id)));
+                                        }) />
+                                    </span>
+                                </Show>
                             </li>
                         }
                     } />
                 </ul>
             </section>
         </div>
-        {move || hours.get().map(|user| view! {
-            <AvailabilityWindow of=Availability::User(user) on_close=Callback::new(move |()| hours.set(None)) />
-        })}
-        <Show when=move || default_hours.get()>
-            <AvailabilityWindow of=Availability::Default on_close=Callback::new(move |()| default_hours.set(false)) />
+        <Show when=move || adding.get()>
+            <PersonForm which=None mode=FormMode::New on_close=Callback::new(move |()| adding.set(false)) />
         </Show>
-        {move || editing.get().map(|which| view! {
-            <PersonForm which=which people=people on_close=Callback::new(move |_| editing.set(None)) />
-        })}
         {move || editing_group.get().map(|which| view! {
             <GroupForm which=which people=people groups=groups on_close=Callback::new(move |_| editing_group.set(None)) />
         })}
@@ -168,29 +184,100 @@ pub fn People() -> impl IntoView {
 }
 // }}}
 
+// PersonCard {{{
+/// Someone as a card: who they are and how booked their next two weeks are, which opens their
+/// window
+#[component]
+fn PersonCard(id: Uuid, name: String) -> impl IntoView {
+    let open = use_open_person();
+    let load = use_load(id, AHEAD);
+    let said = Memo::new(move |_| load.with(|l| busy(l)));
+    let label = name.clone();
+    view! {
+        <button type="button" class="personcard" on:click=move |_| open.run(id)>
+            <Face id=id name=label size=36 />
+            <strong>{name}</strong>
+            <span class="spark" aria-hidden="true">
+                {move || load.get().into_iter().map(|d| {
+                    let share = if d.capacity == 0 {
+                        if d.booked > 0 { 1.2 } else { 0.0 }
+                    } else {
+                        (f64::from(d.booked) / f64::from(d.capacity)).min(1.2)
+                    };
+                    let over = d.booked > u32::from(d.capacity);
+                    view! { <i class:over=over style=format!("height:{}%", (share / 1.2 * 100.0).max(4.0))></i> }
+                }).collect_view()}
+            </span>
+            <span class=move || format!("busy {}", said.get().1)>{move || said.get().0}</span>
+        </button>
+    }
+}
+// }}}
+
+// NewStarters {{{
+/// The hours new people and plans start with, as a card of their own
+#[component]
+fn NewStarters() -> impl IntoView {
+    let sync = use_sync();
+    let today = use_today();
+    let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
+    let days = Signal::derive(move || {
+        let today = today.get();
+        let from = today
+            - chrono::Days::new(
+                crate::format::use_preferences()
+                    .week_start
+                    .get()
+                    .offset(today) as u64,
+            );
+        sync.tenant.with(|t| {
+            t.as_ref()
+                .map(|t| {
+                    hours_from(t.default_schedule(), from)
+                        .into_iter()
+                        .take(14)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+    });
+    let inner = move || {
+        view! {
+            <strong>"New starters"</strong>
+            <span class="small">"The hours new people and plans start with"</span>
+            <HourCells days=days today=today />
+        }
+    };
+    move || {
+        if admin() {
+            view! {
+                <a class="personcard starters" href=Route::Availability(Availability::Default).path()>{inner()}</a>
+            }.into_any()
+        } else {
+            view! { <div class="personcard starters">{inner()}</div> }.into_any()
+        }
+    }
+}
+// }}}
+
 // PersonForm {{{
 #[component]
-fn PersonForm(
-    which: Option<Uuid>,
-    people: Memo<Vec<Person>>,
-    on_close: Callback<()>,
-) -> impl IntoView {
+pub fn PersonForm(which: Option<Uuid>, mode: FormMode, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
-    let existing =
-        which.and_then(|id| people.with_untracked(|p| p.iter().find(|p| p.id == id).cloned()));
-    let name = RwSignal::new(
-        existing
-            .as_ref()
-            .map(|p| p.name.clone())
-            .unwrap_or_default(),
-    );
-    let email = RwSignal::new(
-        existing
-            .as_ref()
-            .map(|p| p.email.clone())
-            .unwrap_or_default(),
-    );
-    let admin = RwSignal::new(existing.as_ref().is_some_and(|p| p.admin));
+    let existing = which.and_then(|id| {
+        sync.tenant.with_untracked(|t| {
+            let u = t.as_ref()?.users().get(&id)?;
+            Some((
+                id,
+                u.name().to_string(),
+                u.email().to_string(),
+                u.role() == Role::Admin,
+            ))
+        })
+    });
+    let name = RwSignal::new(existing.as_ref().map(|p| p.1.clone()).unwrap_or_default());
+    let email = RwSignal::new(existing.as_ref().map(|p| p.2.clone()).unwrap_or_default());
+    let admin = RwSignal::new(existing.as_ref().is_some_and(|p| p.3));
     let password = RwSignal::new(String::new());
     let failure = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
@@ -198,10 +285,20 @@ fn PersonForm(
     let added = RwSignal::new(None::<Uuid>);
     // the server wants the current password for your own, which Preferences asks for
     let yourself = which.is_some() && which == sync.me.with_untracked(|m| m.as_ref().map(|m| m.id));
-    let title = if existing.is_some() {
-        "Edit User"
-    } else {
-        "New User"
+    // only an admin makes others admins, and not themselves any less of one
+    let can_promote = sync
+        .me
+        .with_untracked(|m| m.as_ref().is_some_and(|m| m.admin))
+        && !yourself;
+    let (details, secret_too) = match mode {
+        FormMode::New => (true, true),
+        FormMode::Details => (true, false),
+        FormMode::Password => (false, true),
+    };
+    let title = match mode {
+        FormMode::New => "New User",
+        FormMode::Details => "Edit Details",
+        FormMode::Password => "Set Password",
     };
     let save = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
@@ -212,8 +309,7 @@ fn PersonForm(
         };
         let secret = password.get_untracked();
         // as the server has it, so a new person is not added without one
-        let short = secret.chars().count() < 8;
-        if short && (existing.is_none() || !secret.is_empty()) {
+        if secret_too && secret.chars().count() < 8 {
             failure.set(Some(
                 "The password must be at least 8 characters".to_string(),
             ));
@@ -224,19 +320,21 @@ fn PersonForm(
         }
         failure.set(None);
         match &existing {
-            Some(old) => {
-                let patch = TenantLoginUserPatch {
-                    id: old.id,
-                    name: (old.name != name.get_untracked()).then(|| name.get_untracked()),
-                    email: (old.email != email.get_untracked()).then(|| email.get_untracked()),
-                    role: (old.admin != admin.get_untracked()).then_some(role),
-                };
-                sync.send(TenantUpdateType::User(Crud::Update(patch)));
-                if secret.is_empty() {
+            Some((id, old_name, old_email, old_admin)) => {
+                if details {
+                    let patch = TenantLoginUserPatch {
+                        id: *id,
+                        name: (*old_name != name.get_untracked()).then(|| name.get_untracked()),
+                        email: (*old_email != email.get_untracked()).then(|| email.get_untracked()),
+                        role: (can_promote && *old_admin != admin.get_untracked()).then_some(role),
+                    };
+                    sync.send(TenantUpdateType::User(Crud::Update(patch)));
+                }
+                if !secret_too {
                     on_close.run(());
                     return;
                 }
-                let id = old.id;
+                let id = *id;
                 busy.set(true);
                 spawn_local(async move {
                     match api::change_password(Some(id), None, &secret).await {
@@ -289,27 +387,28 @@ fn PersonForm(
     view! {
         <Modal title=title on_close=on_close>
             <form class="form" on:submit=save>
-                <Field label="Name"><Text value=name on_input=Callback::new(move |v| name.set(v)) /></Field>
-                <Field label="Email"><Text value=email on_input=Callback::new(move |v| email.set(v)) kind="email" /></Field>
-                <label class="check">
-                    <input type="checkbox" prop:checked=move || admin.get() on:change=move |ev| admin.set(event_target_checked(&ev)) />
-                    "Admin (can manage people and see every plan)"
-                </label>
-                {if yourself {
-                    view! {
-                        <p class="small">
-                            "Your own password is changed in "
-                            <a href=Route::Preferences.path() on:click=move |_| on_close.run(())>"Preferences"</a>
-                            ", given the current one"
-                        </p>
-                    }.into_any()
-                } else {
-                    view! {
-                        <Field label=if which.is_some() { "New password, leave empty to keep" } else { "Password, at least 8 characters" }>
-                            <Text value=password on_input=Callback::new(move |v| password.set(v)) kind="password" />
-                        </Field>
-                    }.into_any()
-                }}
+                {details.then(|| view! {
+                    <Field label="Name"><Text value=name on_input=Callback::new(move |v| name.set(v)) /></Field>
+                    <Field label="Email"><Text value=email on_input=Callback::new(move |v| email.set(v)) kind="email" /></Field>
+                })}
+                {(details && (can_promote || which.is_none())).then(|| view! {
+                    <label class="check">
+                        <input type="checkbox" prop:checked=move || admin.get() on:change=move |ev| admin.set(event_target_checked(&ev)) />
+                        "Admin (can manage people and see every plan)"
+                    </label>
+                })}
+                {(details && yourself).then(|| view! {
+                    <p class="small">
+                        "Your own password is changed in "
+                        <a href=Route::Preferences.path() on:click=move |_| on_close.run(())>"Preferences"</a>
+                        ", given the current one"
+                    </p>
+                })}
+                {secret_too.then(|| view! {
+                    <Field label="Password, at least 8 characters">
+                        <Text value=password on_input=Callback::new(move |v| password.set(v)) kind="password" />
+                    </Field>
+                })}
                 <Show when=move || failure.get().is_some()><p class="error">{move || failure.get()}</p></Show>
                 <Actions on_cancel=on_close />
             </form>

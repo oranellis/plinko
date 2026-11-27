@@ -332,6 +332,8 @@ fn Workers(
     open_row: RwSignal<Option<usize>>,
 ) -> impl IntoView {
     let named = worker_options(plan);
+    let open_person = crate::person::use_open_person();
+    let sync = use_sync();
     // a row asked to open has done so once its list has seen it
     Effect::new(move |_| {
         if open_row.get().is_some() {
@@ -398,8 +400,28 @@ fn Workers(
                         all.iter().filter(|c| !taken.contains(&c.value)).cloned().collect::<Vec<_>>()
                     })
                 });
+                // a person on the row, whose face opens more about them
+                let person = Signal::derive(move || {
+                    let id = allocations.with(|a| match a.get(i) {
+                        Some((Worker::User(id), _)) => Some(*id),
+                        _ => None,
+                    })?;
+                    let name = sync.tenant.with(|t| t.as_ref()?.users().get(&id).map(|u| u.name().to_string()))?;
+                    Some((id, name))
+                });
                 view! {
                     <div class="row" class:cursor=move || cursor.get() == Some(i)>
+                        {move || match person.get() {
+                            Some((id, name)) => {
+                                let title = format!("About {name}");
+                                view! {
+                                <button type="button" class="facebtn" title=title on:click=move |_| open_person.run(id)>
+                                    <crate::person::Face id=id name=name size=26 />
+                                </button>
+                                }.into_any()
+                            }
+                            None => view! { <span class="facebtn"></span> }.into_any(),
+                        }}
                         <Picker
                             value=worker
                             choices=open

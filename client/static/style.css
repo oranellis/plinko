@@ -199,9 +199,79 @@ table.grid th:first-child, table.grid td:first-child { text-align: left; positio
 .agenda h3 { margin: 0 0 6px; font-size: 14px; }
 .agenda .over h3 { color: var(--danger-text); }
 .agenda .item { display: grid; text-decoration: none; color: var(--text); padding: 7px 18px; background: var(--bg); border-radius: var(--radius); }
-.people { display: grid; gap: 16px; max-width: 760px; margin: 0 auto; }
-.people section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 10px; }
+/* the people page: you, then everyone as cards, then the groups */
+.people { display: grid; gap: 20px; max-width: 900px; margin: 0 auto; min-width: 0; }
+.people > section { min-width: 0; display: grid; gap: 10px; }
+.people > section .bar { margin: 0; }
+.people > section .bar h2 { margin-right: auto; }
+.people h2 { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
 .page:has(.people) { padding: 16px; }
+.me { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+.personcards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); gap: 10px; }
+.personcards li { min-width: 0; }
+.personcard { width: 100%; height: 100%; display: grid; gap: 6px; align-content: start; justify-items: start; text-align: left; padding: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--text); text-decoration: none; font: inherit; min-height: 0; }
+button.personcard:hover, a.personcard:hover { background: var(--raised); border-color: var(--accent); }
+.personcard strong { font-size: 14px; color: var(--title); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.personcard.starters { border-style: dashed; background: none; }
+.personcard.starters .hourcells { width: 100%; }
+.spark { display: flex; align-items: end; gap: 2px; height: 26px; width: 100%; }
+.spark i { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; opacity: 0.8; }
+.spark i.over { background: var(--danger-text); opacity: 1; }
+.busy { font-size: 12px; color: var(--muted); }
+.busy.free { color: var(--ok); }
+.busy.full { color: var(--amber); }
+.busy.over { color: var(--danger-text); font-weight: 600; }
+.group { gap: 10px; flex-wrap: wrap; }
+.group .faces { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; }
+
+/* a person: who they are, their next two weeks and their hours */
+.face { width: var(--size); height: var(--size); flex: none; border-radius: 50%; display: inline-grid; place-items: center; color: #fff; font-weight: 600; font-size: calc(var(--size) * 0.4); letter-spacing: 0.02em; user-select: none; }
+button.facebtn { padding: 0; min-height: 0; background: none; border: none; border-radius: 50%; flex: none; }
+button.facebtn:hover .face { box-shadow: 0 0 0 2px var(--accent); }
+span.facebtn { width: 26px; flex: none; }
+button.person-link { display: inline; padding: 0; min-height: 0; background: none; border: none; font: inherit; color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+button.person-link:hover { color: var(--accent-hover); }
+.person { display: grid; gap: 18px; min-width: 0; }
+.modal.bare { width: min(620px, 100%); }
+.modal.bare .body { padding: 18px; }
+.person-head { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.person-head .icon { align-self: start; }
+.person-names { display: grid; gap: 3px; flex: 1; min-width: 0; }
+.person-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.person-title strong { font-size: 20px; color: var(--title); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rolebadge { font-size: 11px; color: var(--accent-hover); border: 1px solid var(--accent); border-radius: 10px; padding: 0 7px; line-height: 17px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips:empty { display: none; }
+.chip { font-size: 11px; background: var(--raised); border-radius: 10px; padding: 1px 8px; color: var(--text); }
+a.quiet { font-size: 13px; color: var(--muted); text-decoration: none; white-space: nowrap; }
+a.quiet:hover { color: var(--accent-hover); }
+.person-head > a.quiet { align-self: start; }
+.person-part { display: grid; gap: 8px; min-width: 0; }
+.person-part-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.person-part-head h3 { margin: 0; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.more-link { justify-self: end; }
+.booked { --names: minmax(70px, 28%); display: grid; gap: 4px; min-width: 0; }
+.booked.none { display: none; }
+.brow { display: grid; grid-template-columns: var(--names) repeat(var(--days), minmax(0, 1fr)); column-gap: 2px; align-items: center; min-width: 0; }
+.brow > * { grid-row: 1; }
+.brow.pies { min-height: 26px; }
+.bday { text-align: center; font-size: 11px; color: var(--muted); }
+.bday.off { opacity: 0.5; }
+.bday.today { color: var(--accent-hover); font-weight: 700; }
+.bpie { display: grid; place-items: center; min-width: 0; }
+.bpie svg { width: 100%; max-width: 26px; height: auto; }
+.blabel { grid-column: 1; min-width: 0; padding: 0 8px 0 0; min-height: 0; background: none; border: none; text-align: left; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.blabel:hover { color: var(--accent-hover); }
+.blabel.ghost, .blabel.more { color: var(--muted); font-style: italic; }
+.bbar { height: 12px; min-height: 0; padding: 0; border: none; border-radius: 6px; opacity: 0.85; }
+button.bbar:hover { opacity: 1; box-shadow: 0 0 0 2px var(--text); }
+.bbar.ghost { background: repeating-linear-gradient(135deg, #555 0 4px, #3a3a3c 4px 8px); }
+.hourcells { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; max-width: 360px; }
+.hhead { text-align: center; font-size: 10px; color: var(--muted); }
+.hcell { position: relative; height: 14px; border-radius: 3px; background: color-mix(in srgb, var(--accent) calc(var(--shade, 0) * 70%), var(--soft)); }
+.hcell.today { box-shadow: inset 0 0 0 1.5px #fff; }
+.hcell.marked::after { content: ""; position: absolute; right: 2px; top: 2px; width: 4px; height: 4px; border-radius: 50%; background: #ffd600; }
+.person-actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--line); }
 
 @media (max-width: 719px) {
   :root { --top: 40px; }

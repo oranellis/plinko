@@ -65,6 +65,9 @@ pub fn Modal(
     /// A big window, for a calendar
     #[prop(optional)]
     wide: bool,
+    /// Without the title bar, for what has a top and a close button of its own
+    #[prop(optional)]
+    bare: bool,
     children: Children,
 ) -> impl IntoView {
     let label = move || title.get();
@@ -117,6 +120,7 @@ pub fn Modal(
             <div
                 class="modal"
                 class:wide=wide
+                class:bare=bare
                 role="dialog"
                 aria-modal="true"
                 aria-label=label
@@ -124,10 +128,12 @@ pub fn Modal(
                 node_ref=modal
                 on:click=|ev| ev.stop_propagation()
             >
-                <header>
-                    <h2>{move || title.get()}</h2>
-                    <IconButton kind=IconKind::Close label="Close" on_click=on_close />
-                </header>
+                {(!bare).then(|| view! {
+                    <header>
+                        <h2>{move || title.get()}</h2>
+                        <IconButton kind=IconKind::Close label="Close" on_click=on_close />
+                    </header>
+                })}
                 <div class="body">{children()}</div>
             </div>
         </div>

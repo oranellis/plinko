@@ -54,8 +54,10 @@ fn FinderWindow(on_close: Callback<()>) -> impl IntoView {
     });
     let at = RwSignal::new(0usize);
     let places = Memo::new(move |_| {
-        let me = sync.me.with(|m| m.as_ref().map(|m| (m.id, m.admin)));
-        let (me, admin) = me.unwrap_or_default();
+        let me = sync
+            .me
+            .with(|m| m.as_ref().map(|m| m.id))
+            .unwrap_or_default();
         let page = |name: &str, icon, to| Place {
             name: name.to_string(),
             icon,
@@ -64,16 +66,18 @@ fn FinderWindow(on_close: Callback<()>) -> impl IntoView {
         let mut places = vec![
             page("Home", IconKind::Home, Route::Home),
             page("Plans", IconKind::Gantt, Route::Plans),
-            page("Allocations", IconKind::Allocation, Route::Allocations),
+            page("People", IconKind::Users, Route::People),
             page(
-                "Availability",
+                "My Allocations",
+                IconKind::Allocation,
+                Route::Allocations(me),
+            ),
+            page(
+                "My Hours",
                 IconKind::Resources,
                 Route::Availability(Availability::User(me)),
             ),
         ];
-        if admin {
-            places.push(page("People", IconKind::Users, Route::People));
-        }
         let mut plans: Vec<Place> = sync.tenant.with(|t| {
             let plans = t.as_ref().map(|t| t.plans().iter());
             plans

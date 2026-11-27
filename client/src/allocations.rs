@@ -90,7 +90,7 @@ const COLOURS: [&str; 10] = [
 // }}}
 
 // colour_of {{{
-fn colour_of(task: Uuid) -> &'static str {
+pub fn colour_of(task: Uuid) -> &'static str {
     COLOURS[(task.as_u128() % COLOURS.len() as u128) as usize]
 }
 // }}}
@@ -101,7 +101,7 @@ fn colour_of(task: Uuid) -> &'static str {
 /// person has, orange while there are still hours left, and red when they are overbooked. Hours
 /// past the eight go round a ring outside it.
 #[component]
-fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoView {
+pub fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoView {
     let colour = if booked > u32::from(capacity) {
         "#e57373"
     } else if booked == u32::from(capacity) {
@@ -166,22 +166,24 @@ fn slice(i: u8) -> String {
 // Allocations {{{
 #[component]
 pub fn Allocations(
-    /// Whose, yours when left out
-    #[prop(default = None)]
-    of: Option<Uuid>,
+    /// Whose
+    of: Uuid,
 ) -> impl IntoView {
     let sync = use_sync();
-    let mine = use_tasks_of(of);
-    let who = move || of.or_else(|| sync.me.with(|m| m.as_ref().map(|m| m.id)));
-    let title = move || match of {
-        None => "Allocations".to_string(),
-        Some(user) => sync.tenant.with(|t| {
+    let mine = use_tasks_of(Some(of));
+    let yours = move || sync.me.with(|m| m.as_ref().map(|m| m.id)) == Some(of);
+    let who = move || Some(of);
+    let title = move || {
+        if yours() {
+            return "My Allocations".to_string();
+        }
+        sync.tenant.with(|t| {
             let name = t
                 .as_ref()
-                .and_then(|t| t.users().get(&user))
+                .and_then(|t| t.users().get(&of))
                 .map_or("Someone", |u| u.name());
             format!("{name}'s Allocations")
-        }),
+        })
     };
     let today = Memo::new(move |_| {
         sync.tenant
@@ -316,11 +318,9 @@ pub fn Allocations(
     view! {
         <div class="plan">
             <div class="bar allocbar">
-                {of.is_some().then(|| view! {
-                    <a class="toolbar-btn" href=Route::People.path() title="Back to people" aria-label="Back">
-                        <Icon kind=IconKind::Back />
-                    </a>
-                })}
+                <a class="toolbar-btn" href=Route::People.path() title="Back to people" aria-label="Back">
+                    <Icon kind=IconKind::Back />
+                </a>
                 <h1>{title}</h1>
                 <button type="button" on:click=move |_| to_today()>"Today"</button>
             </div>
@@ -328,7 +328,7 @@ pub fn Allocations(
                 <div class="main">
                     <Show
                         when=move || mine.with(|m| !m.is_empty())
-                        fallback=move || view! { <p class="empty">{if of.is_some() { "No tasks are scheduled for them." } else { "No tasks are scheduled for you." }}</p> }
+                        fallback=move || view! { <p class="empty">{if yours() { "No tasks are scheduled for you." } else { "No tasks are scheduled for them." }}</p> }
                     >
                         <div
                             class="alloc scroll"
@@ -386,7 +386,7 @@ pub fn Allocations(
                                             view! {
                                             <th class="booked" class:off=matches!(d.weekday(), Weekday::Sat | Weekday::Sun) class:today=d == today.get() class:m1=d.day() == 1>
                                                 {(booked > 0).then(|| view! {
-                                                    <HourPie booked=booked capacity=capacity title=format!("{booked} of the {capacity} hours you have") />
+                                                    <HourPie booked=booked capacity=capacity title=format!("{booked} of {capacity} hours booked") />
                                                 })}
                                             </th>
                                         }}).collect_view()}

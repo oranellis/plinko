@@ -25,6 +25,7 @@ use crate::{
     icons::{Icon, IconKind},
     mine::set_status,
     model,
+    person::PersonButton,
     sync::Sync,
     ui::use_sync,
 };
@@ -258,11 +259,11 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
     let sync = use_sync();
     let lines = move || {
         let Some(d) = of.get() else {
-            return Vec::new();
+            return Default::default();
         };
         sync.tenant.with(|t| {
             let Some((t, p)) = t.as_ref().and_then(|t| Some((t, t.plans().get(&plan)?))) else {
-                return Vec::new();
+                return Default::default();
             };
             let group = match d.parent {
                 Parent::Plan => "Top level".to_string(),
@@ -287,10 +288,14 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
                 };
                 format!("Constraint: {held}{which} {}", format::day(pin.day))
             }));
-            let workers: Vec<String> = d
+            let workers: Vec<(Option<Uuid>, String, u8)> = d
                 .allocations
                 .iter()
                 .map(|(worker, hours)| {
+                    let person = match worker {
+                        Worker::User(id) => Some(*id),
+                        _ => None,
+                    };
                     let name = match worker {
                         Worker::Placeholder => "Placeholder".to_string(),
                         Worker::User(id) => t
@@ -309,22 +314,42 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
                             .map_or("A group", |g| g.name())
                             .to_string(),
                     };
-                    format!("{name} {hours}h")
+                    (person, name, *hours)
                 })
                 .collect();
-            if !workers.is_empty() {
-                lines.push(format!("Workers: {}", workers.join(", ")));
-            }
+            let mut after = Vec::new();
             let blocks = blocks_said(p, d.node);
             if !blocks.is_empty() {
-                lines.push(format!("Data: {}", blocks.join(", ")));
+                after.push(format!("Data: {}", blocks.join(", ")));
             }
-            lines
+            (lines, workers, after)
         })
+    };
+    let text = |lines: Vec<String>| {
+        lines
+            .into_iter()
+            .map(|line| view! { <li>{line}</li> })
+            .collect_view()
     };
     view! {
         <ul class="stripfacts">
-            {move || lines().into_iter().map(|line| view! { <li>{line}</li> }).collect_view()}
+            {move || {
+                let (before, workers, after) = lines();
+                // the people on it can be clicked for more about them
+                let workers = (!workers.is_empty()).then(|| {
+                    let last = workers.len() - 1;
+                    let names = workers.into_iter().enumerate().map(|(i, (person, name, hours))| {
+                        let sep = if i < last { ", " } else { "" };
+                        let who = match person {
+                            Some(id) => view! { <PersonButton id=id name=name /> }.into_any(),
+                            None => view! { <span>{name}</span> }.into_any(),
+                        };
+                        view! { {who}{format!(" {hours}h{sep}")} }
+                    }).collect_view();
+                    view! { <li>"Workers: "{names}</li> }
+                });
+                (text(before), workers, text(after))
+            }}
         </ul>
     }
 }

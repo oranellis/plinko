@@ -39,10 +39,10 @@ pub enum Route {
     Plans,
     /// A plan, and the item open in its editor
     Plan(ShortId, PlanTab, Option<Uuid>),
-    Allocations,
-    /// What a person is down for, reached from the people page
-    UserAllocations(Uuid),
+    /// Everyone: you at the top, then the others and the groups
     People,
+    /// What a person is down for, reached from their card
+    Allocations(Uuid),
     Preferences,
     /// Availability of a user, the plan default of a plan, or the default of the tenant
     Availability(Availability),
@@ -71,13 +71,12 @@ impl Route {
                 let open = open.map(|id| format!("/{id}")).unwrap_or_default();
                 format!("#/plan/{plan}/{}{open}", tab.name())
             }
-            Route::Allocations => "#/allocations".to_string(),
-            Route::UserAllocations(user) => format!("#/allocations/user/{user}"),
             Route::People => "#/people".to_string(),
+            Route::Allocations(user) => format!("#/people/{user}/allocations"),
             Route::Preferences => "#/preferences".to_string(),
-            Route::Availability(Availability::User(user)) => format!("#/availability/user/{user}"),
+            Route::Availability(Availability::User(user)) => format!("#/people/{user}/hours"),
             Route::Availability(Availability::Plan(plan)) => format!("#/availability/plan/{plan}"),
-            Route::Availability(Availability::Default) => "#/availability/default".to_string(),
+            Route::Availability(Availability::Default) => "#/people/new-starters/hours".to_string(),
         }
     }
 
@@ -94,21 +93,20 @@ impl Route {
                 Route::Plan(plan, tab.unwrap_or(PlanTab::Gantt), open)
             }
             ["plans"] => Route::Plans,
-            ["allocations"] => Route::Allocations,
-            ["allocations", "user", user] => {
-                Uuid::parse_str(user).map_or(Route::Home, Route::UserAllocations)
-            }
             ["people"] => Route::People,
-            ["preferences"] => Route::Preferences,
-            ["availability", "user", user] => match Uuid::parse_str(user) {
+            ["people", "new-starters", "hours"] => Route::Availability(Availability::Default),
+            ["people", user, "allocations"] => {
+                Uuid::parse_str(user).map_or(Route::Home, Route::Allocations)
+            }
+            ["people", user, "hours"] => match Uuid::parse_str(user) {
                 Ok(user) => Route::Availability(Availability::User(user)),
                 Err(_) => Route::Home,
             },
+            ["preferences"] => Route::Preferences,
             ["availability", "plan", plan] => match ShortId::from_str_checked(plan) {
                 Ok(plan) => Route::Availability(Availability::Plan(plan)),
                 Err(_) => Route::Home,
             },
-            ["availability", "default"] => Route::Availability(Availability::Default),
             _ => Route::Home,
         }
     }
@@ -148,9 +146,8 @@ mod tests {
             Route::Plans,
             Route::Plan(plan, PlanTab::List, None),
             Route::Plan(plan, PlanTab::Gantt, Some(item)),
-            Route::Allocations,
-            Route::UserAllocations(item),
             Route::People,
+            Route::Allocations(item),
             Route::Preferences,
             Route::Availability(Availability::User(item)),
             Route::Availability(Availability::Plan(plan)),
