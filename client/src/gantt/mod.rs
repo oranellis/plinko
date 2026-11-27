@@ -576,27 +576,28 @@ pub fn Gantt(
             }
         };
         // a corner of every item that is held to a day is marked: the left for its first day,
-        // the right for its last
-        let staged_tag =
-            pinned.map(|node| (node, staged.as_ref().and_then(|s| s.pin).map(|p| p.end)));
+        // the right for its last. The item being edited is marked as it would be once saved.
+        let staged_end = staged.as_ref().and_then(|s| s.pin).map(|p| p.end);
+        let tag = |mark: Mark, end: bool| {
+            // a milestone has no corner to speak of, and is marked with a dot by it
+            let dot = scene.with_untracked(|s| {
+                s.placed(mark)
+                    .is_some_and(|p| p.kind == arrange::Kind::Milestone)
+            });
+            match rect_of(mark) {
+                Some(rect) if dot => shift::paint_dot(ctx, rect),
+                Some(rect) => shift::paint_tag(ctx, rect, end),
+                None => {}
+            }
+        };
         tags.with(|tags| {
-            for (mark, end) in tags {
-                let end = match staged_tag {
-                    Some((node, held)) if node == *mark => held,
-                    _ => Some(*end),
-                };
-                // a milestone has no corner to speak of, and is marked with a dot by it
-                let dot = scene.with_untracked(|s| {
-                    s.placed(*mark)
-                        .is_some_and(|p| p.kind == arrange::Kind::Milestone)
-                });
-                match rect_of(*mark).zip(end) {
-                    Some((rect, _)) if dot => shift::paint_dot(ctx, rect),
-                    Some((rect, end)) => shift::paint_tag(ctx, rect, end),
-                    None => {}
-                }
+            for (mark, end) in tags.iter().filter(|(mark, _)| Some(*mark) != pinned) {
+                tag(*mark, *end);
             }
         });
+        if let Some((node, end)) = pinned.zip(staged_end) {
+            tag(node, end);
+        }
         // the day what is looked at is held to, faintly, and that of the item being edited
         if let Some(looked) = hovered.or(picked).filter(|n| Some(*n) != pinned) {
             let pin = editing
