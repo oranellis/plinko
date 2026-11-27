@@ -55,6 +55,19 @@ pub fn Shell() -> impl IntoView {
             .with(|t| t.as_ref().map(|t| t.name().to_string()).unwrap_or_default())
     };
     let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
+    // the pages of people other than you are only for admins, wherever the address says to go
+    let allowed = Memo::new(move |_| {
+        let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
+        let theirs = |user| Some(user) != me;
+        let admins = match page.get() {
+            Page::People | Page::Availability(Availability::Default) => true,
+            Page::Allocations(Some(user)) | Page::Availability(Availability::User(user)) => {
+                theirs(user)
+            }
+            _ => false,
+        };
+        !admins || admin()
+    });
     let _ = Role::Admin;
     let logout = move |()| {
         spawn_local(async move {
@@ -101,6 +114,7 @@ pub fn Shell() -> impl IntoView {
             <Finder />
             <main class="page">
                 {move || match page.get() {
+                    _ if !allowed.get() => view! { <p>"Only admins can see this."</p> }.into_any(),
                     Page::Home => view! { <Home /> }.into_any(),
                     Page::Plans => view! { <Plans /> }.into_any(),
                     Page::Plan(plan) => view! { <PlanPage plan=plan /> }.into_any(),
