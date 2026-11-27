@@ -3,6 +3,7 @@
 
 // modules {{{
 use leptos::prelude::*;
+use wasm_bindgen::{JsCast, closure::Closure};
 
 use crate::{
     icons::{Icon, IconKind},
@@ -37,6 +38,7 @@ const PAGES: &[Page] = &[(
                         &["shift"],
                         "Hold to show the handles of the item the pointer is near",
                     ),
+                    (&["?"], "This help"),
                 ],
             ),
             (
@@ -135,10 +137,35 @@ const PAGES: &[Page] = &[(
 // }}}
 
 // HelpButton {{{
-/// The question mark at the top right, and the window it opens
+/// The question mark at the top right, and the window it opens, which `?` opens too from
+/// anywhere that is not being typed into
 #[component]
 pub fn HelpButton() -> impl IntoView {
     let open = RwSignal::new(false);
+    let on_key =
+        Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
+            let target = ev
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+            let typing = target.is_some_and(|t| {
+                t.closest("input, textarea, select")
+                    .ok()
+                    .flatten()
+                    .is_some()
+            });
+            let window_open = web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.query_selector(".modal").ok().flatten())
+                .is_some();
+            if ev.key() == "?" && !typing && !window_open && !ev.default_prevented() {
+                ev.prevent_default();
+                open.try_set(true);
+            }
+        });
+    if let Some(window) = web_sys::window() {
+        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
+    }
+    on_key.forget();
     view! {
         <button
             type="button"

@@ -109,7 +109,7 @@ A task, group or milestone can be held to a day, one that is being created too. 
 
 ### Keys
 
-The question mark at the top right opens a help window (`help.rs`) with these, a page for each view. On the chart, typed at the page and not into a box:
+The question mark at the top right, or `?` anywhere, opens a help window (`help.rs`) with these, a page for each view. On the chart, typed at the page and not into a box:
 
 | Key | Does |
 | --- | --- |
