@@ -132,8 +132,8 @@ fn new_name(node: PlanNode) -> &'static str {
 pub fn Hint(draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let said = move || {
         draft.with(|d| d.as_ref()?.pick).map(|pick| match pick {
-            Pick::Before => "Click the items it waits for, or nothing to finish",
-            Pick::After => "Click the items that wait for it, or nothing to finish",
+            Pick::Before => "Select preceding nodes",
+            Pick::After => "Select succeeding nodes",
             Pick::Group => "Click a group to put it in, or nothing for the top level",
             Pick::Day => "Click the day to hold it to",
         })
