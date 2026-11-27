@@ -24,7 +24,7 @@ use web_sys::{CanvasRenderingContext2d, PointerEvent, WheelEvent};
 use crate::gantt::{
     arrange::{Arrangement, Mark},
     draw::{Frame, Hits, paint_header, paint_links, paint_marks, paint_notes},
-    layout::{Bounds, DAY_WIDTH, Rect, Viewport},
+    layout::{Bounds, Rect, Viewport},
     links::{Anchor, Link, Role},
     scene::Scene,
     shift::{Drag, DragView, Editing, Grips, Handle, Held, Overlay, Pin, PinView},
@@ -215,15 +215,13 @@ pub fn Gantt(
         }
     });
 
-    // the first time, put today in the middle
+    // the first time, put today in the middle, as the button for today does
     Effect::new(move |_| {
         let (width, _) = size.get();
         if viewport.get_untracked().is_none() && canvas.get().is_some() && width > 0.0 {
-            let scroll_x = (today_offset() * DAY_WIDTH - width / 2.0).max(0.0);
-            viewport.set(Some(Viewport {
-                scroll_x,
-                ..Viewport::default()
-            }));
+            let mut vp = Viewport::default();
+            vp.centre_on_day(today_offset(), bounds.get_untracked());
+            viewport.set(Some(vp));
         }
     });
     Effect::new(move |previous: Option<u32>| {
