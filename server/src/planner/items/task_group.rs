@@ -1,18 +1,20 @@
 // modules {{{
-use chrono::{Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match,
-    traits::patch::Patchable,
-    types::{
-        common::DateRange, data_block::DataBlocks, dependency::Dependency, error::PlinkoResult,
-        parent::Parent,
+    common::{
+        dates::{DateRange, NodeConstraint},
+        error::PlinkoResult,
     },
+    helpers::functions::check_id_match,
+    planner::items::{dependency::PlanNode, parent::Parent},
+    planner::resources::data_block::DataBlocks,
+    traits::patch::Patchable,
 };
 // }}}
 
+// constants {{{
 /// A single node around the items whose `parent` is this group (tasks, milestones, buffers and
 /// nested groups). Its dependencies decide the day members can start (`ParentStart`). The group
 /// then covers the first member's start to the last member's end, so it begins with its first
@@ -20,13 +22,16 @@ use crate::{
 /// days instead, and that stops applying as soon as a member is added.
 /// How many calendar days a group with no members lasts
 pub const EMPTY_DAYS: i64 = 3;
+// }}}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TaskGroup {
     id: Uuid,
     name: String,
-    dependencies: Vec<Dependency>,
+    dependencies: Vec<PlanNode>,
     parent: Parent,
+    /// A date for the first day of its first member or the last day of its last
+    time_constraint: NodeConstraint,
     description: Option<String>,
     data: DataBlocks,
 }
@@ -41,12 +46,16 @@ impl TaskGroup {
         &self.name
     }
 
-    pub fn dependencies(&self) -> &Vec<Dependency> {
+    pub fn dependencies(&self) -> &Vec<PlanNode> {
         &self.dependencies
     }
 
     pub fn parent(&self) -> Parent {
         self.parent
+    }
+
+    pub fn time_constraint(&self) -> NodeConstraint {
+        self.time_constraint
     }
 
     pub fn description(&self) -> Option<&str> {
@@ -64,19 +73,6 @@ impl TaskGroup {
     pub(crate) fn data_mut(&mut self) -> &mut DataBlocks {
         &mut self.data
     }
-
-    /// The range the group covers. `start` is the day its dependencies let members start, and
-    /// `members` are the ranges of its scheduled members (a milestone as its one day). With none,
-    /// `EMPTY_DAYS` days from `start`. Call it with no members only when the group has no members
-    /// at all, a group whose members are all unscheduled is unscheduled itself.
-    pub fn place(&self, start: NaiveDate, members: &[DateRange]) -> Option<DateRange> {
-        let first = members.iter().map(DateRange::start).min();
-        let last = members.iter().map(DateRange::end).max();
-        match (first, last) {
-            (Some(first), Some(last)) => DateRange::new(first, last),
-            _ => DateRange::new(start, start + Duration::days(EMPTY_DAYS)),
-        }
-    }
 }
 
 impl From<NewTaskGroup> for TaskGroup {
@@ -86,6 +82,7 @@ impl From<NewTaskGroup> for TaskGroup {
             name: new.name,
             dependencies: Vec::new(),
             parent: new.parent,
+            time_constraint: NodeConstraint::default(),
             description: None,
             data: DataBlocks::default(),
         }
@@ -99,16 +96,20 @@ impl Patchable<TaskGroupPatch> for TaskGroup {
             self.name = n;
         }
         if let Some(d) = patch.dependencies {
-            self.dependencies = Dependency::merged(d);
+            self.dependencies = PlanNode::merged(d);
         }
         if let Some(p) = patch.parent {
             self.parent = p;
+        }
+        if let Some(t) = patch.time_constraint {
+            self.time_constraint = t;
         }
         Ok(())
     }
 }
 // }}}
 
+// TaskGroup supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewTaskGroup {
     pub id: Uuid,
@@ -120,55 +121,14 @@ pub struct NewTaskGroup {
 pub struct TaskGroupPatch {
     pub id: Uuid,
     pub name: Option<String>,
-    pub dependencies: Option<Vec<Dependency>>,
+    pub dependencies: Option<Vec<PlanNode>>,
     pub parent: Option<Parent>,
+    pub time_constraint: Option<NodeConstraint>,
 }
 
-/// Written by the scheduler for every group it could schedule, see `TaskGroup::place`
+/// Written by the scheduler for every group it could schedule
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub date_range: DateRange,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn d(day: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(2024, 1, day).unwrap()
-    }
-
-    fn range(start: u32, end: u32) -> DateRange {
-        DateRange::new(d(start), d(end)).unwrap()
-    }
-
-    fn group() -> TaskGroup {
-        TaskGroup {
-            id: Uuid::now_v7(),
-            name: "Group".to_string(),
-            dependencies: Vec::new(),
-            parent: Parent::Plan,
-            description: None,
-            data: DataBlocks::default(),
-        }
-    }
-
-    #[test]
-    fn groups_run_from_their_first_member_to_the_end_of_their_last() {
-        // dependencies allow the 1st, the first member only starts on the 3rd
-        let members = [range(5, 9), range(3, 6), range(8, 10)];
-        assert_eq!(group().place(d(1), &members), Some(range(3, 10)));
-    }
-
-    #[test]
-    fn empty_groups_last_three_calendar_days() {
-        assert_eq!(group().place(d(3), &[]), Some(range(3, 6)));
-        // the weekend counts
-        assert_eq!(group().place(d(5), &[]), Some(range(5, 8)));
-    }
-
-    #[test]
-    fn the_empty_length_stops_applying_once_there_are_members() {
-        assert_eq!(group().place(d(3), &[range(3, 4)]), Some(range(3, 4)));
-    }
-}
+// }}}

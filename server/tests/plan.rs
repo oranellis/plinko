@@ -1,20 +1,22 @@
+// modules {{{
 use plinko::{
-    planner::{plan::*, plan_update::PlanUpdate},
-    types::{
-        crud::Crud,
-        error::PlinkoError,
+    common::{crud::Crud, error::PlinkoError, short_id::ShortId},
+    planner::items::{
+        dependency::PlanNodeType,
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
-        short_id::ShortId,
-        tag::NewTag,
+        plan_delay::NewPlanDelay,
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
-        user::NewPlanUser,
     },
+    planner::resources::{tag::NewTag, user::NewPlanUser},
+    planner::{plan::*, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
+// }}}
 
+// create_plan {{{
 #[test]
 fn create_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -26,7 +28,9 @@ fn create_plan() {
     assert_eq!(plan.id().to_owned(), id);
     assert_eq!(plan.name(), "My Plan");
 }
+// }}}
 
+// add_task_to_plan {{{
 #[test]
 fn add_task_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -35,7 +39,7 @@ fn add_task_to_plan() {
         name: "My Plan".to_owned(),
     });
     let task = NewTask {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Task Name".to_string(),
         parent: Parent::Plan,
     };
@@ -44,7 +48,9 @@ fn add_task_to_plan() {
     plan.apply_update(update).expect("should not error");
     assert!(plan.tasks().contains_key(&task_id));
 }
+// }}}
 
+// add_milestone_to_plan {{{
 #[test]
 fn add_milestone_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -53,7 +59,7 @@ fn add_milestone_to_plan() {
         name: "My Plan".to_owned(),
     });
     let milestone = NewMilestone {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Milestone Name".to_string(),
         parent: Parent::Plan,
     };
@@ -62,7 +68,9 @@ fn add_milestone_to_plan() {
     plan.apply_update(update).expect("should not error");
     assert!(plan.milestones().contains_key(&milestone_id));
 }
+// }}}
 
+// add_user_to_plan {{{
 #[test]
 fn add_user_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -70,12 +78,14 @@ fn add_user_to_plan() {
         id,
         name: "My Plan".to_owned(),
     });
-    let user_id = Uuid::now_v7(); // Fake Uuid, would normally match Tenant user Uuid
+    let user_id = Uuid::new_v4(); // Fake Uuid, would normally match Tenant user Uuid
     let update = PlanUpdate::User(Crud::Add(NewPlanUser { id: user_id }));
     plan.apply_update(update).expect("should not error");
     assert!(plan.users().contains_key(&user_id));
 }
+// }}}
 
+// add_tag_to_plan {{{
 #[test]
 fn add_tag_to_plan() {
     let id = ShortId::from_str_checked("ABCDEFGH").expect("should always be valid");
@@ -84,7 +94,7 @@ fn add_tag_to_plan() {
         name: "My Plan".to_owned(),
     });
     let tag = NewTag {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "John Doe".to_string(),
     };
     let tag_id = tag.id;
@@ -92,12 +102,14 @@ fn add_tag_to_plan() {
     plan.apply_update(update).expect("should not error");
     assert!(plan.tags().contains_key(&tag_id));
 }
+// }}}
 
+// add_task_group_to_plan {{{
 #[test]
 fn add_task_group_to_plan() {
     let mut plan = new_plan();
     let group = NewTaskGroup {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Group".to_string(),
         parent: Parent::Plan,
     };
@@ -109,12 +121,14 @@ fn add_task_group_to_plan() {
         .expect("should not error");
     assert!(plan.task_groups().is_empty());
 }
+// }}}
 
+// add_plan_buffer_to_plan {{{
 #[test]
 fn add_plan_buffer_to_plan() {
     let mut plan = new_plan();
     let buffer = NewPlanBuffer {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         parent: Parent::Plan,
         duration: 5,
     };
@@ -123,7 +137,87 @@ fn add_plan_buffer_to_plan() {
         .expect("should not error");
     assert_eq!(*plan.plan_buffers()[&buffer_id].duration(), 5);
 }
+// }}}
 
+// add_plan_delay_to_plan {{{
+#[test]
+fn add_plan_delay_to_plan() {
+    let mut plan = new_plan();
+    let delay = NewPlanDelay {
+        id: Uuid::new_v4(),
+        name: Some("Cure".into()),
+        parent: Parent::Plan,
+        duration: 5,
+    };
+    let delay_id = delay.id;
+    plan.apply_update(PlanUpdate::PlanDelay(Crud::Add(delay)))
+        .expect("should not error");
+    assert_eq!(*plan.plan_delays()[&delay_id].duration(), 5);
+    assert_eq!(plan.plan_delays()[&delay_id].name(), Some("Cure"));
+    plan.apply_update(PlanUpdate::PlanDelay(Crud::Remove(delay_id)))
+        .expect("nothing depends on it");
+    assert!(plan.plan_delays().is_empty());
+}
+// }}}
+
+// nodes_are_found_by_id_whatever_their_kind {{{
+#[test]
+fn nodes_are_found_by_id_whatever_their_kind() {
+    let mut plan = new_plan();
+    let ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
+    let group = ids[4];
+    let updates = [
+        PlanUpdate::TaskGroup(Crud::Add(NewTaskGroup {
+            id: group,
+            name: "Group".to_string(),
+            parent: Parent::Plan,
+        })),
+        PlanUpdate::Task(Crud::Add(NewTask {
+            id: ids[0],
+            name: "Task".to_string(),
+            parent: Parent::Node(group),
+        })),
+        PlanUpdate::Milestone(Crud::Add(NewMilestone {
+            id: ids[1],
+            name: "Milestone".to_string(),
+            parent: Parent::Plan,
+        })),
+        PlanUpdate::PlanBuffer(Crud::Add(NewPlanBuffer {
+            id: ids[2],
+            parent: Parent::Plan,
+            duration: 2,
+        })),
+        PlanUpdate::PlanDelay(Crud::Add(NewPlanDelay {
+            id: ids[3],
+            name: None,
+            parent: Parent::Plan,
+            duration: 2,
+        })),
+    ];
+    for update in updates {
+        plan.apply_update(update).unwrap();
+    }
+
+    let kinds = [
+        PlanNodeType::Task,
+        PlanNodeType::Milestone,
+        PlanNodeType::PlanBuffer,
+        PlanNodeType::PlanDelay,
+        PlanNodeType::TaskGroup,
+    ];
+    for (id, kind) in ids.iter().zip(kinds) {
+        let node = plan.node(id).expect("every added item is found");
+        assert_eq!(node.id(), *id);
+        assert_eq!(node.node_type(), kind);
+        assert!(node.dependencies().is_empty());
+    }
+    assert_eq!(plan.node(&ids[0]).unwrap().parent(), Parent::Node(group));
+    assert_eq!(plan.node(&ids[1]).unwrap().parent(), Parent::Plan);
+    assert!(plan.node(&Uuid::new_v4()).is_none());
+}
+// }}}
+
+// helpers {{{
 fn new_plan() -> Plan {
     Plan::from(NewPlan {
         id: ShortId::new(),
@@ -132,7 +226,7 @@ fn new_plan() -> Plan {
 }
 
 fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTaskGroup {
         id,
         name: "Group".to_string(),
@@ -144,6 +238,7 @@ fn add_group(plan: &mut Plan, parent: Parent) -> Result<Uuid, PlinkoError> {
 
 fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), PlinkoError> {
     let patch = TaskGroupPatch {
+        time_constraint: None,
         id,
         name: None,
         dependencies: None,
@@ -151,7 +246,9 @@ fn set_group_parent(plan: &mut Plan, id: Uuid, parent: Parent) -> Result<(), Pli
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Update(patch)))
 }
+// }}}
 
+// group_parents_reject_cycles_and_missing_groups {{{
 #[test]
 fn group_parents_reject_cycles_and_missing_groups() {
     let mut plan = new_plan();
@@ -162,13 +259,15 @@ fn group_parents_reject_cycles_and_missing_groups() {
 
     assert!(set_group_parent(&mut plan, outer, Parent::Node(leaf)).is_err());
     assert!(set_group_parent(&mut plan, inner, Parent::Node(inner)).is_err());
-    assert!(add_group(&mut plan, Parent::Node(Uuid::now_v7())).is_err());
+    assert!(add_group(&mut plan, Parent::Node(Uuid::new_v4())).is_err());
 
     // moving is a single parent change
     set_group_parent(&mut plan, leaf, Parent::Node(outer)).unwrap();
     assert_eq!(plan.task_groups()[&leaf].parent(), Parent::Node(outer));
 }
+// }}}
 
+// tasks_move_between_groups_and_block_group_removal {{{
 #[test]
 fn tasks_move_between_groups_and_block_group_removal() {
     let mut plan = new_plan();
@@ -177,7 +276,7 @@ fn tasks_move_between_groups_and_block_group_removal() {
         add_group(&mut plan, Parent::Plan).unwrap(),
     );
     let task = NewTask {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         name: "Task".to_string(),
         parent: Parent::Node(a),
     };
@@ -192,7 +291,6 @@ fn tasks_move_between_groups_and_block_group_removal() {
         id: task_id,
         name: None,
         parent: Some(Parent::Node(b)),
-        mode: None,
         duration: None,
         time_constraint: None,
         dependencies: None,
@@ -207,3 +305,4 @@ fn tasks_move_between_groups_and_block_group_removal() {
     remove(&mut plan, a).unwrap();
     assert!(remove(&mut plan, b).is_err());
 }
+// }}}

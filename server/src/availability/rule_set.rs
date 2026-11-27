@@ -13,11 +13,11 @@ use crate::{
             DEFAULT_RULE, EPOCH, MAX_NAME, NewRule, RULE_START_RANGE, Rule, RuleKind, RulePatch,
         },
     },
-    traits::entity::Entity,
-    types::{
+    common::{
         crud::Crud,
         error::{PlinkoError, PlinkoResult},
     },
+    traits::entity::Entity,
 };
 // }}}
 
@@ -27,6 +27,7 @@ pub struct RuleSet<V> {
     pub(super) rules: HashMap<Uuid, Rule<V>>,
 }
 
+// RuleSet supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub enum RuleSetUpdate<V> {
     Rule(Crud<NewRule<V>, RulePatch<V>>),
@@ -40,6 +41,7 @@ impl<V> RuleSetUpdate<V> {
         }
     }
 }
+// }}}
 
 // impl RuleSet{{{
 impl<V: DayValue> Default for RuleSet<V> {
@@ -78,6 +80,7 @@ impl<V: DayValue> RuleSet<V> {
 }
 // }}}
 
+// impl Entity {{{
 impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
     type New = NewRule<V>;
     type Patch = RulePatch<V>;
@@ -125,17 +128,21 @@ impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
         id == DEFAULT_RULE
     }
 }
+// }}}
 
+// is_weekly {{{
 fn is_weekly<V>(kind: &RuleKind<V>) -> bool {
     matches!(kind, RuleKind::Weekly(_) | RuleKind::ResetWeekly)
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         availability::rule::{DayOverride, Every, Unit, WeeklySchedule},
-        types::workload::Workload,
+        availability::workload::Workload,
     };
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
@@ -152,7 +159,7 @@ mod tests {
         stop_day: Option<NaiveDate>,
         kind: RuleKind<Workload>,
     ) -> PlinkoResult<Uuid> {
-        let id = Uuid::now_v7();
+        let id = Uuid::new_v4();
         let new = NewRule {
             name: String::new(),
             stop_day,
@@ -167,7 +174,7 @@ mod tests {
     fn over(days: u32, hours: u8, every: Option<(u32, Unit)>) -> RuleKind<Workload> {
         RuleKind::Override(DayOverride {
             days,
-            value: Workload::new(hours).unwrap(),
+            value: Workload::new_const(hours),
             every: every.map(|(n, unit)| Every {
                 n,
                 unit,
@@ -302,7 +309,7 @@ mod tests {
         };
         let kind = RuleKind::Override(DayOverride {
             days: 1,
-            value: Workload::new(1).unwrap(),
+            value: Workload::new_const(1),
             every: Some(every),
         });
         add(&mut set, start, None, kind).unwrap();
@@ -493,7 +500,7 @@ mod tests {
         assert_eq!(
             set.calendar(d(2024, 1, 15), d(2024, 1, 23))
                 .on(d(2024, 1, 23)),
-            Some(Workload::new(8).unwrap())
+            Some(Workload::new_const(8))
         );
         // not on a day that already has a weekly change, whichever comes second
         assert!(add(&mut set, d(2024, 1, 8), None, RuleKind::ResetWeekly).is_err());
@@ -509,7 +516,7 @@ mod tests {
             let new = NewRule {
                 name,
                 stop_day: None,
-                id: Uuid::now_v7(),
+                id: Uuid::new_v4(),
                 start_day: d(2024, 1, 8),
                 kind: over(1, 2, None),
             };
@@ -528,7 +535,7 @@ mod tests {
         let new = NewRule {
             name: String::new(),
             stop_day: None,
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             start_day: d(2024, 1, 3),
             kind: RuleKind::Override(DayOverride {
                 days: 2,
@@ -542,3 +549,4 @@ mod tests {
         assert_eq!(results, [true, false, false, true]);
     }
 }
+// }}}

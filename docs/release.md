@@ -6,7 +6,8 @@ under a prefix, `/opt/plinko` by default, and each tenant keeps its files in
 
 ## Steps
 
-1. `deploy/build.sh` builds the release client and server (the client is much smaller if
+1. `deploy/build.sh` checks formatting (`cargo fmt`) and lints (`cargo clippy`, warnings are
+   errors) and stops if either fails, then builds the release client and server (the client is much smaller if
    `wasm-opt` is installed, and the proxy should gzip it, see the nginx example).
 2. `sudo deploy/install.sh [prefix]` installs them, makes the `plinko` user and the systemd
    template `plinko@.service`. Run it again to update, then `systemctl restart 'plinko@*'`.
@@ -18,7 +19,7 @@ under a prefix, `/opt/plinko` by default, and each tenant keeps its files in
 ## What is where
 
 - `/opt/plinko/plinko-server` and `/opt/plinko/client/dist` the program and the client.
-- `/opt/plinko/data/<name>/tenant.db` a tenant's log, snapshots, passwords and sessions.
+- `/opt/plinko/data/<name>/tenant.db` a tenant's log, snapshots, schedules, passwords and sessions.
 - `/etc/plinko/<name>.env` its port, and the first admin until the tenant exists.
 - Logs are in the journal: `journalctl -u plinko@<name>`.
 

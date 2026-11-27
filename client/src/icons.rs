@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 
+// Icon {{{
 #[component]
 pub fn Icon(
     /// Which icon
@@ -10,6 +11,10 @@ pub fn Icon(
     #[prop(default = 24)] size: u32,
 ) -> impl IntoView {
     let body = match kind {
+        IconKind::Home => view! {
+            <path d="M2.8,7.4 L8,3 L13.2,7.4 M4.4,6.2 V13 H11.6 V6.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        }
+        .into_any(),
         IconKind::Back => view! {
             <polyline points="8.6,4.6 5.2,8 8.6,11.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
         }
@@ -98,6 +103,13 @@ pub fn Icon(
             <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
         }
         .into_any(),
+        IconKind::AddDelay => view! {
+            <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" stroke-width="1" />
+            <path d="M6.5 4V6.5L8.2 7.6" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="13" y1="10" x2="13" y2="15.5" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
+            <line x1="10.25" y1="12.75" x2="15.75" y2="12.75" stroke="currentColor" stroke-width="1.0" stroke-linecap="round" />
+        }
+        .into_any(),
         IconKind::Circle => view! {
             <circle cx="8" cy="8" r="5.2" stroke="currentColor" stroke-width="1.4" />
         }
@@ -116,9 +128,14 @@ pub fn Icon(
             <path d="M8 14V9.4M5.4 3.4H10.6L10 8.4H6Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" />
         }
         .into_any(),
-        IconKind::Reset => view! {
-            <path d="M12.8 8A4.8 4.8 0 1 1 11.4 4.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-            <polyline points="12.2,2.2 12.2,5 9.4,5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+        IconKind::Pinned => view! {
+            <path d="M8 14V9.4M5.4 3.4H10.6L10 8.4H6Z" stroke="currentColor" fill="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" />
+        }
+        .into_any(),
+        IconKind::Unpin => view! {
+            <path d="M8 14V9.4M5.4 3.4H10.6L10 8.4H6Z" stroke="currentColor" fill="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round" />
+            <line x1="3" y1="13" x2="13" y2="3" stroke="#181818" stroke-width="3.2" stroke-linecap="round" />
+            <line x1="3" y1="13" x2="13" y2="3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
         }
         .into_any(),
         IconKind::Data => view! {
@@ -147,6 +164,27 @@ pub fn Icon(
         IconKind::Close => view! {
             <line x1="4" y1="4" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             <line x1="12" y1="4" x2="4" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+        }
+        .into_any(),
+        IconKind::Bin => view! {
+            <path d="M3.5 4.5H12.5M6.5 4.5V3H9.5V4.5M4.5 4.5L5.1 13H10.9L11.5 4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            <line x1="6.8" y1="6.8" x2="7" y2="10.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+            <line x1="9.2" y1="6.8" x2="9" y2="10.8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+        }
+        .into_any(),
+        IconKind::Help => view! {
+            <circle cx="8" cy="8" r="6.3" stroke="currentColor" stroke-width="1.2" fill="none" />
+            <path d="M6.2 6.3C6.2 5.2 7 4.6 8 4.6C9 4.6 9.8 5.3 9.8 6.2C9.8 7.4 8 7.5 8 8.9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" fill="none" />
+            <circle cx="8" cy="11.1" r="0.75" fill="currentColor" />
+        }
+        .into_any(),
+        IconKind::Move => view! {
+            <path d="M2.5 8H13.5M4.8 5.7L2.5 8L4.8 10.3M11.2 5.7L13.5 8L11.2 10.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+        }
+        .into_any(),
+        IconKind::Timer => view! {
+            <circle cx="8" cy="9" r="4.7" stroke="currentColor" stroke-width="1.2" fill="none" />
+            <path d="M8 6.4V9H10M6.6 2.4H9.4M8 2.4V4.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
         }
         .into_any(),
         IconKind::Plus => view! {
@@ -181,9 +219,11 @@ pub fn Icon(
         </svg>
     }
 }
+// }}}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IconKind {
+    Home,
     Back,
     Gantt,
     List,
@@ -197,6 +237,7 @@ pub enum IconKind {
     AddMilestone,
     AddGroup,
     AddBuffer,
+    AddDelay,
     Alert,
     Person,
     Tick,
@@ -206,10 +247,15 @@ pub enum IconKind {
     Pause,
     Drop,
     Pin,
-    Reset,
+    Pinned,
+    Unpin,
     Data,
     Pencil,
     Close,
+    Bin,
+    Timer,
+    Move,
+    Help,
     Plus,
     Play,
 }

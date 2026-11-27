@@ -1,12 +1,13 @@
 // modules{{{
 use crate::{
     availability::rule_set::RuleSetUpdate,
+    availability::workload::Workload,
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         user::{NewTenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
     planner::{plan::NewPlan, plan_update::PlanUpdate},
-    types::{crud::Crud, short_id::ShortId, workload::Workload},
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -23,12 +24,15 @@ pub struct TenantUpdate {
     pub update_type: TenantUpdateType,
 }
 
+// TenantUpdate supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub enum TenantUpdateType {
     User(Crud<NewTenantLoginUser, TenantLoginUserPatch>),
     UserGroup(Crud<NewTenantUserGroup, TenantUserGroupPatch>),
     /// Change one user's availability, which only they or an admin may do
     Availability(Uuid, RuleSetUpdate<Workload>),
+    /// Change the availability new users and new plans start with, which only an admin may do
+    DefaultSchedule(RuleSetUpdate<Workload>),
     /// Moves the tenant's clock, which only admins (the server runner) may do
     SetToday(NaiveDate),
     /// Stars a plan for the person making the update, or takes the star off
@@ -43,7 +47,9 @@ pub enum PlanTenantUpdate {
     /// Mutate the contents of an existing plan
     Update(ShortId, Box<PlanUpdate>),
 }
+// }}}
 
+// impl TenantUpdateType {{{
 impl TenantUpdateType {
     /// Gives everything the update creates a fresh id, replacing whatever a client sent. A server
     /// handler calls this before building the `TenantUpdate` it applies and logs.
@@ -51,13 +57,16 @@ impl TenantUpdateType {
         match self {
             TenantUpdateType::User(update) => update.assign_id(),
             TenantUpdateType::UserGroup(update) => update.assign_id(),
-            TenantUpdateType::Availability(_, update) => update.assign_ids(),
+            TenantUpdateType::Availability(_, update)
+            | TenantUpdateType::DefaultSchedule(update) => update.assign_ids(),
             TenantUpdateType::SetToday(_) | TenantUpdateType::Favourite(..) => {}
             TenantUpdateType::Plan(update) => update.assign_ids(),
         }
     }
 }
+// }}}
 
+// impl PlanTenantUpdate {{{
 impl PlanTenantUpdate {
     fn assign_ids(&mut self) {
         match self {
@@ -67,3 +76,4 @@ impl PlanTenantUpdate {
         }
     }
 }
+// }}}

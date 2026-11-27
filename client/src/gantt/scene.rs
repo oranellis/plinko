@@ -1,17 +1,15 @@
 //! A plan turned into what the chart needs: its items arranged in lanes, and the ones that could
 //! not be placed because the scheduler gave them no dates.
 
+// modules {{{
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 use plinko::{
     availability::day_value::DayValue,
+    planner::items::{dependency::PlanNode, parent::Parent},
     planner::plan::Plan,
     scheduler::state::PlanVolatileState,
-    types::{
-        dependency::{DependencyNode, PlanNode},
-        parent::Parent,
-    },
 };
 use uuid::Uuid;
 
@@ -19,14 +17,7 @@ use crate::{
     gantt::arrange::{Arrangement, Entry, Kind, Mark, Placed, arrange},
     model::{self, node_name},
 };
-
-/// An item with no place on the chart
-#[derive(Clone, Debug, PartialEq)]
-pub struct Unplaced {
-    pub node: PlanNode,
-    pub name: String,
-    pub reason: String,
-}
+// }}}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene {
@@ -40,6 +31,25 @@ pub struct Scene {
     index: HashMap<Mark, usize>,
 }
 
+// Scene supporting types {{{
+/// An item with no place on the chart
+#[derive(Clone, Debug, PartialEq)]
+pub struct Unplaced {
+    pub node: PlanNode,
+    pub name: String,
+    pub reason: String,
+}
+
+struct Context<'a> {
+    plan: &'a Plan,
+    state: Option<&'a PlanVolatileState>,
+    collapsed: &'a HashSet<Uuid>,
+    targets: &'a HashSet<PlanNode>,
+    children: &'a HashMap<Parent, Vec<PlanNode>>,
+}
+// }}}
+
+// impl Scene {{{
 impl Scene {
     /// A scene with nothing in it
     pub fn empty(origin: NaiveDate) -> Self {
@@ -56,16 +66,20 @@ impl Scene {
         self.arrangement.placed.get(*self.index.get(&mark)?)
     }
 }
+// }}}
 
+// kind_of {{{
 fn kind_of(node: PlanNode) -> Kind {
     match node {
         PlanNode::Task(_) => Kind::Task,
         PlanNode::Milestone(_) => Kind::Milestone,
-        PlanNode::PlanBuffer(_) => Kind::Buffer,
+        PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => Kind::Buffer,
         PlanNode::TaskGroup(_) => Kind::Group,
     }
 }
+// }}}
 
+// build {{{
 pub fn build(
     plan: &Plan,
     state: Option<&PlanVolatileState>,
@@ -73,14 +87,6 @@ pub fn build(
     today: NaiveDate,
 ) -> Scene {
     let nodes = model::nodes(plan);
-    let mut depended: HashSet<PlanNode> = HashSet::new();
-    for node in &nodes {
-        for dep in model::dependencies(plan, *node) {
-            if let DependencyNode::Node(before) = dep.node {
-                depended.insert(before);
-            }
-        }
-    }
     let targets: HashSet<PlanNode> = plan.targets().values().map(|t| t.node()).collect();
     let mut children: HashMap<Parent, Vec<PlanNode>> = HashMap::new();
     let mut unplaced = Vec::new();
@@ -107,7 +113,6 @@ pub fn build(
         plan,
         state,
         collapsed,
-        depended: &depended,
         targets: &targets,
         children: &children,
     };
@@ -135,16 +140,9 @@ pub fn build(
         index,
     }
 }
+// }}}
 
-struct Context<'a> {
-    plan: &'a Plan,
-    state: Option<&'a PlanVolatileState>,
-    collapsed: &'a HashSet<Uuid>,
-    depended: &'a HashSet<PlanNode>,
-    targets: &'a HashSet<PlanNode>,
-    children: &'a HashMap<Parent, Vec<PlanNode>>,
-}
-
+// impl Context {{{
 impl Context<'_> {
     fn entries(&self, parent: Parent) -> Vec<Entry> {
         let nodes = self.children.get(&parent).into_iter().flatten().copied();
@@ -157,6 +155,13 @@ impl Context<'_> {
                 };
                 let (name, span) = match node {
                     PlanNode::PlanBuffer(id) => self.buffer(id, span),
+                    // a delay with no name is told from a buffer by its shape, so only its days
+                    PlanNode::PlanDelay(id) => match self.plan.plan_delays().get(&id) {
+                        Some(delay) if delay.name().is_none() => {
+                            (format!("{}d", delay.duration()), span)
+                        }
+                        _ => (node_name(self.plan, node), span),
+                    },
                     _ => (node_name(self.plan, node), span),
                 };
                 Some(Entry {
@@ -166,15 +171,6 @@ impl Context<'_> {
                     span,
                     look: model::look_of(self.plan, self.state, node),
                     violated: self.state.is_some_and(|s| s.constraint_violations.contains_key(&node)),
-                    // what ends its group is not a leaf when something waits on the group
-                    leaf: !self.depended.contains(&node)
-                        && !model::ends_groups(self.plan, self.state, node)
-                            .iter()
-                            .any(|group| self.depended.contains(group)),
-                    rooted: model::parent_of(self.plan, node) == Parent::Plan
-                        && model::dependencies(self.plan, node)
-                            .iter()
-                            .all(|d| d.node == DependencyNode::ParentStart),
                     pinned: matches!(node, PlanNode::PlanBuffer(id)
                         if self.plan.plan_buffers().get(&id).is_some_and(|b| b.set_start_day().is_some())),
                     target: self.targets.contains(&node),
@@ -210,19 +206,19 @@ impl Context<'_> {
         (name, (span.0, span.1.max(span.0 + chrono::Days::new(1))))
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use plinko::{
-        planner::{plan::NewPlan, plan_update::PlanUpdate},
-        scheduler::state::UnscheduledReason,
-        types::{
-            common::DateRange,
-            crud::Crud,
-            dependency::Dependency,
-            short_id::ShortId,
+        common::{crud::Crud, dates::DateRange, short_id::ShortId},
+        planner::items::{
+            dependency::PlanNode,
             task::{self, NewTask, TaskPatch},
         },
+        planner::{plan::NewPlan, plan_update::PlanUpdate},
+        scheduler::state::UnscheduledReason,
     };
 
     use super::*;
@@ -262,13 +258,9 @@ mod tests {
             id: ids[1],
             name: None,
             parent: None,
-            mode: None,
             duration: None,
             time_constraint: None,
-            dependencies: Some(vec![Dependency {
-                node: DependencyNode::Node(PlanNode::Task(ids[0])),
-                lag: 0,
-            }]),
+            dependencies: Some(vec![PlanNode::Task(ids[0])]),
             allocations: None,
             affinities: None,
             actual_workers: None,
@@ -296,10 +288,10 @@ mod tests {
         // T0 and T1 in the first lane with a day between them
         assert_eq!(scene.arrangement.placed.len(), 2);
         assert_eq!((get("T0").lane, get("T1").lane), (0, 0));
-        assert!(!get("T0").leaf && get("T1").leaf);
         assert_eq!(scene.last_day, 7.0);
         assert_eq!(scene.unplaced.len(), 1);
         assert_eq!(scene.unplaced[0].name, "T2");
         assert!(scene.unplaced[0].reason.contains("eligible"));
     }
 }
+// }}}

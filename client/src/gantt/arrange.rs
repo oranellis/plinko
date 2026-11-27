@@ -4,12 +4,21 @@
 //! group can be drawn as one rounded rectangle around them. All of it is worked out from the dates,
 //! and nothing here knows how anything is drawn.
 
+// modules {{{
 use chrono::NaiveDate;
-use plinko::types::dependency::PlanNode;
+use plinko::planner::items::dependency::PlanNode;
 use uuid::Uuid;
 
 use crate::model::Look;
+// }}}
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Arrangement {
+    pub placed: Vec<Placed>,
+    pub lanes: usize,
+}
+
+// Arrangement supporting types {{{
 /// What can be shown on the chart
 pub type Mark = PlanNode;
 
@@ -31,10 +40,6 @@ pub struct Entry {
     pub span: (NaiveDate, NaiveDate),
     pub look: Look,
     pub violated: bool,
-    /// Nothing depends on it
-    pub leaf: bool,
-    /// It depends on nothing, so it begins where the plan does
-    pub rooted: bool,
     /// For a buffer: it has a day it is set to start on
     pub pinned: bool,
     pub target: bool,
@@ -51,8 +56,6 @@ pub struct Placed {
     pub span: (NaiveDate, NaiveDate),
     pub look: Look,
     pub violated: bool,
-    pub leaf: bool,
-    pub rooted: bool,
     /// For a buffer: it has a day it is set to start on
     pub pinned: bool,
     pub target: bool,
@@ -67,19 +70,15 @@ pub struct Placed {
     pub collapsed: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Arrangement {
-    pub placed: Vec<Placed>,
-    pub lanes: usize,
-}
-
 /// The days after which each lane is free. An item may start on a day after its lane is free,
 /// which leaves at least one empty day after the item before it.
 #[derive(Default)]
 struct Lanes {
     free: Vec<NaiveDate>,
 }
+// }}}
 
+// impl Lanes {{{
 impl Lanes {
     fn fits(&self, lane: usize, height: usize, start: NaiveDate) -> bool {
         (lane..lane + height).all(|l| self.free.get(l).is_none_or(|free| start > *free))
@@ -97,7 +96,9 @@ impl Lanes {
         lane
     }
 }
+// }}}
 
+// helpers {{{
 fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
     Placed {
         mark: entry.node,
@@ -106,8 +107,6 @@ fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
         span: entry.span,
         look: entry.look,
         violated: entry.violated,
-        leaf: entry.leaf,
-        rooted: entry.rooted,
         pinned: entry.pinned,
         target: entry.target,
         lane,
@@ -122,7 +121,9 @@ fn placed(entry: &Entry, lane: usize, depth: u32) -> Placed {
 fn sort_key(entry: &Entry) -> (NaiveDate, &str, Uuid) {
     (entry.span.0, entry.name.as_str(), entry.node.id())
 }
+// }}}
 
+// pack {{{
 /// Packs the entries into `lanes`, groups with their members, and returns what they placed
 fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>) {
     let mut sorted: Vec<&Entry> = entries.iter().collect();
@@ -158,7 +159,9 @@ fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>)
         }
     }
 }
+// }}}
 
+// arrange {{{
 /// Packs a plan's items
 pub fn arrange(entries: &[Entry]) -> Arrangement {
     let mut lanes = Lanes::default();
@@ -169,7 +172,9 @@ pub fn arrange(entries: &[Entry]) -> Arrangement {
         placed: out,
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,8 +193,6 @@ mod tests {
             span: (d(from), d(last + 1)),
             look: Look::NotStarted,
             violated: false,
-            leaf: false,
-            rooted: false,
             pinned: false,
             target: false,
             members: Vec::new(),
@@ -324,3 +327,4 @@ mod tests {
         assert_eq!(arranged.lanes, 1);
     }
 }
+// }}}

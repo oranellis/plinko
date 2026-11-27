@@ -78,7 +78,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .top .status { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; display: flex; align-items: center; gap: 6px; }
 .top .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
 .top .status.warn::before { background: #ff9800; }
-.notice { background: #2a2a3e; color: #a0c4ff; border-bottom: 1px solid #4a6fa5; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.toast { position: fixed; right: 16px; bottom: 16px; z-index: 3000; max-width: min(420px, calc(100vw - 32px)); padding: 10px 16px; background: #2a2a3e; color: #a0c4ff; border: 1px solid #4a6fa5; border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); font-size: 14px; cursor: pointer; animation: toast 5s ease forwards; }
+@keyframes toast { 0% { opacity: 0; translate: 0 8px; } 5%, 85% { opacity: 1; translate: 0 0; } 100% { opacity: 0; } }
 .page { overflow: auto; padding: 16px; min-height: 0; flex: 1; }
 .page:has(.plan) { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
 .page:has(.calpage) { display: flex; flex-direction: column; overflow: hidden; }
@@ -121,6 +122,14 @@ h2.section { margin: 16px 0 8px; color: var(--muted); font-size: 13px; text-tran
 }
 .toolbar-title-text { overflow: hidden; text-overflow: ellipsis; }
 .main { flex: 1; min-width: 0; min-height: 0; overflow: auto; position: relative; }
+/* what the page is in the middle of, at the top left of the chart: a box for each, each laid
+   over the one it was gone into from, down and to the right */
+.modestack { position: absolute; left: 10px; top: 72px; z-index: 22; pointer-events: none; }
+.modestack .mode { position: absolute; left: calc(var(--i) * 24px); top: calc(var(--i) * 24px); z-index: var(--i); width: 80px; height: 80px; display: grid; place-items: center; background: #181818; border: 2px solid var(--line); border-radius: 18px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55); color: var(--text); }
+.modestack .mode:last-child { border-color: var(--accent); color: #fff; }
+.modestack .mode.before { color: #fc1ef1; }
+.modestack .mode.after { color: #07fcd7; }
+.modestack .mode.day { color: #c8e63c; }
 canvas.gantt { width: 100%; height: 100%; display: block; touch-action: none; background: var(--bg); }
 
 /* floating windows and the pane beside the chart */
@@ -159,8 +168,14 @@ input.search { width: 100%; margin-bottom: 10px; }
 input.search.nothing { border-color: var(--danger); }
 .results { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow-y: auto; }
 .results li button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: none; padding: 8px 4px; border-bottom: 1px solid var(--soft); border-radius: 0; font-size: 13px; flex-wrap: wrap; }
-.results li button:hover { background: var(--raised); }
+.results li button:hover, .results li button.at { background: var(--raised); }
+.results li button.at { box-shadow: inset 3px 0 0 var(--accent); }
+.results li a { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border-bottom: 1px solid var(--soft); color: var(--text); text-decoration: none; font-size: 13px; }
+.results li a:hover, .results li a.at { background: var(--raised); }
+.results li a.at { box-shadow: inset 3px 0 0 var(--accent); }
+.results .glyph { display: inline-flex; }
 .results .glyph { color: var(--muted); }
+.results .picked { margin-left: auto; color: var(--accent); }
 .results .none { color: var(--faint); text-align: center; padding: 12px 0; font-size: 13px; }
 
 /* the list view */
@@ -219,6 +234,7 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .popover input.search { width: 100%; margin: 0; }
 .popover ul { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow-y: auto; }
 .popover li button { width: 100%; text-align: left; background: none; border-radius: 3px; padding: 5px 8px; min-height: 0; font-size: 13px; color: inherit; }
+.popover li button.at { background: var(--raised); box-shadow: inset 3px 0 0 var(--accent); }
 .popover li button.start { color: #a78bfa; } .popover li button.target { color: #ffd600; }
 .popover li button:hover { background: var(--raised); }
 .popover li.none { color: var(--faint); padding: 6px 8px; font-size: 13px; }
@@ -242,6 +258,29 @@ button.picker .chevron { font-size: 10px; opacity: 0.6; margin-left: 6px; }
 .calendar .foot { display: flex; justify-content: space-between; }
 
 /* the account menu */
+.helpbutton { padding: 2px; min-height: 0; border-radius: 50%; display: flex; color: var(--muted); }
+.helpbutton:hover { color: var(--text); }
+/* the help window: its pages down the left, and what each says to the right */
+.help { display: flex; flex: 1; min-height: 0; }
+.helptabs { display: flex; flex-direction: column; gap: 2px; width: 180px; flex: none; padding: 12px 8px; border-right: 1px solid var(--line); }
+.helptabs button { text-align: left; background: none; padding: 8px 10px; border-radius: 6px; color: var(--muted); }
+.helptabs button:hover { color: var(--text); background: var(--raised); }
+.helptabs button.active { color: var(--title); background: var(--raised); }
+.helppage { flex: 1; overflow-y: auto; padding: 16px 24px 24px; }
+.helppage h3 { margin: 0 0 4px; font-size: 18px; color: var(--title); }
+.helppage h4 { margin: 18px 0 6px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.helppage h4 { display: flex; align-items: center; gap: 8px; }
+.helppage .modebox { width: 26px; height: 26px; display: grid; place-items: center; flex: none; background: #181818; border: 1.5px solid var(--accent); border-radius: 7px; color: var(--text); }
+.helppage .modebox.before { color: #fc1ef1; }
+.helppage .modebox.day { color: #c8e63c; }
+table.keys { width: 100%; border-collapse: collapse; }
+table.keys td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--soft); vertical-align: top; font-size: 14px; }
+table.keys td:first-child { width: 140px; white-space: nowrap; }
+kbd { display: inline-block; min-width: 24px; margin-right: 4px; padding: 1px 7px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; background: #181818; color: var(--title); font: 13px/20px ui-monospace, monospace; text-align: center; }
+@media (max-width: 640px) {
+  .help { flex-direction: column; }
+  .helptabs { flex-direction: row; width: auto; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; }
+}
 .user-menu { position: relative; }
 .user-menu .avatar { padding: 2px; min-height: 0; border-radius: 50%; display: flex; }
 .menu-backdrop { position: fixed; inset: 0; z-index: 40; }
@@ -447,13 +486,129 @@ textarea.description { min-height: 90px; }
 
 /* the bar under the selected item of the chart */
 .contextbar { position: absolute; z-index: 20; display: flex; gap: 4px; padding: 4px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }
-button.ctx, .statusswitch .st { width: 34px; height: 34px; min-height: 0; padding: 0; display: grid; place-items: center; background: none; border: 1.5px solid var(--line); border-radius: 8px; color: var(--muted); flex: none; }
+/* what the bar has more of while its item is edited, which the card of a new item has too: the
+   name, typed over where it stands, and buttons that fade in beside the others */
+.contextbar { align-items: center; }
+.fadein { animation: fadein 0.3s ease 0.1s both; }
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+.namebox { width: 100%; min-width: 190px; height: 40px; min-height: 0; padding: 8px 7px; resize: none; overflow: hidden; line-height: 22px; font-family: inherit; background: none; border: 1.5px solid transparent; border-radius: 8px; color: var(--title); font-size: 17px; user-select: text; }
+textarea.namebox:hover { border-color: var(--line); }
+textarea.namebox:focus { border-color: var(--accent); outline: none; }
+span.namebox { display: flex; align-items: center; color: var(--muted); }
+button.ctx.on { border-color: var(--text); color: var(--text); }
+/* which end is held to a day: the timer is lit, with a bar on the side of that end */
+button.ctx.held-start, button.ctx.held-end { border-color: #c8e63c; color: #c8e63c; }
+button.ctx.held-start { box-shadow: inset 4px 0 0 #c8e63c; }
+button.ctx.held-end { box-shadow: inset -4px 0 0 #c8e63c; }
+/* what to do with an edit: saving it is the button, leaving and deleting it a hover away. */
+/* a button that shows under the pointer what a click would leave it as */
+button.ctx.swap .rest, button.ctx.swap .over { display: grid; }
+button.ctx.swap .over, button.ctx.swap:hover .rest { display: none; }
+button.ctx.swap:hover .over { display: grid; }
+.editswitch .st { --c: #e53935; }
+.editswitch .st.save { --c: #43c463; }
+.editswitch .st.delete:hover { color: var(--c); background: color-mix(in srgb, var(--c) 18%, #181818); }
+/* who works on the task being created or edited: a card at the right of the chart, standing on
+   the middle of it so that it is clear of the bar at the bottom. It is put there without a
+   transform, which the lists that drop from its pickers would be placed against. */
+.workerwin { position: absolute; right: 12px; bottom: calc(50% + 12px); z-index: 19; width: 380px; max-width: calc(100% - 24px); max-height: 45%; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
+/* the workers card while the keys are on it: lit, with the row they are on marked */
+.workerwin.keys { border-color: var(--accent); }
+.workerwin .row { position: relative; }
+.workerwin .row.cursor::before { content: ""; position: absolute; left: -6px; top: 0; bottom: 0; width: 4px; border-radius: 2px; background: var(--accent); }
+/* what to do about unsaved changes: three buttons twice the size of the bar's, in a window no
+   bigger than they need */
+.modal:has(.choices) { width: auto; }
+.modal:has(.choices) > header { padding: 10px 12px 8px; }
+.modal:has(.choices) .body { padding: 12px; }
+.choices { display: flex; justify-content: center; gap: 12px; }
+.choices button.ctx { width: 80px; height: 80px; border-radius: 14px; }
+.choices button.ctx.save:hover { border-color: #43c463; color: #43c463; }
+.choices button.ctx.cancel:hover { border-color: #e53935; color: #e53935; }
+/* while its item is edited the bar slides to the bottom middle, with room under it for its statuses */
+.stripbuttons { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+/* docked, the bar has the shape of the item over its buttons, at the bottom of the chart and
+   to the right of the panel that says what the item is, the two of them in the middle: 270 and
+   330 wide. The two are one shape: the bar has no
+   left edge, and the panel, which is as high as its name needs, stands over it. */
+.contextbar.docked { left: calc(50% - 30px); top: calc(100% - 300px); width: 330px; height: 130px; flex-direction: column; align-items: stretch; justify-content: space-between; border-left: 0; border-radius: 0 8px 8px 0; transition: left 0.3s ease, top 0.3s ease; }
+/* the shadow goes round the two as one: neither casts one on the other */
+.infopanel.docked { clip-path: inset(-400px 0 -400px -400px); }
+.contextbar.docked { clip-path: inset(-400px -400px -400px -1px); }
+.contextbar.docked.leaf, .infopanel.leaf { background-image: radial-gradient(circle at top right, rgba(30, 136, 229, 0.55), transparent 46px); }
+.contextbar.docked::before { content: ""; position: absolute; left: -1px; top: 0; bottom: 0; width: 1px; background: #181818; }
+.stripstage { position: relative; flex: 1; display: grid; place-items: center; --card: #181818; user-select: none; }
+.infopanel { position: absolute; left: 8px; bottom: 8px; z-index: 19; width: 270px; display: grid; align-content: start; gap: 2px; padding: 4px 10px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); transition: left 0.3s ease, bottom 0.3s ease; }
+.infopanel.gone { display: none; }
+.infopanel.docked { left: calc(50% - 300px); bottom: 170px; min-height: 130px; border-radius: 8px 0 0 8px; }
+/* on a narrow screen the panel stands on the bar and not beside it */
+@media (max-width: 640px) {
+  .infopanel.docked { left: calc(50% - 165px); bottom: 300px; width: 330px; min-height: 0; border-radius: 8px 8px 0 0; clip-path: inset(-400px -400px 0 -400px); }
+  .contextbar.docked { left: calc(50% - 165px); border-left: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; clip-path: inset(-1px -400px -400px -400px); }
+  .contextbar.docked::before { left: 0; right: 0; top: -1px; bottom: auto; width: auto; height: 1px; }
+}
+.infoname { margin: 0; padding: 9px 8px; font-size: 17px; line-height: 22px; color: var(--title); overflow-wrap: anywhere; }
+.stripfacts { margin: 0; padding: 0 8px 6px; list-style: none; display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.stripfacts li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.ctx, .statusswitch .st { width: 40px; height: 40px; min-height: 0; padding: 0; display: grid; place-items: center; background: none; border: 1.5px solid var(--line); border-radius: 8px; color: var(--muted); flex: none; }
 button.ctx:hover:not(:disabled) { border-color: var(--text); color: var(--text); background: none; }
 button.ctx:disabled { opacity: 0.35; cursor: default; }
-.statusswitch { position: relative; width: 34px; height: 34px; z-index: 2; }
+.statusswitch { position: relative; width: 40px; height: 40px; z-index: 2; flex: none; }
 .statuscol { position: absolute; left: 0; top: 0; display: grid; gap: 0; }
 .statusswitch .st { background: #181818; }
 .statusswitch .st:hover { border-color: var(--c); color: var(--c); background: #181818; }
 .statusswitch .st.current { background: color-mix(in srgb, var(--c) 18%, #181818); }
-.statusswitch:not(:hover) .st:not(.next) { display: none; }
-.statusswitch:hover .statuscol { top: var(--shift); }
+.statusswitch:not(:hover):not(.open) .st:not(.next) { display: none; }
+.statusswitch:hover .statuscol, .statusswitch.open .statuscol { top: var(--shift); }
+
+/* the card over the bottom of the chart for the item being created or edited: its shape, with a
+   circle each side for what it waits for and what waits for it, a grip for its group and a bar
+   on its right edge for its days. The edge of the card fades into the chart. */
+.draftcard-stage { display: flex; align-items: center; gap: 14px; padding: 0 20px; }
+.draftcard-knob { --c: #fc1ef1; width: 24px; height: 24px; min-height: 0; padding: 0; flex: none; border-radius: 50%; background: var(--card); border: 2px solid var(--c); cursor: grab; touch-action: none; }
+.draftcard-knob.after { --c: #07fcd7; }
+.draftcard-knob:hover { background: color-mix(in srgb, var(--c) 30%, var(--card)); }
+.draftcard-knob.lit { background: radial-gradient(circle closest-side, var(--c) 52%, var(--card) 58%); }
+.draftcard-shape { position: relative; width: 200px; height: 32px; display: flex; align-items: center; padding: 0 8px; color: rgba(255, 255, 255, 0.9); }
+.draftcard-shape.task { background: #555; border-radius: 6px; }
+.draftcard-shape.group { height: 44px; align-items: flex-start; padding-top: 6px; border: 1.5px solid #8a8a8a; border-radius: 8px; background: rgba(255, 255, 255, 0.04); }
+.draftcard-shape.buffer { border: 1.5px dashed #8a8a8a; border-radius: 6px; }
+.draftcard-shape.delay { border: dashed #8a8a8a; border-width: 0 1.5px; background: repeating-linear-gradient(to right, #8a8a8a 0 3px, transparent 3px 6px) center / 100% 1.5px no-repeat; }
+.draftcard-shape.delay .draftcard-name { background: var(--card); padding: 0 4px; }
+.draftcard-shape.milestone { width: 32px; margin-bottom: 24px; padding: 0; }
+.draftcard-shape.milestone::before { content: ""; position: absolute; inset: 5px; background: #555; border-radius: 3px; transform: rotate(45deg); }
+.draftcard-shape.milestone .draftcard-name { display: none; }
+.draftcard-name { position: relative; max-width: 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.draftcard-grip { --c: #c4c4c9; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 28px; height: 24px; min-height: 0; padding: 0; border: 0; background: none; cursor: grab; touch-action: none; }
+.draftcard-grip::before { content: ""; position: absolute; left: 6px; right: 6px; top: 10.5px; height: 3px; border-radius: 1.5px; background: var(--c); box-shadow: 0 -6px var(--c), 0 6px var(--c); }
+.draftcard-shape.task .draftcard-grip { --c: #2c2c30; }
+.draftcard-grip:hover, .draftcard-shape.task .draftcard-grip:hover { --c: #ececf0; background: none; }
+.draftcard-grip.lit, .draftcard-shape.task .draftcard-grip.lit { --c: #1e88e5; }
+.draftcard-shape.milestone .draftcard-grip { top: auto; bottom: -25px; transform: translateX(-50%); }
+.draftcard-days { position: absolute; right: 0; top: 0; bottom: 0; display: flex; }
+.draftcard-daycount { display: flex; align-items: center; gap: 6px; min-height: 0; padding: 0 0 0 7px; --edge: #e8e8e8; background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(to right, transparent, var(--edge)) border-box; border: 1.5px solid transparent; border-radius: 6px; color: #e8e8e8; font-size: 12px; font-variant-numeric: tabular-nums; cursor: ew-resize; touch-action: none; }
+.draftcard-daycount i { align-self: stretch; width: 7px; background: #e8e8e8; border-radius: 0 4px 4px 0; }
+.draftcard-daycount:hover, .draftcard-days.held .draftcard-daycount { --edge: var(--accent); background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(to right, transparent, var(--edge)) border-box; color: #fff; }
+.draftcard-daycount:hover i, .draftcard-days.held .draftcard-daycount i { background: var(--accent); }
+/* a delay is lines, and so is the handle for its days: the count sits on the line as its name
+   does, and the bar at its end is what is dragged */
+.draftcard-shape.delay .draftcard-days { right: -1.5px; }
+.draftcard-shape.delay .draftcard-daycount, .draftcard-shape.delay .draftcard-daycount:hover, .draftcard-shape.delay .draftcard-days.held .draftcard-daycount { padding: 0; gap: 8px; background: none; border: 0; border-radius: 0; color: #bbb; }
+.draftcard-shape.delay .draftcard-daycount span { padding: 0 4px; background: var(--card); }
+.draftcard-shape.delay .draftcard-daycount i, .draftcard-shape.delay .draftcard-daycount:hover i, .draftcard-shape.delay .draftcard-days.held .draftcard-daycount i { width: 0; background: none; border-radius: 0; border-right: 1.5px dashed #8a8a8a; }
+.draftcard-shape.delay .draftcard-daycount:hover, .draftcard-shape.delay .draftcard-days.held .draftcard-daycount { color: #fff; }
+.draftcard-shape.delay .draftcard-daycount:hover i, .draftcard-shape.delay .draftcard-days.held .draftcard-daycount i { border-right: 2.5px solid var(--accent); }
+.draftcard-daybox { width: 78px; text-align: right; }
+.draftcard-drag { position: absolute; right: 0; bottom: calc(100% + 7px); display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: 3px; width: 200px; pointer-events: none; }
+.draftcard-drag i { width: 10px; height: 10px; border-radius: 2px; background: #8a8a8a; border: 1.5px solid #8a8a8a; }
+.draftcard-drag i.added { background: var(--accent); border-color: var(--accent); }
+.draftcard-drag i.taken { background: none; border-style: dashed; }
+.draftcard-drag b { flex-basis: 100%; height: 10px; line-height: 4px; text-align: right; color: #8a8a8a; font-size: 16px; letter-spacing: 2px; }
+/* what a click will do while something is being picked, at the bottom of the chart */
+.hint { position: absolute; left: 50%; bottom: 8px; translate: -50% 0; z-index: 21; margin: 0; padding: 10px 20px; background: #181818; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); color: var(--title); font-size: 15px; white-space: nowrap; pointer-events: none; }
+.draftcard-line { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 2000; }
+.draftcard-line line { stroke: #1e88e5; stroke-width: 2.5; stroke-dasharray: 6 4; stroke-linecap: round; }
+.draftcard-line line.before { stroke: #fc1ef1; }
+.draftcard-line line.after { stroke: #07fcd7; }
+/* a window takes the keyboard when it opens, which needs no ring around it */
+.modal:focus { outline: none; }

@@ -1,12 +1,15 @@
+// modules {{{
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 
-use crate::types::error::{PlinkoError, PlinkoResult};
+use crate::common::error::{PlinkoError, PlinkoResult};
+// }}}
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct ShortId([u8; 8]);
 
+// impl ShortId {{{
 impl ShortId {
     pub fn new() -> Self {
         Self::from_str_checked(&nanoid!(8)).expect("nanoid output unexpectedly invalid")
@@ -52,3 +55,4 @@ impl std::fmt::Debug for ShortId {
         f.debug_tuple("ShortId").field(&self.as_str()).finish()
     }
 }
+// }}}

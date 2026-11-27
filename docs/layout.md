@@ -14,13 +14,13 @@
 
 ## The `plinko` crate
 
-- `types/` entities (tasks, milestones, groups, buffers, tags, affinities, data blocks) and shared value types.
-- `availability/` rule sets that describe daily availability or allowed days, built into calendars.
-- `planner/` plans, their updates and the dependency graph checks.
+- `common/` errors, `Crud`, short ids and date ranges, shared across the crate.
+- `availability/` rule sets that describe daily availability or allowed days, built into calendars, and `Workload`.
+- `planner/` plans, their updates and the dependency graph checks. `items/` are the schedulable nodes (tasks, groups, milestones, buffers, delays) and `resources/` the rest of a plan (tags, targets, affinities, users, data blocks).
 - `multitenancy/` tenants, login users, user groups and `TenantUpdate`.
 - `scheduler/` schedules a whole tenant (`scheduler::schedule`, spec in `scheduler.md`) and holds the state it writes.
 - `protocol.rs`, `codec.rs` the WebSocket messages and the format of updates, snapshots and schedules.
-- `store/` a tenant's SQLite file: update log, snapshots, passwords and sessions.
+- `store/` a tenant's SQLite file: update log, daily snapshots, saved schedules, passwords and sessions.
 - `net/` the tenant actor, the scheduling thread, and the HTTP and WebSocket front.
 - `traits/` the shared `Entity`, `Patchable` and `Identified` traits.
 

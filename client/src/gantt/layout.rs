@@ -2,17 +2,21 @@
 //! chart starts, and everything is a day offset from it. Drawing and the pointer both go through
 //! here, so what is drawn is what is hit.
 
-pub const ROW_HEIGHT: f64 = 36.0;
+// constants {{{
+pub const ROW_HEIGHT: f64 = 40.0;
 pub const HEADER_HEIGHT: f64 = 56.0;
+/// Where the first lane starts: under the header, with a little room
+pub const LANES_TOP: f64 = HEADER_HEIGHT + 8.0;
 /// The month row of the header, the day row is the rest
 pub const MONTH_HEIGHT: f64 = 22.0;
-pub const DAY_WIDTH: f64 = 34.0;
+pub const DAY_WIDTH: f64 = 38.0;
 pub const MIN_DAY_WIDTH: f64 = 8.0;
 pub const MAX_DAY_WIDTH: f64 = 80.0;
 /// Room above and below a bar in its row
 pub const BAR_INSET_Y: f64 = 6.0;
 /// The thinnest a bar is drawn
 pub const MIN_BAR_WIDTH: f64 = 4.0;
+// }}}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
@@ -22,12 +26,15 @@ pub struct Rect {
     pub h: f64,
 }
 
+// impl Rect {{{
 impl Rect {
     pub fn contains(&self, x: f64, y: f64) -> bool {
         x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
     }
 }
+// }}}
 
+// Rect supporting types {{{
 /// The size of the canvas and how much there is to scroll over
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bounds {
@@ -47,7 +54,9 @@ pub struct Viewport {
     pub scroll_y: f64,
     pub day_width: f64,
 }
+// }}}
 
+// impl Viewport {{{
 impl Default for Viewport {
     fn default() -> Self {
         Self {
@@ -70,7 +79,7 @@ impl Viewport {
     }
 
     pub fn lane_top(&self, lane: usize) -> f64 {
-        HEADER_HEIGHT + lane as f64 * ROW_HEIGHT - self.scroll_y
+        LANES_TOP + lane as f64 * ROW_HEIGHT - self.scroll_y
     }
 
     /// The days shown across `width` pixels, the first and the last, for drawing the header
@@ -87,7 +96,7 @@ impl Viewport {
         self.scroll_x = self
             .scroll_x
             .clamp(-b.width / 2.0, right.max(-b.width / 2.0));
-        let down = (b.lanes as f64 * ROW_HEIGHT - (b.height - HEADER_HEIGHT)).max(0.0);
+        let down = (b.lanes as f64 * ROW_HEIGHT - (b.height - LANES_TOP)).max(0.0);
         self.scroll_y = self.scroll_y.clamp(0.0, down);
         // whole pixels, so layers drawn earlier can be moved to where the chart is now exactly
         self.scroll_x = self.scroll_x.round();
@@ -123,7 +132,7 @@ impl Viewport {
     /// Puts a lane in the middle of the rows
     pub fn centre_on_lane(&mut self, lane: usize, b: Bounds) {
         let middle = lane as f64 * ROW_HEIGHT + ROW_HEIGHT / 2.0;
-        self.scroll_y = middle - (b.height - HEADER_HEIGHT) / 2.0;
+        self.scroll_y = middle - (b.height - LANES_TOP) / 2.0;
         self.clamp(b);
     }
 
@@ -155,7 +164,9 @@ impl Viewport {
         self.start_centre(end - 1.0, lane)
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,10 +186,10 @@ mod tests {
             scroll_x: 100.0,
             ..Viewport::default()
         };
-        assert_eq!(view.x(10.0), 240.0);
-        assert_eq!(view.day_at(240.0), 10.0);
-        assert_eq!(view.lane_top(0), HEADER_HEIGHT);
-        assert_eq!(view.lane_top(2), HEADER_HEIGHT + 2.0 * ROW_HEIGHT);
+        assert_eq!(view.x(10.0), 10.0 * DAY_WIDTH - 100.0);
+        assert_eq!(view.day_at(10.0 * DAY_WIDTH - 100.0), 10.0);
+        assert_eq!(view.lane_top(0), LANES_TOP);
+        assert_eq!(view.lane_top(2), LANES_TOP + 2.0 * ROW_HEIGHT);
     }
 
     #[test]
@@ -190,7 +201,7 @@ mod tests {
         assert_eq!(view.scroll_y, 0.0);
         view.drag(-100_000.0, -100_000.0, b);
         assert_eq!(view.scroll_x, 60.0 * DAY_WIDTH + 400.0);
-        assert_eq!(view.scroll_y, 20.0 * ROW_HEIGHT - (400.0 - HEADER_HEIGHT));
+        assert_eq!(view.scroll_y, 20.0 * ROW_HEIGHT - (400.0 - LANES_TOP));
         // few lanes means no vertical scrolling at all
         let mut short = Viewport::default();
         short.scroll(0.0, 500.0, Bounds { lanes: 2, ..b });
@@ -221,26 +232,27 @@ mod tests {
         assert!((view.x(30.0) - 400.0).abs() < 1e-9);
         view.centre_on_lane(10, b);
         let middle = view.lane_top(10) + ROW_HEIGHT / 2.0;
-        assert!((middle - (HEADER_HEIGHT + (400.0 - HEADER_HEIGHT) / 2.0)).abs() < 1e-9);
+        assert!((middle - (LANES_TOP + (400.0 - LANES_TOP) / 2.0)).abs() < 1e-9);
     }
 
     #[test]
     fn bars_are_inset_rounded_boxes_and_never_too_thin() {
         let view = Viewport::default();
         let bar = view.bar(2.0, 5.0, 1);
-        // three days wide less the inset either side, 24 high in a 36 row
+        // three days wide less the inset either side, and a row high less the inset above and below
         assert!((bar.w - (3.0 * DAY_WIDTH - 2.0 * 0.12 * DAY_WIDTH)).abs() < 1e-9);
-        assert_eq!(bar.h, 24.0);
-        assert_eq!(bar.y, HEADER_HEIGHT + ROW_HEIGHT + BAR_INSET_Y);
+        assert_eq!(bar.h, ROW_HEIGHT - 2.0 * BAR_INSET_Y);
+        assert_eq!(bar.y, LANES_TOP + ROW_HEIGHT + BAR_INSET_Y);
         assert!(view.bar(2.0, 2.0, 0).w >= MIN_BAR_WIDTH);
         let (x, y) = view.start_centre(2.0, 1);
         assert_eq!(
             (x, y),
             (
                 2.0 * DAY_WIDTH + DAY_WIDTH / 2.0,
-                HEADER_HEIGHT + ROW_HEIGHT * 1.5
+                LANES_TOP + ROW_HEIGHT * 1.5
             )
         );
         assert_eq!(view.end_centre(5.0, 1).0, 4.0 * DAY_WIDTH + DAY_WIDTH / 2.0);
     }
 }
+// }}}

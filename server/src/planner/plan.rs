@@ -8,32 +8,31 @@ use uuid::Uuid;
 
 use crate::{
     availability::rule_set::RuleSet,
-    planner::{graph, plan_entity::PlanItem, plan_update::PlanUpdate},
-    traits::{entity::Entity, patch::Patchable},
-    types::{
-        affinity::Affinity,
-        data_block::DataBlock,
-        dependency::{DependencyNode, PlanNode},
+    availability::workload::Workload,
+    common::{
         error::{PlinkoError, PlinkoResult},
+        short_id::ShortId,
+    },
+    planner::items::{
+        dependency::PlanNode,
         milestone::Milestone,
         parent::Parent,
         plan_buffer::PlanBuffer,
-        short_id::ShortId,
-        tag::Tag,
-        target::Target,
+        plan_delay::PlanDelay,
         task::{Assignee, Task, Worker},
         task_group::TaskGroup,
-        user::{PlanUserData, PlanUserGroupData},
-        workload::Workload,
     },
+    planner::resources::{
+        affinity::Affinity,
+        data_block::DataBlock,
+        tag::Tag,
+        target::Target,
+        user::{PlanUserData, PlanUserGroupData},
+    },
+    planner::{graph, plan_entity::PlanItem, plan_update::PlanUpdate},
+    traits::{entity::Entity, patch::Patchable},
 };
 // }}}
-
-#[derive(Clone, Serialize, Deserialize)]
-pub struct NewPlan {
-    pub id: ShortId,
-    pub name: String,
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
@@ -43,6 +42,7 @@ pub struct Plan {
     pub(super) task_groups: HashMap<Uuid, TaskGroup>,
     pub(super) milestones: HashMap<Uuid, Milestone>,
     pub(super) plan_buffers: HashMap<Uuid, PlanBuffer>,
+    pub(super) plan_delays: HashMap<Uuid, PlanDelay>,
     pub(super) users: HashMap<Uuid, PlanUserData>,
     pub(super) user_groups: HashMap<Uuid, PlanUserGroupData>,
     pub(super) tags: HashMap<Uuid, Tag>,
@@ -62,6 +62,7 @@ impl From<NewPlan> for Plan {
             task_groups: HashMap::new(),
             milestones: HashMap::new(),
             plan_buffers: HashMap::new(),
+            plan_delays: HashMap::new(),
             users: HashMap::new(),
             user_groups: HashMap::new(),
             tags: HashMap::new(),
@@ -94,6 +95,10 @@ impl Plan {
         &self.plan_buffers
     }
 
+    pub fn plan_delays(&self) -> &HashMap<Uuid, PlanDelay> {
+        &self.plan_delays
+    }
+
     pub fn milestones(&self) -> &HashMap<Uuid, Milestone> {
         &self.milestones
     }
@@ -124,6 +129,11 @@ impl Plan {
         &self.default_availability
     }
 
+    /// Gives the plan's placeholders these rules, as a new plan starts from the tenant's default
+    pub(crate) fn set_default_availability(&mut self, rules: RuleSet<Workload>) {
+        self.default_availability = rules;
+    }
+
     pub fn scheduler_data(&self) -> &PlanSchedulerData {
         &self.scheduler_data
     }
@@ -143,6 +153,7 @@ impl Plan {
             PlanNode::Task(id) => (id, self.tasks.contains_key(id)),
             PlanNode::Milestone(id) => (id, self.milestones.contains_key(id)),
             PlanNode::PlanBuffer(id) => (id, self.plan_buffers.contains_key(id)),
+            PlanNode::PlanDelay(id) => (id, self.plan_delays.contains_key(id)),
             PlanNode::TaskGroup(id) => (id, self.task_groups.contains_key(id)),
         };
         exists
@@ -185,10 +196,8 @@ impl Plan {
             .get(&id)
             .ok_or(PlinkoError::ItemDoesNotExist(id))?;
         self.validate_parent(id, item.parent())?;
-        for dep in item.dependencies() {
-            if let DependencyNode::Node(node) = &dep.node {
-                self.ensure_node_exists(node)?;
-            }
+        for node in item.dependencies() {
+            self.ensure_node_exists(node)?;
         }
         item.workers()
             .iter()
@@ -209,10 +218,10 @@ impl Plan {
     }
 
     fn node_depended_on<T: PlanItem>(&self, node: PlanNode) -> bool {
-        let target = DependencyNode::Node(node);
+        let target = node;
         T::entities(self)
             .values()
-            .any(|i| i.dependencies().iter().any(|d| d.node == target))
+            .any(|i| i.dependencies().contains(&target))
     }
 
     fn has_members<T: PlanItem>(&self, group: Uuid) -> bool {
@@ -227,6 +236,7 @@ impl Plan {
                 self.has_members::<Task>(id)
                     || self.has_members::<Milestone>(id)
                     || self.has_members::<PlanBuffer>(id)
+                    || self.has_members::<PlanDelay>(id)
                     || self.has_members::<TaskGroup>(id)
             }
             _ => false,
@@ -237,6 +247,7 @@ impl Plan {
             || self.node_depended_on::<Task>(node)
             || self.node_depended_on::<Milestone>(node)
             || self.node_depended_on::<PlanBuffer>(node)
+            || self.node_depended_on::<PlanDelay>(node)
             || self.node_depended_on::<TaskGroup>(node)
     }
 
@@ -270,6 +281,7 @@ impl Plan {
             PlanUpdate::TaskGroup(update) => TaskGroup::apply_crud(self, update),
             PlanUpdate::Milestone(update) => Milestone::apply_crud(self, update),
             PlanUpdate::PlanBuffer(update) => PlanBuffer::apply_crud(self, update),
+            PlanUpdate::PlanDelay(update) => PlanDelay::apply_crud(self, update),
             PlanUpdate::User(update) => PlanUserData::apply_crud(self, update),
             PlanUpdate::UserGroup(update) => PlanUserGroupData::apply_crud(self, update),
             PlanUpdate::Tag(update) => Tag::apply_crud(self, update),
@@ -289,8 +301,8 @@ impl Plan {
                     PlanNode::TaskGroup(id) => {
                         self.task_groups.get_mut(&id).map(TaskGroup::data_mut)
                     }
-                    PlanNode::PlanBuffer(_) => {
-                        return Err("buffers hold no data blocks".into());
+                    PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => {
+                        return Err("buffers and delays hold no data blocks".into());
                     }
                 };
                 let data = data.ok_or_else(|| PlinkoError::ItemDoesNotExist(node.id()))?;
@@ -319,7 +331,9 @@ impl Plan {
                             .ok_or_else(missing)?
                             .set_description(text);
                     }
-                    PlanNode::PlanBuffer(_) => return Err("buffers have no description".into()),
+                    PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => {
+                        return Err("buffers and delays have no description".into());
+                    }
                 }
                 Ok(())
             }
@@ -332,15 +346,36 @@ impl Plan {
             }
         }
     }
+
+    pub fn get_node_dependencies(&self, node: &Uuid) -> PlinkoResult<&[PlanNode]> {
+        let node = self
+            .node(node)
+            .ok_or(PlinkoError::ItemDoesNotExist(*node))?;
+        Ok(node.dependencies())
+    }
+
+    pub fn get_node_parent(&self, node: &Uuid) -> PlinkoResult<Parent> {
+        let node = self
+            .node(node)
+            .ok_or(PlinkoError::ItemDoesNotExist(*node))?;
+        Ok(node.parent())
+    }
 }
 // }}}
 
+// Plan supporting types {{{
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanSchedulerData {
     priority: i32,
     /// What new top level items depend on to begin with, set by clients for convenience
     #[serde(default)]
     default_start: Option<PlanNode>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct NewPlan {
+    pub id: ShortId,
+    pub name: String,
 }
 
 // impl PlanSchedulerData{{{
@@ -379,3 +414,4 @@ pub struct PlanSchedulerDataPatch {
     )]
     pub default_start: Option<Option<PlanNode>>,
 }
+// }}}

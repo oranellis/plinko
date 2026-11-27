@@ -24,7 +24,7 @@ The server reads the environment, and `run_debug.sh` passes these on if they are
 
 ## Checks
 
-- `./check.sh` clippy, all tests, and builds the model and client for the browser.
+- `./check.sh` formatting, clippy (warnings fail it), all tests, and builds the model and client for the browser.
 - `client/e2e/run.sh` browser checks against a throwaway tenant (needs node and chromium, set
   `CHROMIUM` if it is not on the PATH).
 - `PLINKO_BENCH_SAVE=1 cargo run --release -p plinko --example bench` times scheduling 1000 tasks

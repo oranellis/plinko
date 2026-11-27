@@ -1,12 +1,13 @@
 //! The plans you can see, with how they are doing.
 
+// modules {{{
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
+    common::short_id::ShortId,
     multitenancy::tenant_update::{PlanTenantUpdate, TenantUpdateType},
     planner::plan::NewPlan,
     protocol::Created,
-    types::short_id::ShortId,
 };
 
 use crate::{
@@ -15,6 +16,7 @@ use crate::{
     shell::open_plan,
     ui::{Actions, Field, Modal, Text, use_sync},
 };
+// }}}
 
 #[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Card {
@@ -28,6 +30,7 @@ pub struct Card {
     pub favourite: bool,
 }
 
+// use_cards {{{
 /// The plans the person signed in can see, by name
 pub fn use_cards() -> Memo<Vec<Card>> {
     let sync = use_sync();
@@ -66,7 +69,9 @@ pub fn use_cards() -> Memo<Vec<Card>> {
         })
     })
 }
+// }}}
 
+// PlanCards {{{
 /// Plans as cards, each with a star to favourite it
 #[component]
 pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
@@ -106,7 +111,9 @@ pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
         </ul>
     }
 }
+// }}}
 
+// Plans {{{
 #[component]
 pub fn Plans() -> impl IntoView {
     let cards = use_cards();
@@ -150,7 +157,9 @@ pub fn Plans() -> impl IntoView {
         </Show>
     }
 }
+// }}}
 
+// NewPlanForm {{{
 #[component]
 fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
@@ -185,3 +194,4 @@ fn NewPlanForm(on_close: Callback<()>) -> impl IntoView {
         </Modal>
     }
 }
+// }}}

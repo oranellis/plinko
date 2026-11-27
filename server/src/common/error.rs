@@ -3,7 +3,7 @@ use std::fmt::Debug;
 
 use uuid::Uuid;
 
-use crate::types::short_id::ShortId;
+use crate::common::short_id::ShortId;
 // }}}
 
 #[derive(Debug)]
@@ -18,6 +18,8 @@ pub enum PlinkoError {
     ItemInUse(Uuid),
     InvalidRule(Uuid),
     LastAdmin,
+    EmailTaken(String),
+    OutOfRange(String),
     UnknownWorkerSlot(Uuid),
     InvalidDuration,
     Forbidden(Uuid),
@@ -58,6 +60,8 @@ impl std::fmt::Display for PlinkoError {
             }
             PlinkoError::InvalidDuration => write!(f, "a duration must be at least 1 day"),
             PlinkoError::LastAdmin => write!(f, "the tenant must keep an admin"),
+            PlinkoError::EmailTaken(email) => write!(f, "someone already has the email {}", email),
+            PlinkoError::OutOfRange(why) => write!(f, "{}", why),
             PlinkoError::InvalidRule(id) => {
                 write!(f, "availability rule {} is invalid", id)
             }
@@ -97,4 +101,6 @@ impl From<&str> for PlinkoError {
 }
 // }}}
 
+// PlinkoError supporting types {{{
 pub type PlinkoResult<T> = Result<T, PlinkoError>;
+// }}}

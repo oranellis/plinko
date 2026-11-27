@@ -4,15 +4,11 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::{
-    planner::{plan::Plan, plan_entity::PlanItem},
-    types::{
-        dependency::{Dependency, DependencyNode, PlanNode},
-        milestone::Milestone,
-        parent::Parent,
-        plan_buffer::PlanBuffer,
-        task::Task,
-        task_group::TaskGroup,
+    planner::items::{
+        dependency::PlanNode, milestone::Milestone, parent::Parent, plan_buffer::PlanBuffer,
+        plan_delay::PlanDelay, task::Task, task_group::TaskGroup,
     },
+    planner::{plan::Plan, plan_entity::PlanItem},
 };
 // }}}
 
@@ -24,6 +20,7 @@ pub(crate) enum Vertex {
     GroupStart(Uuid),
 }
 
+// impl Vertex {{{
 impl Vertex {
     /// A total order over vertices, for results that must not depend on map order
     pub(crate) fn key(&self) -> (u8, Uuid) {
@@ -33,15 +30,9 @@ impl Vertex {
             Vertex::Node(PlanNode::Milestone(id)) => (2, *id),
             Vertex::Node(PlanNode::PlanBuffer(id)) => (3, *id),
             Vertex::Node(PlanNode::TaskGroup(id)) => (4, *id),
+            Vertex::Node(PlanNode::PlanDelay(id)) => (5, *id),
         }
     }
-}
-
-/// A dependency of a vertex, on today when `from` is `None`
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Edge {
-    pub from: Option<Vertex>,
-    pub lag: i32,
 }
 
 impl From<PlanNode> for Vertex {
@@ -49,11 +40,27 @@ impl From<PlanNode> for Vertex {
         Vertex::Node(node)
     }
 }
+// }}}
+
+// Vertex supporting types {{{
+/// A dependency of a vertex, on today when `from` is `None`
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Edge {
+    pub from: Option<Vertex>,
+}
 
 pub(crate) struct Graph<'a> {
     plan: &'a Plan,
     members: HashMap<Uuid, Vec<PlanNode>>,
 }
+
+/// Whether a chain of dependencies leads from `from` back to `to` (today when `None`), with the
+/// answers kept for the next question about the same `to`
+struct Reach<'a, 'p> {
+    graph: &'a Graph<'p>,
+    known: HashMap<(Vertex, Option<Vertex>), bool>,
+}
+// }}}
 
 // impl Graph{{{
 impl<'a> Graph<'a> {
@@ -62,6 +69,7 @@ impl<'a> Graph<'a> {
         collect_members::<Task>(plan, &mut members);
         collect_members::<Milestone>(plan, &mut members);
         collect_members::<PlanBuffer>(plan, &mut members);
+        collect_members::<PlanDelay>(plan, &mut members);
         collect_members::<TaskGroup>(plan, &mut members);
         Self { plan, members }
     }
@@ -71,11 +79,6 @@ impl<'a> Graph<'a> {
         self.edges(v).into_iter().filter_map(|e| e.from).collect()
     }
 
-    /// The items whose parent is the group
-    pub(crate) fn members(&self, group: &Uuid) -> &[PlanNode] {
-        self.members.get(group).map_or(&[], Vec::as_slice)
-    }
-
     /// Every vertex of the plan, in a fixed order
     pub(crate) fn vertices(&self) -> Vec<Vertex> {
         let plan = self.plan;
@@ -83,6 +86,7 @@ impl<'a> Graph<'a> {
             nodes::<Task>(plan),
             nodes::<Milestone>(plan),
             nodes::<PlanBuffer>(plan),
+            nodes::<PlanDelay>(plan),
             nodes::<TaskGroup>(plan),
         ]
         .concat()
@@ -102,15 +106,13 @@ impl<'a> Graph<'a> {
                 let members = self.members.get(&id).into_iter().flatten();
                 let from = members.map(|n| Vertex::Node(*n));
                 from.chain([Vertex::GroupStart(id)])
-                    .map(|v| Edge {
-                        from: Some(v),
-                        lag: 0,
-                    })
+                    .map(|v| Edge { from: Some(v) })
                     .collect()
             }
             Vertex::Node(PlanNode::Task(id)) => self.item_edges::<Task>(id),
             Vertex::Node(PlanNode::Milestone(id)) => self.item_edges::<Milestone>(id),
             Vertex::Node(PlanNode::PlanBuffer(id)) => self.item_edges::<PlanBuffer>(id),
+            Vertex::Node(PlanNode::PlanDelay(id)) => self.item_edges::<PlanDelay>(id),
         }
     }
 
@@ -118,19 +120,16 @@ impl<'a> Graph<'a> {
         let Some(item) = T::entities(self.plan).get(&id) else {
             return Vec::new();
         };
-        let parent = item.parent();
-        // an item that depends on nothing begins when its parent does
-        let none = [Dependency::default()];
-        let dependencies = match item.dependencies() {
-            [] => &none,
-            some => some,
+        // its dependencies in the order it has them, then the start of its parent, which every
+        // item waits for: the enclosing group's start, or today (`None`) at the top level
+        let start = match item.parent() {
+            Parent::Node(group) => Some(Vertex::GroupStart(group)),
+            Parent::Plan => None,
         };
+        let dependencies = item.dependencies().iter().map(|d| Some((*d).into()));
         dependencies
-            .iter()
-            .map(|d| Edge {
-                from: resolve(d, parent),
-                lag: d.lag,
-            })
+            .chain([start])
+            .map(|from| Edge { from })
             .collect()
     }
 }
@@ -143,16 +142,9 @@ fn collect_members<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<Pla
     }
 }
 
-/// `ParentStart` is the enclosing group's start, or today (`None`) at top level
-fn resolve(dep: &Dependency, parent: Parent) -> Option<Vertex> {
-    match (dep.node, parent) {
-        (DependencyNode::Node(n), _) => Some(n.into()),
-        (DependencyNode::ParentStart, Parent::Node(group)) => Some(Vertex::GroupStart(group)),
-        (DependencyNode::ParentStart, Parent::Plan) => None,
-    }
-}
 // }}}
 
+// cycle check {{{
 /// Whether any dependency path leads from `node` back to itself. Only cycles through the changed
 /// node can be new, so this is all that needs checking after an update.
 pub fn has_cycle_through(plan: &Plan, node: PlanNode) -> bool {
@@ -179,44 +171,38 @@ impl Graph<'_> {
         false
     }
 }
+// }}}
 
+// nodes {{{
 pub(crate) fn nodes<T: PlanItem>(plan: &Plan) -> Vec<PlanNode> {
     T::entities(plan).keys().map(|id| T::node(*id)).collect()
 }
+// }}}
 
-/// How much lag the longest chain of dependencies from `from` back to `to` (today when
-/// `None`) adds up to, with the results kept for the next question about the same `to`
-struct Chains<'a, 'p> {
-    graph: &'a Graph<'p>,
-    longest: HashMap<(Vertex, Option<Vertex>), Option<i64>>,
-}
-
-impl Chains<'_, '_> {
-    fn lag(&mut self, from: Vertex, to: Option<Vertex>) -> Option<i64> {
-        if let Some(known) = self.longest.get(&(from, to)) {
+// impl Reach {{{
+impl Reach<'_, '_> {
+    fn leads(&mut self, from: Vertex, to: Option<Vertex>) -> bool {
+        if let Some(known) = self.known.get(&(from, to)) {
             return *known;
         }
         // a cycle would loop for ever, and is not a chain
-        self.longest.insert((from, to), None);
-        let mut best = None;
-        for edge in self.graph.edges(from) {
-            let lag = i64::from(edge.lag);
-            let through = if edge.from == to {
-                Some(lag)
-            } else {
-                edge.from.and_then(|u| self.lag(u, to)).map(|l| l + lag)
-            };
-            best = best.max(through);
-        }
-        self.longest.insert((from, to), best);
-        best
+        self.known.insert((from, to), false);
+        let leads = self
+            .graph
+            .edges(from)
+            .into_iter()
+            .any(|edge| edge.from == to || edge.from.is_some_and(|u| self.leads(u, to)));
+        self.known.insert((from, to), leads);
+        leads
     }
 }
+// }}}
 
+// simplified {{{
 /// The dependencies the items touching `touched` can do without: those another dependency of the
-/// same item already implies. A chain a to b to c makes a direct a to c redundant when the chain's
-/// lags add up to at least its lag. Gives each changed item with the dependencies to keep, in order.
-pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependency>)> {
+/// same item already implies. A chain a to b to c makes a direct a to c redundant. Gives each changed item with the
+/// dependencies to keep, in order.
+pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<PlanNode>)> {
     let graph = Graph::new(plan);
     let vertices = graph.vertices();
     let mut waiting: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
@@ -236,9 +222,9 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
             pending.extend(waiting.get(&v).into_iter().flatten());
         }
     }
-    let mut chains = Chains {
+    let mut reach = Reach {
         graph: &graph,
-        longest: HashMap::new(),
+        known: HashMap::new(),
     };
     let mut changed = Vec::new();
     for v in vertices.into_iter().filter(|v| affected.contains(v)) {
@@ -253,10 +239,13 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
             Vertex::Node(node @ PlanNode::PlanBuffer(id)) => {
                 (node, dependencies::<PlanBuffer>(plan, id))
             }
+            Vertex::Node(node @ PlanNode::PlanDelay(id)) => {
+                (node, dependencies::<PlanDelay>(plan, id))
+            }
             Vertex::Node(PlanNode::TaskGroup(_)) => continue,
         };
         let edges = graph.edges(v);
-        let kept: Vec<Dependency> = deps
+        let kept: Vec<PlanNode> = deps
             .iter()
             .zip(&edges)
             .enumerate()
@@ -265,14 +254,10 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
                     let Some(source) = other.from else {
                         return false;
                     };
-                    j != *i
-                        && other.from != edge.from
-                        && chains
-                            .lag(source, edge.from)
-                            .is_some_and(|l| i64::from(other.lag) + l >= i64::from(edge.lag))
+                    j != *i && other.from != edge.from && reach.leads(source, edge.from)
                 })
             })
-            .map(|(_, (dep, _))| dep.clone())
+            .map(|(_, (dep, _))| *dep)
             .collect();
         if kept.len() < deps.len() {
             changed.push((item, kept));
@@ -280,9 +265,12 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<Dependen
     }
     changed
 }
+// }}}
 
-fn dependencies<'a, T: PlanItem + 'a>(plan: &'a Plan, id: Uuid) -> &'a [Dependency] {
+// dependencies {{{
+fn dependencies<'a, T: PlanItem + 'a>(plan: &'a Plan, id: Uuid) -> &'a [PlanNode] {
     T::entities(plan)
         .get(&id)
         .map_or(&[], |item| item.dependencies())
 }
+// }}}

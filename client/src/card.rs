@@ -1,0 +1,499 @@
+//! The shape of the item being created or edited, over the buttons at the bottom of a plan, with
+//! handles for what it waits for, what waits for it, the group it is in and how many days it
+//! lasts. What is changed is staged in the page's `Draft`.
+
+// modules {{{
+use leptos::{ev::PointerEvent, html, prelude::*};
+use plinko::{
+    common::short_id::ShortId,
+    planner::items::{dependency::PlanNode, parent::Parent},
+    planner::plan::Plan,
+};
+use wasm_bindgen::JsCast;
+
+use crate::{
+    draft::{Draft, Pick},
+    model,
+    ui::use_sync,
+};
+// }}}
+
+// constants {{{
+/// How far a handle moves before letting go of it is a drop and not a click
+const CLICK: f64 = 5.0;
+
+/// How far the days handle is dragged for each day
+const DAY_STEP: f64 = 28.0;
+/// The most boxes shown for the days while they are dragged: four rows of fifteen
+const MOST_BOXES: u32 = 60;
+/// The days from which a drag changes them at the full rate
+const EASED: i64 = 6;
+
+/// The most days an item can be given
+pub const MOST_DAYS: i64 = 3650;
+// }}}
+
+/// How to ask the chart what is at a point of the window: `None` off the chart, `Some(None)` on
+/// a part of it with no item
+pub type Probe = RwSignal<Option<Callback<(f64, f64), Option<Option<PlanNode>>>>>;
+
+// Probe supporting types {{{
+/// A handle of the card
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Grab {
+    /// A circle, for what the item waits for or what waits for it
+    Link(Pick),
+    /// The grip in the middle, for the group it is in
+    Move,
+    /// The bar on its right edge, for its days
+    Days,
+}
+
+/// A handle that is held down: where it was taken, where the pointer is now, the days the item
+/// had then, and whether a mouse holds it (a finger only clicks, dragging is for panning)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Held {
+    grab: Grab,
+    from: (f64, f64),
+    at: (f64, f64),
+    days: u32,
+    mouse: bool,
+}
+// }}}
+
+// impl Held {{{
+impl Held {
+    fn dragged(&self) -> bool {
+        self.mouse && (self.at.0 - self.from.0).hypot(self.at.1 - self.from.1) >= CLICK
+    }
+}
+// }}}
+
+// helpers {{{
+/// How far the pointer goes to take an item from `day` days to one more: twice as far from one
+/// day, easing to `DAY_STEP` from `EASED` days on, so the few days most items have are easy to hit
+fn day_width(day: i64) -> f64 {
+    let slow = (EASED - day.max(1)).max(0) as f64 / (EASED - 1) as f64;
+    DAY_STEP * (1.0 + slow)
+}
+
+/// How far along the drag an item of `days` days is
+fn day_place(days: i64) -> f64 {
+    let eased: f64 = (0..days.min(EASED)).map(day_width).sum();
+    eased + (days - EASED).max(0) as f64 * DAY_STEP
+}
+
+/// The days an item that had `from` has once its handle is dragged `dx` sideways, before limits
+fn dragged_days(from: u32, dx: f64) -> i64 {
+    let target = day_place(i64::from(from)) + dx;
+    let mut days = i64::from(from);
+    while target >= (day_place(days) + day_place(days + 1)) / 2.0 {
+        days += 1;
+    }
+    while days > 0 && target < (day_place(days - 1) + day_place(days)) / 2.0 {
+        days -= 1;
+    }
+    days
+}
+
+/// The fewest days a kind of item can last
+pub fn least_days(node: PlanNode) -> i64 {
+    match node {
+        PlanNode::Task(_) => 1,
+        _ => 0,
+    }
+}
+
+fn kind_class(node: PlanNode) -> &'static str {
+    match node {
+        PlanNode::Task(_) => "task",
+        PlanNode::Milestone(_) => "milestone",
+        PlanNode::TaskGroup(_) => "group",
+        PlanNode::PlanBuffer(_) => "buffer",
+        PlanNode::PlanDelay(_) => "delay",
+    }
+}
+
+fn new_name(node: PlanNode) -> &'static str {
+    match node {
+        PlanNode::Task(_) => "New task",
+        PlanNode::Milestone(_) => "New milestone",
+        PlanNode::TaskGroup(_) => "New group",
+        PlanNode::PlanBuffer(_) => "Buffer",
+        PlanNode::PlanDelay(_) => "Delay",
+    }
+}
+// }}}
+
+// Hint {{{
+/// What a click will do while something is being picked, said at the bottom of the chart for
+/// as long as it is
+#[component]
+pub fn Hint(
+    draft: RwSignal<Option<Draft>>,
+    /// What is being picked for an item that is only selected
+    #[prop(into)]
+    live: Signal<Option<Pick>>,
+    /// What the keys are doing when nothing is being picked
+    #[prop(into)]
+    note: Signal<Option<&'static str>>,
+) -> impl IntoView {
+    let said = move || {
+        let pick = draft.with(|d| d.as_ref()?.pick).or_else(|| live.get());
+        let Some(pick) = pick else {
+            return note.get();
+        };
+        Some(pick).map(|pick| match pick {
+            Pick::Before => "Select preceding nodes",
+            Pick::After => "Select succeeding nodes",
+            Pick::Group => "Click a group to put it in, or nothing (t) for the top level",
+            Pick::Day => "Click the day to hold it to",
+        })
+    };
+    view! { {move || said().map(|said| view! { <p class="hint fadein">{said}</p> })} }
+}
+// }}}
+
+// Card {{{
+/// The shape of the page's draft with its handles. `probe` is how drops and `spot` how the item
+/// under a drag reach the chart.
+#[component]
+pub fn Card(
+    plan: ShortId,
+    draft: RwSignal<Option<Draft>>,
+    probe: Probe,
+    spot: RwSignal<Option<PlanNode>>,
+    /// Whether its days are being typed, which a key can start too
+    typing: RwSignal<bool>,
+    /// The draft was changed from the card
+    on_change: Callback<()>,
+) -> impl IntoView {
+    let sync = use_sync();
+    let held = RwSignal::new(None::<Held>);
+    let days_box = NodeRef::<html::Input>::new();
+    let with_plan = move |f: &mut dyn FnMut(&Plan)| {
+        sync.tenant.with_untracked(|t| {
+            if let Some(p) = t.as_ref().and_then(|t| t.plans().get(&plan)) {
+                f(p);
+            }
+        });
+    };
+    let changed = move || on_change.run(());
+    // changes the draft, and says why if the plan would not take the change
+    let change = move |f: &dyn Fn(&mut Draft, &Plan) -> Result<(), String>| {
+        let mut said = None;
+        with_plan(&mut |p| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    said = f(d, p).err();
+                }
+            });
+        });
+        match said {
+            Some(why) => sync.notice.set(Some(why)),
+            None => changed(),
+        }
+    };
+    let at_point = move |at: (f64, f64)| probe.get_untracked().and_then(|p| p.run(at));
+    let node = Memo::new(move |_| draft.with(|d| d.as_ref().map(|d| d.node)));
+    let lit = move |pick: Pick| draft.with(|d| d.as_ref().is_some_and(|d| d.pick == Some(pick)));
+    let days = move || draft.with(|d| d.as_ref().and_then(|d| d.duration));
+
+    let down = move |grab: Grab, ev: PointerEvent| {
+        ev.prevent_default();
+        ev.stop_propagation();
+        if let Some(target) = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+        {
+            let _ = target.set_pointer_capture(ev.pointer_id());
+        }
+        let at = (f64::from(ev.client_x()), f64::from(ev.client_y()));
+        held.set(Some(Held {
+            grab,
+            from: at,
+            at,
+            days: days().unwrap_or(0),
+            mouse: ev.pointer_type() == "mouse",
+        }));
+    };
+    let moved = move |ev: PointerEvent| {
+        let Some(mut now) = held.get_untracked().filter(|h| h.mouse) else {
+            return;
+        };
+        now.at = (f64::from(ev.client_x()), f64::from(ev.client_y()));
+        held.set(Some(now));
+        if !now.dragged() {
+            return;
+        }
+        match now.grab {
+            Grab::Days => {
+                draft.update(|d| {
+                    if let Some(d) = d {
+                        let wanted = dragged_days(now.days, now.at.0 - now.from.0);
+                        let days = wanted.clamp(least_days(d.node), MOST_DAYS) as u32;
+                        d.duration = d.duration.map(|_| days);
+                    }
+                });
+                changed();
+            }
+            Grab::Link(_) | Grab::Move => {
+                spot.set(at_point(now.at).flatten());
+            }
+        }
+    };
+    let up = move |_: PointerEvent| {
+        let Some(done) = held.get_untracked() else {
+            return;
+        };
+        held.set(None);
+        spot.set(None);
+        let over = at_point(done.at);
+        match (done.grab, done.dragged()) {
+            // a click lights the handle, or puts it out, and the chart then answers to it
+            (Grab::Link(pick), false) => draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick = Some(pick).filter(|p| d.pick != Some(*p));
+                }
+            }),
+            (Grab::Move, false) => draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick = Some(Pick::Group).filter(|p| d.pick != Some(*p));
+                }
+            }),
+            (Grab::Days, false) => typing.set(true),
+            (Grab::Link(pick), true) => {
+                if let Some(Some(other)) = over {
+                    change(&|d, p| d.link(p, pick, other));
+                }
+            }
+            // let go off the chart it stays where it is
+            (Grab::Move, true) => {
+                if let Some(over) = over {
+                    change(&|d, p| d.place(p, over));
+                }
+            }
+            (Grab::Days, true) => {}
+        }
+    };
+    let cancelled = move |_: PointerEvent| {
+        held.set(None);
+        spot.set(None);
+    };
+    Effect::new(move |_| {
+        if typing.get()
+            && let Some(input) = days_box.get()
+        {
+            let _ = input.focus();
+            input.select();
+        }
+    });
+    let typed = move || {
+        let wanted = days_box
+            .get_untracked()
+            .and_then(|i| i.value().parse::<i64>().ok());
+        typing.set(false);
+        draft.update(|d| {
+            if let (Some(d), Some(wanted)) = (d, wanted) {
+                let days = wanted.clamp(least_days(d.node), MOST_DAYS) as u32;
+                d.duration = d.duration.map(|_| days);
+            }
+        });
+        changed();
+    };
+
+    let name = move || {
+        let Some(d) = draft.get() else {
+            return String::new();
+        };
+        match d.name.is_empty() {
+            true => new_name(d.node).to_string(),
+            false => d.name,
+        }
+    };
+    // the line from a handle being dragged to the pointer
+    let line = move || {
+        let h = held.get().filter(|h| h.dragged() && h.grab != Grab::Days)?;
+        let tone = match h.grab {
+            Grab::Link(Pick::After) => "after",
+            Grab::Link(_) => "before",
+            _ => "group",
+        };
+        Some(view! {
+            <svg class="draftcard-line">
+                <line class=tone x1=h.from.0 y1=h.from.1 x2=h.at.0 y2=h.at.1 />
+            </svg>
+        })
+    };
+    let linked = move |pick: Pick| {
+        draft.with(|d| {
+            d.as_ref().map_or(0, |d| match pick {
+                Pick::After => d.dependents.len(),
+                _ => d.dependencies.len(),
+            })
+        })
+    };
+    let knob = move |pick: Pick, label: &'static str| {
+        let side = if pick == Pick::After {
+            "after"
+        } else {
+            "before"
+        };
+        view! {
+                <button
+                    type="button"
+                    class=format!("draftcard-knob {side}")
+                    class:lit=move || lit(pick)
+                    title=label
+                    aria-label=move || format!("{label} ({} linked)", linked(pick))
+                    aria-pressed=move || lit(pick).to_string()
+                    on:pointerdown=move |ev| down(Grab::Link(pick), ev)
+                    on:pointermove=moved
+                    on:pointerup=up
+                    on:pointercancel=cancelled
+                ></button>
+        }
+    };
+
+    view! {
+            <div class="stripstage fadein">
+                <div class="draftcard-stage">
+                    {knob(Pick::Before, "What it waits for: drag onto an item, or click and pick items")}
+                    <div class=move || format!("draftcard-shape {}", node.get().map_or("", kind_class))>
+                        <span class="draftcard-name">{name}</span>
+                        <button
+                                type="button"
+                                class="draftcard-grip"
+                                class:lit=move || lit(Pick::Group)
+                                title="Its group: drag onto a group, or click and pick one"
+                                aria-label="Its group: drag onto a group, or click and pick one"
+                                aria-pressed=move || lit(Pick::Group).to_string()
+                                on:pointerdown=move |ev| down(Grab::Move, ev)
+                                on:pointermove=moved
+                                on:pointerup=up
+                                on:pointercancel=cancelled
+                            ></button>
+                        <Show when=move || days().is_some()>
+                            <div class="draftcard-days" class:held=move || held.with(|h| h.is_some_and(|h| h.grab == Grab::Days))>
+                                <Show
+                                    when=move || typing.get()
+                                    fallback=move || view! {
+                                        <button
+                                            type="button"
+                                            class="draftcard-daycount"
+                                            title="Its days: drag sideways, or click to type"
+                                            aria-label="Its days: drag sideways, or click to type"
+                                            on:pointerdown=move |ev| down(Grab::Days, ev)
+                                            on:pointermove=moved
+                                            on:pointerup=up
+                                            on:pointercancel=cancelled
+                                        >
+                                            <span>{move || format!("{}d", days().unwrap_or(0))}</span>
+                                            <i></i>
+                                        </button>
+                                        // while it is dragged, a box a day: the ones added lit, the ones taken away empty
+                                        {move || held.get().filter(|h| h.grab == Grab::Days && h.dragged()).map(|h| {
+                                            let now = days().unwrap_or(h.days);
+                                            let all = now.max(h.days);
+                                            let boxes = (0..all.min(MOST_BOXES)).map(|i| {
+                                                let class = match (i < h.days, i < now) {
+                                                    (true, true) => "",
+                                                    (false, _) => "added",
+                                                    (true, false) => "taken",
+                                                };
+                                                view! { <i class=class></i> }
+                                            }).collect_view();
+                                            // four rows of them, and then only that there are more
+                                            let more = (all > MOST_BOXES).then(|| view! { <b>"\u{2026}"</b> });
+                                            view! { <span class="draftcard-drag">{boxes}{more}</span> }
+                                        })}
+                                    }
+                                >
+                                    <input
+                                        type="number"
+                                        class="draftcard-daybox"
+                                        node_ref=days_box
+                                        min=move || node.get().map_or(0, least_days)
+                                        max=MOST_DAYS
+                                        // empty to type into, with the days it has shown behind
+                                        placeholder=move || days().unwrap_or(0).to_string()
+                                        on:blur=move |_| typed()
+                                        on:keydown=move |ev| match ev.key().as_str() {
+                                            "Enter" => { ev.prevent_default(); ev.stop_propagation(); typed(); }
+                                            // what was typed is dropped, so going away does not keep it as leaving the box would
+                                            "Escape" => {
+                                                ev.stop_propagation();
+                                                if let Some(input) = days_box.get_untracked() { input.set_value(""); }
+                                                typing.set(false);
+                                            }
+                                            _ => {}
+                                        }
+                                    />
+                                </Show>
+                            </div>
+                        </Show>
+                    </div>
+                    {knob(Pick::After, "What waits for it: drag onto an item, or click and pick items")}
+                </div>
+            </div>
+            {line}
+    }
+}
+// }}}
+
+// picked {{{
+/// What a click on the chart does while a handle of the card is lit: the item clicked is linked
+/// or unlinked, or the item being edited goes in its group. `None` for a click on nothing.
+/// Gives whether the click was the card's, which it is whenever a handle is lit.
+pub fn picked(plan: &Plan, draft: &mut Draft, node: Option<PlanNode>) -> Result<bool, String> {
+    let Some(pick) = draft.pick else {
+        return Ok(false);
+    };
+    match (pick, node) {
+        // a day is picked on the chart itself, which knows where its days are
+        (Pick::Day, _) => {}
+        // one click says where it goes, the top level for a click on nothing
+        (Pick::Group, over) => {
+            draft.place(plan, over)?;
+            draft.pick = None;
+        }
+        (_, Some(other)) => draft.toggle(plan, pick, other)?,
+        // a click on nothing is the end of picking
+        (_, None) => draft.pick = None,
+    }
+    Ok(true)
+}
+
+/// The group of the item a draft is for when it is added from the chart: the group that is
+/// open, or the group of the item that is
+pub fn beside(plan: &Plan, open: Option<PlanNode>) -> Parent {
+    match open {
+        Some(PlanNode::TaskGroup(id)) => Parent::Node(id),
+        Some(other) => model::parent_of(plan, other),
+        None => Parent::Plan,
+    }
+}
+// }}}
+
+// tests {{{
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn few_days_take_a_longer_drag_than_many() {
+        assert_eq!(day_width(1), DAY_STEP * 2.0);
+        assert_eq!(day_width(6), DAY_STEP);
+        assert!(day_width(3) > day_width(4));
+        // a drag that is three days at the full rate
+        let dx = DAY_STEP * 3.0;
+        assert_eq!(dragged_days(1, dx), 3);
+        assert_eq!(dragged_days(10, dx), 13);
+        assert_eq!(dragged_days(10, -dx), 7);
+        assert_eq!(dragged_days(3, 0.0), 3);
+        assert_eq!(dragged_days(2, -1000.0), 0);
+        // there and back again is where it began
+        assert_eq!(dragged_days(dragged_days(2, 200.0) as u32, -200.0), 2);
+    }
+}
+// }}}

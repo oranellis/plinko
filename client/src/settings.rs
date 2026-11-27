@@ -1,30 +1,34 @@
 //! A plan's settings: what new items start from, its targets, who is in it and how they are tagged, the days
 //! work may be done on, and removing it.
 
+// modules {{{
 use std::collections::HashSet;
 
 use leptos::prelude::*;
 use plinko::{
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::tenant_update::{PlanTenantUpdate, TenantUpdateType},
-    planner::{plan::PlanSchedulerDataPatch, plan_update::PlanUpdate},
-    types::{
+    planner::resources::{
         affinity::NewAffinity,
-        crud::Crud,
-        short_id::ShortId,
         tag::NewTag,
         target::{NewTarget, TargetPatch},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch},
     },
+    planner::{plan::PlanSchedulerDataPatch, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
+use wasm_bindgen::JsCast;
 
 use crate::{
     availability::{AffinityWindow, AvailabilityWindow},
+    icons::{Icon, IconKind},
     model::{self, node_name},
     nav::{Availability, Route, navigate},
-    ui::{Choice, Field, Number, Picker, Select, Text, use_sync},
+    ui::{Choice, Field, Modal, Number, Picker, Select, Text, use_sync, window_listener},
 };
+// }}}
 
+// PlanSettings {{{
 #[component]
 pub fn PlanSettings(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -75,10 +79,12 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
         };
         sync.plan(plan, PlanUpdate::SchedulerData(patch));
     };
-    let remove = move |_| {
+    let deleting = RwSignal::new(false);
+    let remove = Callback::new(move |()| {
+        deleting.set(false);
         sync.send(TenantUpdateType::Plan(PlanTenantUpdate::Remove(plan)));
         navigate(Route::Plans);
-    };
+    });
     view! {
         <div class="people">
             <section>
@@ -106,15 +112,50 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
             <People plan=plan />
             <Tags plan=plan />
             <Affinities plan=plan />
-            <section>
-                <h2>"Plan Management"</h2>
-                <button type="button" class="danger" on:click=remove>"Delete Plan"</button>
-            </section>
+            // only an admin may delete a plan
+            <Show when=move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin))>
+                <section>
+                    <h2>"Plan Management"</h2>
+                    <button type="button" class="danger" on:click=move |_| deleting.set(true)>"Delete Plan"</button>
+                </section>
+            </Show>
+            {move || deleting.get().then(|| {
+                let name = sync.tenant.with_untracked(|t| {
+                    t.as_ref().and_then(|t| t.plans().get(&plan)).map(|p| p.name().to_string())
+                });
+                let keep = Callback::new(move |()| deleting.set(false));
+                window_listener("keydown", move |ev: web_sys::KeyboardEvent| {
+                    // a button of the window that has the keyboard does its own thing
+                    let taken = ev
+                        .target()
+                        .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                        .is_some_and(|t| t.closest(".modal button").ok().flatten().is_some());
+                    if ev.key() == "Enter" && !ev.default_prevented() && !taken {
+                        ev.prevent_default();
+                        remove.run(());
+                    }
+                });
+                // a click off it, or escape, is to keep it, as for an item of the plan
+                view! {
+                    <Modal title=format!("Delete {}?", name.unwrap_or_default()) on_close=keep>
+                        <div class="choices">
+                            <button type="button" class="ctx" title="Keep it" aria-label="Keep it" on:click=move |_| keep.run(())>
+                                <Icon kind=IconKind::Close size=40 />
+                            </button>
+                            <button type="button" class="ctx cancel" title="Delete it" aria-label="Delete it" on:click=move |_| remove.run(())>
+                                <Icon kind=IconKind::Bin size=48 />
+                            </button>
+                        </div>
+                    </Modal>
+                }
+            })}
         </div>
     }
     .into_any()
 }
+// }}}
 
+// Targets {{{
 #[component]
 fn Targets(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -202,7 +243,9 @@ fn Targets(plan: ShortId) -> impl IntoView {
         </section>
     }
 }
+// }}}
 
+// People {{{
 #[component]
 fn People(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -339,7 +382,9 @@ fn People(plan: ShortId) -> impl IntoView {
         </section>
     }
 }
+// }}}
 
+// Tags {{{
 #[component]
 fn Tags(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -386,7 +431,9 @@ fn Tags(plan: ShortId) -> impl IntoView {
         </section>
     }
 }
+// }}}
 
+// Affinities {{{
 #[component]
 fn Affinities(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -438,3 +485,4 @@ fn Affinities(plan: ShortId) -> impl IntoView {
         })}
     }
 }
+// }}}

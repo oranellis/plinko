@@ -1,53 +1,62 @@
 //! What dragging handles on the chart does to the plan: adding and cutting dependencies, moving
 //! items between groups and changing how long tasks and buffers run.
 
+// modules {{{
 use chrono::{Duration, NaiveDate};
 use leptos::prelude::*;
 use plinko::{
-    planner::{plan::Plan, plan_update::PlanUpdate},
-    types::{
+    common::{
         crud::Crud,
-        dependency::{Dependency, DependencyNode, PlanNode},
+        dates::{NodeConstraint, NodeEnd},
+        short_id::ShortId,
+    },
+    planner::items::{
+        dependency::PlanNode,
         parent::Parent,
         plan_buffer::PlanBufferPatch,
-        short_id::ShortId,
         task::{PersistentState, Status, TaskPatch},
     },
+    planner::{plan::Plan, plan_update::PlanUpdate},
 };
 
 use crate::{
-    gantt::{links, shift::Editing},
+    card,
+    draft::{Draft, Pick},
+    gantt::{
+        links,
+        shift::{Editing, Held, Pin},
+    },
+    guard::Guard,
     model,
     ui::use_sync,
 };
+// }}}
 
-fn on(node: PlanNode) -> DependencyNode {
-    DependencyNode::Node(node)
+// helpers {{{
+fn on(node: PlanNode) -> PlanNode {
+    node
 }
 
 /// The days a task really started and ended, for one whose end is recorded
 fn ended(state: PersistentState) -> Option<(NaiveDate, NaiveDate)> {
     match (state.status, state.actual_start_date, state.actual_end_date) {
-        (Status::Completed | Status::OnHold, Some(start), Some(end)) => {
+        (Status::Completed | Status::OnHold | Status::Dropped, Some(start), Some(end)) => {
             Some((start, end.max(start)))
         }
         _ => None,
     }
 }
 
-fn with_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
+fn with_dependency(deps: Vec<PlanNode>, node: PlanNode) -> Vec<PlanNode> {
     let mut deps = deps;
-    if !deps.iter().any(|d| d.node == on(node)) {
-        deps.push(Dependency {
-            node: on(node),
-            lag: 0,
-        });
+    if !deps.iter().any(|d| *d == on(node)) {
+        deps.push(on(node));
     }
     deps
 }
 
-fn without_dependency(deps: Vec<Dependency>, node: PlanNode) -> Vec<Dependency> {
-    deps.into_iter().filter(|d| d.node != on(node)).collect()
+fn without_dependency(deps: Vec<PlanNode>, node: PlanNode) -> Vec<PlanNode> {
+    deps.into_iter().filter(|d| *d != on(node)).collect()
 }
 
 /// What a resize changes: the days a task is to run, or for one that is done or on hold the day
@@ -80,7 +89,6 @@ fn task_state(id: uuid::Uuid, state: PersistentState) -> PlanUpdate {
         id,
         name: None,
         parent: None,
-        mode: None,
         duration: None,
         time_constraint: None,
         dependencies: None,
@@ -90,13 +98,19 @@ fn task_state(id: uuid::Uuid, state: PersistentState) -> PlanUpdate {
         persistent_state: Some(state),
     }))
 }
+// }}}
 
+// editing {{{
 pub fn editing(plan: ShortId) -> Editing {
     let sync = use_sync();
     let read = move |f: &dyn Fn(&Plan) -> Option<Vec<PlanUpdate>>| {
         sync.tenant
             .with_untracked(|t| f(t.as_ref()?.plans().get(&plan)?))
             .unwrap_or_default()
+    };
+    let read_one = move |f: &dyn Fn(&Plan) -> Option<bool>| {
+        sync.tenant
+            .with_untracked(|t| f(t.as_ref()?.plans().get(&plan)?))
     };
     let send = move |updates: Vec<PlanUpdate>| {
         for update in updates {
@@ -115,7 +129,7 @@ pub fn editing(plan: ShortId) -> Editing {
         send(read(&|p| {
             let (waiting, before) = if model::dependencies(p, selected)
                 .iter()
-                .any(|d| d.node == on(other))
+                .any(|d| *d == on(other))
             {
                 (selected, other)
             } else {
@@ -164,6 +178,24 @@ pub fn editing(plan: ShortId) -> Editing {
             )])
         }));
     });
+    let restart = Callback::new(move |(node, days): (PlanNode, i32)| {
+        send(read(&|p| {
+            let PlanNode::Task(id) = node else {
+                return None;
+            };
+            let state = p.tasks().get(&id)?.persistent_state();
+            let start = state
+                .actual_start_date?
+                .checked_add_signed(Duration::days(i64::from(days)))?;
+            Some(vec![task_state(
+                id,
+                PersistentState {
+                    actual_start_date: Some(state.actual_end_date.map_or(start, |e| start.min(e))),
+                    ..state
+                },
+            )])
+        }));
+    });
     let resize = Callback::new(move |(node, days): (PlanNode, i32)| {
         send(read(&|p| {
             // finished or paused work ends on another day, the rest takes more or fewer days
@@ -189,7 +221,6 @@ pub fn editing(plan: ShortId) -> Editing {
                     id,
                     name: None,
                     parent: None,
-                    mode: None,
                     duration: Some(duration),
                     time_constraint: None,
                     dependencies: None,
@@ -222,9 +253,49 @@ pub fn editing(plan: ShortId) -> Editing {
                 .unwrap_or_default()
         })
     });
+    // read so that what shows it follows the plan: holding an item or letting it go need not
+    // move anything on the chart
+    let pin = Callback::new(move |node: PlanNode| {
+        sync.tenant.with(|t| {
+            let p = t.as_ref()?.plans().get(&plan)?;
+            let held = match node {
+                PlanNode::Task(id) => p.tasks().get(&id)?.time_constraint(),
+                PlanNode::TaskGroup(id) => p.task_groups().get(&id)?.time_constraint(),
+                // a milestone is a day, held by its end
+                PlanNode::Milestone(id) => NodeConstraint {
+                    constraint: p.milestones().get(&id)?.time_constraint(),
+                    end: NodeEnd::End,
+                },
+                PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => return None,
+            };
+            Pin::of(held.constraint, held.end == NodeEnd::End)
+        })
+    });
+    // what has an end to drag where it is on the chart: a task that has ended, by the day it
+    // did, and a buffer whose start is set, by its days
+    let ended_at = Callback::new(move |node: PlanNode| {
+        read_one(&|p| match node {
+            PlanNode::Task(id) => {
+                let task = p.tasks().get(&id)?;
+                Some(ended(task.persistent_state()).is_some())
+            }
+            PlanNode::PlanBuffer(id) => Some(p.plan_buffers().get(&id)?.set_start_day().is_some()),
+            _ => None,
+        })
+        .unwrap_or(false)
+    });
     Editing {
+        pin,
+        ended: ended_at,
+        // only an item being edited has a day to drag and dots to click, see `staging`
+        constrain: Callback::new(|_| ()),
+        aim: Callback::new(|_| ()),
+        hold: Callback::new(|_| ()),
+        daying: Callback::new(|_| ()),
+        pick: Callback::new(|_| ()),
         dated,
         shift_dates,
+        restart,
         link,
         unlink,
         moved,
@@ -233,7 +304,186 @@ pub fn editing(plan: ShortId) -> Editing {
         chain,
     }
 }
+// }}}
 
+// staging {{{
+/// The same as `live`, but what is asked of the item being edited goes in its draft, to be saved
+/// or discarded with the rest of it
+pub fn staging(
+    live: Editing,
+    plan: ShortId,
+    draft: RwSignal<Option<Draft>>,
+    guard: Guard,
+) -> Editing {
+    let sync = use_sync();
+    let ours =
+        move |node: PlanNode| draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.node == node));
+    let stage = move |f: &dyn Fn(&Plan, &mut Draft) -> Result<(), String>| {
+        let mut said = None;
+        sync.tenant.with_untracked(|t| {
+            if let Some(p) = t.as_ref().and_then(|t| t.plans().get(&plan)) {
+                draft.update(|d| said = d.as_mut().and_then(|d| f(p, d).err()));
+            }
+        });
+        guard.dirtied();
+        if said.is_some() {
+            sync.notice.set(said);
+        }
+    };
+    let link = Callback::new(move |(node, other, right): (PlanNode, PlanNode, bool)| {
+        // the right edge: the other waits on this item, the left: this item waits on the other
+        let side = |after: bool| if after { Pick::After } else { Pick::Before };
+        if ours(node) {
+            stage(&|p, d| d.link(p, side(right), other));
+        } else if ours(other) {
+            stage(&|p, d| d.link(p, side(!right), node));
+        } else {
+            live.link.run((node, other, right));
+        }
+    });
+    let unlink = Callback::new(move |(selected, other): (PlanNode, PlanNode)| {
+        let them = match (ours(selected), ours(other)) {
+            (true, _) => other,
+            (_, true) => selected,
+            _ => return live.unlink.run((selected, other)),
+        };
+        stage(&|p, d| match d.dependencies.contains(&them) {
+            true => d.toggle(p, Pick::Before, them),
+            false if d.dependents.contains(&them) => d.toggle(p, Pick::After, them),
+            false => Ok(()),
+        });
+    });
+    let moved = Callback::new(
+        move |(node, over): (PlanNode, Option<PlanNode>)| match ours(node) {
+            true => stage(&|p, d| d.place(p, over)),
+            false => live.moved.run((node, over)),
+        },
+    );
+    // whether the days it really ran have an end, which its right grip then moves
+    let finished = |p: &Plan, node: PlanNode| match node {
+        PlanNode::Task(id) => p
+            .tasks()
+            .get(&id)
+            .is_some_and(|t| ended(t.persistent_state()).is_some()),
+        _ => false,
+    };
+    let shift_dates = Callback::new(move |(node, days): (PlanNode, i32)| match ours(node) {
+        true => stage(&|_, d| {
+            d.moved = (d.moved.0 + days, d.moved.1 + days);
+            Ok(())
+        }),
+        false => live.shift_dates.run((node, days)),
+    });
+    let restart = Callback::new(move |(node, days): (PlanNode, i32)| match ours(node) {
+        true => stage(&|_, d| {
+            d.moved.0 += days;
+            Ok(())
+        }),
+        false => live.restart.run((node, days)),
+    });
+    let resize = Callback::new(move |(node, days): (PlanNode, i32)| match ours(node) {
+        true => stage(&|p, d| {
+            if finished(p, d.node) {
+                d.moved.1 += days;
+                return Ok(());
+            }
+            let least = card::least_days(d.node);
+            let grown = |now: u32| (i64::from(now) + i64::from(days)).clamp(least, card::MOST_DAYS);
+            d.duration = d.duration.map(|now| grown(now) as u32);
+            Ok(())
+        }),
+        false => live.resize.run((node, days)),
+    });
+    let duration = Callback::new(move |node: PlanNode| {
+        let saved = live.duration.run(node);
+        let Some(d) = draft.get_untracked().filter(|_| ours(node)) else {
+            return saved;
+        };
+        let ended = sync.tenant.with_untracked(|t| {
+            let plan = t.as_ref().and_then(|t| t.plans().get(&plan));
+            plan.is_some_and(|p| finished(p, node))
+        });
+        match ended {
+            true => (i64::from(saved) + i64::from(d.moved.1 - d.moved.0)).max(1) as u32,
+            false => d.duration.unwrap_or(saved),
+        }
+    });
+    // a click on a dot of the item makes clicks on others link and unlink them, another ends it
+    let pick = Callback::new(move |(node, right): (PlanNode, bool)| {
+        if ours(node) {
+            let side = if right { Pick::After } else { Pick::Before };
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick = Some(side).filter(|s| d.pick != Some(*s));
+                }
+            });
+        }
+    });
+    // the held day is put on a day, which ends the picking of one
+    let constrain = Callback::new(move |(node, end, day): (PlanNode, bool, NaiveDate)| {
+        if ours(node) {
+            stage(&|_, d| {
+                let held = d
+                    .pin()
+                    .map_or(if end { Held::Latest } else { Held::Earliest }, |p| p.held);
+                d.hold(Some(Pin { day, held, end }));
+                d.chosen = d.pin();
+                d.pick = d.pick.filter(|p| *p != Pick::Day);
+                d.aim = None;
+                Ok(())
+            });
+        }
+    });
+    let hold = Callback::new(move |(node, held): (PlanNode, Held)| {
+        if ours(node) {
+            stage(&|_, d| {
+                d.hold_as(held);
+                Ok(())
+            });
+        }
+    });
+    let daying = Callback::new(move |node: PlanNode| {
+        if ours(node) {
+            draft.update(|d| {
+                if let Some(d) = d.as_mut().filter(|d| d.pin().is_some()) {
+                    d.pick(Pick::Day);
+                }
+            });
+        }
+    });
+    // while its day is picked, the pointer says where it would go
+    let aim = Callback::new(move |(node, day): (PlanNode, NaiveDate)| {
+        let moved = draft.with_untracked(|d| {
+            d.as_ref()
+                .is_some_and(|d| d.node == node && d.aim != Some(day))
+        });
+        if moved {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.aim = Some(day);
+                }
+            });
+        }
+    });
+    Editing {
+        constrain,
+        aim,
+        hold,
+        daying,
+        pick,
+        link,
+        unlink,
+        moved,
+        shift_dates,
+        restart,
+        resize,
+        duration,
+        ..live
+    }
+}
+// }}}
+
+// tests {{{
 #[cfg(test)]
 mod tests {
     use uuid::Uuid;
@@ -249,3 +499,4 @@ mod tests {
         assert!(without_dependency(without_dependency(deps, a), a).is_empty());
     }
 }
+// }}}

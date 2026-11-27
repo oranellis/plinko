@@ -5,9 +5,9 @@ use uuid::Uuid;
 
 use crate::{
     availability::rule_set::{RuleSet, RuleSetUpdate},
+    common::error::PlinkoResult,
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::error::PlinkoResult,
 };
 // }}}
 
@@ -20,6 +20,7 @@ pub struct Affinity {
     rules: RuleSet<bool>,
 }
 
+// impl Affinity {{{
 impl Affinity {
     pub fn id(&self) -> &Uuid {
         &self.id
@@ -61,7 +62,9 @@ impl Patchable<AffinityPatch> for Affinity {
         Ok(())
     }
 }
+// }}}
 
+// Affinity supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewAffinity {
     pub id: Uuid,
@@ -73,3 +76,4 @@ pub struct AffinityPatch {
     pub id: Uuid,
     pub name: Option<String>,
 }
+// }}}

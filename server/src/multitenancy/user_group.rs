@@ -1,14 +1,13 @@
+// modules {{{
 use crate::helpers::double_option;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-// modules {{{
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match, traits::patch::Patchable, types::error::PlinkoResult,
+    common::error::PlinkoResult, helpers::functions::check_id_match, traits::patch::Patchable,
 };
-
 // }}}
 
 /// A team of users. A group's parent makes teams hierarchical, so anyone in a subgroup is also
@@ -68,6 +67,7 @@ impl Patchable<TenantUserGroupPatch> for TenantUserGroup {
 }
 // }}}
 
+// TenantUserGroup supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewTenantUserGroup {
     pub id: Uuid,
@@ -88,3 +88,4 @@ pub struct TenantUserGroupPatch {
     pub parent: Option<Option<Uuid>>,
     pub users: Option<HashSet<Uuid>>,
 }
+// }}}

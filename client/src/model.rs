@@ -1,20 +1,19 @@
 //! A plan as rows to show: the tree of groups and items in order, with where each is scheduled.
 
+// modules {{{
 use std::collections::{HashMap, HashSet};
 
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{
+    planner::items::{
+        dependency::PlanNode, milestone::DerivedStatus, parent::Parent, task::Status,
+    },
     planner::plan::Plan,
     scheduler::state::{PlanVolatileState, UnscheduledReason},
-    types::{
-        dependency::{Dependency, PlanNode},
-        milestone::DerivedStatus,
-        parent::Parent,
-        task::Status,
-    },
 };
 use uuid::Uuid;
+// }}}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Look {
@@ -24,6 +23,7 @@ pub enum Look {
     Completed,
 }
 
+// impl Look {{{
 impl From<Status> for Look {
     fn from(status: Status) -> Self {
         match status {
@@ -44,7 +44,9 @@ impl From<DerivedStatus> for Look {
         }
     }
 }
+// }}}
 
+// Look supporting types {{{
 #[derive(Clone, Debug, PartialEq, Hash)]
 pub struct Row {
     pub node: PlanNode,
@@ -60,6 +62,15 @@ pub struct Row {
     pub collapsed: bool,
 }
 
+struct Context<'a> {
+    plan: &'a Plan,
+    state: Option<&'a PlanVolatileState>,
+    collapsed: &'a HashSet<Uuid>,
+    children: &'a HashMap<Parent, Vec<PlanNode>>,
+}
+// }}}
+
+// helpers {{{
 pub fn node_name(plan: &Plan, node: PlanNode) -> String {
     match node {
         PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.name().to_string()),
@@ -69,6 +80,10 @@ pub fn node_name(plan: &Plan, node: PlanNode) -> String {
             .plan_buffers()
             .get(&id)
             .map(|b| format!("Buffer {}d", b.duration())),
+        PlanNode::PlanDelay(id) => plan.plan_delays().get(&id).map(|d| {
+            d.name()
+                .map_or_else(|| format!("Delay {}d", d.duration()), str::to_string)
+        }),
     }
     .unwrap_or_else(|| "Missing".to_string())
 }
@@ -79,6 +94,7 @@ pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
         PlanNode::Milestone(id) => plan.milestones().get(&id).map(|m| m.parent()),
         PlanNode::TaskGroup(id) => plan.task_groups().get(&id).map(|g| g.parent()),
         PlanNode::PlanBuffer(id) => plan.plan_buffers().get(&id).map(|b| b.parent()),
+        PlanNode::PlanDelay(id) => plan.plan_delays().get(&id).map(|d| d.parent()),
     }
     .unwrap_or(Parent::Plan)
 }
@@ -86,7 +102,7 @@ pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
 /// The group a node is directly in, found in the plan as the client holds it
 pub fn parent_of_in(
     sync: crate::sync::Sync,
-    plan: plinko::types::short_id::ShortId,
+    plan: plinko::common::short_id::ShortId,
     node: PlanNode,
 ) -> Option<Uuid> {
     sync.tenant.with_untracked(|t| {
@@ -98,8 +114,19 @@ pub fn parent_of_in(
     })
 }
 
+/// What waits for a node, by name
+pub fn dependents(plan: &Plan, node: PlanNode) -> Vec<PlanNode> {
+    let mut found: Vec<(String, PlanNode)> = nodes(plan)
+        .into_iter()
+        .filter(|n| *n != node && dependencies(plan, *n).contains(&node))
+        .map(|n| (node_name(plan, n), n))
+        .collect();
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found.into_iter().map(|(_, n)| n).collect()
+}
+
 /// What a node depends on
-pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<Dependency> {
+pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<PlanNode> {
     match node {
         PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.dependencies().clone()),
         PlanNode::Milestone(id) => plan.milestones().get(&id).map(|m| m.dependencies().clone()),
@@ -111,6 +138,10 @@ pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<Dependency> {
             .plan_buffers()
             .get(&id)
             .map(|b| b.dependencies().clone()),
+        PlanNode::PlanDelay(id) => plan
+            .plan_delays()
+            .get(&id)
+            .map(|d| d.dependencies().clone()),
     }
     .unwrap_or_default()
 }
@@ -124,13 +155,17 @@ pub fn nodes(plan: &Plan) -> Vec<PlanNode> {
         .plan_buffers()
         .keys()
         .map(|id| PlanNode::PlanBuffer(*id));
+    let delays = plan.plan_delays().keys().map(|id| PlanNode::PlanDelay(*id));
     tasks
         .chain(milestones)
         .chain(groups)
         .chain(buffers)
+        .chain(delays)
         .collect()
 }
+// }}}
 
+// span_of {{{
 pub fn span_of(
     state: Option<&PlanVolatileState>,
     node: PlanNode,
@@ -150,9 +185,15 @@ pub fn span_of(
             .plan_buffers
             .get(&id)
             .map(|b| (b.date_range.start(), b.date_range.end())),
+        PlanNode::PlanDelay(id) => state
+            .plan_delays
+            .get(&id)
+            .map(|d| (d.date_range.start(), d.date_range.end())),
     }
 }
+// }}}
 
+// look_of {{{
 pub fn look_of(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -> Look {
     match node {
         PlanNode::Task(id) => plan
@@ -165,7 +206,9 @@ pub fn look_of(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -
         _ => Look::NotStarted,
     }
 }
+// }}}
 
+// rows {{{
 /// The plan's items in order, groups first with what is in them below, each level by when it
 /// starts. What is not scheduled comes last. Members of a collapsed group are left out.
 pub fn rows(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet<Uuid>) -> Vec<Row> {
@@ -192,14 +235,9 @@ pub fn rows(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet<
     context.add_level(Parent::Plan, 0, &mut rows);
     rows
 }
+// }}}
 
-struct Context<'a> {
-    plan: &'a Plan,
-    state: Option<&'a PlanVolatileState>,
-    collapsed: &'a HashSet<Uuid>,
-    children: &'a HashMap<Parent, Vec<PlanNode>>,
-}
-
+// impl Context {{{
 impl Context<'_> {
     fn add_level(&self, parent: Parent, depth: u32, rows: &mut Vec<Row>) {
         for node in self.children.get(&parent).into_iter().flatten().copied() {
@@ -228,7 +266,9 @@ impl Context<'_> {
         }
     }
 }
+// }}}
 
+// helpers {{{
 /// What it is that keeps an item off the schedule, in words
 pub fn reason(reason: UnscheduledReason) -> &'static str {
     match reason {
@@ -264,19 +304,19 @@ fn ends_group(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) ->
     let group = PlanNode::TaskGroup(group);
     (span_of(state, node)?.1 == span_of(state, group)?.1).then_some(group)
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use plinko::{
-        planner::{plan::NewPlan, plan_update::PlanUpdate},
-        scheduler::state::{PlanVolatileState, UnscheduledReason},
-        types::{
-            common::DateRange,
-            crud::Crud,
-            short_id::ShortId,
+        common::{crud::Crud, dates::DateRange, short_id::ShortId},
+        planner::items::{
             task::{self, NewTask},
             task_group::NewTaskGroup,
         },
+        planner::{plan::NewPlan, plan_update::PlanUpdate},
+        scheduler::state::{PlanVolatileState, UnscheduledReason},
     };
 
     use super::*;
@@ -385,3 +425,4 @@ mod tests {
         );
     }
 }
+// }}}

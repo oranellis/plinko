@@ -1,33 +1,28 @@
 //! One plan: its toolbar of icons, its Gantt chart or list, and the window for the item that is open.
 
-use std::collections::{HashMap, HashSet};
+// modules {{{
+use std::collections::HashSet;
 
 use leptos::prelude::*;
 use plinko::{
-    planner::plan_update::PlanUpdate,
-    protocol::Created,
-    scheduler::state::PlanVolatileState,
-    types::{
-        crud::Crud,
-        dependency::{Dependency, DependencyNode, PlanNode},
-        milestone::NewMilestone,
+    common::short_id::ShortId,
+    planner::items::{
+        dependency::PlanNode,
         parent::Parent,
-        plan_buffer::NewPlanBuffer,
-        short_id::ShortId,
-        task::{NewTask, TaskPatch, Worker},
-        task_group::NewTaskGroup,
-        workload::Workload,
+        task::{Status, Worker},
     },
+    scheduler::state::PlanVolatileState,
 };
 use uuid::Uuid;
 
 use crate::{
-    chart_edit,
-    context::ContextBar,
+    card, chart_edit,
+    context::{ContextBar, InfoPanel},
     data::DataWindow,
-    editor::{ItemEditor, remove_item},
+    draft::{Draft, Pick},
+    editor::{self, WorkersWindow},
     format,
-    gantt::{self, Gantt, arrange::Mark, layout::Viewport, scene},
+    gantt::{self, Gantt, Staged, arrange::Mark, layout::Viewport, scene, shift::Held},
     guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     model::{self, Look, Row},
@@ -35,35 +30,73 @@ use crate::{
     settings::PlanSettings,
     ui::{Modal, use_sync},
 };
+// }}}
 
-fn task_patch(id: Uuid) -> TaskPatch {
-    TaskPatch {
-        id,
-        name: None,
-        parent: None,
-        mode: None,
-        duration: None,
-        time_constraint: None,
-        dependencies: None,
-        allocations: None,
-        affinities: None,
-        actual_workers: None,
-        persistent_state: None,
+// types {{{
+/// What the page is in the middle of, shown at the top left of the chart
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Mode {
+    Creating,
+    Editing,
+    Adding,
+    Statuses,
+    Workers,
+    Moving,
+    Picking(Pick),
+}
+
+impl Mode {
+    fn shown(self) -> (IconKind, &'static str, &'static str) {
+        match self {
+            Mode::Creating => (IconKind::Plus, "Creating", ""),
+            Mode::Editing => (IconKind::Pencil, "Editing", ""),
+            Mode::Adding => (IconKind::Plus, "Choosing what to add", ""),
+            Mode::Statuses => (IconKind::Play, "Choosing its status", ""),
+            Mode::Workers => (IconKind::Person, "On its workers", ""),
+            Mode::Moving => (IconKind::Move, "Moving its days", ""),
+            Mode::Picking(Pick::Before) => {
+                (IconKind::Circle, "Picking what it waits for", "before")
+            }
+            Mode::Picking(Pick::After) => (IconKind::Circle, "Picking what waits for it", "after"),
+            Mode::Picking(Pick::Group) => (IconKind::AddGroup, "Picking its group", ""),
+            Mode::Picking(Pick::Day) => (IconKind::Timer, "Picking the day it is held to", "day"),
+        }
     }
 }
 
-/// Sets up a new item once it exists: what it depends on to begin with, and for a task who does it
-type Anchor =
-    fn(Uuid, ShortId, &crate::sync::Sync, Option<Dependency>, Box<dyn FnOnce(Option<Created>)>);
+/// What of the days of an item the keys move
+#[derive(Clone, Copy, PartialEq)]
+enum Moving {
+    All,
+    Start,
+    End,
+}
 
+impl Moving {
+    fn said(self) -> &'static str {
+        match self {
+            Moving::All => "Moving its days: ← → or h l, then s for its start, e for its end",
+            Moving::Start => "Moving its start: ← → or h l, m for all of it, e for its end",
+            Moving::End => "Moving its end: ← → or h l, m for all of it, s for its start",
+        }
+    }
+}
+
+/// A change the keys make to who works on a task, and to the row they are on
+type Staffing<'a> = dyn Fn(&mut Vec<(Worker, u8)>, &mut usize) + 'a;
+
+/// The kinds of item the add menu makes
 #[derive(Clone, Copy)]
 enum Kind {
     Task,
     Milestone,
     Group,
     Buffer,
+    Delay,
 }
+// }}}
 
+// PlanPage {{{
 #[component]
 pub fn PlanPage(plan: ShortId) -> impl IntoView {
     let sync = use_sync();
@@ -125,13 +158,25 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 .unwrap_or_default()
         })
     });
+    // an item being added, which is not in the plan until it is saved, and the group it goes in
+    let adding = RwSignal::new(None::<(PlanNode, Parent)>);
+    // one more each time one is added, so adding the kind being added starts it again
+    let added = RwSignal::new(0u32);
     let node = Memo::new(move |_| {
+        if let Some((node, _)) = adding.get() {
+            return Some(node);
+        }
         let id = open.get()?;
         sync.tenant.with(|t| {
             let p = t.as_ref()?.plans().get(&plan)?;
             model::nodes(p).into_iter().find(|n| n.id() == id)
         })
     });
+    // the item being created or edited as it would be saved, and as it was when it was opened
+    let draft = RwSignal::new(None::<Draft>);
+    let pristine = StoredValue::new(None::<Draft>);
+    let probe: card::Probe = RwSignal::new(None);
+    let spot = RwSignal::new(None::<PlanNode>);
     let today = Signal::derive(move || {
         sync.tenant
             .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default())
@@ -148,6 +193,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         reveal.set(Some(PlanNode::Task(task)));
         asked.set(None);
     }
+    let revealed = reveal.get_untracked();
     let searching = RwSignal::new(false);
     let listing = RwSignal::new(false);
 
@@ -163,26 +209,13 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         });
         found
     });
-    let info = Callback::new(move |mark: Mark| {
-        let mut said = Vec::new();
-        with_state(&mut |state| {
-            said = sync
-                .tenant
-                .with(|t| {
-                    let t = t.as_ref()?;
-                    Some(gantt::info::info(t, t.plans().get(&plan)?, state, mark))
-                })
-                .unwrap_or_default();
-        });
-        said
-    });
     let violation = Callback::new(move |mark: Mark| {
         let mut said = Vec::new();
         with_state(&mut |state| said = gantt::info::violation(state, mark));
         said
     });
 
-    let selected = RwSignal::new(None::<PlanNode>);
+    let selected = RwSignal::new(revealed);
     let any_selected = Memo::new(move |_| selected.get().is_some());
     crate::escape::on_escape(
         move || any_selected.get(),
@@ -209,49 +242,445 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             Some((left, top))
         })
     });
-    // an item just added and not saved yet, which is dropped again if the window is cancelled
-    let fresh = RwSignal::new(None::<Uuid>);
-    let go = move |tab: PlanTab, open: Option<Uuid>| navigate(Route::Plan(plan, tab, open));
+    let go = move |tab: PlanTab, open: Option<Uuid>| {
+        adding.set(None);
+        navigate(Route::Plan(plan, tab, open))
+    };
+    // while an item of the plan is edited its bar is out of the way at the bottom of the chart,
+    // and is there even when the item is not on the chart
+    let edited = Memo::new(move |_| draft.with(|d| d.as_ref().filter(|d| !d.new).map(|d| d.node)));
+    let editing_one = Memo::new(move |_| edited.get().is_some());
+    let bar_of = Memo::new(move |_| edited.get().or_else(|| chosen.get()));
+    // an item being created has the bar too, docked from the start
+    let making = Memo::new(move |_| draft.with(|d| d.as_ref().is_some_and(|d| d.new)));
+    let docked = Memo::new(move |_| editing_one.get() || making.get());
+    let bar_shown = Memo::new(move |_| docked.get() || bar_at.with(Option::is_some));
+    let hovered = RwSignal::new(None::<PlanNode>);
     let guard = Guard::new();
-    // an item is opened or the pane closed only after asking about changes not yet saved
-    let on_open = Callback::new(move |node: PlanNode| {
-        guard.then(Callback::new(move |()| {
-            go(tab.get_untracked(), Some(node.id()))
-        }));
+    // a click while a handle of the card is lit is the card's: it links, unlinks or places the
+    // item being edited, and is nothing else. Gives whether it was.
+    let card_click = move |clicked: Option<PlanNode>| {
+        let (mut used, mut said) = (false, None);
+        sync.tenant.with_untracked(|t| {
+            let Some(p) = t.as_ref().and_then(|t| t.plans().get(&plan)) else {
+                return;
+            };
+            draft.update(|d| {
+                if let Some(d) = d {
+                    match card::picked(p, d, clicked) {
+                        Ok(card) => used = card,
+                        Err(why) => (used, said) = (true, Some(why)),
+                    }
+                }
+            });
+        });
+        if used {
+            guard.dirtied();
+        }
+        if said.is_some() {
+            sync.notice.set(said);
+        }
+        used
+    };
+    // what is being picked with the keyboard for an item that is only selected, which clicks
+    // then change in the plan at once: what it waits for, what waits for it, or its group
+    let live = RwSignal::new(None::<(PlanNode, Pick)>);
+    let at_once = chart_edit::editing(plan);
+    // what the chart does to the plan: to the item being edited it is staged, to others at once
+    let edits = chart_edit::staging(at_once, plan, draft, guard);
+    Effect::new(move |_| {
+        let still = selected
+            .get()
+            .is_some_and(|s| live.with_untracked(|l| l.is_some_and(|l| l.0 == s)));
+        if !still || draft.with(Option::is_some) {
+            live.set(None);
+        }
     });
-    // a tap on the chart selects, and with an edit pane open that moves to the item tapped
+    crate::escape::on_escape(
+        move || live.with(Option::is_some),
+        Callback::new(move |()| live.set(None)),
+    );
+    // a click while that is being picked is for it, and a click on nothing ends it. Gives
+    // whether it was.
+    let live_click = move |clicked: Option<PlanNode>| {
+        let Some((own, pick)) = live.get_untracked() else {
+            return false;
+        };
+        match (pick, clicked) {
+            (Pick::Group, over) => {
+                at_once.moved.run((own, over));
+                live.set(None);
+            }
+            (_, None) => live.set(None),
+            (_, Some(other)) if other == own => {}
+            (_, Some(other)) => {
+                let right = pick == Pick::After;
+                let (waiting, before) = if right { (other, own) } else { (own, other) };
+                let linked = sync.tenant.with_untracked(|t| {
+                    let plan = t.as_ref().and_then(|t| t.plans().get(&plan));
+                    plan.is_some_and(|p| model::dependencies(p, waiting).contains(&before))
+                });
+                match linked {
+                    true => at_once.unlink.run((own, other)),
+                    false => at_once.link.run((own, other, right)),
+                }
+            }
+        }
+        true
+    };
+    // an item is opened for editing, on the chart, or left only after asking about changes not
+    // yet saved
+    let on_open = Callback::new(move |node: PlanNode| {
+        if card_click(Some(node)) {
+            return;
+        }
+        guard.then(Callback::new(move |()| go(PlanTab::Gantt, Some(node.id()))));
+    });
+    // a tap on the chart selects, and with an item being edited that moves to the item tapped
     let on_tap = Callback::new(move |node: PlanNode| {
+        if live_click(Some(node)) || card_click(Some(node)) {
+            return;
+        }
         selected.set(Some(node));
         if tab.get_untracked() == PlanTab::Gantt && open_node_exists.get_untracked() {
             on_open.run(node);
         }
     });
     let on_close = Callback::new(move |_| go(tab.get_untracked(), None));
-    // leaving a new item that was never saved takes it away again, as Cancel does
-    let leave = Callback::new(move |()| {
-        let item = node.get_untracked();
-        if let Some(item) = item.filter(|i| fresh.get_untracked() == Some(i.id())) {
-            fresh.set(None);
-            remove_item(sync, plan, item);
+    // whether the item that is opened next is opened for the day it is held to
+    let grabbing = StoredValue::new(false);
+    // whether the days of the item being created or edited are being typed
+    let typing = RwSignal::new(false);
+    // the draft follows the item that is open, and what is selected follows an item of the plan
+    Effect::new(move |_| {
+        added.track();
+        // the item being edited going while it is still open is someone else deleting it
+        let edited = draft.with_untracked(|d| d.as_ref().filter(|d| !d.new).map(|d| d.node));
+        if edited.is_some_and(|e| node.get().is_none() && open.get() == Some(e.id())) {
+            sync.notice.set(Some(
+                "What was being edited was deleted, so the edit is gone".to_string(),
+            ));
         }
-        on_close.run(());
+        let open = node.get().filter(|_| tab.get() != PlanTab::Settings);
+        let new = adding.get_untracked().map(|(_, parent)| parent);
+        let next = open.and_then(|node| Draft::open(sync, plan, node, new));
+        match &next {
+            Some(next) => {
+                guard.opened();
+                if !next.new {
+                    selected.set(Some(next.node));
+                }
+            }
+            None => guard.closed(),
+        }
+        typing.set(false);
+        let grab = grabbing.get_value() && next.as_ref().is_some_and(|d| !d.new);
+        grabbing.set_value(false);
+        pristine.set_value(next.clone());
+        draft.set(next);
+        // it was opened to take hold of the day it is held to, which it is first if it is not
+        if grab {
+            if draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.pin().is_none())) {
+                crate::context::hold_next(sync, plan, draft);
+            }
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick(Pick::Day)
+                }
+            });
+        }
     });
+    // anything of the draft that is not as it was is a change to ask about, but not a lit handle
+    Effect::new(move |_| {
+        let now = draft.with(|d| {
+            d.clone().map(|d| Draft {
+                pick: None,
+                aim: None,
+                ..d
+            })
+        });
+        match pristine.with_value(|was| *was == now) {
+            true => guard.clean(),
+            false => guard.dirtied(),
+        }
+    });
+    let leave = Callback::new(move |()| {
+        guard.clean();
+        go(tab.get_untracked(), None);
+    });
+    let on_save = Callback::new(move |()| {
+        if let Some(mut draft) = draft.get_untracked() {
+            // what others changed while it was edited is kept, only what was changed here goes
+            let was = pristine.get_value();
+            let now = (!draft.new)
+                .then(|| Draft::open(sync, plan, draft.node, None))
+                .flatten();
+            if let (Some(was), Some(now)) = (was, now) {
+                draft = draft.onto(&was, now);
+            }
+            editor::save(sync, plan, &draft);
+        }
+        leave.run(());
+    });
+    guard.watch_clicks();
+    // the days of the item that is selected or edited being moved by the keys: all of them, or
+    // its start or its end
+    let moving = RwSignal::new(None::<(PlanNode, Moving)>);
+    Effect::new(move |_| {
+        let item = bar_of.get();
+        if moving.with_untracked(|m| m.is_some_and(|m| Some(m.0) != item)) {
+            moving.set(None);
+        }
+    });
+    crate::escape::on_escape(
+        move || moving.with(Option::is_some),
+        Callback::new(move |()| moving.set(None)),
+    );
+    // a day either way, of what can be moved: the days a started task ran, all or one end of
+    // them, and the end of anything that lasts, which is how long it lasts
+    let move_by = move |days: i32| {
+        let Some((node, how)) = moving.get_untracked() else {
+            return;
+        };
+        let started = edits.dated.run(node);
+        match how {
+            Moving::All if started => edits.shift_dates.run((node, days)),
+            Moving::Start if started => edits.restart.run((node, days)),
+            Moving::End => edits.resize.run((node, days)),
+            // the rest is where the schedule puts it
+            _ => {}
+        }
+    };
+    let on_moving =
+        move || moving.try_with_untracked(Option::is_some).unwrap_or(false) && !window_open();
+    on_key("ArrowLeft", on_moving, Callback::new(move |()| move_by(-1)));
+    on_key("ArrowRight", on_moving, Callback::new(move |()| move_by(1)));
+    on_key(
+        "Enter",
+        on_moving,
+        Callback::new(move |()| moving.set(None)),
+    );
+    let daying = move || {
+        draft
+            .try_with_untracked(|d| d.as_ref().is_some_and(|d| d.pick == Some(Pick::Day)))
+            .unwrap_or(false)
+    };
+    on_key(
+        "Enter",
+        move || {
+            open_node_exists.try_get_untracked().unwrap_or(false)
+                && !window_open()
+                && !daying()
+                && !on_moving()
+        },
+        on_save,
+    );
+    // while the day an item is held to is picked, the arrows move it a day and enter puts it
+    // there, as a click would
+    let aim = move |days: i64| {
+        Callback::new(move |()| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.aim_by(days)
+                }
+            })
+        })
+    };
+    on_key("ArrowLeft", move || daying() && !window_open(), aim(-1));
+    on_key("ArrowRight", move || daying() && !window_open(), aim(1));
+    on_key(
+        "Enter",
+        move || daying() && !window_open(),
+        Callback::new(move |()| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.aimed()
+                }
+            })
+        }),
+    );
+    // the delete key asks to delete the item that is selected or edited, and enter then does
+    let deleting = RwSignal::new(None::<PlanNode>);
+    let delete = Callback::new(move |()| {
+        let Some(node) = deleting.get_untracked() else {
+            return;
+        };
+        deleting.set(None);
+        editor::remove_item(sync, plan, node);
+        selected.set(None);
+        if draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.node == node)) {
+            leave.run(());
+        }
+    });
+    // the bin asks first, as the key does, and for an item not yet added it is to drop it
+    let on_delete = Callback::new(move |()| {
+        match draft.with_untracked(|d| d.as_ref().map(|d| (d.node, d.new))) {
+            Some((node, false)) => deleting.set(Some(node)),
+            Some((_, true)) => leave.run(()),
+            None => {}
+        }
+    });
+    // the row of the workers card the keys are on, while they are on it, and a row whose list of
+    // who it can be is to open
+    let workers = RwSignal::new(None::<usize>);
+    let open_row = RwSignal::new(None::<usize>);
+    Effect::new(move |_| {
+        if !draft.with(|d| {
+            d.as_ref()
+                .is_some_and(|d| matches!(d.node, PlanNode::Task(_)))
+        }) {
+            workers.set(None);
+        }
+    });
+    crate::escape::on_escape(
+        move || workers.with(Option::is_some),
+        Callback::new(move |()| workers.set(None)),
+    );
+    // what the keys do to the workers: up and down a row, fewer or more hours, add, or take away
+    let staff = move |f: &Staffing<'_>| {
+        let Some(mut at) = workers.get_untracked() else {
+            return;
+        };
+        draft.update(|d| {
+            if let Some(d) = d {
+                f(&mut d.allocations, &mut at);
+                at = at.min(d.allocations.len().saturating_sub(1));
+            }
+        });
+        workers.set(Some(at));
+    };
+    // with the keys on the workers the arrows move along them and delete takes one away, and
+    // else delete, or backspace, asks to delete the item
+    let on_workers = move || workers.try_get_untracked().flatten().is_some() && !window_open();
+    let worker_key = |f: fn(&mut Vec<(Worker, u8)>, &mut usize)| Callback::new(move |()| staff(&f));
+    on_key("ArrowDown", on_workers, worker_key(|_, at| *at += 1));
+    on_key(
+        "ArrowUp",
+        on_workers,
+        worker_key(|_, at| *at = at.saturating_sub(1)),
+    );
+    on_key(
+        "ArrowLeft",
+        on_workers,
+        worker_key(|a, at| hours_by(a, *at, -1)),
+    );
+    on_key(
+        "ArrowRight",
+        on_workers,
+        worker_key(|a, at| hours_by(a, *at, 1)),
+    );
+    for key in ["Delete", "Backspace"] {
+        on_key(
+            key,
+            on_workers,
+            worker_key(|a, at| {
+                if *at < a.len() {
+                    a.remove(*at);
+                }
+            }),
+        );
+        on_key(
+            key,
+            move || {
+                // while one is being created the bar is not for what is selected
+                let creating = making.try_get_untracked().unwrap_or(false);
+                bar_of.try_get_untracked().flatten().is_some()
+                    && !creating
+                    && !window_open()
+                    && !on_workers()
+            },
+            Callback::new(move |()| deleting.set(bar_of.get_untracked())),
+        );
+    }
+    on_key(
+        "Enter",
+        move || deleting.try_get_untracked().flatten().is_some(),
+        delete,
+    );
+    // the task being created or edited, which has a card for who works on it
+    let staffed = Memo::new(move |_| {
+        draft.with(|d| {
+            d.as_ref()
+                .map(|d| d.node)
+                .filter(|n| matches!(n, PlanNode::Task(_)))
+        })
+    });
+    // escape is the same as clicking off the item: it asks first when something is unsaved
+    crate::escape::on_escape(
+        move || open_node_exists.get(),
+        Callback::new(move |()| guard.then(on_close)),
+    );
+    // but first it ends a pick, leaving what was picked for as it was
+    let lit = Memo::new(move |_| draft.with(|d| d.as_ref().is_some_and(|d| d.pick.is_some())));
+    crate::escape::on_escape(
+        move || lit.get(),
+        Callback::new(move |()| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick = None;
+                    d.aim = None;
+                }
+            })
+        }),
+    );
     let on_blank = Callback::new(move |()| {
+        if live_click(None) || card_click(None) {
+            return;
+        }
         selected.set(None);
         if node.get_untracked().is_some() {
-            guard.then(leave);
+            guard.then(on_close);
         }
     });
     let on_toggle = Callback::new(move |node: PlanNode| {
+        if live_click(Some(node)) || card_click(Some(node)) {
+            return;
+        }
         collapsed.update(|c| {
             if !c.remove(&node.id()) {
                 c.insert(node.id());
             }
         });
     });
-    // what a search picked: on the chart scroll to it and flash it, else open it
+    // what a search picked is selected, and put in the middle of the chart
+    // what is picked while the search is used for picking: what the item waits for, or what
+    // waits for it, staged for one being edited and in the plan for one only selected
+    let picked = Signal::derive(move || {
+        if let Some(d) = draft.get() {
+            return match d.pick {
+                Some(Pick::Before) => d.dependencies,
+                Some(Pick::After) => d.dependents,
+                _ => Vec::new(),
+            };
+        }
+        let Some((own, pick)) = live.get() else {
+            return Vec::new();
+        };
+        sync.tenant.with(|t| {
+            let Some(p) = t.as_ref().and_then(|t| t.plans().get(&plan)) else {
+                return Vec::new();
+            };
+            match pick {
+                Pick::Before => model::dependencies(p, own),
+                Pick::After => model::dependents(p, own),
+                _ => Vec::new(),
+            }
+        })
+    });
     let on_found = Callback::new(move |node: PlanNode| {
+        // while something is being picked it is a pick, as a click on the item would be, and
+        // the search closes: it opens again empty for another
+        let picking = draft
+            .with_untracked(|d| d.as_ref().and_then(|d| d.pick))
+            .or(live.with_untracked(|l| l.map(|l| l.1)));
+        if let Some(Pick::Before | Pick::After | Pick::Group) = picking
+            && (live_click(Some(node)) || card_click(Some(node)))
+        {
+            searching.set(false);
+            return;
+        }
         searching.set(false);
+        selected.set(Some(node));
         let placed = scene.with_untracked(|s| s.arrangement.placed.iter().any(|p| p.mark == node));
         if tab.get_untracked() == PlanTab::Gantt && placed {
             focus.set(Some(node));
@@ -269,123 +698,255 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 std::time::Duration::from_millis(50),
             );
         } else {
-            go(tab.get_untracked(), Some(node.id()));
+            go(PlanTab::Gantt, None);
+            set_timeout(
+                move || focus.set(Some(node)),
+                std::time::Duration::from_millis(50),
+            );
         }
     });
 
-    // new items go in the group that is open, or beside the item that is
+    // a new item starts as a draft on the card, in the group that is open or beside the item
+    // that is, and is only added to the plan when it is saved
     let add = move |kind: Kind| {
-        let parent = node
-            .get_untracked()
-            .and_then(|n| match n {
-                PlanNode::TaskGroup(id) => Some(Parent::Node(id)),
-                other => sync.tenant.with_untracked(|t| {
-                    let p = t.as_ref()?.plans().get(&plan)?;
-                    Some(match other {
-                        PlanNode::Task(id) => p.tasks().get(&id)?.parent(),
-                        PlanNode::Milestone(id) => p.milestones().get(&id)?.parent(),
-                        PlanNode::PlanBuffer(id) => p.plan_buffers().get(&id)?.parent(),
-                        PlanNode::TaskGroup(_) => unreachable!("a group is handled above"),
-                    })
-                }),
-            })
-            .unwrap_or(Parent::Plan);
-        let nil = Uuid::nil();
-        let (update, depends): (PlanUpdate, Anchor) = match kind {
-            Kind::Task => (
-                PlanUpdate::Task(Crud::Add(NewTask {
-                    id: nil,
-                    name: "New task".to_string(),
-                    parent,
-                })),
-                |id, plan, sync, start, then| {
-                    // the person creating it does it for half a day by default
-                    let me = sync.me.get_untracked().map(|m| Worker::User(m.id));
-                    let patch = TaskPatch {
-                        dependencies: start.map(|d| vec![d]),
-                        allocations: me.zip(Workload::new(4).ok()).map(|w| HashMap::from([w])),
-                        ..task_patch(id)
-                    };
-                    sync.plan_then(plan, PlanUpdate::Task(Crud::Update(patch)), then);
-                },
-            ),
-            Kind::Milestone => (
-                PlanUpdate::Milestone(Crud::Add(NewMilestone {
-                    id: nil,
-                    name: "New milestone".to_string(),
-                    parent,
-                })),
-                |id, plan, sync, start, then| {
-                    let patch = plinko::types::milestone::MilestonePatch {
-                        id,
-                        name: None,
-                        parent: None,
-                        time_constraint: None,
-                        dependencies: start.map(|d| vec![d]),
-                        persistent_state: None,
-                    };
-                    sync.plan_then(plan, PlanUpdate::Milestone(Crud::Update(patch)), then);
-                },
-            ),
-            Kind::Group => (
-                PlanUpdate::TaskGroup(Crud::Add(NewTaskGroup {
-                    id: nil,
-                    name: "New group".to_string(),
-                    parent,
-                })),
-                |id, plan, sync, start, then| {
-                    let patch = plinko::types::task_group::TaskGroupPatch {
-                        id,
-                        name: None,
-                        dependencies: start.map(|d| vec![d]),
-                        parent: None,
-                    };
-                    sync.plan_then(plan, PlanUpdate::TaskGroup(Crud::Update(patch)), then);
-                },
-            ),
-            Kind::Buffer => (
-                PlanUpdate::PlanBuffer(Crud::Add(NewPlanBuffer {
-                    id: nil,
-                    parent,
-                    duration: 3,
-                })),
-                |id, plan, sync, start, then| {
-                    let patch = plinko::types::plan_buffer::PlanBufferPatch {
-                        id,
-                        parent: None,
-                        dependencies: start.map(|d| vec![d]),
-                        set_start_day: None,
-                        duration: None,
-                    };
-                    sync.plan_then(plan, PlanUpdate::PlanBuffer(Crud::Update(patch)), then);
-                },
-            ),
-        };
-        // top level items begin from the plan's default start node when it has one
-        let start = sync.tenant.with_untracked(|t| {
-            let p = t.as_ref()?.plans().get(&plan)?;
-            let node = p
-                .scheduler_data()
-                .default_start()
-                .filter(|_| parent == Parent::Plan)?;
-            Some(Dependency {
-                node: DependencyNode::Node(node),
-                lag: 0,
-            })
-        });
-        let current = tab.get_untracked();
-        sync.plan_then(plan, update, move |created| {
-            if let Some(Created::Item(id)) = created {
-                // anchored to the start so it is scheduled, then open for editing
-                let open = Box::new(move |_| {
-                    fresh.try_set(Some(id));
-                    navigate(Route::Plan(plan, current, Some(id)));
-                });
-                depends(id, plan, &sync, start, open);
-            }
-        });
+        guard.then(Callback::new(move |()| {
+            let open = node
+                .get_untracked()
+                .filter(|_| adding.get_untracked().is_none());
+            let parent = sync.tenant.with_untracked(|t| {
+                let p = t.as_ref()?.plans().get(&plan)?;
+                Some(card::beside(p, open))
+            });
+            // it has no id until the plan gives it one
+            let nil = Uuid::nil();
+            let new = match kind {
+                Kind::Task => PlanNode::Task(nil),
+                Kind::Milestone => PlanNode::Milestone(nil),
+                Kind::Group => PlanNode::TaskGroup(nil),
+                Kind::Buffer => PlanNode::PlanBuffer(nil),
+                Kind::Delay => PlanNode::PlanDelay(nil),
+            };
+            go(PlanTab::Gantt, None);
+            adding.set(Some((new, parent.unwrap_or(Parent::Plan))));
+            added.update(|n| *n += 1);
+        }));
     };
 
+    // letters, for what the buttons do. With the add menu listed they are the kinds of item,
+    // with the day an item is held to picked they are how it is held, with an item edited they
+    // light its handles, and with one only selected they edit it or pick for it at once.
+    let menu = RwSignal::new(false);
+    // the statuses of the task that is selected or edited, listed by a key: it is closed again
+    // by another item, by escape, or by one of them being picked
+    let statuses = RwSignal::new(false);
+    Effect::new(move |_| {
+        bar_of.track();
+        statuses.set(false);
+    });
+    crate::escape::on_escape(
+        move || statuses.get(),
+        Callback::new(move |()| statuses.set(false)),
+    );
+    on_letter(move |key: char| {
+        if window_open() || tab.try_get_untracked() != Some(PlanTab::Gantt) {
+            return false;
+        }
+        // moving, the letters say what is moved and vim's move it
+        if moving.get_untracked().is_some() {
+            let set = |how: Moving| moving.update(|m| *m = m.map(|(node, _)| (node, how)));
+            match key {
+                'm' => set(Moving::All),
+                's' => set(Moving::Start),
+                'e' => set(Moving::End),
+                'h' => move_by(-1),
+                'l' => move_by(1),
+                _ => return false,
+            }
+            return true;
+        }
+        // with the keys on the workers, letters are for them, with vim's for the arrows
+        if workers.get_untracked().is_some() {
+            match key {
+                'j' => staff(&|_, at| *at += 1),
+                'k' => staff(&|_, at| *at = at.saturating_sub(1)),
+                'h' => staff(&|a, at| hours_by(a, *at, -1)),
+                'l' => staff(&|a, at| hours_by(a, *at, 1)),
+                'a' => {
+                    let next = draft.with_untracked(|d| {
+                        let asked = d
+                            .as_ref()
+                            .map(|d| d.allocations.clone())
+                            .unwrap_or_default();
+                        editor::next_worker(sync, plan, &asked)
+                    });
+                    // with everyone asked for already there is nobody to add
+                    let Some(next) = next else {
+                        sync.notice
+                            .set(Some("Everyone in the plan already works on it".to_string()));
+                        return true;
+                    };
+                    staff(&|a, at| {
+                        a.push((next, 4));
+                        *at = a.len() - 1;
+                    });
+                    open_row.set(workers.get_untracked());
+                }
+                'p' => staff(
+                    &|a, at| match a.iter().position(|(w, _)| *w == Worker::Placeholder) {
+                        Some(there) => *at = there,
+                        None => {
+                            a.push((Worker::Placeholder, 4));
+                            *at = a.len() - 1;
+                        }
+                    },
+                ),
+                // who the worker is, from its list with the cursor in its search
+                'c' => open_row.set(workers.get_untracked()),
+                'w' => workers.set(None),
+                _ => return false,
+            }
+            return true;
+        }
+        let item = bar_of.get_untracked();
+        if let (true, Some(PlanNode::Task(task))) = (statuses.get_untracked(), item) {
+            let now = sync.tenant.with_untracked(|t| {
+                let task = t.as_ref()?.plans().get(&plan)?.tasks().get(&task)?;
+                Some(task.persistent_state().status)
+            });
+            let to = match key {
+                's' => now.map(crate::context::next),
+                'n' => Some(Status::NotStarted),
+                'i' => Some(Status::InProgress),
+                'o' => Some(Status::OnHold),
+                'c' => Some(Status::Completed),
+                'd' => Some(Status::Dropped),
+                _ => return false,
+            };
+            statuses.set(false);
+            if let Some(to) = to {
+                crate::mine::set_status_with(sync, plan, task, to);
+            }
+            return true;
+        }
+        if menu.get_untracked() {
+            let kind = match key {
+                't' => Kind::Task,
+                'm' => Kind::Milestone,
+                'g' => Kind::Group,
+                'b' => Kind::Buffer,
+                'd' => Kind::Delay,
+                _ => return false,
+            };
+            menu.set(false);
+            add(kind);
+            return true;
+        }
+        // picking a group, t is the top level, as a click on nothing is
+        let card_pick = draft.with_untracked(|d| d.as_ref().and_then(|d| d.pick));
+        let live_pick = live.with_untracked(|l| l.map(|l| l.1));
+        if key == 't' && (card_pick == Some(Pick::Group) || live_pick == Some(Pick::Group)) {
+            if !live_click(None) {
+                card_click(None);
+            }
+            return true;
+        }
+        let editing =
+            draft.with_untracked(|d| d.as_ref().map(|d| (d.new, d.pick, d.pin().is_some())));
+        if let Some((_, Some(Pick::Day), _)) = editing {
+            let held = match key {
+                // vim's move it a day, as the arrows do
+                'h' | 'l' => {
+                    let by = if key == 'h' { -1 } else { 1 };
+                    draft.update(|d| {
+                        if let Some(d) = d {
+                            d.aim_by(by)
+                        }
+                    });
+                    return true;
+                }
+                'e' => Held::Earliest,
+                'f' => Held::Fixed,
+                'd' => Held::Latest,
+                // again, it goes round: the other end, then not held, which lets go of it
+                'c' => {
+                    crate::context::hold_next(sync, plan, draft);
+                    return true;
+                }
+                _ => return false,
+            };
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.hold_as(held)
+                }
+            });
+            return true;
+        }
+        let light = |pick: Pick| {
+            draft.update(|d| {
+                if let Some(d) = d {
+                    d.pick(pick)
+                }
+            })
+        };
+        // only these can be held to a day
+        let holds =
+            |node: PlanNode| !matches!(node, PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_));
+        let held_kind = draft.with_untracked(|d| d.as_ref().is_some_and(|d| holds(d.node)));
+        let lasts = draft.with_untracked(|d| d.as_ref().is_some_and(|d| d.duration.is_some()));
+        match (key, editing, chosen.get_untracked()) {
+            ('a', _, _) => menu.set(true),
+            // the next status of a task is one more press away, and a buffer is pinned
+            ('s', _, _) => match item {
+                Some(PlanNode::Task(_)) => statuses.set(true),
+                Some(PlanNode::PlanBuffer(buffer)) => {
+                    crate::context::toggle_pin(sync, plan, buffer)
+                }
+                _ => return false,
+            },
+            ('/', _, _) => searching.set(true),
+            ('t', _, _) => jump.update(|n| *n += 1),
+            ('d', Some(_), _) => light(Pick::Before),
+            ('f', Some(_), _) => light(Pick::After),
+            ('g', Some(_), _) => light(Pick::Group),
+            ('l', Some(_), _) if lasts => typing.set(true),
+            ('n', Some(_), _) => name_box_end(),
+            ('w', Some(_), _) if staffed.get_untracked().is_some() => workers.set(Some(0)),
+            // the day of the item is taken hold of, held first if it is not
+            ('c', Some((_, _, held)), _) if held_kind => {
+                if !held {
+                    crate::context::hold_next(sync, plan, draft);
+                }
+                light(Pick::Day);
+            }
+            ('e', None, Some(node)) => on_open.run(node),
+            ('m', _, _) => match item {
+                Some(node) => moving.set(Some((node, Moving::All))),
+                None => return false,
+            },
+            ('c', None, Some(node)) if holds(node) => {
+                grabbing.set_value(true);
+                on_open.run(node);
+            }
+            ('d' | 'f' | 'g', None, Some(node)) => {
+                let pick = match key {
+                    'd' => Pick::Before,
+                    'f' => Pick::After,
+                    _ => Pick::Group,
+                };
+                live.update(|l| *l = Some((node, pick)).filter(|next| *l != Some(*next)));
+            }
+            _ => return false,
+        }
+        true
+    });
+    // one that leaves what is being edited alone, which asks nothing first
+    let keeps = move |label: &'static str, kind: IconKind, on: Callback<()>| {
+        view! {
+            <button type="button" class="toolbar-btn keeps" title=label aria-label=label on:click=move |_| on.run(())>
+                <Icon kind=kind />
+            </button>
+        }
+    };
     let icon_button = move |label: &'static str, kind: IconKind, on: Callback<()>| {
         view! {
             <button type="button" class="toolbar-btn" title=label aria-label=label on:click=move |_| on.run(())>
@@ -407,10 +968,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         >
                             {icon_button("Back to plans", IconKind::Back, Callback::new(move |_| navigate(Route::Plans)))}
                             <Show when=move || tab.get() == PlanTab::Gantt>
-                                {icon_button("Jump to today", IconKind::Today, Callback::new(move |_| jump.update(|n| *n += 1)))}
+                                {keeps("Jump to today", IconKind::Today, Callback::new(move |_| jump.update(|n| *n += 1)))}
                             </Show>
-                            <AddMenu on_add=Callback::new(move |kind: Kind| add(kind)) />
-                            {icon_button("Search", IconKind::Search, Callback::new(move |_| searching.set(true)))}
+                            <AddMenu on_add=Callback::new(move |kind: Kind| add(kind)) pinned=menu />
+                            {keeps("Search", IconKind::Search, Callback::new(move |_| searching.set(true)))}
                         </Show>
                     </div>
                     <span class="toolbar-title">
@@ -420,7 +981,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         <Show when=move || { unplaced.get() > 0 }>
                             <button
                                 type="button"
-                                class="toolbar-btn problem"
+                                class="toolbar-btn problem keeps"
                                 title="Not scheduled"
                                 aria-label="Items that are not scheduled"
                                 on:click=move |_| listing.set(true)
@@ -459,55 +1020,177 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 today=today
                                 viewport=viewport
                                 links=links
-                                info=info
                                 violation=violation
                                 on_open=on_tap
                                 on_edit=on_open
-                                editing=chart_edit::editing(plan)
+                                editing=edits
                                 selected=Signal::derive(move || chosen.get())
                                 on_toggle=on_toggle
                                 on_blank=on_blank
                                 reveal=reveal
                                 jump=jump
                                 focus=focus
+                                staged=Signal::derive(move || draft.with(|d| {
+                                    d.as_ref().map(|d| {
+                                        let group = match d.parent {
+                                            Parent::Node(id) => Some(PlanNode::TaskGroup(id)),
+                                            Parent::Plan => None,
+                                        };
+                                        // how far the days it really ran are from the ones it has
+                                        let said: Vec<String> = [("start", d.moved.0), ("end", d.moved.1)]
+                                            .into_iter()
+                                            .filter(|(_, by)| *by != 0)
+                                            .map(|(which, by)| format!("{which} {by:+}"))
+                                            .collect();
+                                        let days = Some(said.join("  ")).filter(|s| !s.is_empty());
+                                        Staged {
+                                            before: d.dependencies.clone(),
+                                            after: d.dependents.clone(),
+                                            group,
+                                            item: Some(d.node),
+                                            days,
+                                            pin: d.pin(),
+                                            daying: d.pick == Some(Pick::Day),
+                                            aim: d.aim,
+                                            pick: match d.pick {
+                                                Some(Pick::Before) => Some(false),
+                                                Some(Pick::After) => Some(true),
+                                                _ => None,
+                                            },
+                                        }
+                                    })
+                                }))
+                                spot=spot
+                                probe=probe
+                                hovered=hovered
+                                moving=Signal::derive(move || {
+                                    let (node, how) = moving.get()?;
+                                    // only what can move is lit: the end of anything that lasts,
+                                    // and the start of a task that has started
+                                    let started = edits.dated.run(node);
+                                    let (start, end) = match how {
+                                        Moving::All => (started, started),
+                                        Moving::Start => (started, false),
+                                        Moving::End => (false, true),
+                                    };
+                                    Some((node, start, end))
+                                })
+                                gripped=Signal::derive(move || live.get().map(|(node, pick)| {
+                                    (node, match pick {
+                                        Pick::Before => Some(false),
+                                        Pick::After => Some(true),
+                                        _ => None,
+                                    })
+                                }))
                             />
                         }.into_any(),
                         PlanTab::List => view! { <List rows=rows on_open=on_open on_toggle=on_toggle /> }.into_any(),
                         PlanTab::Settings => view! { <PlanSettings plan=plan /> }.into_any(),
                     }}
                     {move || {
-                        let (plan_node, at) = (chosen.get()?, bar_at.get()?);
-                        (tab.get() == PlanTab::Gantt).then(|| view! {
+                        // only made again for another item, so it slides when it is docked
+                        let plan_node = bar_of.get().filter(|_| !making.get());
+                        let shown = making.get() || plan_node.is_some() && bar_shown.get();
+                        (tab.get() == PlanTab::Gantt && shown).then(|| view! {
                             <ContextBar
                                 plan=plan
                                 node=plan_node
-                                left=at.0
-                                top=at.1
-                                on_edit=Callback::new(move |()| go(tab.get_untracked(), Some(plan_node.id())))
-                                on_data=Callback::new(move |()| data_of.set(Some(plan_node)))
+                                at=bar_at
+                                docked=docked
+                                draft=draft
+                                probe=probe
+                                spot=spot
+                                typing=typing
+                                statuses=statuses
+                                on_change=Callback::new(move |()| guard.dirtied())
+                                on_edit=Callback::new(move |()| if let Some(node) = plan_node { on_open.run(node) })
+                                on_data=Callback::new(move |()| data_of.set(plan_node))
+                                on_save=on_save
+                                on_cancel=leave
+                                on_delete=on_delete
                             />
                         })
                     }}
+                    // made again for each task, as it starts from what the task has
+                    {move || {
+                        let task = staffed.get().filter(|_| tab.get() == PlanTab::Gantt);
+                        task.map(|_| view! { <WorkersWindow plan=plan draft=draft cursor=workers open_row=open_row /> })
+                    }}
+                    <Show when=move || tab.get() == PlanTab::Gantt>
+                        <ModeStack modes=Signal::derive(move || {
+                            // what the page is doing, the first under the rest
+                            let mut modes = Vec::new();
+                            let (pick, editing) = draft.with(|d| match d {
+                                Some(d) => (d.pick, Some(d.new)),
+                                None => (None, None),
+                            });
+                            match editing {
+                                Some(true) => modes.push(Mode::Creating),
+                                Some(false) => modes.push(Mode::Editing),
+                                None => {}
+                            }
+                            if menu.get() {
+                                modes.push(Mode::Adding);
+                            }
+                            if statuses.get() {
+                                modes.push(Mode::Statuses);
+                            }
+                            if workers.with(Option::is_some) {
+                                modes.push(Mode::Workers);
+                            }
+                            if moving.with(Option::is_some) {
+                                modes.push(Mode::Moving);
+                            }
+                            modes.extend(pick.or(live.get().map(|l| l.1)).map(Mode::Picking));
+                            modes
+                        }) />
+                        <card::Hint
+                            draft=draft
+                            live=Signal::derive(move || live.get().map(|l| l.1))
+                            note=Signal::derive(move || moving.get().map(|(_, how)| how.said()))
+                        />
+                        <InfoPanel
+                            plan=plan
+                            draft=draft
+                            looked=Signal::derive(move || hovered.get().or_else(|| chosen.get()))
+                            on_save=on_save
+                        />
+                    </Show>
                 </div>
                 {move || data_of.get().map(|data_node| view! {
                     <DataWindow plan=plan node=data_node on_close=Callback::new(move |()| data_of.set(None)) />
                 })}
-                {move || {
-                    node.get()
-                        .filter(|_| tab.get() != PlanTab::Settings)
-                        .map(|node| view! { <ItemPane plan=plan node=node fresh=fresh guard=guard on_close=on_close /> })
-                }}
                 </div>
-                <ConfirmLeave guard=guard />
+                <ConfirmLeave guard=guard on_save=on_save />
+                {move || deleting.get().map(|node| {
+                    let name = sync.tenant.with_untracked(|t| {
+                        let plan = t.as_ref().and_then(|t| t.plans().get(&plan));
+                        plan.map(|p| model::node_name(p, node)).unwrap_or_default()
+                    });
+                    let keep = Callback::new(move |()| deleting.set(None));
+                    // a click off it, or escape, is to keep it
+                    view! {
+                        <Modal title=format!("Delete {name}?") on_close=keep>
+                            <div class="choices">
+                                <button type="button" class="ctx" title="Keep it" aria-label="Keep it" on:click=move |_| keep.run(())>
+                                    <Icon kind=IconKind::Close size=40 />
+                                </button>
+                                <button type="button" class="ctx cancel" title="Delete it" aria-label="Delete it" on:click=move |_| delete.run(())>
+                                    <Icon kind=IconKind::Bin size=48 />
+                                </button>
+                            </div>
+                        </Modal>
+                    }
+                })}
                 <Show when=move || searching.get()>
-                    <SearchWindow plan=plan on_found=on_found on_close=Callback::new(move |_| searching.set(false)) />
+                    <SearchWindow plan=plan on_found=on_found picked=picked on_close=Callback::new(move |_| searching.set(false)) />
                 </Show>
                 <Show when=move || listing.get()>
                     <UnplacedWindow
                         scene=scene
                         on_open=Callback::new(move |node: PlanNode| {
                             listing.set(false);
-                            go(tab.get_untracked(), Some(node.id()));
+                            go(PlanTab::Gantt, Some(node.id()));
                         })
                         on_close=Callback::new(move |_| listing.set(false))
                     />
@@ -516,13 +1199,38 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         </Show>
     }
 }
+// }}}
 
+// ModeStack {{{
+/// What the page is in the middle of, as boxes at the top left of the chart, each one it went
+/// into from the one before laid over that, down and to the right
+#[component]
+fn ModeStack(modes: Signal<Vec<Mode>>) -> impl IntoView {
+    view! {
+        <div class="modestack" aria-live="polite">
+            <For each=move || modes.get().into_iter().enumerate() key=|m| *m children=move |(i, mode)| {
+                let (icon, said, tone) = mode.shown();
+                view! {
+                    <div class=format!("mode fadein {tone}") style=format!("--i:{i}") title=said aria-label=said>
+                        <Icon kind=icon size=40 />
+                    </div>
+                }
+            } />
+        </div>
+    }
+}
+// }}}
+
+// AddMenu {{{
 /// The plus button of the toolbar, which lists what can be added when the pointer is over it and
 /// stays listed once it has been clicked
 #[component]
-fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
+fn AddMenu(
+    on_add: Callback<Kind>,
+    /// Whether it stays listed, which a key can make it too
+    pinned: RwSignal<bool>,
+) -> impl IntoView {
     let over = RwSignal::new(false);
-    let pinned = RwSignal::new(false);
     crate::escape::on_escape(
         move || pinned.get() || over.get(),
         Callback::new(move |()| {
@@ -552,7 +1260,7 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
     view! {
         // hovering opens it for a mouse only, a touch also sends a hover that nothing ends
         <div
-            class="addmenu"
+            class="addmenu keeps"
             on:pointerenter=move |ev| over.set(ev.pointer_type() == "mouse")
             on:pointerleave=move |_| over.set(false)
         >
@@ -573,6 +1281,7 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
                     {item(Kind::Milestone, IconKind::AddMilestone, "Milestone", "Add milestone")}
                     {item(Kind::Group, IconKind::AddGroup, "Group", "Add task group")}
                     {item(Kind::Buffer, IconKind::AddBuffer, "Buffer", "Add buffer")}
+                    {item(Kind::Delay, IconKind::AddDelay, "Delay", "Add delay")}
                 </div>
             </Show>
             <Show when=move || pinned.get()>
@@ -584,6 +1293,89 @@ fn AddMenu(on_add: Callback<Kind>) -> impl IntoView {
         </div>
     }
 }
+// }}}
+
+// helpers {{{
+/// Gives the worker at `at` `by` more hours a day, from none to a whole day
+fn hours_by(asked: &mut [(Worker, u8)], at: usize, by: i8) {
+    if let Some((_, hours)) = asked.get_mut(at) {
+        *hours = hours.saturating_add_signed(by).min(8);
+    }
+}
+
+/// Puts the cursor at the end of the name of what is being created or edited
+fn name_box_end() {
+    use wasm_bindgen::JsCast;
+    let input = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector("textarea.namebox").ok().flatten())
+        .and_then(|i| i.dyn_into::<web_sys::HtmlTextAreaElement>().ok());
+    if let Some(input) = input {
+        let _ = input.focus();
+        let end = input.value().encode_utf16().count() as u32;
+        let _ = input.set_selection_range(end, end);
+    }
+}
+
+/// Whether a window is open over the page
+fn window_open() -> bool {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector(".modal").ok().flatten())
+        .is_some()
+}
+
+/// A key that does something to the page while `active`, from anywhere it is not something
+/// else: typed into a box, or pressed on a button outside the bar
+fn on_key(key: &'static str, active: impl Fn() -> bool + 'static, run: Callback<()>) {
+    use wasm_bindgen::JsCast;
+    crate::ui::window_listener("keydown", move |ev: web_sys::KeyboardEvent| {
+        if ev.key() != key || ev.default_prevented() || !active() {
+            return;
+        }
+        let target = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+        // a button of the bar that was last clicked still has the keyboard, and is not what
+        // the key is for: enter would press it again
+        let taken = target.is_some_and(|t| {
+            let within = |what: &str| t.closest(what).ok().flatten().is_some();
+            within("input, textarea, select, a") || within("button") && !within(".contextbar")
+        });
+        if !taken {
+            ev.prevent_default();
+            run.run(());
+        }
+    });
+}
+
+/// A letter typed at the page and not into anything, with nothing held down with it. `run`
+/// gives whether it was for something.
+fn on_letter(run: impl Fn(char) -> bool + 'static) {
+    use wasm_bindgen::JsCast;
+    crate::ui::window_listener("keydown", move |ev: web_sys::KeyboardEvent| {
+        let held = ev.ctrl_key() || ev.meta_key() || ev.alt_key();
+        let key = ev.key();
+        let mut letters = key.chars();
+        let (Some(letter), None, false) = (letters.next(), letters.next(), held) else {
+            return;
+        };
+        let target = ev
+            .target()
+            .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+        let typing = target.is_some_and(|t| {
+            t.closest("input, textarea, select")
+                .ok()
+                .flatten()
+                .is_some()
+        });
+        // a capital is shift held, which is for the handles of the chart
+        let capital = letter.is_ascii_uppercase() && ev.shift_key();
+        if !typing && !capital && !ev.default_prevented() && run(letter.to_ascii_lowercase()) {
+            ev.prevent_default();
+        }
+    });
+}
 
 /// Whether a click landed on nothing in particular, rather than on something that does its own thing
 pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
@@ -591,84 +1383,24 @@ pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
     ev.target()
         .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
         .is_some_and(|t| {
-            t.closest("button, a, input, select, canvas, .name, .pane")
-                .ok()
-                .flatten()
-                .is_none()
+            t.closest(
+                "button, a, input, select, canvas, .name, .contextbar, .infopanel, .workerwin",
+            )
+            .ok()
+            .flatten()
+            .is_none()
         })
 }
+// }}}
 
-/// Puts the cursor in the first box of the pane's form, with what it holds selected
-fn focus_first_box() {
-    use wasm_bindgen::JsCast;
-    let input = web_sys::window()
-        .and_then(|w| w.document())
-        .and_then(|d| d.query_selector(".pane form input").ok().flatten())
-        .and_then(|i| i.dyn_into::<web_sys::HtmlInputElement>().ok());
-    if let Some(input) = input {
-        let _ = input.focus();
-        input.select();
-    }
-}
-
-/// The pane beside the chart for editing the item that is open
-#[component]
-pub fn ItemPane(
-    plan: ShortId,
-    node: PlanNode,
-    fresh: RwSignal<Option<Uuid>>,
-    guard: Guard,
-    on_close: Callback<()>,
-) -> impl IntoView {
-    let sync = use_sync();
-    guard.opened();
-    on_cleanup(move || guard.closed());
-    // a new item has its first box ready to type in, its name or for a buffer its days
-    if fresh.get_untracked() == Some(node.id()) {
-        set_timeout(focus_first_box, std::time::Duration::from_millis(80));
-    }
-    let title = match node {
-        PlanNode::Task(_) => "Edit Task",
-        PlanNode::Milestone(_) => "Edit Milestone",
-        PlanNode::PlanBuffer(_) => "Edit Buffer",
-        PlanNode::TaskGroup(_) => "Edit Task Group",
-    };
-    let saved = Callback::new(move |()| {
-        fresh.set(None);
-        on_close.run(());
-    });
-    let cancel = Callback::new(move |()| {
-        if fresh.get_untracked() == Some(node.id()) {
-            fresh.set(None);
-            remove_item(sync, plan, node);
-        }
-        on_close.run(());
-    });
-    // escape is the same as clicking off the pane: it asks first when something is unsaved
-    crate::escape::on_escape(|| true, Callback::new(move |()| guard.then(cancel)));
-    view! {
-        <aside class="pane">
-            <header>
-                <h2>{title}</h2>
-                <button type="button" class="plain" aria-label="Close" on:click=move |_| cancel.run(())>"✕"</button>
-            </header>
-            <div
-                class="body"
-                on:input=move |ev| guard.touched(&ev)
-                on:change=move |ev| guard.touched(&ev)
-                on:click=move |ev| guard.touched(&ev)
-            >
-                <ItemEditor plan=plan node=node on_close=saved on_cancel=cancel />
-            </div>
-        </aside>
-    }
-}
-
+// SearchWindow {{{
 /// Filter the items by name, then go to one
 #[component]
 fn SearchWindow(
     plan: ShortId,
     on_found: Callback<PlanNode>,
+    /// What is picked, while the search picks: these are marked in the list
+    picked: Signal<Vec<PlanNode>>,
     on_close: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
@@ -679,18 +1411,27 @@ fn SearchWindow(
             let _ = input.focus();
         }
     });
+    // the row that enter takes, which the arrows move, and which a new filter puts back on top
+    let at = RwSignal::new(0usize);
     let results = Memo::new(move |_| {
-        let wanted = filter.get().to_lowercase();
+        let wanted = filter.get();
         sync.tenant
             .with(|t| {
                 let p = t.as_ref()?.plans().get(&plan)?;
-                let mut found: Vec<(PlanNode, String)> = model::nodes(p)
+                // the best matches first, and those that match as well by name
+                let mut found: Vec<(i32, PlanNode, String)> = model::nodes(p)
                     .into_iter()
-                    .map(|n| (n, model::node_name(p, n)))
-                    .filter(|(_, name)| wanted.is_empty() || name.to_lowercase().contains(&wanted))
+                    .filter_map(|n| {
+                        let name = model::node_name(p, n);
+                        Some((crate::fuzzy::score(&wanted, &name)?, n, name))
+                    })
                     .collect();
-                found.sort_by(|a, b| a.1.cmp(&b.1).then(a.0.id().cmp(&b.0.id())));
-                Some(found)
+                found.sort_by(|a, b| {
+                    b.0.cmp(&a.0)
+                        .then(a.2.cmp(&b.2))
+                        .then(a.1.id().cmp(&b.1.id()))
+                });
+                Some(found.into_iter().map(|(_, n, name)| (n, name)).collect())
             })
             .unwrap_or_default()
     });
@@ -703,24 +1444,54 @@ fn SearchWindow(
                 placeholder="Filter tasks and milestones…"
                 prop:value=move || filter.get()
                 class:nothing=move || !filter.with(String::is_empty) && results.with(Vec::is_empty)
-                on:input=move |ev| filter.set(event_target_value(&ev))
+                on:input=move |ev| {
+                    at.set(0);
+                    filter.set(event_target_value(&ev));
+                }
+                on:keydown=move |ev| {
+                    let count = results.with(Vec::len);
+                    match ev.key().as_str() {
+                        "ArrowDown" if count > 0 => {
+                            ev.prevent_default();
+                            at.update(|a| *a = (*a + 1).min(count - 1));
+                        }
+                        "ArrowUp" => {
+                            ev.prevent_default();
+                            at.update(|a| *a = a.saturating_sub(1));
+                        }
+                        "Enter" => {
+                            ev.prevent_default();
+                            let picked = results.with(|r| r.get(at.get_untracked()).map(|(n, _)| *n));
+                            if let Some(node) = picked {
+                                on_found.run(node);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             />
             <ul class="results">
                 <Show when=move || results.with(Vec::is_empty)>
                     <li class="none">"No results"</li>
                 </Show>
-                <For each=move || results.get() key=|r| r.clone() children=move |(node, name)| {
+                <For each=move || results.get().into_iter().enumerate() key=|r| r.clone() children=move |(i, (node, name))| {
                     let glyph = match node {
                         PlanNode::Task(_) => "▬",
                         PlanNode::Milestone(_) => "◇",
-                        PlanNode::PlanBuffer(_) => "▭",
+                        PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => "▭",
                         PlanNode::TaskGroup(_) => "▢",
                     };
                     view! {
                         <li>
-                            <button type="button" on:click=move |_| on_found.run(node)>
+                            <button
+                                type="button"
+                                class:at=move || at.get() == i
+                                on:click=move |_| on_found.run(node)
+                                on:pointerenter=move |_| at.set(i)
+                            >
                                 <span class="glyph">{glyph}</span>
                                 {name}
+                                {move || picked.with(|p| p.contains(&node)).then(|| view! { <span class="picked">"✓"</span> })}
                             </button>
                         </li>
                     }
@@ -729,7 +1500,9 @@ fn SearchWindow(
         </Modal>
     }
 }
+// }}}
 
+// UnplacedWindow {{{
 /// Everything the scheduler could not place, and why
 #[component]
 fn UnplacedWindow(
@@ -756,7 +1529,9 @@ fn UnplacedWindow(
         </Modal>
     }
 }
+// }}}
 
+// List {{{
 #[component]
 fn List(
     rows: Memo<Vec<Row>>,
@@ -803,3 +1578,4 @@ fn List(
         </ul>
     }
 }
+// }}}

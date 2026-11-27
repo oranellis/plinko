@@ -4,12 +4,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    common::{dates::TimeConstraint, error::PlinkoResult},
     helpers::functions::check_id_match,
+    planner::items::{dependency::PlanNode, parent::Parent},
+    planner::resources::data_block::DataBlocks,
     traits::patch::Patchable,
-    types::{
-        common::TimeConstraint, data_block::DataBlocks, dependency::Dependency,
-        error::PlinkoResult, parent::Parent,
-    },
 };
 // }}}
 
@@ -19,7 +18,7 @@ pub struct Milestone {
     name: String,
     parent: Parent,
     time_constraint: TimeConstraint,
-    dependencies: Vec<Dependency>,
+    dependencies: Vec<PlanNode>,
     description: Option<String>,
     data: DataBlocks,
     persistent_state: PersistentState,
@@ -51,7 +50,7 @@ impl Milestone {
         &mut self.data
     }
 
-    pub fn dependencies(&self) -> &Vec<Dependency> {
+    pub fn dependencies(&self) -> &Vec<PlanNode> {
         &self.dependencies
     }
 
@@ -96,7 +95,7 @@ impl Patchable<MilestonePatch> for Milestone {
             self.time_constraint = t;
         }
         if let Some(d) = patch.dependencies {
-            self.dependencies = Dependency::merged(d);
+            self.dependencies = PlanNode::merged(d);
         }
         if let Some(p) = patch.persistent_state {
             self.persistent_state = p
@@ -106,6 +105,7 @@ impl Patchable<MilestonePatch> for Milestone {
 }
 // }}}
 
+// Milestone supporting types {{{
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PersistentState {
     pub actual_date: Option<NaiveDate>,
@@ -116,14 +116,6 @@ pub struct PersistentState {
 pub struct VolatileState {
     pub derived_status: DerivedStatus,
     pub date: NaiveDate,
-}
-
-impl VolatileState {
-    /// The exclusive end of the one day the milestone lands on, so dependents treat it like any
-    /// other node (see `Dependency::start_after`)
-    pub fn end(&self) -> NaiveDate {
-        self.date + chrono::Days::new(1)
-    }
 }
 
 /// Milestones have no status of their own, it comes from what they depend on
@@ -148,6 +140,17 @@ pub struct MilestonePatch {
     pub name: Option<String>,
     pub parent: Option<Parent>,
     pub time_constraint: Option<TimeConstraint>,
-    pub dependencies: Option<Vec<Dependency>>,
+    pub dependencies: Option<Vec<PlanNode>>,
     pub persistent_state: Option<PersistentState>,
 }
+// }}}
+
+// impl VolatileState {{{
+impl VolatileState {
+    /// The exclusive end of the one day the milestone lands on, so dependents treat it like any
+    /// other node
+    pub fn end(&self) -> NaiveDate {
+        self.date + chrono::Days::new(1)
+    }
+}
+// }}}

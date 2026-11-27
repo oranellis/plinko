@@ -1,5 +1,6 @@
 //! Small pieces the pages share.
 
+// modules {{{
 use leptos::{html, prelude::*};
 
 use crate::{
@@ -7,11 +8,25 @@ use crate::{
     nav::Route,
     sync::{Link, Sync},
 };
+// }}}
 
+// use_sync {{{
 pub fn use_sync() -> Sync {
     expect_context::<Sync>()
 }
 
+/// The tenant's today, which moves on at midnight while the page is open
+pub fn use_today() -> Memo<chrono::NaiveDate> {
+    let sync = use_sync();
+    Memo::new(move |_| {
+        sync.tenant
+            .with(|t| t.as_ref().map(|t| t.today()))
+            .unwrap_or_default()
+    })
+}
+// }}}
+
+// Back {{{
 /// The way back from a page that is not one of the main ones, at its top left
 #[component]
 pub fn Back(to: Route) -> impl IntoView {
@@ -23,7 +38,9 @@ pub fn Back(to: Route) -> impl IntoView {
         </div>
     }
 }
+// }}}
 
+// IconButton {{{
 /// A small button that is only an icon
 #[component]
 pub fn IconButton(
@@ -37,7 +54,9 @@ pub fn IconButton(
         </button>
     }
 }
+// }}}
 
+// Modal {{{
 /// A panel over the page, a sheet from the bottom on a phone
 #[component]
 pub fn Modal(
@@ -50,9 +69,61 @@ pub fn Modal(
 ) -> impl IntoView {
     let label = move || title.get();
     crate::escape::on_escape(|| true, on_close);
+    // a press that starts in a field and lets go over the backdrop is not a click off it
+    let pressed = StoredValue::new(false);
+    let on_backdrop =
+        |ev: &web_sys::Event| ev.target().is_some() && ev.target() == ev.current_target();
+    // the keyboard goes into the window, unless something in it took it already, and back to
+    // where it was when the window closes
+    let modal = NodeRef::<html::Div>::new();
+    let focused = || web_sys::window()?.document()?.active_element();
+    let before = StoredValue::new_local(focused());
+    Effect::new(move |_| {
+        if modal.get().is_none() {
+            return;
+        }
+        set_timeout(
+            move || {
+                let Some(Some(modal)) = modal.try_get_untracked() else {
+                    return;
+                };
+                let inside = focused().is_some_and(|f| modal.contains(Some(&f)));
+                if !inside {
+                    let _ = modal.focus();
+                }
+            },
+            std::time::Duration::ZERO,
+        );
+    });
+    on_cleanup(move || {
+        use wasm_bindgen::JsCast;
+        let back = before.try_get_value().flatten();
+        if let Some(back) = back.and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok())
+            && back.is_connected()
+        {
+            let _ = back.focus();
+        }
+    });
     view! {
-        <div class="backdrop" on:click=move |_| on_close.run(())>
-            <div class="modal" class:wide=wide role="dialog" aria-label=label on:click=|ev| ev.stop_propagation()>
+        <div
+            class="backdrop"
+            on:pointerdown=move |ev| pressed.set_value(on_backdrop(&ev))
+            on:click=move |ev| {
+                if pressed.get_value() && on_backdrop(&ev) {
+                    on_close.run(());
+                }
+            }
+        >
+            <div
+                class="modal"
+                class:wide=wide
+                role="dialog"
+                aria-modal="true"
+                aria-label=label
+                tabindex="-1"
+                node_ref=modal
+                on:click=|ev| ev.stop_propagation()
+            >
                 <header>
                     <h2>{move || title.get()}</h2>
                     <IconButton kind=IconKind::Close label="Close" on_click=on_close />
@@ -62,7 +133,9 @@ pub fn Modal(
         </div>
     }
 }
+// }}}
 
+// Field {{{
 #[component]
 pub fn Field(#[prop(into)] label: Signal<String>, children: Children) -> impl IntoView {
     view! {
@@ -72,7 +145,9 @@ pub fn Field(#[prop(into)] label: Signal<String>, children: Children) -> impl In
         </label>
     }
 }
+// }}}
 
+// Block {{{
 /// A labelled group of controls, for the ones a label cannot wrap
 #[component]
 pub fn Block(
@@ -89,78 +164,9 @@ pub fn Block(
         </div>
     }
 }
+// }}}
 
-/// Buttons side by side, one of which is picked
-#[component]
-pub fn Segmented(
-    #[prop(into)] value: Signal<String>,
-    options: Signal<Vec<(String, String)>>,
-    on_change: Callback<String>,
-) -> impl IntoView {
-    // one tab stop for the whole group, on the picked button, and the arrows move along it
-    let stop = move |v: &str| {
-        let picked = options.with(|o| o.iter().any(|(o, _)| *o == value.get()));
-        let first = options.with(|o| o.first().is_some_and(|(f, _)| f == v));
-        value.get() == v || (!picked && first)
-    };
-    let arrows = |ev: web_sys::KeyboardEvent| {
-        use wasm_bindgen::JsCast;
-        let step = match ev.key().as_str() {
-            "ArrowRight" | "ArrowDown" => 1,
-            "ArrowLeft" | "ArrowUp" => -1,
-            _ => return,
-        };
-        ev.prevent_default();
-        let Some(current) = ev
-            .target()
-            .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
-        else {
-            return;
-        };
-        let mut next = if step > 0 {
-            current.next_element_sibling()
-        } else {
-            current.previous_element_sibling()
-        };
-        if next.is_none()
-            && let Some(parent) = current.parent_element()
-        {
-            next = if step > 0 {
-                parent.first_element_child()
-            } else {
-                parent.last_element_child()
-            };
-        }
-        if let Some(next) = next.and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok()) {
-            let _ = next.focus();
-        }
-    };
-    view! {
-        <div class="segmented" on:keydown=arrows>
-            {move || {
-                options
-                    .get()
-                    .into_iter()
-                    .map(|(v, label)| {
-                        let mine = v.clone();
-                        let tab = v.clone();
-                        view! {
-                            <button
-                                type="button"
-                                tabindex=move || if stop(&tab) { "0" } else { "-1" }
-                                class:on=move || value.get() == mine
-                                on:click=move |_| on_change.run(v.clone())
-                            >
-                                {label}
-                            </button>
-                        }
-                    })
-                    .collect_view()
-            }}
-        </div>
-    }
-}
-
+// Choice {{{
 /// One thing a `Picker` can pick. `tone` is a CSS class that colours it: `start` or `target`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Choice {
@@ -178,7 +184,9 @@ impl Choice {
         }
     }
 }
+// }}}
 
+// Picker {{{
 /// A button that opens a searchable list of `choices`, holding the value that is picked
 #[component]
 pub fn Picker(
@@ -186,8 +194,13 @@ pub fn Picker(
     #[prop(into)] choices: Signal<Vec<Choice>>,
     on_change: Callback<String>,
     #[prop(optional, into)] placeholder: String,
+    /// Opens the list when it becomes true, as a click on the button does
+    #[prop(optional, into)]
+    opener: Option<Signal<bool>>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
+    // the choice that enter takes, which the arrows move
+    let at = RwSignal::new(0usize);
     crate::escape::on_escape(move || open.get(), Callback::new(move |()| open.set(false)));
     let filter = RwSignal::new(String::new());
     let anchor = RwSignal::new((0.0, 0.0, 0.0));
@@ -197,12 +210,13 @@ pub fn Picker(
         let v = value.get();
         choices.with(|all| all.iter().find(|c| c.value == v).cloned())
     });
-    let show = move |_| {
+    let show = move || {
         if let Some(b) = button.get_untracked() {
             let r = b.get_bounding_client_rect();
             anchor.set((r.left(), r.bottom() + 2.0, r.width()));
         }
         filter.set(String::new());
+        at.set(0);
         open.set(true);
         set_timeout(
             move || {
@@ -213,17 +227,34 @@ pub fn Picker(
             std::time::Duration::from_millis(0),
         );
     };
+    if let Some(opener) = opener {
+        Effect::new(move |_| {
+            if opener.get() {
+                show();
+            }
+        });
+    }
+    // the best matches first, as in the search of a plan
     let shown = Memo::new(move |_| {
-        let wanted = filter.get().to_lowercase();
+        let wanted = filter.get();
         choices.with(|all| {
-            all.iter()
-                .filter(|c| wanted.is_empty() || c.label.to_lowercase().contains(&wanted))
-                .cloned()
+            let mut found: Vec<(i32, &Choice)> = all
+                .iter()
+                .filter_map(|c| Some((crate::fuzzy::score(&wanted, &c.label)?, c)))
+                .collect();
+            found.sort_by_key(|f| std::cmp::Reverse(f.0));
+            found
+                .into_iter()
+                .map(|(_, c)| c.clone())
                 .collect::<Vec<_>>()
         })
     });
+    let take = move |value: String| {
+        open.set(false);
+        on_change.run(value);
+    };
     view! {
-        <button type="button" class="picker" node_ref=button on:click=show>
+        <button type="button" class="picker" node_ref=button on:click=move |_| show()>
             {move || match current.get() {
                 Some(c) => view! { <span class=c.tone>{c.label}</span> }.into_any(),
                 None => view! { <span class="muted">{placeholder.clone()}</span> }.into_any(),
@@ -244,17 +275,44 @@ pub fn Picker(
                     node_ref=search
                     placeholder="Search…"
                     prop:value=move || filter.get()
-                    on:input=move |ev| filter.set(event_target_value(&ev))
-                    on:keydown=move |ev| if ev.key() == "Escape" { open.set(false) }
+                    on:input=move |ev| {
+                        at.set(0);
+                        filter.set(event_target_value(&ev));
+                    }
+                    on:keydown=move |ev| {
+                        let count = shown.with(Vec::len);
+                        match ev.key().as_str() {
+                            "Escape" => open.set(false),
+                            "ArrowDown" if count > 0 => {
+                                ev.prevent_default();
+                                at.update(|a| *a = (*a + 1).min(count - 1));
+                            }
+                            "ArrowUp" => {
+                                ev.prevent_default();
+                                at.update(|a| *a = a.saturating_sub(1));
+                            }
+                            "Enter" => {
+                                ev.prevent_default();
+                                ev.stop_propagation();
+                                if let Some(c) = shown.with(|s| s.get(at.get_untracked()).cloned()) {
+                                    take(c.value);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 />
                 <ul>
-                    <For each=move || shown.get() key=|c| c.value.clone() children=move |c| {
+                    <For each=move || shown.get().into_iter().enumerate() key=|(i, c)| (*i, c.value.clone()) children=move |(i, c)| {
                         let pick = c.value.clone();
                         view! {
-                            <li><button type="button" class=c.tone on:click=move |_| {
-                                open.set(false);
-                                on_change.run(pick.clone());
-                            }>{c.label}</button></li>
+                            <li><button
+                                type="button"
+                                class=c.tone
+                                class:at=move || at.get() == i
+                                on:click=move |_| take(pick.clone())
+                                on:pointerenter=move |_| at.set(i)
+                            >{c.label}</button></li>
                         }
                     } />
                     <Show when=move || shown.with(Vec::is_empty)><li class="none">"No results"</li></Show>
@@ -263,7 +321,9 @@ pub fn Picker(
         </Show>
     }
 }
+// }}}
 
+// Hours {{{
 /// A level out of `max`: a thin cell for none, then a cell for each step, lit from the left
 #[component]
 pub fn Hours(
@@ -298,7 +358,9 @@ pub fn Hours(
         </div>
     }
 }
+// }}}
 
+// List {{{
 /// A bordered list of rows with an add button under it
 #[component]
 pub fn List(
@@ -328,7 +390,9 @@ pub fn List(
         </div>
     }
 }
+// }}}
 
+// Actions {{{
 /// The buttons under a form: an optional delete on the left, then cancel and save
 #[component]
 pub fn Actions(
@@ -344,7 +408,9 @@ pub fn Actions(
         </div>
     }
 }
+// }}}
 
+// Text {{{
 /// A text box that tells its owner when it changes
 #[component]
 pub fn Text(
@@ -367,7 +433,9 @@ pub fn Text(
         />
     }
 }
+// }}}
 
+// Number {{{
 /// A box for a whole number
 #[component]
 pub fn Number(
@@ -391,7 +459,9 @@ pub fn Number(
         />
     }
 }
+// }}}
 
+// Select {{{
 /// A choice of `options` (value and label), holding the value that is picked
 #[component]
 pub fn Select(
@@ -415,7 +485,9 @@ pub fn Select(
         </select>
     }
 }
+// }}}
 
+// options {{{
 pub fn options<const N: usize>(pairs: [(&str, &str); N]) -> Signal<Vec<(String, String)>> {
     let pairs: Vec<(String, String)> = pairs
         .iter()
@@ -423,7 +495,9 @@ pub fn options<const N: usize>(pairs: [(&str, &str); N]) -> Signal<Vec<(String, 
         .collect();
     Signal::stored(pairs)
 }
+// }}}
 
+// Status {{{
 /// How the connection and the schedule are doing
 #[component]
 pub fn Status() -> impl IntoView {
@@ -439,7 +513,50 @@ pub fn Status() -> impl IntoView {
         </span>
     }
 }
+// }}}
 
+// window_listener {{{
+/// Listens to `event` on the window until the current owner is cleaned up
+pub fn window_listener<E>(event: &'static str, handler: impl FnMut(E) + 'static)
+where
+    E: wasm_bindgen::convert::FromWasmAbi + 'static,
+{
+    listen(event, false, handler);
+}
+
+/// As `window_listener`, but heard before anything on the page is
+pub fn window_capture<E>(event: &'static str, handler: impl FnMut(E) + 'static)
+where
+    E: wasm_bindgen::convert::FromWasmAbi + 'static,
+{
+    listen(event, true, handler);
+}
+
+fn listen<E>(event: &'static str, capture: bool, handler: impl FnMut(E) + 'static)
+where
+    E: wasm_bindgen::convert::FromWasmAbi + 'static,
+{
+    use wasm_bindgen::{JsCast, closure::Closure};
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let closure = Closure::<dyn FnMut(E)>::new(handler);
+    let heard = closure.as_ref().unchecked_ref();
+    let _ = window.add_event_listener_with_callback_and_bool(event, heard, capture);
+    let closure = StoredValue::new_local(closure);
+    // the window is not Send, so it is looked up again
+    on_cleanup(move || {
+        if let Some(window) = web_sys::window() {
+            closure.try_with_value(|c| {
+                let heard = c.as_ref().unchecked_ref();
+                let _ = window.remove_event_listener_with_callback_and_bool(event, heard, capture);
+            });
+        }
+    });
+}
+// }}}
+
+// hashed {{{
 /// A cheap key for a list entry that is drawn again whenever anything in it changes
 pub fn hashed<T: std::hash::Hash>(item: &T) -> u64 {
     use std::hash::Hasher;
@@ -447,3 +564,4 @@ pub fn hashed<T: std::hash::Hash>(item: &T) -> u64 {
     item.hash(&mut hasher);
     hasher.finish()
 }
+// }}}

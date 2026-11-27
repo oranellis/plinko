@@ -1,30 +1,33 @@
+// modules {{{
 use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use plinko::{
+    availability::workload::Workload,
     availability::{
         rule::{NewRule, RuleKind, WeeklySchedule},
         rule_set::RuleSetUpdate,
     },
-    planner::{plan::*, plan_update::PlanUpdate},
-    types::{
-        affinity::{AffinityPatch, NewAffinity},
-        crud::Crud,
-        data_block::{BlockContent, DataBlockPatch, NewDataBlock, TodoItem},
+    common::{crud::Crud, error::PlinkoResult, short_id::ShortId},
+    planner::items::{
         dependency::PlanNode,
-        error::PlinkoResult,
         milestone::NewMilestone,
         parent::Parent,
         plan_buffer::NewPlanBuffer,
-        short_id::ShortId,
-        target::{NewTarget, TargetPatch},
         task::{Assignee, NewTask, TaskPatch, Worker},
         task_group::NewTaskGroup,
-        workload::Workload,
     },
+    planner::resources::{
+        affinity::{AffinityPatch, NewAffinity},
+        data_block::{BlockContent, DataBlockPatch, NewDataBlock, TodoItem},
+        target::{NewTarget, TargetPatch},
+    },
+    planner::{plan::*, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
+// }}}
 
+// helpers {{{
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
@@ -38,7 +41,7 @@ fn new_plan() -> Plan {
 }
 
 fn add_task(plan: &mut Plan, parent: Parent) -> Uuid {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTask {
         id,
         name: "Task".to_string(),
@@ -53,7 +56,6 @@ fn task_patch(id: Uuid) -> TaskPatch {
         id,
         name: None,
         parent: None,
-        mode: None,
         duration: None,
         time_constraint: None,
         dependencies: None,
@@ -67,12 +69,14 @@ fn task_patch(id: Uuid) -> TaskPatch {
 fn patch_task(plan: &mut Plan, patch: TaskPatch) -> PlinkoResult<()> {
     plan.apply_update(PlanUpdate::Task(Crud::Update(patch)))
 }
+// }}}
 
+// allocations_are_hours_per_day_and_may_use_placeholders {{{
 #[test]
 fn allocations_are_hours_per_day_and_may_use_placeholders() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
-    let workers = HashMap::from([(Worker::Placeholder, Workload::new(4).unwrap())]);
+    let workers = HashMap::from([(Worker::Placeholder, Workload::new_const(4))]);
     let patch = TaskPatch {
         allocations: Some(workers),
         ..task_patch(task)
@@ -83,14 +87,16 @@ fn allocations_are_hours_per_day_and_may_use_placeholders() {
         4
     );
 }
+// }}}
 
+// helpers {{{
 /// Allowed weekdays, Monday as 0
 fn days(allowed: &[usize]) -> [bool; 7] {
     std::array::from_fn(|i| allowed.contains(&i))
 }
 
 fn add_affinity(plan: &mut Plan, weekly: [bool; 7]) -> Uuid {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewAffinity {
         id,
         name: "Affinity".to_string(),
@@ -100,7 +106,7 @@ fn add_affinity(plan: &mut Plan, weekly: [bool; 7]) -> Uuid {
     let rule = NewRule {
         name: String::new(),
         stop_day: None,
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         start_day: d(2000, 1, 1),
         kind: RuleKind::Weekly(WeeklySchedule::new(weekly)),
     };
@@ -117,7 +123,9 @@ fn link(plan: &mut Plan, task: Uuid, affinities: &[Uuid]) -> PlinkoResult<()> {
     };
     patch_task(plan, patch)
 }
+// }}}
 
+// tasks_only_work_on_days_every_linked_affinity_allows {{{
 #[test]
 fn tasks_only_work_on_days_every_linked_affinity_allows() {
     let mut plan = new_plan();
@@ -137,14 +145,16 @@ fn tasks_only_work_on_days_every_linked_affinity_allows() {
     assert_eq!(plan.task_allows_day(&task, thursday), Some(true));
     link(&mut plan, task, &[weekend, thursdays]).unwrap();
     assert_eq!(plan.task_allows_day(&task, thursday), Some(false));
-    assert_eq!(plan.task_allows_day(&Uuid::now_v7(), thursday), None);
+    assert_eq!(plan.task_allows_day(&Uuid::new_v4(), thursday), None);
 }
+// }}}
 
+// affinities_must_exist_and_cannot_be_removed_while_linked {{{
 #[test]
 fn affinities_must_exist_and_cannot_be_removed_while_linked() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
-    assert!(link(&mut plan, task, &[Uuid::now_v7()]).is_err());
+    assert!(link(&mut plan, task, &[Uuid::new_v4()]).is_err());
     assert!(plan.tasks()[&task].affinities().is_empty());
 
     let affinity = add_affinity(&mut plan, [true; 7]);
@@ -161,29 +171,33 @@ fn affinities_must_exist_and_cannot_be_removed_while_linked() {
         .unwrap();
     assert_eq!(plan.affinities()[&affinity].name(), "Renamed");
     plan.apply_update(remove()).unwrap();
-    let rules = RuleSetUpdate::Rule(Crud::Remove(Uuid::now_v7()));
+    let rules = RuleSetUpdate::Rule(Crud::Remove(Uuid::new_v4()));
     assert!(
         plan.apply_update(PlanUpdate::AffinityRules(affinity, rules))
             .is_err()
     );
 }
+// }}}
 
+// add_target {{{
 fn add_target(plan: &mut Plan, node: PlanNode, priority: i32) -> PlinkoResult<Uuid> {
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewTarget { id, node, priority };
     plan.apply_update(PlanUpdate::Target(Crud::Add(new)))
         .map(|()| id)
 }
+// }}}
 
+// targets_must_name_existing_nodes_and_block_their_removal {{{
 #[test]
 fn targets_must_name_existing_nodes_and_block_their_removal() {
     let mut plan = new_plan();
     assert!(plan.targets().is_empty());
-    assert!(add_target(&mut plan, PlanNode::Task(Uuid::now_v7()), 0).is_err());
+    assert!(add_target(&mut plan, PlanNode::Task(Uuid::new_v4()), 0).is_err());
     assert!(plan.targets().is_empty());
 
     let task = add_task(&mut plan, Parent::Plan);
-    let milestone = Uuid::now_v7();
+    let milestone = Uuid::new_v4();
     let new = NewMilestone {
         id: milestone,
         name: "Done".to_string(),
@@ -203,7 +217,7 @@ fn targets_must_name_existing_nodes_and_block_their_removal() {
         node,
         priority,
     };
-    let bad = patch(Some(PlanNode::Task(Uuid::now_v7())), None);
+    let bad = patch(Some(PlanNode::Task(Uuid::new_v4())), None);
     assert!(
         plan.apply_update(PlanUpdate::Target(Crud::Update(bad)))
             .is_err()
@@ -219,7 +233,9 @@ fn targets_must_name_existing_nodes_and_block_their_removal() {
         .unwrap();
     assert!(plan.targets().is_empty());
 }
+// }}}
 
+// plan_priority_defaults_to_zero_and_is_patched {{{
 #[test]
 fn plan_priority_defaults_to_zero_and_is_patched() {
     let mut plan = new_plan();
@@ -231,7 +247,9 @@ fn plan_priority_defaults_to_zero_and_is_patched() {
     plan.apply_update(PlanUpdate::SchedulerData(patch)).unwrap();
     assert_eq!(plan.scheduler_data().priority(), -3);
 }
+// }}}
 
+// the_default_start_is_an_existing_node_that_stays_while_it_is_set {{{
 #[test]
 fn the_default_start_is_an_existing_node_that_stays_while_it_is_set() {
     let mut plan = new_plan();
@@ -244,7 +262,7 @@ fn the_default_start_is_an_existing_node_that_stays_while_it_is_set() {
     };
     assert!(plan.scheduler_data().default_start().is_none());
     assert!(
-        plan.apply_update(set(Some(PlanNode::Task(Uuid::now_v7()))))
+        plan.apply_update(set(Some(PlanNode::Task(Uuid::new_v4()))))
             .is_err()
     );
     plan.apply_update(set(Some(PlanNode::Task(task)))).unwrap();
@@ -261,7 +279,9 @@ fn the_default_start_is_an_existing_node_that_stays_while_it_is_set() {
     plan.apply_update(PlanUpdate::Task(Crud::Remove(task)))
         .unwrap();
 }
+// }}}
 
+// todo {{{
 fn todo(items: &[(&str, bool)]) -> BlockContent {
     let items = items.iter().map(|&(text, done)| TodoItem {
         text: text.to_string(),
@@ -269,13 +289,15 @@ fn todo(items: &[(&str, bool)]) -> BlockContent {
     });
     BlockContent::TodoList(items.collect())
 }
+// }}}
 
+// tasks_and_milestones_hold_data_blocks {{{
 #[test]
 fn tasks_and_milestones_hold_data_blocks() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
     let node = PlanNode::Task(task);
-    let block = Uuid::now_v7();
+    let block = Uuid::new_v4();
     let new = NewDataBlock {
         id: block,
         title: "Checklist".to_string(),
@@ -300,9 +322,9 @@ fn tasks_and_milestones_hold_data_blocks() {
         .unwrap();
     assert!(plan.tasks()[&task].data().blocks().is_empty());
 
-    let buffer = PlanNode::PlanBuffer(Uuid::now_v7());
+    let buffer = PlanNode::PlanBuffer(Uuid::new_v4());
     let new = NewDataBlock {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         title: "Nope".to_string(),
         content: todo(&[]),
     };
@@ -310,17 +332,19 @@ fn tasks_and_milestones_hold_data_blocks() {
         plan.apply_update(PlanUpdate::Data(buffer, Crud::Add(new)))
             .is_err()
     );
-    let missing = PlanNode::Task(Uuid::now_v7());
+    let missing = PlanNode::Task(Uuid::new_v4());
     assert!(
         plan.apply_update(PlanUpdate::Data(missing, Crud::Remove(block)))
             .is_err()
     );
 }
+// }}}
 
+// a_new_affinity_allows_every_day {{{
 #[test]
 fn a_new_affinity_allows_every_day() {
     let mut plan = new_plan();
-    let affinity = Uuid::now_v7();
+    let affinity = Uuid::new_v4();
     let new = NewAffinity {
         id: affinity,
         name: "Anything".to_string(),
@@ -333,15 +357,17 @@ fn a_new_affinity_allows_every_day() {
         assert_eq!(plan.task_allows_day(&task, day), Some(true));
     }
 }
+// }}}
 
+// plan_users_hold_tags_by_id {{{
 #[test]
 fn plan_users_hold_tags_by_id() {
-    use plinko::types::{
+    use plinko::planner::resources::{
         tag::NewTag,
         user::{NewPlanUser, PlanUserDataPatch},
     };
     let mut plan = new_plan();
-    let (user, tag) = (Uuid::now_v7(), Uuid::now_v7());
+    let (user, tag) = (Uuid::new_v4(), Uuid::new_v4());
     let new = NewPlanUser { id: user };
     plan.apply_update(PlanUpdate::User(Crud::Add(new))).unwrap();
     let hold = |tags: &[Uuid]| {
@@ -369,7 +395,9 @@ fn plan_users_hold_tags_by_id() {
     plan.apply_update(hold(&[])).unwrap();
     plan.apply_update(remove()).unwrap();
 }
+// }}}
 
+// record {{{
 fn record(plan: &mut Plan, task: Uuid, workers: &[(Worker, Assignee)]) -> PlinkoResult<()> {
     let patch = TaskPatch {
         actual_workers: Some(workers.iter().copied().collect()),
@@ -377,24 +405,23 @@ fn record(plan: &mut Plan, task: Uuid, workers: &[(Worker, Assignee)]) -> Plinko
     };
     patch_task(plan, patch)
 }
+// }}}
 
+// the_person_who_did_the_work_is_recorded_per_requested_worker {{{
 #[test]
 fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
     let allocate = |plan: &mut Plan, slots: &[Worker]| {
-        let allocations = slots
-            .iter()
-            .map(|w| (*w, Workload::new(4).unwrap()))
-            .collect();
+        let allocations = slots.iter().map(|w| (*w, Workload::new_const(4))).collect();
         let patch = TaskPatch {
             allocations: Some(allocations),
             ..task_patch(task)
         };
         patch_task(plan, patch)
     };
-    let (slot, other) = (Worker::Placeholder, Worker::UserGroup(Uuid::now_v7()));
-    let person = Assignee::User(Uuid::now_v7());
+    let (slot, other) = (Worker::Placeholder, Worker::UserGroup(Uuid::new_v4()));
+    let person = Assignee::User(Uuid::new_v4());
 
     // only workers the task asks for can have someone recorded
     assert!(record(&mut plan, task, &[(slot, person)]).is_err());
@@ -411,7 +438,9 @@ fn the_person_who_did_the_work_is_recorded_per_requested_worker() {
     assert!(plan.tasks()[&task].actual_workers().is_empty());
     allocate(&mut plan, &[]).unwrap();
 }
+// }}}
 
+// task_and_group_durations_start_at_one_and_cannot_be_zero {{{
 #[test]
 fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
     let mut plan = new_plan();
@@ -429,7 +458,7 @@ fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
     patch_task(&mut plan, three).unwrap();
     assert_eq!(plan.tasks()[&task].duration(), 3);
 
-    let group = Uuid::now_v7();
+    let group = Uuid::new_v4();
     let new = NewTaskGroup {
         id: group,
         name: "Group".to_string(),
@@ -438,12 +467,14 @@ fn task_and_group_durations_start_at_one_and_cannot_be_zero() {
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
         .unwrap();
 }
+// }}}
 
+// tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither {{{
 #[test]
 fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither() {
     let mut plan = new_plan();
     let task = add_task(&mut plan, Parent::Plan);
-    let milestone = Uuid::now_v7();
+    let milestone = Uuid::new_v4();
     let new = NewMilestone {
         id: milestone,
         name: "M".to_string(),
@@ -451,7 +482,7 @@ fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither(
     };
     plan.apply_update(PlanUpdate::Milestone(Crud::Add(new)))
         .unwrap();
-    let group = Uuid::now_v7();
+    let group = Uuid::new_v4();
     let new = NewTaskGroup {
         id: group,
         name: "G".to_string(),
@@ -459,7 +490,7 @@ fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither(
     };
     plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
         .unwrap();
-    let buffer = Uuid::now_v7();
+    let buffer = Uuid::new_v4();
     let new = NewPlanBuffer {
         id: buffer,
         parent: Parent::Plan,
@@ -489,11 +520,11 @@ fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither(
     describe(&mut plan, PlanNode::Task(task), Some("")).unwrap();
     assert_eq!(plan.tasks()[&task].description(), None);
     assert!(describe(&mut plan, PlanNode::PlanBuffer(buffer), Some("no")).is_err());
-    assert!(describe(&mut plan, PlanNode::Task(Uuid::now_v7()), Some("no")).is_err());
+    assert!(describe(&mut plan, PlanNode::Task(Uuid::new_v4()), Some("no")).is_err());
 
     // data blocks go on groups as well, and not on buffers
     let block = || NewDataBlock {
-        id: Uuid::now_v7(),
+        id: Uuid::new_v4(),
         title: "Todo".to_string(),
         content: BlockContent::TodoList(Vec::new()),
     };
@@ -502,3 +533,4 @@ fn tasks_milestones_and_groups_have_a_description_and_data_buffers_have_neither(
     assert_eq!(plan.task_groups()[&group].data().blocks().len(), 1);
     assert!(plan.apply_update(on(PlanNode::PlanBuffer(buffer))).is_err());
 }
+// }}}

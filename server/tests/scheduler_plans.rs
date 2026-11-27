@@ -1,34 +1,35 @@
+// modules {{{
 use chrono::{DateTime, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
+    common::{crud::Crud, dates::TimeConstraint, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
+    planner::items::{
+        dependency::PlanNode,
+        milestone::NewMilestone,
+        parent::Parent,
+        task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
+    },
+    planner::resources::{target::NewTarget, user::NewPlanUser},
     planner::{
         plan::{NewPlan, PlanSchedulerDataPatch},
         plan_update::PlanUpdate,
     },
-    scheduler::{prepare, solve_tenant, state::TenantVolatileState},
-    types::{
-        common::TimeConstraint,
-        crud::Crud,
-        dependency::{Dependency, DependencyNode, PlanNode},
-        milestone::NewMilestone,
-        parent::Parent,
-        short_id::ShortId,
-        target::NewTarget,
-        task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
-        user::NewPlanUser,
-        workload::Workload,
-    },
+    scheduler::{Hints, expand, solve, state::TenantVolatileState},
 };
 use uuid::Uuid;
+// }}}
 
+// helpers {{{
 fn day(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).unwrap()
 }
 
+// Plans {{{
 struct Plans {
     tenant: Tenant,
     root: Uuid,
@@ -42,7 +43,7 @@ impl Plans {
         let mut plans = Self {
             tenant,
             root,
-            shared: Uuid::now_v7(),
+            shared: Uuid::new_v4(),
         };
         let new = NewTenantLoginUser {
             id: plans.shared,
@@ -83,7 +84,7 @@ impl Plans {
 
     /// A new person in the tenant and the plan
     fn person(&mut self, plan: ShortId) -> Uuid {
-        let id = Uuid::now_v7();
+        let id = Uuid::new_v4();
         let new = NewTenantLoginUser {
             id,
             name: "Person".to_string(),
@@ -97,14 +98,14 @@ impl Plans {
 
     /// A tag in the plan held by the people
     fn tag(&mut self, plan: ShortId, holders: &[Uuid]) -> Uuid {
-        let id = Uuid::now_v7();
-        let new = plinko::types::tag::NewTag {
+        let id = Uuid::new_v4();
+        let new = plinko::planner::resources::tag::NewTag {
             id,
             name: "Tag".to_string(),
         };
         self.update(plan, PlanUpdate::Tag(Crud::Add(new)));
         for user in holders {
-            let patch = plinko::types::user::PlanUserDataPatch {
+            let patch = plinko::planner::resources::user::PlanUserDataPatch {
                 id: *user,
                 tags: Some([id].into()),
             };
@@ -120,21 +121,15 @@ impl Plans {
     }
 
     fn task_for(&mut self, plan: ShortId, days: u32, worker: Worker, after: &[PlanNode]) -> Uuid {
-        let task = Uuid::now_v7();
+        let task = Uuid::new_v4();
         let new = NewTask {
             id: task,
             name: "Task".to_string(),
             parent: Parent::Plan,
         };
         self.update(plan, PlanUpdate::Task(Crud::Add(new)));
-        let after: Vec<Dependency> = match after {
-            [] => vec![DependencyNode::ParentStart],
-            nodes => nodes.iter().map(|n| DependencyNode::Node(*n)).collect(),
-        }
-        .into_iter()
-        .map(|node| Dependency { node, lag: 0 })
-        .collect();
-        let who = [(worker, Workload::new(8).unwrap())];
+        let after: Vec<PlanNode> = after.to_vec();
+        let who = [(worker, Workload::new_const(8))];
         self.patch(plan, task, |p| {
             p.duration = Some(days);
             p.dependencies = Some(after);
@@ -148,7 +143,6 @@ impl Plans {
             id: task,
             name: None,
             parent: None,
-            mode: None,
             duration: None,
             time_constraint: None,
             dependencies: None,
@@ -162,22 +156,19 @@ impl Plans {
     }
 
     fn milestone(&mut self, plan: ShortId, after: PlanNode) -> PlanNode {
-        let id = Uuid::now_v7();
+        let id = Uuid::new_v4();
         let new = NewMilestone {
             id,
             name: "Milestone".to_string(),
             parent: Parent::Plan,
         };
         self.update(plan, PlanUpdate::Milestone(Crud::Add(new)));
-        let patch = plinko::types::milestone::MilestonePatch {
+        let patch = plinko::planner::items::milestone::MilestonePatch {
             id,
             name: None,
             parent: None,
             time_constraint: None,
-            dependencies: Some(vec![Dependency {
-                node: DependencyNode::Node(after),
-                lag: 0,
-            }]),
+            dependencies: Some(vec![after]),
             persistent_state: None,
         };
         self.update(plan, PlanUpdate::Milestone(Crud::Update(patch)));
@@ -186,7 +177,7 @@ impl Plans {
 
     fn target(&mut self, plan: ShortId, node: PlanNode) {
         let new = NewTarget {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             node,
             priority: 0,
         };
@@ -208,16 +199,18 @@ impl Plans {
     }
 
     fn solve(&mut self) -> TenantVolatileState {
-        prepare(&mut self.tenant);
-        solve_tenant(&self.tenant)
+        solve(&mut self.tenant, &Hints::default()).state
     }
 }
+// }}}
 
 /// The first day of the task
 fn first_day(state: &TenantVolatileState, plan: ShortId, task: Uuid) -> NaiveDate {
     state.plans[&plan].tasks[&task].date_range.start()
 }
+// }}}
 
+// repair_puts_the_short_plan_first_to_cut_the_worst_delay {{{
 #[test]
 fn repair_puts_the_short_plan_first_to_cut_the_worst_delay() {
     let mut plans = Plans::new();
@@ -230,7 +223,9 @@ fn repair_puts_the_short_plan_first_to_cut_the_worst_delay() {
     assert_eq!(first_day(&state, long, long_task), day(2024, 1, 2));
     assert_eq!(state.users[&plans.shared].booked_on(day(2024, 1, 4)), 8);
 }
+// }}}
 
+// equal_ends_go_by_id {{{
 #[test]
 fn equal_ends_go_by_id() {
     let mut plans = Plans::new();
@@ -244,7 +239,9 @@ fn equal_ends_go_by_id() {
     assert_eq!(first_day(&state, low.0, low.1), day(2024, 1, 1));
     assert_eq!(first_day(&state, high.0, high.1), day(2024, 1, 2));
 }
+// }}}
 
+// forecasts_are_compared_with_the_plan_on_its_own {{{
 #[test]
 fn forecasts_are_compared_with_the_plan_on_its_own() {
     let mut plans = Plans::new();
@@ -260,35 +257,9 @@ fn forecasts_are_compared_with_the_plan_on_its_own() {
         day(2024, 1, 3)
     );
 }
+// }}}
 
-#[test]
-fn baselines_are_cached_and_dropped_when_what_they_depend_on_changes() {
-    let mut plans = Plans::new();
-    let ((one, _), (two, _)) = (plans.plan(1), plans.plan(1));
-    assert!(plans.tenant.baseline(&one).is_none());
-    plans.solve();
-    assert!(plans.tenant.baseline(&one).is_some());
-    assert!(plans.tenant.baseline(&two).is_some());
-
-    // changing a plan only drops its own
-    let new = NewTask {
-        id: Uuid::now_v7(),
-        name: "More".to_string(),
-        parent: Parent::Plan,
-    };
-    plans.update(one, PlanUpdate::Task(Crud::Add(new)));
-    assert!(plans.tenant.baseline(&one).is_none());
-    assert!(plans.tenant.baseline(&two).is_some());
-
-    // the clock, or anything about people, drops them all
-    plans.solve();
-    plans.apply(TenantUpdateType::SetToday(day(2024, 1, 2)));
-    assert!(plans.tenant.baseline(&one).is_none());
-    assert!(plans.tenant.baseline(&two).is_none());
-    plans.solve();
-    assert!(plans.tenant.baseline(&two).is_some());
-}
-
+// chain {{{
 /// A plan of one task for each of the given days, one after the other, with a target at the end
 fn chain(plans: &mut Plans, days: &[u32]) -> (ShortId, Vec<Uuid>) {
     let plan = plans.empty();
@@ -306,7 +277,9 @@ fn chain(plans: &mut Plans, days: &[u32]) -> (ShortId, Vec<Uuid>) {
     plans.target(plan, end);
     (plan, tasks)
 }
+// }}}
 
+// plan_priority_decides_who_gets_contended_hours {{{
 #[test]
 fn plan_priority_decides_who_gets_contended_hours() {
     for favoured in [0, 1] {
@@ -322,14 +295,16 @@ fn plan_priority_decides_who_gets_contended_hours() {
         assert_eq!(plan.targets.values().next().unwrap().delay(), 2);
     }
 }
+// }}}
 
+// target_priority_counts_beside_plan_priority {{{
 #[test]
 fn target_priority_counts_beside_plan_priority() {
     let mut plans = Plans::new();
     let made = [chain(&mut plans, &[1]), chain(&mut plans, &[1])];
     let plan = made[1].0;
     let target = *plans.tenant.plans()[&plan].targets().keys().next().unwrap();
-    let patch = plinko::types::target::TargetPatch {
+    let patch = plinko::planner::resources::target::TargetPatch {
         id: target,
         node: None,
         priority: Some(3),
@@ -340,7 +315,9 @@ fn target_priority_counts_beside_plan_priority() {
     // 3 beats 2 whichever plan is first by the usual order
     assert_eq!(first_day(&state, plan, made[1].1[0]), day(2024, 1, 1));
 }
+// }}}
 
+// work_off_the_target_chain_waits_for_every_chain {{{
 #[test]
 fn work_off_the_target_chain_waits_for_every_chain() {
     let mut plans = Plans::new();
@@ -352,13 +329,15 @@ fn work_off_the_target_chain_waits_for_every_chain() {
     assert_eq!(first_day(&state, short, short_chain[0]), day(2024, 1, 1));
     assert_eq!(first_day(&state, long, rest), day(2024, 1, 5));
 }
+// }}}
 
+// chains_to_close_hard_dates_go_before_target_chains {{{
 #[test]
 fn chains_to_close_hard_dates_go_before_target_chains() {
     let mut plans = Plans::new();
     let (hard_plan, hard) = plans.plan(1);
     plans.patch(hard_plan, hard, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(day(2024, 1, 3)));
+        p.time_constraint = Some(TimeConstraint::Fixed(day(2024, 1, 3)).into());
     });
     let (long, long_chain) = chain(&mut plans, &[3]);
     let state = plans.solve();
@@ -367,7 +346,9 @@ fn chains_to_close_hard_dates_go_before_target_chains() {
     // a three day run cannot straddle the day taken, so it starts after it
     assert_eq!(first_day(&state, long, long_chain[0]), day(2024, 1, 4));
 }
+// }}}
 
+// work_in_progress_in_any_plan_claims_hours_first {{{
 #[test]
 fn work_in_progress_in_any_plan_claims_hours_first() {
     let mut plans = Plans::new();
@@ -383,7 +364,9 @@ fn work_in_progress_in_any_plan_claims_hours_first() {
     assert_eq!(first_day(&state, active, active_task), day(2024, 1, 1));
     assert_eq!(first_day(&state, first, first_chain[0]), day(2024, 1, 4));
 }
+// }}}
 
+// Random {{{
 /// A small random generator, so the same plans come out every run
 struct Random(u64);
 
@@ -396,7 +379,9 @@ impl Random {
         (self.0 >> 33) % n
     }
 }
+// }}}
 
+// random_plans_never_overbook_a_person_or_start_before_their_dependencies {{{
 #[test]
 fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
     let mut random = Random(12345);
@@ -418,12 +403,8 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
                     (random.below(4) == 0).then(|| day(2024, 1, 1 + random.below(10) as u32));
                 if let Some(date) = fixed {
                     plans.patch(plan, task, |p| {
-                        p.time_constraint = Some(TimeConstraint::Fixed(date))
+                        p.time_constraint = Some(TimeConstraint::Fixed(date).into())
                     });
-                }
-                if random.below(4) == 0 {
-                    let relaxed = Some(plinko::types::task::ScheduleMode::Relaxed);
-                    plans.patch(plan, task, |p| p.mode = relaxed);
                 }
                 made.push((plan, task, after, fixed));
                 tasks.push(task);
@@ -433,7 +414,12 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
                 plans.target(plan, end);
             }
         }
-        let state = plans.solve();
+        let solved = solve(&mut plans.tenant, &Hints::default());
+        // what was decided gives the same schedule back without searching
+        let expanded = expand(&mut plans.tenant, &solved.solution);
+        assert_eq!(expanded.state, solved.state);
+        assert_eq!(expanded.solution, solved.solution);
+        let state = solved.state;
         for schedule in state.users.values() {
             for day in schedule.assignments.keys() {
                 assert!(schedule.booked_on(*day) <= 8, "overbooked on {day}");
@@ -448,13 +434,17 @@ fn random_plans_never_overbook_a_person_or_start_before_their_dependencies() {
         }
     }
 }
+// }}}
 
+// fixed {{{
 fn fixed(plans: &mut Plans, plan: ShortId, task: Uuid, date: NaiveDate) {
     plans.patch(plan, task, |p| {
-        p.time_constraint = Some(TimeConstraint::Fixed(date))
+        p.time_constraint = Some(TimeConstraint::Fixed(date).into())
     });
 }
+// }}}
 
+// repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help {{{
 #[test]
 fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help() {
     let mut plans = Plans::new();
@@ -478,32 +468,4 @@ fn repair_moves_tag_work_off_a_bottleneck_a_bump_cannot_help() {
     let worker = state.plans[&tagged].tasks[&held].workers[&Worker::Tag(tag)];
     assert_eq!(worker, Assignee::User(high));
 }
-
-#[test]
-fn someone_much_less_booked_is_worth_finishing_a_day_later() {
-    let mut plans = Plans::new();
-    let plan = plans.empty();
-    let (alice, bob) = (plans.person(plan), plans.person(plan));
-    let tag = plans.tag(plan, &[alice, bob]);
-    // bob does not work Mondays, so finishes a day after alice, who has a day booked
-    let rule = plinko::availability::rule::NewRule {
-        name: String::new(),
-        stop_day: None,
-        id: Uuid::now_v7(),
-        start_day: day(2000, 1, 3),
-        kind: plinko::availability::rule::RuleKind::Weekly(
-            plinko::availability::rule::WeeklySchedule::new(
-                [0, 8, 8, 8, 8, 0, 0].map(|h| Workload::new(h).unwrap()),
-            ),
-        ),
-    };
-    let update = plinko::availability::rule_set::RuleSetUpdate::Rule(Crud::Add(rule));
-    plans.apply(TenantUpdateType::Availability(bob, update));
-    let booked = plans.task_for(plan, 1, Worker::User(alice), &[]);
-    fixed(&mut plans, plan, booked, day(2024, 1, 3));
-    let task = plans.task_for(plan, 2, Worker::Tag(tag), &[]);
-    let state = plans.solve();
-    let worker = state.plans[&plan].tasks[&task].workers[&Worker::Tag(tag)];
-    assert_eq!(worker, Assignee::User(bob));
-    assert_eq!(first_day(&state, plan, task), day(2024, 1, 2));
-}
+// }}}

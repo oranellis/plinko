@@ -1,11 +1,12 @@
+// modules {{{
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    helpers::functions::check_id_match,
-    traits::patch::Patchable,
-    types::{dependency::PlanNode, error::PlinkoResult},
+    common::error::PlinkoResult, helpers::functions::check_id_match,
+    planner::items::dependency::PlanNode, traits::patch::Patchable,
 };
+// }}}
 
 /// A node the scheduler brings as far forward as it can. It has no due date, the scheduler
 /// forecasts when it lands. `priority` is added to the plan's and breaks contention for people.
@@ -16,6 +17,7 @@ pub struct Target {
     priority: i32,
 }
 
+// impl Target {{{
 impl Target {
     pub fn id(&self) -> &Uuid {
         &self.id
@@ -52,7 +54,9 @@ impl Patchable<TargetPatch> for Target {
         Ok(())
     }
 }
+// }}}
 
+// Target supporting types {{{
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewTarget {
     pub id: Uuid,
@@ -66,3 +70,4 @@ pub struct TargetPatch {
     pub node: Option<PlanNode>,
     pub priority: Option<i32>,
 }
+// }}}

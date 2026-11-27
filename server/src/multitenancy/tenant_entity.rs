@@ -4,19 +4,18 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
+    common::error::{PlinkoError, PlinkoResult},
     multitenancy::{
         tenant::Tenant,
         user::{NewTenantLoginUser, TenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroup, TenantUserGroupPatch},
     },
+    planner::items::task::Assignee,
     traits::entity::Entity,
-    types::{
-        error::{PlinkoError, PlinkoResult},
-        task::Assignee,
-    },
 };
 // }}}
 
+// impl Entity for TenantLoginUser {{{
 impl Entity<Tenant> for TenantLoginUser {
     type New = NewTenantLoginUser;
     type Patch = TenantLoginUserPatch;
@@ -27,11 +26,17 @@ impl Entity<Tenant> for TenantLoginUser {
     fn entities_mut(tenant: &mut Tenant) -> &mut HashMap<Uuid, Self> {
         &mut tenant.users
     }
-    /// The tenant always keeps an admin, so a role change cannot demote the last one
-    fn validate(tenant: &Tenant, _id: Uuid) -> PlinkoResult<()> {
-        match tenant.admins().next() {
-            Some(_) => Ok(()),
-            None => Err(PlinkoError::LastAdmin),
+    /// The tenant always keeps an admin, so a role change cannot demote the last one. An email
+    /// logs one user in, so no two have the same.
+    fn validate(tenant: &Tenant, id: Uuid) -> PlinkoResult<()> {
+        if tenant.admins().next().is_none() {
+            return Err(PlinkoError::LastAdmin);
+        }
+        let email = tenant.users[&id].email();
+        let mut others = tenant.users.values().filter(|u| *u.id() != id);
+        match !tenant.logged && others.any(|u| u.has_email(email)) {
+            true => Err(PlinkoError::EmailTaken(email.trim().to_string())),
+            false => Ok(()),
         }
     }
 
@@ -47,7 +52,9 @@ impl Entity<Tenant> for TenantLoginUser {
             || tenant.user_groups.values().any(|g| g.users().contains(&id))
     }
 }
+// }}}
 
+// impl Entity for TenantUserGroup {{{
 impl Entity<Tenant> for TenantUserGroup {
     type New = NewTenantUserGroup;
     type Patch = TenantUserGroupPatch;
@@ -87,3 +94,4 @@ impl Entity<Tenant> for TenantUserGroup {
             || tenant.user_groups.values().any(|g| g.parent() == Some(id))
     }
 }
+// }}}

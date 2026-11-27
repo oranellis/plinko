@@ -2,21 +2,14 @@
 //! call across to JavaScript (and a font parse) to set what is already set. Every method here
 //! shadows the one of the same name on the context, which the rest is reached through.
 
+// modules {{{
 use std::{cell::RefCell, ops::Deref};
 
 use wasm_bindgen::{JsValue, intern};
 use web_sys::{CanvasGradient, CanvasRenderingContext2d};
+// }}}
 
-#[derive(Clone, Default)]
-struct State {
-    fill: Option<String>,
-    stroke: Option<String>,
-    font: Option<String>,
-    baseline: Option<String>,
-    align: Option<String>,
-    width: Option<f64>,
-}
-
+// changed {{{
 /// Set the field to `value` and say whether that is a change
 fn changed<T: PartialEq + Clone>(field: &mut Option<T>, value: &T) -> bool {
     if field.as_ref() == Some(value) {
@@ -25,6 +18,7 @@ fn changed<T: PartialEq + Clone>(field: &mut Option<T>, value: &T) -> bool {
     *field = Some(value.clone());
     true
 }
+// }}}
 
 pub struct Pen {
     ctx: CanvasRenderingContext2d,
@@ -34,6 +28,19 @@ pub struct Pen {
     widths: RefCell<std::collections::HashMap<(String, String), f64>>,
 }
 
+// Pen supporting types {{{
+#[derive(Clone, Default)]
+struct State {
+    fill: Option<String>,
+    stroke: Option<String>,
+    font: Option<String>,
+    baseline: Option<String>,
+    align: Option<String>,
+    width: Option<f64>,
+}
+// }}}
+
+// impl Pen {{{
 impl Deref for Pen {
     type Target = CanvasRenderingContext2d;
     fn deref(&self) -> &CanvasRenderingContext2d {
@@ -62,11 +69,6 @@ impl Pen {
         if changed(&mut self.state.borrow_mut().stroke, &colour.to_string()) {
             self.ctx.set_stroke_style_str(intern(colour));
         }
-    }
-
-    pub fn set_fill_style_canvas_gradient(&self, gradient: &CanvasGradient) {
-        self.state.borrow_mut().fill = None;
-        self.ctx.set_fill_style_canvas_gradient(gradient);
     }
 
     pub fn set_stroke_style_canvas_gradient(&self, gradient: &CanvasGradient) {
@@ -131,3 +133,4 @@ impl Pen {
         self.ctx.restore();
     }
 }
+// }}}

@@ -1,10 +1,11 @@
 //! Where the user is, kept in the address (`#/plan/AbCdEfGh/gantt`) so links and the back button
 //! work.
 
+// modules {{{
 use leptos::prelude::*;
-use plinko::types::short_id::ShortId;
+use plinko::common::short_id::ShortId;
 use uuid::Uuid;
-use wasm_bindgen::{JsCast, closure::Closure};
+// }}}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlanTab {
@@ -13,6 +14,7 @@ pub enum PlanTab {
     Settings,
 }
 
+// impl PlanTab {{{
 impl PlanTab {
     fn name(self) -> &'static str {
         match self {
@@ -28,7 +30,9 @@ impl PlanTab {
             .find(|t| t.name() == text)
     }
 }
+// }}}
 
+// PlanTab supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
     Home,
@@ -40,7 +44,7 @@ pub enum Route {
     UserAllocations(Uuid),
     People,
     Preferences,
-    /// Availability of a user, or the plan default of a plan
+    /// Availability of a user, the plan default of a plan, or the default of the tenant
     Availability(Availability),
 }
 
@@ -48,8 +52,16 @@ pub enum Route {
 pub enum Availability {
     User(Uuid),
     Plan(ShortId),
+    /// What new users and new plans start with
+    Default,
 }
 
+/// A task to show when the chart of its plan opens, asked for from another page
+#[derive(Clone, Copy)]
+pub struct Reveal(pub RwSignal<Option<(ShortId, Uuid)>>);
+// }}}
+
+// impl Route {{{
 impl Route {
     pub fn path(&self) -> String {
         match self {
@@ -65,6 +77,7 @@ impl Route {
             Route::Preferences => "#/preferences".to_string(),
             Route::Availability(Availability::User(user)) => format!("#/availability/user/{user}"),
             Route::Availability(Availability::Plan(plan)) => format!("#/availability/plan/{plan}"),
+            Route::Availability(Availability::Default) => "#/availability/default".to_string(),
         }
     }
 
@@ -95,15 +108,14 @@ impl Route {
                 Ok(plan) => Route::Availability(Availability::Plan(plan)),
                 Err(_) => Route::Home,
             },
+            ["availability", "default"] => Route::Availability(Availability::Default),
             _ => Route::Home,
         }
     }
 }
+// }}}
 
-/// A task to show when the chart of its plan opens, asked for from another page
-#[derive(Clone, Copy)]
-pub struct Reveal(pub RwSignal<Option<(ShortId, Uuid)>>);
-
+// helpers {{{
 pub fn navigate(route: Route) {
     if let Some(window) = web_sys::window() {
         let _ = window.location().set_hash(&route.path());
@@ -117,15 +129,12 @@ pub fn use_route() -> RwSignal<Route> {
         Route::parse(&hash.unwrap_or_default())
     };
     let route = RwSignal::new(read());
-    let listener = Closure::<dyn FnMut()>::new(move || route.set(read()));
-    if let Some(window) = web_sys::window() {
-        let _ = window
-            .add_event_listener_with_callback("hashchange", listener.as_ref().unchecked_ref());
-    }
-    listener.forget();
+    crate::ui::window_listener("hashchange", move |_: web_sys::Event| route.set(read()));
     route
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,6 +154,7 @@ mod tests {
             Route::Preferences,
             Route::Availability(Availability::User(item)),
             Route::Availability(Availability::Plan(plan)),
+            Route::Availability(Availability::Default),
         ] {
             assert_eq!(Route::parse(&route.path()), route);
         }
@@ -157,3 +167,4 @@ mod tests {
         assert_eq!(Route::parse("#/nowhere/at/all"), Route::Home);
     }
 }
+// }}}

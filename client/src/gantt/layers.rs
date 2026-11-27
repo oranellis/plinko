@@ -3,6 +3,7 @@
 //! only draws the lines, outlines and names over them. They are drawn bigger than the screen, so
 //! scrolling just moves them until the screen is about to run off their edge.
 
+// modules {{{
 use std::rc::Rc;
 
 use chrono::NaiveDate;
@@ -15,12 +16,31 @@ use crate::gantt::{
     pen::Pen,
     scene::Scene,
 };
+// }}}
 
+pub struct Layers {
+    back: Image,
+    nodes: Image,
+    key: Key,
+    /// The size of what is drawn on them, in chart pixels, which can be less than they hold
+    size: (f64, f64),
+    ratio: f64,
+    /// The size they were made for
+    room: (f64, f64),
+    /// Where the top left of what was drawn is in the chart, in pixels
+    origin: (f64, f64),
+    /// The names to draw over the layers, positioned in them
+    pub labels: Vec<Label>,
+}
+
+// constants {{{
 /// How much is drawn past each side of the screen, as a share of the screen up to a limit
 const SPARE: f64 = 0.5;
 const SPARE_X: f64 = 600.0;
 const SPARE_Y: f64 = 400.0;
+// }}}
 
+// Layers supporting types {{{
 /// What the layers were drawn from. They are drawn again when any of it changes.
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
@@ -35,7 +55,9 @@ struct Image {
     canvas: HtmlCanvasElement,
     pen: Rc<Pen>,
 }
+// }}}
 
+// impl Image {{{
 impl Image {
     fn new(width: u32, height: u32, ratio: f64) -> Option<Self> {
         let canvas = web_sys::window()?
@@ -58,22 +80,9 @@ impl Image {
         })
     }
 }
+// }}}
 
-pub struct Layers {
-    back: Image,
-    nodes: Image,
-    key: Key,
-    /// The size of what is drawn on them, in chart pixels, which can be less than they hold
-    size: (f64, f64),
-    ratio: f64,
-    /// The size they were made for
-    room: (f64, f64),
-    /// Where the top left of what was drawn is in the chart, in pixels
-    origin: (f64, f64),
-    /// The names to draw over the layers, positioned in them
-    pub labels: Vec<Label>,
-}
-
+// impl Layers {{{
 impl Layers {
     /// Where the layers' top left is on the screen for the chart scrolled to `viewport`
     pub fn at(&self, viewport: Viewport) -> (f64, f64) {
@@ -115,7 +124,9 @@ impl Layers {
         );
     }
 }
+// }}}
 
+// key {{{
 fn key(
     (width, height): (f64, f64),
     ratio: f64,
@@ -130,7 +141,9 @@ fn key(
         today,
     }
 }
+// }}}
 
+// render {{{
 /// Draws the layers for the screen as it is now, using the images already made if they are the
 /// right size
 pub fn render(
@@ -183,9 +196,11 @@ pub fn render(
         today,
         hover: None,
         selected: None,
+        staged: None,
+        nameless: None,
+        ghosted: None,
         links: &[],
         flash: None,
-        info: &[],
         tip: None,
     };
     let mut found = Found::default();
@@ -208,3 +223,4 @@ pub fn render(
         found,
     ))
 }
+// }}}

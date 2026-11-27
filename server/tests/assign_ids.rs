@@ -1,34 +1,34 @@
+// modules {{{
 use chrono::NaiveDate;
 use plinko::{
+    availability::workload::Workload,
     availability::{
         rule::{NewRule, RuleKind},
         rule_set::RuleSetUpdate,
     },
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant_update::{PlanTenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
         user_group::NewTenantUserGroup,
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    types::{
+    planner::items::{
+        dependency::PlanNode, milestone::NewMilestone, parent::Parent, plan_buffer::NewPlanBuffer,
+        task::NewTask, task_group::NewTaskGroup,
+    },
+    planner::resources::{
         affinity::NewAffinity,
-        crud::Crud,
         data_block::{BlockContent, NewDataBlock},
-        dependency::PlanNode,
-        milestone::NewMilestone,
-        parent::Parent,
-        plan_buffer::NewPlanBuffer,
-        short_id::ShortId,
         tag::NewTag,
         target::NewTarget,
-        task::NewTask,
-        task_group::NewTaskGroup,
         user::{NewPlanUser, NewPlanUserGroup},
-        workload::Workload,
     },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
+// }}}
 
+// helpers {{{
 const CLIENT_ID: Uuid = Uuid::nil();
 
 fn rule_update<V>(kind: RuleKind<V>) -> RuleSetUpdate<V> {
@@ -66,7 +66,9 @@ fn plan_update_ids(mut update: PlanUpdate) -> Uuid {
         _ => panic!("expected an add"),
     }
 }
+// }}}
 
+// plan_adds_get_fresh_ids {{{
 #[test]
 fn plan_adds_get_fresh_ids() {
     let parent = Parent::Plan;
@@ -121,7 +123,9 @@ fn plan_adds_get_fresh_ids() {
         assert_ne!(plan_update_ids(update), CLIENT_ID);
     }
 }
+// }}}
 
+// existing_tenant_users_and_groups_keep_their_ids_in_a_plan {{{
 #[test]
 fn existing_tenant_users_and_groups_keep_their_ids_in_a_plan() {
     let user = PlanUpdate::User(Crud::Add(NewPlanUser { id: CLIENT_ID }));
@@ -129,14 +133,18 @@ fn existing_tenant_users_and_groups_keep_their_ids_in_a_plan() {
     let group = PlanUpdate::UserGroup(Crud::Add(NewPlanUserGroup { id: CLIENT_ID }));
     assert_eq!(plan_update_ids(group), CLIENT_ID);
 }
+// }}}
 
+// updates_and_removals_keep_the_ids_they_name {{{
 #[test]
 fn updates_and_removals_keep_the_ids_they_name() {
     let mut remove = PlanUpdate::Task(Crud::Remove(CLIENT_ID));
     remove.assign_ids();
     assert!(matches!(remove, PlanUpdate::Task(Crud::Remove(id)) if id == CLIENT_ID));
 }
+// }}}
 
+// tenant_adds_get_fresh_ids {{{
 #[test]
 fn tenant_adds_get_fresh_ids() {
     let mut user = TenantUpdateType::User(Crud::Add(NewTenantLoginUser {
@@ -166,7 +174,9 @@ fn tenant_adds_get_fresh_ids() {
     assert_eq!(user, CLIENT_ID);
     assert_ne!(rule_id::<Workload>(&update), CLIENT_ID);
 }
+// }}}
 
+// new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned {{{
 #[test]
 fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned() {
     let client_plan = ShortId::from_str_checked("AAAAAAAA").unwrap();
@@ -198,3 +208,4 @@ fn new_plans_get_fresh_ids_and_nested_plan_updates_are_assigned() {
     assert_eq!(plan, client_plan, "the plan being edited is not reassigned");
     assert_ne!(new.id, CLIENT_ID);
 }
+// }}}

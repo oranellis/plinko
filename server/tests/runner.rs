@@ -1,23 +1,24 @@
+// modules {{{
 use chrono::{DateTime, NaiveDate, Utc};
 use plinko::{
+    availability::workload::Workload,
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    types::{
-        crud::Crud,
-        dependency::{Dependency, DependencyNode},
+    planner::items::{
         parent::Parent,
-        short_id::ShortId,
         task::{Assignee, NewTask, PersistentState, Status, TaskPatch, Worker},
-        user::NewPlanUser,
-        workload::Workload,
     },
+    planner::resources::user::NewPlanUser,
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
+// }}}
 
+// helpers {{{
 const CLIENT_ID: Uuid = Uuid::nil();
 
 fn day(d: u32) -> NaiveDate {
@@ -33,7 +34,6 @@ fn patch(id: Uuid) -> TaskPatch {
         id,
         name: None,
         parent: None,
-        mode: None,
         duration: None,
         time_constraint: None,
         dependencies: None,
@@ -43,7 +43,9 @@ fn patch(id: Uuid) -> TaskPatch {
         persistent_state: None,
     }
 }
+// }}}
 
+// updates_are_staged_applied_and_scheduled {{{
 #[test]
 fn updates_are_staged_applied_and_scheduled() {
     let mut tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), day(1));
@@ -88,19 +90,15 @@ fn updates_are_staged_applied_and_scheduled() {
     assert_ne!(task, CLIENT_ID);
     let setup = TaskPatch {
         duration: Some(2),
-        dependencies: Some(vec![Dependency {
-            node: DependencyNode::ParentStart,
-            lag: 0,
-        }]),
-        allocations: Some([(Worker::User(bob), Workload::new(8).unwrap())].into()),
+        allocations: Some([(Worker::User(bob), Workload::new_const(8))].into()),
         ..patch(task)
     };
     send(&mut tenant, in_plan(PlanUpdate::Task(Crud::Update(setup)))).unwrap();
 
     // every applied update leaves a current schedule
     let scheduled = &tenant.schedule().unwrap().plans[&plan].tasks[&task];
-    assert_eq!(scheduled.date_range.start(), day(2));
-    assert_eq!(tenant.schedule().unwrap().users[&bob].booked_on(day(2)), 8);
+    assert_eq!(scheduled.date_range.start(), day(1));
+    assert_eq!(tenant.schedule().unwrap().users[&bob].booked_on(day(1)), 8);
 
     // staging fills in the people last scheduled, so the logged update holds them
     let started = TaskPatch {
@@ -130,8 +128,9 @@ fn updates_are_staged_applied_and_scheduled() {
 
     // a refused update changes nothing and keeps the schedule
     let before = tenant.schedule().unwrap().clone();
-    let refused = tenant.stage(time(), Uuid::now_v7(), TenantUpdateType::SetToday(day(9)));
+    let refused = tenant.stage(time(), Uuid::new_v4(), TenantUpdateType::SetToday(day(9)));
     assert!(tenant.apply_and_schedule(refused).is_err());
     assert_eq!(tenant.today(), day(1));
     assert_eq!(tenant.schedule(), Some(&before));
 }
+// }}}

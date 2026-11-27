@@ -2,10 +2,13 @@
 //! with field names, so a field added with a default later still reads old data, and with map
 //! keys of any type, which `HashMap<Worker, Workload>` needs.
 
+// modules {{{
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::types::error::{PlinkoError, PlinkoResult};
+use crate::common::error::{PlinkoError, PlinkoResult};
+// }}}
 
+// functions {{{
 pub fn encode<T: Serialize>(value: &T) -> PlinkoResult<Vec<u8>> {
     rmp_serde::to_vec_named(value).map_err(|e| PlinkoError::Codec(e.to_string()))
 }
@@ -13,7 +16,9 @@ pub fn encode<T: Serialize>(value: &T) -> PlinkoResult<Vec<u8>> {
 pub fn decode<T: DeserializeOwned>(bytes: &[u8]) -> PlinkoResult<T> {
     rmp_serde::from_slice(bytes).map_err(|e| PlinkoError::Codec(e.to_string()))
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -22,25 +27,23 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::types::{
-        crud::Crud,
-        short_id::ShortId,
-        task::{TaskPatch, Worker},
-        workload::Workload,
+    use crate::{
+        availability::workload::Workload,
+        common::{crud::Crud, short_id::ShortId},
+        planner::items::task::{TaskPatch, Worker},
     };
 
     fn patch() -> TaskPatch {
         TaskPatch {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             name: None,
             parent: None,
-            mode: None,
             duration: Some(3),
             time_constraint: None,
             dependencies: None,
             allocations: Some(HashMap::from([
-                (Worker::Placeholder, Workload::new(4).unwrap()),
-                (Worker::Tag(Uuid::now_v7()), Workload::new(8).unwrap()),
+                (Worker::Placeholder, Workload::new_const(4)),
+                (Worker::Tag(Uuid::new_v4()), Workload::new_const(8)),
             ])),
             affinities: None,
             actual_workers: None,
@@ -64,7 +67,7 @@ mod tests {
     fn clearing_a_field_is_not_the_same_as_leaving_it() {
         use crate::availability::rule::RulePatch;
         let patch = |stop_day| RulePatch::<Workload> {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             start_day: None,
             stop_day,
             kind: None,
@@ -88,3 +91,4 @@ mod tests {
         assert!(decode::<Workload>(&[0xc1]).is_err());
     }
 }
+// }}}

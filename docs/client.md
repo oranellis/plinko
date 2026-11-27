@@ -47,8 +47,9 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
 
 ## Storage and auth
 
-- One SQLite file per tenant, `data/<name>/tenant.db`, holds the update log, snapshots (every N updates, replay
-  from the last), credentials and sessions. Users are already tenant state, so there is no
+- One SQLite file per tenant, `data/<name>/tenant.db`, holds the update log, a snapshot of the tenant for each
+  day (loading replays from the last), what the scheduler decided after updates, credentials and
+  sessions. Users are already tenant state, so there is no
   global user table.
 - The log holds only staged updates, no secrets. Password hashes are in a separate `credentials`
   table keyed by user id, never in updates or snapshots.
@@ -67,10 +68,10 @@ Decisions for the web client and the server it talks to. The scheduler is in `sc
 
 - The Gantt is one canvas in the style of Plinko 1 (`plinko1-ui.md`), on desktop and phones alike:
   packed lanes, group outlines, hover dependency lines, momentum drag, pinch and wheel zoom.
-- Items open in a pane beside the chart. A plan can also be shown as a list.
+- Items are created and edited on the chart, there is no pane. A plan can also be shown as a list, from which an item opens on the chart.
 - Home shows your tasks in progress and the next ones to start, with buttons to start or finish them,
   and your favourite plans. Allocations is a table with a row for each of your tasks across plans and the hours you work on
-  each day, under a row of the hours you have. Availability opens your own calendar.
+  each day, under a row of the hours you have; a task there opens its plan with the task selected. Availability opens your own calendar.
 - Availability, and the days an affinity allows, are edited from a calendar (`rulecalendar.rs`): a
   window from plan settings, a full page for your own hours. Dates and week start follow the
   preferences of the browser.
@@ -89,15 +90,56 @@ All five steps are built: serde and the `wasm32` check (`check.sh`), the benchma
 
 ## Gantt selection
 
-Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a set/reset start button, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane.
+The delete key asks to delete the item that is selected or edited (enter deletes, escape or a click off keeps it). Tapping an item selects it: its dependency lines stay on show and a bar opens below it with the item's buttons. Tasks get a status switcher (the button is the next status, hovering lists all five), buffers a pin for their start, which shows under the pointer what a click would leave it as: full for one that is not set, struck through for one that is, and all but buffers a data button (description plus one block of each kind: to-do, links, budget). The pencil opens the edit pane. While the item is edited the bar slides to the bottom middle of the chart, out of the way of the handles.
+
+### Creating and editing
+
+Everything set of an item while it is created or edited is staged in a `Draft` (`draft.rs`) and reaches the plan only on save; a new item is not in the plan until then. Redundant links are dropped by the server on save. Enter saves from anywhere that does not take it. Leaving with changes asks first (`guard.rs`): escape, a click on the chart, or a click on any link or button outside what is being edited, which is made again once the answer is to save or to discard. The question is three large buttons: keep editing, which a click off it also is, save and close, and discard changes. Enter saves and escape discards, so escape twice leaves without saving.
+
+Both are done in the same place, at the bottom of the chart (`context.rs`). An item of the plan has its bar slide there from under it; a new item's is there from the start.
+
+- The panel that says what the hovered or selected item is (its name over its group, days, held day, workers and data blocks) slides up from the corner of the chart to stand to the left of the bar, as one shape with it in the middle of the chart (on a narrow screen it stands on the bar). It then says what the draft is, and the name is typed over where it stands on as many lines as it needs (enter saves).
+- The bar has the shape of the item (`card.rs`) over its buttons. The shape has circles left and right for what it waits for and what waits for it (drag one onto an item, or click it and then click items to link and unlink them, and nothing to finish; a loop is refused with a notice), a grip in the middle for its group (drop on a group, on an item to join its group, or on blank space for the top level) and on its right edge its days (drag sideways, slower under six days, or click to type). The shape never changes length. On touch nothing on it drags, so the chart still pans: handles are tapped and days typed. While something is being picked, what a click will do is said at the bottom of the chart.
+- A task has a card at the right of the chart for who works on it and its affinities.
+- The buttons: for an item of the plan its status and data, then a timer, and last a switch like the status one: a tick that saves, with a cross that leaves and a bin that deletes a hover away.
+
+On the chart what is staged shows as the usual magenta and cyan outlines and a blue outline on its group. The item being edited stays where it is scheduled, faint and without its name, with its dependency lines as they would be once it is saved. A task that has started keeps a grip in its left edge for the day it started, and one that has ended a grip in its right for the day it ended, as a buffer whose start is set has for its last day (it ends its days after its start); how far they are moved shows above it as `start -1  end +2`. With nothing waiting for the item there is a little blue in the top right corner of the bar, as there is in the panel of one that is looked at.
+
+A task, group or milestone can be held to a day, one that is being created too. The timer goes round nothing, its first day and its last (a milestone is one day, held or not). The day starts where the item is scheduled (today, for one that is not in the plan yet) and follows the end round, until one is chosen: the day it had in the plan, or one it is moved to. From then on, for as long as it is edited, going round only changes the end, and holding it again goes back to that day held that way. The held day has a band down the chart like today's, in its own colour. While the item is edited three buttons are on the band, half way down the chart, for no earlier, exactly and no later, with the one it is lit. The band is dragged to another day from anywhere on it that nothing else is, and a click on it picks the day: the band then goes to the day the pointer moves over, or a day either way for the left and right arrows, until a click on a day or enter puts it there, or escape leaves it where it was. An item that is hovered or selected shows the band faintly, with a sign in the middle of it, in the row nearest the item where nothing is in their way: on from the tick for no earlier, up to it for no later, and a lock for exactly. Every item that is held has a top corner of its border in the colour, fading out along the edges, always: the left for its first day, the right for its last. A milestone has a small dot off its top right instead.
+
+### Keys
+
+`Ctrl+K` anywhere, even in a box, opens a search of the pages and plans to go to (`finder.rs`), which matches as the other searches do; enter or a click follows the link, so leaving an edit with changes asks first. The question mark at the top right, or `?` anywhere, opens a help window (`help.rs`) with these, a page for each view. On the chart, typed at the page and not into a box:
+
+| Key | Does |
+| --- | --- |
+| `a` | lists what can be added, where `t` `m` `g` `b` `d` then add a task, milestone, group, buffer or delay |
+| `/` | opens the search, which matches loosely, as every list that is searched does (`fuzzy.rs`: the letters typed in order, in any case, best where they are together or start words), where the arrows move down the list, and enter or a click selects the item and shows it on the chart; while what an item waits for, what waits for it or its group is being picked, it picks the item instead and closes, with what is picked ticked in it |
+| `t` | jumps to today |
+| `e` | edits the selected item |
+| `s` | lists the statuses of the selected or edited task, where `s` again moves it on to the next and `n` `i` `o` `c` `d` put it not started, in progress, on hold, complete or dropped; for a buffer it pins or unpins the start |
+| `d` `f` `g` | pick what the item waits for, what waits for it, or its group: for the item being edited by lighting that handle of its shape, and for one that is only selected at once in the plan, with its shift handles shown; picking its group, `t` is the top level |
+| `c` | takes hold of the day the item is held to, editing it first if it is only selected and holding it first if it is not held, and again goes round its first day, its last and not held; `h` `l` or the arrows then move it a day and `e` `f` `d` hold it no earlier, exactly, or no later (a deadline) |
+| `m` | moves the days of the selected or edited item, at once or staged: left and right (or `h` `l`) a day either way, `s` and `e` its start or its end and `m` all of them; a started task's days, or how long anything lasts by its end, with the ends that move lit and nothing done for the rest; enter or escape stops |
+| `l` | puts the cursor on the days of the item being created or edited |
+| `n` | puts the cursor at the end of the name of the item being created or edited |
+| `w` | puts the keys on the workers of the task being created or edited, its card lit and the top row marked: up and down (or `k` `j`) move along them, left and right (or `h` `l`) give fewer or more hours, `a` adds one with its list open to search, `c` opens the list of the marked one, `p` adds a placeholder, delete or backspace takes the marked one away, and `w` or escape leaves them |
+| tab | in the name, leaves it for the page, where these keys are |
+| enter | saves the edit, or answers a question with yes |
+| escape | ends a pick, then leaves the edit, asking first; in that question it discards |
+| delete, backspace | asks to delete the selected or edited item |
+
+### Modes
+
+What the chart is in the middle of shows at its top left (`ModeStack`): a box for creating or editing, and over it, down and to the right, a box for each mode gone into from there (adding, statuses, workers, moving, or what is being picked), the last outlined.
 
 ### Shift editing
 
-A top level item with no dependencies shows a purple wash on its left edge while hovered, like the blue one on the right of an item nothing depends on. Plan settings name a default start node (a picker with search) that new top level items depend on to begin with; the plan has no start date to set.
+Plan settings name a default start node (a picker with search) that new top level items depend on to begin with; the plan has no start date to set.
 
 With shift held, items the pointer is near show handles: a dot off each edge (drag to another item; right edge: it depends on this item, left edge: this item depends on it), a dot in the middle (drop on a group to move in, on another item to join its group, on blank space for the top level, see `Plan::moving`) and, for tasks and buffers, a grip inside the right edge that changes the duration by whole grid days, shown as `+2 (6d)`. Dragging to the chart's edge scrolls it. Shift-clicking an item linked to the selected one cuts that dependency. With an item selected, hovering another one on a dependency chain with it shows the longest chain in red.
 
-Handles are grey; a dependency dot takes magenta (left, what comes before) or cyan (right, what comes after) when taken. For started tasks (in progress, on hold, completed) dragging the middle handle sideways moves the days they really ran, unless it is dropped on another item, and the right grip changes the end date of on hold and completed ones (in progress ones change duration as normal).
+Handles are grey; a dependency dot takes magenta (left, what comes before) or cyan (right, what comes after) when taken. For started tasks (in progress, on hold, completed) dragging the middle handle sideways moves the days they really ran, unless it is dropped on another item, and the right grip changes the end date of on hold, completed and dropped ones (in progress ones change duration as normal). A grip inside the left edge of a started task changes the day it started.
 
 ### Drawing the chart
 

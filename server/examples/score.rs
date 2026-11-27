@@ -3,35 +3,38 @@
 //! date. A reference schedule without the dates is made first and each date is set on or after where
 //! the reference started the task, so a schedule that meets them all always exists. Lower is better.
 
+// modules {{{
 use std::{collections::HashMap, time::Instant};
 
 use chrono::{DateTime, Days, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
+    common::{crud::Crud, dates::TimeConstraint, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    scheduler,
-    types::{
-        common::TimeConstraint,
-        crud::Crud,
-        dependency::{Dependency, DependencyNode, PlanNode},
+    planner::items::{
+        dependency::PlanNode,
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
-        short_id::ShortId,
+        task::{NewTask, TaskPatch, Worker},
+    },
+    planner::resources::{
         tag::NewTag,
         target::NewTarget,
-        task::{NewTask, TaskPatch, Worker},
         user::{NewPlanUser, PlanUserDataPatch},
-        workload::Workload,
     },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
+    scheduler,
 };
 use uuid::Uuid;
+// }}}
 
 struct Random(u64);
 
+// impl Random {{{
 impl Random {
     fn below(&mut self, n: u64) -> u64 {
         self.0 = self
@@ -41,7 +44,9 @@ impl Random {
         (self.0 >> 33) % n
     }
 }
+// }}}
 
+// apply {{{
 fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
     let time = DateTime::from_timestamp(978307200, 0).unwrap();
     tenant
@@ -52,7 +57,9 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
         })
         .unwrap();
 }
+// }}}
 
+// Random supporting types {{{
 /// What a made up tenant holds: the tasks of each plan in order, to put dates on
 struct Made {
     tenant: Tenant,
@@ -61,7 +68,9 @@ struct Made {
     /// The four tags of each plan, a person is in the tag that is their position modulo four
     tags: Vec<Vec<Uuid>>,
 }
+// }}}
 
+// make {{{
 /// A tenant of busy people with `plans` plans of about `total` tasks between them in layers,
 /// each task waiting on one to three of the previous two layers, and a milestone now and then
 /// that gathers several. `dates` says what hard date each task gets, if any.
@@ -154,17 +163,12 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 &nodes[(layer.saturating_sub(2) * LAYER).min(nodes.len())
                     ..(layer * LAYER).min(nodes.len())]
             };
-            let mut on: Vec<Dependency> = Vec::new();
-            if pool.is_empty() {
-                on.push(Dependency::default());
-            } else {
+            let mut on: Vec<PlanNode> = Vec::new();
+            if !pool.is_empty() {
                 for _ in 0..1 + random.below(3) {
                     let pick = pool[random.below(pool.len() as u64) as usize];
-                    if !on.iter().any(|d| d.node == DependencyNode::Node(pick)) {
-                        on.push(Dependency {
-                            node: DependencyNode::Node(pick),
-                            lag: 0,
-                        });
+                    if !on.contains(&pick) {
+                        on.push(pick);
                     }
                 }
             }
@@ -172,14 +176,13 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                 0 => Worker::Tag(tags[random.below(4) as usize]),
                 _ => Worker::User(people[random.below(12) as usize]),
             };
-            let hours = Workload::new([4, 8][random.below(2) as usize]).unwrap();
+            let hours = Workload::new_const([4, 8][random.below(2) as usize]);
             let patch = TaskPatch {
                 id: task,
                 name: None,
                 parent: None,
-                mode: None,
                 duration: Some(1 + random.below(6) as u32),
-                time_constraint: dates.get(&task).copied(),
+                time_constraint: dates.get(&task).copied().map(Into::into),
                 dependencies: Some(on),
                 allocations: Some(HashMap::from([(worker, hours)])),
                 affinities: None,
@@ -197,10 +200,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
                     parent: Parent::Plan,
                 };
                 send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-                let gather = nodes.iter().rev().take(4).map(|n| Dependency {
-                    node: DependencyNode::Node(*n),
-                    lag: 0,
-                });
+                let gather = nodes.iter().rev().take(4).copied();
                 let patch = MilestonePatch {
                     id: milestone,
                     name: None,
@@ -220,10 +220,7 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
             parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-        let after = nodes.iter().rev().take(6).map(|n| Dependency {
-            node: DependencyNode::Node(*n),
-            lag: 0,
-        });
+        let after = nodes.iter().rev().take(6).copied();
         let patch = MilestonePatch {
             id: end,
             name: None,
@@ -249,7 +246,9 @@ fn make(seed: u64, plans: usize, total: usize, dates: &HashMap<Uuid, TimeConstra
         tags: all_tags,
     }
 }
+// }}}
 
+// export {{{
 /// Writes the plans and how they were scheduled as JSON for comparing with an exact solver
 fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, path: &str) {
     let person = |u: &Uuid| world.people.iter().position(|p| p == u).unwrap();
@@ -263,14 +262,8 @@ fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, p
     let mut starts = Vec::new();
     for (p, (plan_id, _)) in world.plans.iter().enumerate() {
         let plan = &world.tenant.plans()[plan_id];
-        let deps = |list: &[Dependency]| {
-            let nodes: Vec<String> = list
-                .iter()
-                .filter_map(|d| match &d.node {
-                    DependencyNode::Node(n) => Some(node(n)),
-                    _ => None,
-                })
-                .collect();
+        let deps = |list: &[PlanNode]| {
+            let nodes: Vec<String> = list.iter().map(node).collect();
             nodes.join(",")
         };
         for (id, t) in plan.tasks() {
@@ -283,7 +276,7 @@ fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, p
                 }
                 _ => unreachable!(),
             };
-            let constraint = match t.time_constraint() {
+            let constraint = match t.time_constraint().constraint {
                 TimeConstraint::Fixed(d) => format!("[\"fixed\",\"{d}\"]"),
                 TimeConstraint::Latest(d) => format!("[\"latest\",\"{d}\"]"),
                 _ => "null".to_string(),
@@ -317,7 +310,9 @@ fn export(world: &Made, state: &plinko::scheduler::state::TenantVolatileState, p
     );
     std::fs::write(path, json).unwrap();
 }
+// }}}
 
+// main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
         .skip(1)
@@ -333,8 +328,7 @@ fn main() {
     for seed in 1..=seeds as u64 {
         // the reference schedule has no hard dates
         let mut plain = make(seed, plans, 500, &HashMap::new());
-        scheduler::prepare(&mut plain.tenant);
-        let reference = scheduler::solve_tenant(&plain.tenant);
+        let reference = scheduler::solve(&mut plain.tenant, &scheduler::Hints::default()).state;
         let mut random = Random(seed * 31 + 5);
         let mut dates: HashMap<Uuid, TimeConstraint> = HashMap::new();
         for (plan, tasks) in &plain.plans {
@@ -359,9 +353,8 @@ fn main() {
         }
         dated += dates.len() as f64;
         let mut world = make(seed, plans, 500, &dates);
-        scheduler::prepare(&mut world.tenant);
         let started = Instant::now();
-        let state = scheduler::solve_tenant(&world.tenant);
+        let state = scheduler::solve(&mut world.tenant, &scheduler::Hints::default()).state;
         seconds += started.elapsed().as_secs_f64();
         if let Ok(dir) = std::env::var("EXPORT") {
             export(
@@ -399,3 +392,4 @@ fn main() {
     println!("plan delay in all   {:.1}", delay / n);
     println!("seconds to schedule {:.2}", seconds / n);
 }
+// }}}

@@ -1,43 +1,48 @@
 //! Times a full schedule of a busy tenant: `cargo run --release --example bench [plans] [tasks]`.
 //! The login of the saved tenant is root@localhost with the password password123.
 
+// modules {{{
 use std::{collections::HashMap, time::Instant};
 
 use chrono::{DateTime, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
+    common::{crud::Crud, dates::TimeConstraint, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role},
     },
-    planner::{plan::NewPlan, plan_update::PlanUpdate},
-    scheduler,
-    types::{
-        common::TimeConstraint,
-        crud::Crud,
-        dependency::{Dependency, DependencyNode, PlanNode},
+    planner::items::{
+        dependency::PlanNode,
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
-        short_id::ShortId,
+        task::{NewTask, TaskPatch, Worker},
+    },
+    planner::resources::{
         tag::NewTag,
         target::NewTarget,
-        task::{NewTask, TaskPatch, Worker},
         user::{NewPlanUser, PlanUserDataPatch},
-        workload::Workload,
     },
+    planner::{plan::NewPlan, plan_update::PlanUpdate},
+    scheduler,
 };
 use uuid::Uuid;
+// }}}
 
 /// Ids that are the same every run, so runs can be compared
 struct Ids(u128);
 
+// impl Ids {{{
 impl Ids {
     fn next(&mut self) -> Uuid {
         self.0 += 1;
         Uuid::from_u128(self.0)
     }
 }
+// }}}
 
+// Random {{{
 struct Random(u64);
 
 impl Random {
@@ -49,7 +54,9 @@ impl Random {
         (self.0 >> 33) % n
     }
 }
+// }}}
 
+// apply {{{
 fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
     let time = DateTime::from_timestamp(978307200, 0).unwrap();
     tenant
@@ -60,7 +67,9 @@ fn apply(tenant: &mut Tenant, actor: Uuid, update_type: TenantUpdateType) {
         })
         .unwrap();
 }
+// }}}
 
+// main {{{
 fn main() {
     let args: Vec<usize> = std::env::args()
         .skip(1)
@@ -140,33 +149,18 @@ fn main() {
                 parent: Parent::Plan,
             };
             send(&mut tenant, PlanUpdate::Task(Crud::Add(new)));
-            let mut on: Vec<Dependency> = Vec::new();
-            if tasks.is_empty() || random.below(10) == 0 {
-                on.push(Dependency {
-                    node: DependencyNode::ParentStart,
-                    lag: 0,
-                });
-            }
+            let mut on: Vec<PlanNode> = Vec::new();
             for _ in 0..random.below(3) {
                 if let Some(t) = tasks.get(tasks.len().saturating_sub(1 + random.below(8) as usize))
                 {
-                    on.push(Dependency {
-                        node: DependencyNode::Node(PlanNode::Task(*t)),
-                        lag: 0,
-                    });
+                    on.push(PlanNode::Task(*t));
                 }
-            }
-            if on.is_empty() {
-                on.push(Dependency {
-                    node: DependencyNode::ParentStart,
-                    lag: 0,
-                });
             }
             let worker = match random.below(3) {
                 0 => Worker::Tag(tags[random.below(4) as usize]),
                 _ => Worker::User(people[random.below(20) as usize]),
             };
-            let hours = Workload::new([4, 8][random.below(2) as usize]).unwrap();
+            let hours = Workload::new_const([4, 8][random.below(2) as usize]);
             let constraint = (i % 40 == 39).then(|| {
                 let date = today + chrono::Days::new(30 + random.below(60));
                 TimeConstraint::Latest(date)
@@ -175,9 +169,8 @@ fn main() {
                 id,
                 name: None,
                 parent: None,
-                mode: None,
                 duration: Some(1 + random.below(4) as u32),
-                time_constraint: constraint,
+                time_constraint: constraint.map(Into::into),
                 dependencies: Some(on),
                 allocations: Some(HashMap::from([(worker, hours)])),
                 affinities: None,
@@ -194,10 +187,7 @@ fn main() {
             parent: Parent::Plan,
         };
         send(&mut tenant, PlanUpdate::Milestone(Crud::Add(new)));
-        let after = tasks.iter().rev().take(5).map(|t| Dependency {
-            node: DependencyNode::Node(PlanNode::Task(*t)),
-            lag: 0,
-        });
+        let after = tasks.iter().rev().take(5).map(|t| PlanNode::Task(*t));
         let patch = MilestonePatch {
             id: end,
             name: None,
@@ -225,10 +215,7 @@ fn main() {
         store.set_password(root, "password123").unwrap();
     }
     let started = Instant::now();
-    scheduler::prepare(&mut tenant);
-    println!("prepare (calendars, baselines): {:?}", started.elapsed());
-    let started = Instant::now();
-    let state = scheduler::solve_tenant(&tenant);
+    let state = scheduler::solve(&mut tenant, &scheduler::Hints::default()).state;
     println!("solve: {:?}", started.elapsed());
     let scheduled: usize = state.plans.values().map(|p| p.tasks.len()).sum();
     let unscheduled: usize = state.plans.values().map(|p| p.unscheduled.len()).sum();
@@ -245,3 +232,4 @@ fn main() {
     let bytes = plinko::codec::encode(&state).unwrap();
     println!("schedule on the wire: {} KiB", bytes.len() / 1024);
 }
+// }}}

@@ -2,17 +2,15 @@
 //! can be given, at most one of each kind: a to-do list, links and a budget. Changes are saved as
 //! each box is left.
 
+// modules {{{
 use leptos::prelude::*;
 use plinko::{
-    planner::{plan::Plan, plan_update::PlanUpdate},
-    types::{
-        crud::Crud,
-        data_block::{
-            BlockContent, Budget, DataBlock, DataBlockPatch, Link, NewDataBlock, TodoItem,
-        },
-        dependency::PlanNode,
-        short_id::ShortId,
+    common::{crud::Crud, short_id::ShortId},
+    planner::items::dependency::PlanNode,
+    planner::resources::data_block::{
+        BlockContent, Budget, DataBlock, DataBlockPatch, Link, NewDataBlock, TodoItem,
     },
+    planner::{plan::Plan, plan_update::PlanUpdate},
 };
 use uuid::Uuid;
 
@@ -21,14 +19,18 @@ use crate::{
     model::node_name,
     ui::{IconButton, Modal, use_sync},
 };
+// }}}
 
+// constants {{{
 /// The kinds of block, in the order they are listed, with what they are called
 const KINDS: [(&str, &str); 3] = [
     ("todo", "To-do list"),
     ("links", "Links"),
     ("budget", "Budget"),
 ];
+// }}}
 
+// helpers {{{
 fn kind_of(content: &BlockContent) -> &'static str {
     match content {
         BlockContent::TodoList(_) => "todo",
@@ -48,7 +50,9 @@ fn empty(kind: &str) -> BlockContent {
         _ => BlockContent::TodoList(Vec::new()),
     }
 }
+// }}}
 
+// data_of {{{
 /// What an item says about itself: its description, and the data blocks it holds
 fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
     let (description, blocks) = match node {
@@ -64,7 +68,7 @@ fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
             let g = plan.task_groups().get(&id)?;
             (g.description(), g.data().blocks())
         }
-        PlanNode::PlanBuffer(_) => return None,
+        PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => return None,
     };
     let mut blocks: Vec<DataBlock> = blocks.values().cloned().collect();
     blocks.sort_by_key(|b| {
@@ -75,12 +79,27 @@ fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
     });
     Some((description.unwrap_or_default().to_string(), blocks))
 }
+// }}}
 
-/// Whether an item can hold data, which buffers cannot
-pub fn has_data(node: PlanNode) -> bool {
-    !matches!(node, PlanNode::PlanBuffer(_))
+// blocks_said {{{
+/// The kinds of data block an item holds, by what they are called
+pub fn blocks_said(plan: &Plan, node: PlanNode) -> Vec<&'static str> {
+    let blocks = data_of(plan, node)
+        .map(|(_, blocks)| blocks)
+        .unwrap_or_default();
+    let held = |kind: &str| blocks.iter().any(|b| kind_of(b.content()) == kind);
+    KINDS.iter().filter(|k| held(k.0)).map(|k| k.1).collect()
 }
+// }}}
 
+// has_data {{{
+/// Whether an item can hold data, which buffers and delays cannot
+pub fn has_data(node: PlanNode) -> bool {
+    !matches!(node, PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_))
+}
+// }}}
+
+// DataWindow {{{
 #[component]
 pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();
@@ -119,8 +138,17 @@ pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
         sync.plan(plan, PlanUpdate::Data(node, Crud::Add(new)));
     };
     let description = RwSignal::new(state.get_untracked().map(|s| s.0).unwrap_or_default());
+    // sent when it is left or the window closes, if it is not what was sent last
+    let sent = StoredValue::new(description.get_untracked());
+    let describe = move || {
+        let now = description.get_untracked();
+        if sent.with_value(|s| *s != now) {
+            sent.set_value(now.clone());
+            sync.plan(plan, PlanUpdate::Describe(node, Some(now)));
+        }
+    };
     view! {
-        <Modal title=title on_close=on_close>
+        <Modal title=title on_close=Callback::new(move |()| { describe(); on_close.run(()) })>
             <div class="data">
                 <div class="databar">
                     <span class="small">"Description"</span>
@@ -142,7 +170,7 @@ pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
                     placeholder="What this is about"
                     prop:value=move || description.get()
                     on:input=move |ev| description.set(event_target_value(&ev))
-                    on:change=move |_| sync.plan(plan, PlanUpdate::Describe(node, Some(description.get_untracked())))
+                    on:change=move |_| describe()
                 ></textarea>
                 <For each=move || state.get().map(|s| s.1).unwrap_or_default() key=|b| format!("{b:?}") children=move |block| {
                     view! { <BlockEditor plan=plan node=node block=block /> }
@@ -151,7 +179,9 @@ pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
         </Modal>
     }
 }
+// }}}
 
+// BlockEditor {{{
 /// One block, saved as each box in it is left
 #[component]
 fn BlockEditor(plan: ShortId, node: PlanNode, block: DataBlock) -> impl IntoView {
@@ -190,7 +220,9 @@ fn BlockEditor(plan: ShortId, node: PlanNode, block: DataBlock) -> impl IntoView
         </section>
     }
 }
+// }}}
 
+// Todos {{{
 #[component]
 fn Todos(items: Vec<TodoItem>, send: Callback<BlockContent>) -> impl IntoView {
     let items = RwSignal::new(items);
@@ -229,7 +261,9 @@ fn Todos(items: Vec<TodoItem>, send: Callback<BlockContent>) -> impl IntoView {
         }>"+ Add item"</button>
     }
 }
+// }}}
 
+// Links {{{
 #[component]
 fn Links(links: Vec<Link>, send: Callback<BlockContent>) -> impl IntoView {
     let links = RwSignal::new(links);
@@ -270,7 +304,9 @@ fn Links(links: Vec<Link>, send: Callback<BlockContent>) -> impl IntoView {
         }>"+ Add link"</button>
     }
 }
+// }}}
 
+// helpers {{{
 /// Money is kept in minor units, shown here as the main unit with two decimals
 fn shown(minor: i64) -> String {
     format!("{}.{:02}", minor / 100, (minor % 100).abs())
@@ -280,7 +316,9 @@ fn parsed(text: &str) -> i64 {
     let value: f64 = text.trim().parse().unwrap_or(0.0);
     (value * 100.0).round() as i64
 }
+// }}}
 
+// Money {{{
 #[component]
 fn Money(budget: Budget, send: Callback<BlockContent>) -> impl IntoView {
     let planned = RwSignal::new(shown(budget.planned));
@@ -310,7 +348,9 @@ fn Money(budget: Budget, send: Callback<BlockContent>) -> impl IntoView {
         </label>
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,3 +371,4 @@ mod tests {
         }
     }
 }
+// }}}

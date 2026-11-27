@@ -4,16 +4,14 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    planner::plan::Plan,
-    types::{
-        dependency::{Dependency, DependencyNode, PlanNode},
-        milestone::DerivedStatus,
-        parent::Parent,
-        task::Status,
+    planner::items::{
+        dependency::PlanNode, milestone::DerivedStatus, parent::Parent, task::Status,
     },
+    planner::plan::Plan,
 };
 // }}}
 
+// milestone_statuses {{{
 /// The derived status of every milestone in the plan. It follows what the milestone depends on,
 /// not the schedule, so it is known before anything is placed.
 pub fn milestone_statuses(plan: &Plan) -> HashMap<Uuid, DerivedStatus> {
@@ -37,6 +35,7 @@ pub fn milestone_statuses(plan: &Plan) -> HashMap<Uuid, DerivedStatus> {
         })
         .collect()
 }
+// }}}
 
 struct Derive<'a> {
     plan: &'a Plan,
@@ -46,7 +45,7 @@ struct Derive<'a> {
 
 // impl Derive {{{
 impl Derive<'_> {
-    fn deps_of(&self, node: PlanNode) -> (&[Dependency], Parent) {
+    fn deps_of(&self, node: PlanNode) -> (&[PlanNode], Parent) {
         let plan = self.plan;
         match node {
             PlanNode::Task(id) => (plan.tasks()[&id].dependencies(), plan.tasks()[&id].parent()),
@@ -57,6 +56,10 @@ impl Derive<'_> {
             PlanNode::PlanBuffer(id) => {
                 let b = &plan.plan_buffers()[&id];
                 (b.dependencies(), b.parent())
+            }
+            PlanNode::PlanDelay(id) => {
+                let d = &plan.plan_delays()[&id];
+                (d.dependencies(), d.parent())
             }
             PlanNode::TaskGroup(id) => {
                 let g = &plan.task_groups()[&id];
@@ -75,17 +78,20 @@ impl Derive<'_> {
             .plan_buffers()
             .values()
             .filter(|b| b.parent() == parent);
+        let delays = plan.plan_delays().values().filter(|d| d.parent() == parent);
         let groups = plan.task_groups().values().filter(|g| g.parent() == parent);
         tasks
             .map(|t| PlanNode::Task(*t.id()))
             .chain(milestones.map(|m| PlanNode::Milestone(*m.id())))
             .chain(buffers.map(|b| PlanNode::PlanBuffer(*b.id())))
+            .chain(delays.map(|d| PlanNode::PlanDelay(*d.id())))
             .chain(groups.map(|g| PlanNode::TaskGroup(*g.id())))
             .collect()
     }
 
-    /// What `ParentStart` stands for: the dependencies of the group around the item, if any
-    fn parent_start(&self, parent: Parent) -> Option<(Vec<Dependency>, Parent)> {
+    /// What the start of an item's parent waits for: the dependencies of the group around it,
+    /// if it is in one
+    fn parent_start(&self, parent: Parent) -> Option<(Vec<PlanNode>, Parent)> {
         let Parent::Node(group) = parent else {
             return None;
         };
@@ -93,24 +99,18 @@ impl Derive<'_> {
         Some((own.to_vec(), grandparent))
     }
 
-    fn all_done(&mut self, deps: &[Dependency], parent: Parent) -> bool {
-        deps.iter().all(|d| match d.node {
-            DependencyNode::Node(n) => self.is_done(n),
-            DependencyNode::ParentStart => match self.parent_start(parent) {
-                Some((own, grandparent)) => self.all_done(&own, grandparent),
-                None => true,
-            },
-        })
+    /// Whether everything an item waits for is done: what it depends on, and what its parent's
+    /// start waits for
+    fn all_done(&mut self, deps: &[PlanNode], parent: Parent) -> bool {
+        let before = self.parent_start(parent);
+        deps.iter().all(|n| self.is_done(*n))
+            && before.is_none_or(|(own, grandparent)| self.all_done(&own, grandparent))
     }
 
-    fn any_active(&mut self, deps: &[Dependency], parent: Parent) -> bool {
-        deps.iter().any(|d| match d.node {
-            DependencyNode::Node(n) => self.is_active(n),
-            DependencyNode::ParentStart => match self.parent_start(parent) {
-                Some((own, grandparent)) => self.any_active(&own, grandparent),
-                None => false,
-            },
-        })
+    fn any_active(&mut self, deps: &[PlanNode], parent: Parent) -> bool {
+        let before = self.parent_start(parent);
+        deps.iter().any(|n| self.is_active(*n))
+            || before.is_some_and(|(own, grandparent)| self.any_active(&own, grandparent))
     }
 
     fn is_done(&mut self, node: PlanNode) -> bool {
@@ -124,7 +124,9 @@ impl Derive<'_> {
                 self.plan.tasks()[&id].persistent_state().status,
                 Status::Completed | Status::Dropped
             ),
-            PlanNode::Milestone(_) | PlanNode::PlanBuffer(_) => self.all_done(&deps, parent),
+            PlanNode::Milestone(_) | PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => {
+                self.all_done(&deps, parent)
+            }
             PlanNode::TaskGroup(id) => {
                 self.all_done(&deps, parent)
                     && self.members(id).into_iter().all(|m| self.is_done(m))
@@ -147,7 +149,7 @@ impl Derive<'_> {
                 self.plan.tasks()[&id].persistent_state().status == Status::InProgress
             }
             PlanNode::Milestone(_) => false,
-            PlanNode::PlanBuffer(_) => self.any_active(&deps, parent),
+            PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_) => self.any_active(&deps, parent),
             PlanNode::TaskGroup(id) => {
                 self.any_active(&deps, parent)
                     || self.members(id).into_iter().any(|m| self.is_active(m))

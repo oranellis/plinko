@@ -1,18 +1,17 @@
 //! The dependency lines shown for the item under the pointer: what it waits for, and what waits
 //! for it. Which ends they join is worked out here and where they are is drawn from it.
 
+// modules {{{
 use std::collections::HashMap;
 
 use plinko::{
+    planner::items::{dependency::PlanNode, parent::Parent},
     planner::plan::Plan,
     scheduler::state::PlanVolatileState,
-    types::{
-        dependency::{Dependency, DependencyNode, PlanNode},
-        parent::Parent,
-    },
 };
 
 use crate::{gantt::arrange::Mark, model};
+// }}}
 
 /// A place a line can end
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,6 +22,7 @@ pub enum Anchor {
     End(PlanNode),
 }
 
+// Anchor supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
     /// Comes before the item under the pointer
@@ -39,27 +39,23 @@ pub struct Link {
     pub to: Anchor,
     pub role: Role,
 }
+// }}}
 
+// links {{{
 /// Only the direct links of the item, one step either way. An item inside a group that depends on
-/// the start of its group is linked to the start of the group. At the top level that is no line,
-/// the item just begins when the plan does.
+/// nothing is linked to the start of the group, which is what it waits for. At the top level that
+/// is no line, the item just begins when the plan does.
 pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> Vec<Link> {
     let mut out = Vec::new();
     let nodes = model::nodes(plan);
     let node = hovered;
-    let mut deps = model::dependencies(plan, node);
-    if deps.is_empty() {
-        // depending on nothing is depending on the start of the parent
-        deps.push(Dependency::default());
-    }
-    for dep in deps {
-        let from = match dep.node {
-            DependencyNode::Node(before) => Anchor::End(before),
-            DependencyNode::ParentStart => match model::parent_of(plan, node) {
-                Parent::Plan => continue,
-                Parent::Node(group) => Anchor::Start(PlanNode::TaskGroup(group)),
-            },
-        };
+    let deps = model::dependencies(plan, node);
+    let ends = deps.iter().map(|before| Anchor::End(*before));
+    let start = match model::parent_of(plan, node) {
+        Parent::Node(group) if deps.is_empty() => Some(Anchor::Start(PlanNode::TaskGroup(group))),
+        _ => None,
+    };
+    for from in ends.chain(start) {
         out.push(Link {
             from,
             to: Anchor::Start(node),
@@ -67,10 +63,7 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
         });
     }
     for other in nodes {
-        if model::dependencies(plan, other)
-            .iter()
-            .any(|d| d.node == DependencyNode::Node(node))
-        {
+        if model::dependencies(plan, other).contains(&node) {
             out.push(Link {
                 from: Anchor::End(node),
                 to: Anchor::Start(other),
@@ -88,7 +81,9 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
     }
     out
 }
+// }}}
 
+// chain {{{
 /// The longest chain of dependencies between two items, in either direction, as links
 pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
     let nodes = model::nodes(plan);
@@ -110,7 +105,9 @@ pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
         })
         .collect()
 }
+// }}}
 
+// path {{{
 /// The longest run of items from `from` to `to`, each waiting on the one before
 fn path(
     plan: &Plan,
@@ -126,11 +123,10 @@ fn path(
         return done.clone();
     }
     let mut best: Option<Vec<PlanNode>> = None;
-    for next in nodes.iter().filter(|n| {
-        model::dependencies(plan, **n)
-            .iter()
-            .any(|d| d.node == DependencyNode::Node(from))
-    }) {
+    for next in nodes
+        .iter()
+        .filter(|n| model::dependencies(plan, **n).contains(&from))
+    {
         if let Some(rest) = path(plan, nodes, *next, to, known)
             && best.as_ref().is_none_or(|b| rest.len() + 1 > b.len())
         {
@@ -140,24 +136,25 @@ fn path(
     known.insert(from, best.clone());
     best
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use plinko::{
-        planner::{plan::NewPlan, plan_update::PlanUpdate},
-        types::{
-            crud::Crud,
-            dependency::Dependency,
-            short_id::ShortId,
+        common::{crud::Crud, short_id::ShortId},
+        planner::items::{
+            dependency::PlanNode,
             task::{NewTask, TaskPatch},
             task_group::NewTaskGroup,
         },
+        planner::{plan::NewPlan, plan_update::PlanUpdate},
     };
     use uuid::Uuid;
 
     use super::*;
 
-    fn task(plan: &mut Plan, id: u128, parent: Parent, on: &[DependencyNode]) -> PlanNode {
+    fn task(plan: &mut Plan, id: u128, parent: Parent, on: &[PlanNode]) -> PlanNode {
         let id = Uuid::from_u128(id);
         let new = NewTask {
             id,
@@ -169,10 +166,9 @@ mod tests {
             id,
             name: None,
             parent: None,
-            mode: None,
             duration: None,
             time_constraint: None,
-            dependencies: Some(on.iter().map(|n| Dependency { node: *n, lag: 0 }).collect()),
+            dependencies: Some(on.to_vec()),
             allocations: None,
             affinities: None,
             actual_workers: None,
@@ -193,9 +189,9 @@ mod tests {
     #[test]
     fn an_item_is_linked_to_what_it_waits_for_and_what_waits_for_it() {
         let mut plan = new_plan();
-        let first = task(&mut plan, 1, Parent::Plan, &[DependencyNode::ParentStart]);
-        let second = task(&mut plan, 2, Parent::Plan, &[DependencyNode::Node(first)]);
-        let third = task(&mut plan, 3, Parent::Plan, &[DependencyNode::Node(second)]);
+        let first = task(&mut plan, 1, Parent::Plan, &[]);
+        let second = task(&mut plan, 2, Parent::Plan, &[first]);
+        let third = task(&mut plan, 3, Parent::Plan, &[second]);
 
         let around = links(&plan, None, second);
         assert_eq!(around.len(), 2);
@@ -222,14 +218,9 @@ mod tests {
     fn the_chain_between_two_items_is_the_longest_either_way_round() {
         let mut plan = new_plan();
         let a = task(&mut plan, 1, Parent::Plan, &[]);
-        let b = task(&mut plan, 2, Parent::Plan, &[DependencyNode::Node(a)]);
-        let c = task(&mut plan, 3, Parent::Plan, &[DependencyNode::Node(b)]);
-        let d = task(
-            &mut plan,
-            4,
-            Parent::Plan,
-            &[DependencyNode::Node(a), DependencyNode::Node(c)],
-        );
+        let b = task(&mut plan, 2, Parent::Plan, &[a]);
+        let c = task(&mut plan, 3, Parent::Plan, &[b]);
+        let d = task(&mut plan, 4, Parent::Plan, &[a, c]);
         let step = |from, to| Link {
             from: Anchor::End(from),
             to: Anchor::Start(to),
@@ -256,13 +247,8 @@ mod tests {
         plan.apply_update(PlanUpdate::TaskGroup(Crud::Add(new)))
             .unwrap();
         let group = PlanNode::TaskGroup(id);
-        let member = task(
-            &mut plan,
-            1,
-            Parent::Node(id),
-            &[DependencyNode::ParentStart],
-        );
-        let after = task(&mut plan, 2, Parent::Plan, &[DependencyNode::Node(group)]);
+        let member = task(&mut plan, 1, Parent::Node(id), &[]);
+        let after = task(&mut plan, 2, Parent::Plan, &[group]);
 
         assert!(links(&plan, None, member).contains(&Link {
             from: Anchor::Start(group),
@@ -279,3 +265,4 @@ mod tests {
         }));
     }
 }
+// }}}

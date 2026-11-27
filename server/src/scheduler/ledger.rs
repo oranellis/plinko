@@ -1,263 +1,292 @@
 // modules {{{
-use std::collections::HashMap;
-
-use chrono::{Days, NaiveDate};
-use uuid::Uuid;
-
-use crate::{
-    availability::calendar::Calendar, multitenancy::tenant::Tenant, types::workload::Workload,
+use crate::scheduler::{
+    arc::ArcId,
+    bits::{Bits, Valid},
+    day::Day,
+    table::{Ask, RowId, Table},
 };
 // }}}
 
-/// How far past the start of a search the scheduler looks for capacity
-pub const MAX_FILL_DAYS: u32 = 3650;
-
-/// Hours of one person on one day
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Claim {
-    pub user: Uuid,
-    pub day: NaiveDate,
-    pub hours: u8,
-}
-
-/// The claims of one placement, so it can be taken and given back as a whole
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Run(pub Vec<Claim>);
-
-/// Remaining hours per person per day over a window of days, shared by every plan. Placeholders
-/// are unlimited so have no entry. Days before the window are past and cost nothing, days after
-/// it have no capacity.
-#[derive(Clone, Debug, PartialEq)]
+/// The hours people still have free from today on, which work claims as it is placed. Days
+/// before today are history and cost nothing.
+#[derive(Clone, Debug)]
 pub struct Ledger {
-    start: NaiveDate,
-    days: usize,
-    capacity: HashMap<Uuid, Vec<u8>>,
-    free: HashMap<Uuid, Vec<u8>>,
+    today: Day,
+    /// Free hours per day for each row people's hours are taken from, empty for the others
+    free: Vec<Vec<u8>>,
+    /// For each such row, the days with fewer than 1 to 8 hours free
+    short: Vec<Vec<Bits>>,
+    /// What holds hours of each row, as the span it holds them over
+    held: Vec<Vec<(Day, Day, ArcId)>>,
 }
+
+// Ledger supporting types {{{
+/// Where a run of days fits
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Window {
+    pub start: Day,
+    /// The day after the last
+    pub end: Day,
+    /// The last day other work held that pushed the window later, and whose hours it held
+    pub blocker: Option<(RowId, Day)>,
+}
+// }}}
 
 // impl Ledger {{{
 impl Ledger {
-    /// A ledger for `days` days from `start`, with each person's hours from their calendar (none
-    /// on days it does not cover)
-    pub fn new<'a>(
-        start: NaiveDate,
-        days: usize,
-        people: impl IntoIterator<Item = (Uuid, &'a Calendar<Workload>)>,
-    ) -> Self {
-        let capacity: HashMap<_, _> = people
-            .into_iter()
-            .map(|(user, calendar)| {
-                let hours = (0..days)
-                    .map(|i| start + Days::new(i as u64))
-                    .map(|day| calendar.on(day).map_or(0, |w| w.get()))
-                    .collect();
-                (user, hours)
+    pub fn new(table: &Table) -> Self {
+        let rows = (0..table.rows() as u32).map(RowId);
+        let claimable = |row: &RowId| table.claimable(*row);
+        let free: Vec<Vec<u8>> = rows
+            .clone()
+            .map(|row| match claimable(&row) {
+                true => table.row_hours(row).to_vec(),
+                false => Vec::new(),
+            })
+            .collect();
+        let short = free
+            .iter()
+            .map(|hours| {
+                let below = |h: u8| Bits::from_fn(hours.len(), |i| hours[i] < h);
+                (1..=8).filter(|_| !hours.is_empty()).map(below).collect()
             })
             .collect();
         Self {
-            start,
-            days,
-            free: capacity.clone(),
-            capacity,
+            today: table.today,
+            held: vec![Vec::new(); free.len()],
+            free,
+            short,
         }
     }
 
-    /// Every tenant user over `MAX_FILL_DAYS` from `start`, from the calendars cached by
-    /// `Tenant::refresh_calendars`
-    pub fn from_tenant(tenant: &Tenant, start: NaiveDate) -> Self {
-        let people = tenant
-            .users()
-            .keys()
-            .filter_map(|u| Some((*u, tenant.calendar(u)?)));
-        Self::new(start, MAX_FILL_DAYS as usize, people)
+    fn limited(&self, ask: &Ask) -> bool {
+        ask.1 > 0 && !self.free[ask.0.0 as usize].is_empty()
     }
 
-    pub fn start(&self) -> NaiveDate {
-        self.start
-    }
-
-    /// The first day after the window
-    pub fn end(&self) -> NaiveDate {
-        self.start + Days::new(self.days as u64)
-    }
-
-    fn index(&self, day: NaiveDate) -> Option<usize> {
-        usize::try_from((day - self.start).num_days())
-            .ok()
-            .filter(|i| *i < self.days)
-    }
-
-    fn hours(&self, hours: &HashMap<Uuid, Vec<u8>>, user: &Uuid, day: NaiveDate) -> u8 {
-        let hours = hours.get(user);
-        self.index(day)
-            .and_then(|i| hours?.get(i))
-            .copied()
-            .unwrap_or(0)
-    }
-
-    /// The person's hours that day before anything is claimed
-    pub fn capacity(&self, user: &Uuid, day: NaiveDate) -> u8 {
-        self.hours(&self.capacity, user, day)
-    }
-
-    /// Hours still unclaimed
-    pub fn free(&self, user: &Uuid, day: NaiveDate) -> u8 {
-        self.hours(&self.free, user, day)
-    }
-
-    /// Takes every claim in the run, or none of them if any day lacks the hours. Claims on days
-    /// before the window are accepted and ignored.
-    pub fn claim(&mut self, run: &Run) -> bool {
-        for (i, claim) in run.0.iter().enumerate() {
-            if !self.take(claim) {
-                self.release(&Run(run.0[..i].to_vec()));
-                return false;
+    fn change(&mut self, asks: &[Ask], days: &[Day], give_back: Option<&Table>) {
+        let limited: Vec<Ask> = asks.iter().copied().filter(|a| self.limited(a)).collect();
+        for ask in limited {
+            let (row, hours) = (ask.0.0 as usize, ask.1);
+            for day in days.iter().filter(|d| **d >= self.today) {
+                let Some(free) = self.free[row].get_mut(day.index()) else {
+                    continue;
+                };
+                *free = match give_back {
+                    Some(table) => (*free + hours).min(table.hours(ask.0, *day)),
+                    None => free.saturating_sub(hours),
+                };
+                for h in 1..=8u8 {
+                    self.short[row][usize::from(h) - 1].set(*day, *free < h);
+                }
             }
         }
-        true
     }
 
-    /// Gives back a run that was claimed
-    pub fn release(&mut self, run: &Run) {
-        for claim in &run.0 {
-            let slot = self.index(claim.day).and_then(|i| {
-                let capacity = self.capacity.get(&claim.user)?.get(i)?;
-                Some((self.free.get_mut(&claim.user)?.get_mut(i)?, *capacity))
+    /// Takes the hours asked on each of the days, for `arc`
+    pub fn claim(&mut self, asks: &[Ask], days: &[Day], arc: ArcId) {
+        self.change(asks, days, None);
+        let (Some(first), Some(last)) = (days.first(), days.last()) else {
+            return;
+        };
+        let limited: Vec<Ask> = asks.iter().copied().filter(|a| self.limited(a)).collect();
+        for ask in limited {
+            self.held[ask.0.0 as usize].push((*first, last.next(), arc));
+        }
+    }
+
+    /// Gives back what `claim` took
+    pub fn release(&mut self, table: &Table, asks: &[Ask], days: &[Day], arc: ArcId) {
+        self.change(asks, days, Some(table));
+        for ask in asks {
+            self.held[ask.0.0 as usize].retain(|(_, _, holder)| *holder != arc);
+        }
+    }
+
+    /// What holds hours of the row over a day
+    pub fn holder(&self, row: RowId, day: Day) -> Option<ArcId> {
+        let held = self.held[row.0 as usize].iter();
+        let mut over = held.filter(|(start, end, _)| *start <= day && day < *end);
+        over.next().map(|(_, _, arc)| *arc)
+    }
+
+    /// A valid day in `from..to` that other work leaves too few hours on, the last or the first
+    fn blocked(
+        &self,
+        valid: &Valid,
+        asks: &[Ask],
+        from: Day,
+        to: Day,
+        last: bool,
+    ) -> Option<(RowId, Day)> {
+        let from = from.max(self.today);
+        let found = asks.iter().filter(|a| self.limited(a)).filter_map(|ask| {
+            let short = &self.short[ask.0.0 as usize][usize::from(ask.1.min(8)) - 1];
+            let day = match last {
+                true => short.last_common(valid.bits(), from, to),
+                false => short.first_common(valid.bits(), from, to),
+            };
+            Some((ask.0, day?))
+        });
+        match last {
+            true => found.max_by_key(|(row, day)| (*day, std::cmp::Reverse(*row))),
+            false => found.min_by_key(|(row, day)| (*day, *row)),
+        }
+    }
+
+    /// The first run of `n` valid days from `from` on that no other work breaks up, `None` if
+    /// the table ends first. Days that are not valid may fall inside it, days other work holds
+    /// may not.
+    pub fn window(&self, valid: &Valid, asks: &[Ask], from: Day, n: u32) -> Option<Window> {
+        let (mut from, mut blocker) = (from, None);
+        if n == 0 {
+            return Some(Window {
+                start: from,
+                end: from,
+                blocker,
             });
-            if let Some((free, capacity)) = slot {
-                *free = free.saturating_add(claim.hours).min(capacity);
+        }
+        loop {
+            let start = valid.next(from)?;
+            let end = valid.nth_from(start, n)?.next();
+            match self.blocked(valid, asks, start, end, true) {
+                Some((row, day)) => {
+                    blocker = Some((row, day));
+                    from = day.next();
+                }
+                None => {
+                    return Some(Window {
+                        start,
+                        end,
+                        blocker,
+                    });
+                }
             }
         }
     }
 
-    fn take(&mut self, claim: &Claim) -> bool {
-        let Some(i) = self.index(claim.day) else {
-            return claim.day < self.start || claim.hours == 0;
-        };
-        match self.free.get_mut(&claim.user).and_then(|f| f.get_mut(i)) {
-            Some(free) if *free >= claim.hours => {
-                *free -= claim.hours;
-                true
+    /// The last such run that ends by `to` and starts no sooner than `floor`
+    pub fn window_back(
+        &self,
+        valid: &Valid,
+        asks: &[Ask],
+        to: Day,
+        n: u32,
+        floor: Day,
+    ) -> Option<(Day, Day)> {
+        let mut to = to;
+        if n == 0 {
+            return (to >= floor).then_some((to, to));
+        }
+        loop {
+            let end = valid.previous(to)?.next();
+            let start = valid.nth_back(end, n)?;
+            if start < floor {
+                return None;
             }
-            _ => claim.hours == 0,
+            match self.blocked(valid, asks, start, end, false) {
+                Some((_, day)) => to = day,
+                None => return Some((start, end)),
+            }
         }
     }
 
-    /// Booked hours as a share of capacity from the person's first to last booked day, 0 if
-    /// they have nothing booked
-    pub fn load(&self, user: &Uuid) -> f32 {
-        let (Some(capacity), Some(free)) = (self.capacity.get(user), self.free.get(user)) else {
-            return 0.0;
-        };
-        let booked = |i: usize| capacity[i] - free[i];
-        let mut days = (0..self.days).filter(|i| booked(*i) > 0);
+    /// Booked hours as a share of the hours the row has from its first to last booked day, 0 if
+    /// nothing is booked
+    pub fn load(&self, table: &Table, row: RowId) -> f32 {
+        let (free, hours) = (&self.free[row.0 as usize], table.row_hours(row));
+        let booked = |i: usize| u32::from(hours[i] - free[i]);
+        let mut days = (0..free.len()).filter(|i| booked(*i) > 0);
         let (Some(first), Some(last)) = (days.clone().next(), days.next_back()) else {
             return 0.0;
         };
-        let booked: u32 = (first..=last).map(|i| u32::from(booked(i))).sum();
-        let available: u32 = capacity[first..=last].iter().map(|h| u32::from(*h)).sum();
-        booked as f32 / available as f32
+        let available: u32 = hours[first..=last].iter().map(|h| u32::from(*h)).sum();
+        (first..=last).map(booked).sum::<u32>() as f32 / available as f32
     }
 }
 // }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::availability::rule_set::RuleSet;
+    use crate::{availability::workload::Workload, scheduler::table::RowKey};
+    use chrono::{Datelike, NaiveDate};
+    use uuid::Uuid;
 
-    fn d(day: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(2024, 1, day).unwrap()
+    /// One person on full weekdays over four weeks from Monday the 1st, today being that Monday
+    fn setup() -> (Table, RowId, Ledger) {
+        let origin = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let mut table = Table::new(origin, 28, origin);
+        let user = table.insert(RowKey::User(Uuid::nil()), |d| {
+            Workload::new_const(if d.weekday().number_from_monday() > 5 {
+                0
+            } else {
+                8
+            })
+        });
+        let ledger = Ledger::new(&table);
+        (table, user, ledger)
     }
 
-    fn claim(user: Uuid, day: u32, hours: u8) -> Claim {
-        Claim {
-            user,
-            day: d(day),
-            hours,
-        }
+    fn days(days: &[u32]) -> Vec<Day> {
+        days.iter().copied().map(Day).collect()
     }
 
-    /// One person with default weekdays from Monday the 1st, over two weeks
-    fn ledger(user: Uuid) -> Ledger {
-        let calendar = RuleSet::default().calendar(d(1), d(14));
-        Ledger::new(d(1), 14, [(user, &calendar)])
-    }
-
-    #[test]
-    fn capacity_comes_from_the_calendar_and_is_zero_outside_it() {
-        let user = Uuid::now_v7();
-        let ledger = ledger(user);
-        assert_eq!(ledger.free(&user, d(1)), 8);
-        assert_eq!(ledger.free(&user, d(6)), 0, "Saturday");
-        assert_eq!(ledger.free(&user, d(15)), 0, "after the window");
-        assert_eq!(ledger.free(&user, NaiveDate::MIN), 0, "before the window");
-        assert_eq!(ledger.free(&Uuid::now_v7(), d(1)), 0, "unknown person");
+    fn span(window: Option<Window>) -> Option<(u32, u32)> {
+        window.map(|w| (w.start.0, w.end.0))
     }
 
     #[test]
-    fn claims_take_hours_and_releases_return_them() {
-        let user = Uuid::now_v7();
-        let mut ledger = ledger(user);
-        let run = Run(vec![claim(user, 1, 5), claim(user, 2, 8)]);
-        assert!(ledger.claim(&run));
-        assert_eq!((ledger.free(&user, d(1)), ledger.free(&user, d(2))), (3, 0));
-        assert_eq!(ledger.capacity(&user, d(1)), 8);
-        ledger.release(&run);
-        assert_eq!((ledger.free(&user, d(1)), ledger.free(&user, d(2))), (8, 8));
+    fn a_window_runs_across_weekends_but_starts_over_after_other_work() {
+        let (table, user, mut ledger) = setup();
+        let asks = [(user, 8)];
+        let valid = table.valid(&asks, None, table.full());
+        // Thursday, Friday and the Monday after
+        assert_eq!(span(ledger.window(&valid, &asks, Day(3), 3)), Some((3, 8)));
+        // half of Wednesday is held, which a full block cannot share
+        ledger.claim(&[(user, 4)], &days(&[2]), ArcId(7));
+        let window = ledger.window(&valid, &asks, Day(0), 3).unwrap();
+        assert_eq!((window.start, window.end), (Day(3), Day(8)));
+        assert_eq!(window.blocker, Some((user, Day(2))));
+        assert_eq!(ledger.holder(user, Day(2)), Some(ArcId(7)));
+        // a half block fits beside it
+        let half = [(user, 4)];
+        let valid = table.valid(&half, None, table.full());
+        assert_eq!(span(ledger.window(&valid, &half, Day(0), 3)), Some((0, 3)));
+        assert_eq!(span(ledger.window(&valid, &half, Day(0), 30)), None);
     }
 
     #[test]
-    fn a_failed_run_takes_nothing() {
-        let user = Uuid::now_v7();
-        let mut ledger = ledger(user);
-        let before = ledger.clone();
-        // the second claim fits alone, the third overdraws the first day, or hits a weekend
-        for last in [claim(user, 1, 4), claim(user, 6, 1), claim(user, 20, 1)] {
-            let run = Run(vec![claim(user, 1, 6), claim(user, 2, 3), last]);
-            assert!(!ledger.claim(&run));
-            assert_eq!(ledger, before);
-        }
+    fn a_window_from_the_back_ends_as_late_as_it_can() {
+        let (table, user, mut ledger) = setup();
+        let asks = [(user, 8)];
+        let valid = table.valid(&asks, None, table.full());
+        // ending by the second Wednesday: Friday, Monday, Tuesday
+        assert_eq!(
+            ledger.window_back(&valid, &asks, Day(9), 3, Day(0)),
+            Some((Day(4), Day(9)))
+        );
+        ledger.claim(&asks, &days(&[7]), ArcId(1));
+        assert_eq!(
+            ledger.window_back(&valid, &asks, Day(9), 3, Day(0)),
+            Some((Day(2), Day(5)))
+        );
+        assert_eq!(ledger.window_back(&valid, &asks, Day(9), 3, Day(3)), None);
     }
 
     #[test]
-    fn past_days_are_ignored_and_zero_hour_claims_always_fit() {
-        let user = Uuid::now_v7();
-        let mut ledger = ledger(user);
-        let before = ledger.clone();
-        let run = Run(vec![
-            claim(user, 1, 0),
-            claim(user, 6, 0),
-            claim(user, 20, 0),
-        ]);
-        assert!(ledger.claim(&run));
-        let past = NaiveDate::from_ymd_opt(2023, 12, 25).unwrap();
-        let run = Run(vec![Claim {
-            user,
-            day: past,
-            hours: 8,
-        }]);
-        assert!(ledger.claim(&run));
-        ledger.release(&run);
-        assert_eq!(ledger, before);
-    }
-
-    #[test]
-    fn releases_never_exceed_capacity() {
-        let user = Uuid::now_v7();
-        let mut ledger = ledger(user);
-        ledger.release(&Run(vec![claim(user, 1, 8)]));
-        assert_eq!(ledger.free(&user, d(1)), 8);
-    }
-
-    #[test]
-    fn load_is_booked_over_available_between_first_and_last_booked_day() {
-        let user = Uuid::now_v7();
-        let mut ledger = ledger(user);
-        assert_eq!(ledger.load(&user), 0.0);
+    fn releases_give_hours_back_and_load_is_booked_over_available() {
+        let (table, user, mut ledger) = setup();
+        let asks = [(user, 8)];
+        let valid = table.valid(&asks, None, table.full());
+        assert_eq!(ledger.load(&table, user), 0.0);
         // Friday 4h and Monday 8h: 12 of the 16 hours across the two working days
-        assert!(ledger.claim(&Run(vec![claim(user, 5, 4), claim(user, 8, 8)])));
-        assert_eq!(ledger.load(&user), 0.75);
-        assert_eq!(ledger.load(&Uuid::now_v7()), 0.0);
+        ledger.claim(&[(user, 4)], &days(&[4]), ArcId(1));
+        ledger.claim(&asks, &days(&[7]), ArcId(2));
+        assert_eq!(ledger.load(&table, user), 0.75);
+        ledger.release(&table, &asks, &days(&[7]), ArcId(2));
+        assert_eq!(ledger.holder(user, Day(7)), None);
+        assert_eq!(span(ledger.window(&valid, &asks, Day(7), 1)), Some((7, 8)));
     }
 }
+// }}}

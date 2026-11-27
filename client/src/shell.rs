@@ -1,5 +1,6 @@
 //! The frame around every page: where you are, who you are, and how the connection is doing.
 
+// modules {{{
 use leptos::{prelude::*, task::spawn_local};
 use plinko::multitenancy::user::Role;
 
@@ -7,6 +8,8 @@ use crate::{
     allocations::Allocations,
     api,
     availability::Availability as AvailabilityPage,
+    finder::Finder,
+    help::HelpButton,
     home::Home,
     icons::{Icon, IconKind},
     nav::Availability,
@@ -17,18 +20,20 @@ use crate::{
     preferences::Preferences,
     ui::{Status, use_sync},
 };
+// }}}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
     Home,
     Plans,
-    Plan(plinko::types::short_id::ShortId),
+    Plan(plinko::common::short_id::ShortId),
     Allocations(Option<uuid::Uuid>),
     People,
     Preferences,
     Availability(crate::nav::Availability),
 }
 
+// Shell {{{
 #[component]
 pub fn Shell() -> impl IntoView {
     let sync = use_sync();
@@ -50,27 +55,48 @@ pub fn Shell() -> impl IntoView {
             .with(|t| t.as_ref().map(|t| t.name().to_string()).unwrap_or_default())
     };
     let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
+    // the pages of people other than you are only for admins, wherever the address says to go
+    let allowed = Memo::new(move |_| {
+        let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
+        let theirs = |user| Some(user) != me;
+        let admins = match page.get() {
+            Page::People | Page::Availability(Availability::Default) => true,
+            Page::Allocations(Some(user)) | Page::Availability(Availability::User(user)) => {
+                theirs(user)
+            }
+            _ => false,
+        };
+        !admins || admin()
+    });
     let _ = Role::Admin;
     let logout = move |()| {
         spawn_local(async move {
             api::logout().await;
-            sync.me.set(None);
-            sync.tenant.set(None);
+            sync.end();
         });
     };
-    let link = move |label: &'static str, icon: IconKind, to: Route, active: Signal<bool>| {
-        view! {
-            <a href=to.path() class:active=move || active.get()>
-                <Icon kind=icon size=16 />
-                {label}
-            </a>
-        }
-    };
+    let link =
+        move |label: &'static str, icon: IconKind, to: Signal<Route>, active: Signal<bool>| {
+            view! {
+                <a href=move || to.get().path() class:active=move || active.get()>
+                    <Icon kind=icon size=16 />
+                    {label}
+                </a>
+            }
+        };
     let on_home = Signal::derive(move || route.get() == Route::Home);
     let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
     let on_allocations = Signal::derive(move || route.get() == Route::Allocations);
-    let me = sync.me.get_untracked().map(|m| m.id).unwrap_or_default();
-    let mine = Route::Availability(Availability::User(me));
+    // whoever is logged in now
+    let mine = Signal::derive(move || {
+        let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
+        Route::Availability(Availability::User(me.unwrap_or_default()))
+    });
+    let (plans, allocations, people) = (
+        Signal::stored(Route::Plans),
+        Signal::stored(Route::Allocations),
+        Signal::stored(Route::People),
+    );
     let on_availability = Signal::derive(move || matches!(route.get(), Route::Availability(_)));
     // a person's allocations are looked at from the people page, so that stays lit
     let on_people =
@@ -84,22 +110,20 @@ pub fn Shell() -> impl IntoView {
                 </a>
                 <span class="tenant">{name}</span>
                 <nav class="tabs" aria-label="Main">
-                {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
-                    {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
+                {link("Plans", IconKind::Gantt, plans, on_plans)}
+                    {link("Allocations", IconKind::Allocation, allocations, on_allocations)}
                     {link("Availability", IconKind::Resources, mine, on_availability)}
-                    <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
+                    <Show when=admin>{link("People", IconKind::Users, people, on_people)}</Show>
                 </nav>
                 <Status />
+                <HelpButton />
                 <UserMenu on_logout=Callback::new(logout) />
             </header>
-            <Show when=move || sync.notice.with(Option::is_some)>
-                <div class="notice" role="alert">
-                    {move || sync.notice.get()}
-                    <button type="button" class="plain" on:click=move |_| sync.notice.set(None)>"Dismiss"</button>
-                </div>
-            </Show>
+            <Toast />
+            <Finder />
             <main class="page">
                 {move || match page.get() {
+                    _ if !allowed.get() => view! { <p>"Only admins can see this."</p> }.into_any(),
                     Page::Home => view! { <Home /> }.into_any(),
                     Page::Plans => view! { <Plans /> }.into_any(),
                     Page::Plan(plan) => view! { <PlanPage plan=plan /> }.into_any(),
@@ -110,15 +134,17 @@ pub fn Shell() -> impl IntoView {
                 }}
             </main>
             <nav class="bottom" aria-label="Main">
-                {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
-                {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
+                {link("Plans", IconKind::Gantt, plans, on_plans)}
+                {link("Allocations", IconKind::Allocation, allocations, on_allocations)}
                 {link("Availability", IconKind::Resources, mine, on_availability)}
-                <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
+                <Show when=admin>{link("People", IconKind::Users, people, on_people)}</Show>
             </nav>
         </div>
     }
 }
+// }}}
 
+// UserMenu {{{
 /// The person circle at the top right, and the menu it opens
 #[component]
 fn UserMenu(on_logout: Callback<()>) -> impl IntoView {
@@ -155,7 +181,9 @@ fn UserMenu(on_logout: Callback<()>) -> impl IntoView {
         </div>
     }
 }
+// }}}
 
+// account_names {{{
 /// The name and email of the person signed in, which follow their profile as it changes
 fn account_names(sync: crate::sync::Sync) -> (Signal<String>, Signal<String>) {
     let me = move || sync.me.with(|m| m.as_ref().map(|m| m.id));
@@ -181,7 +209,44 @@ fn account_names(sync: crate::sync::Sync) -> (Signal<String>, Signal<String>) {
         Signal::derive(move || email().unwrap_or_default()),
     )
 }
+// }}}
 
-pub fn open_plan(plan: plinko::types::short_id::ShortId) {
+// open_plan {{{
+pub fn open_plan(plan: plinko::common::short_id::ShortId) {
     navigate(Route::Plan(plan, crate::nav::PlanTab::Gantt, None));
 }
+// }}}
+
+// Toast {{{
+/// How long the last thing that went wrong stays at the bottom of the screen
+const TOAST_FOR: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The last thing that went wrong, at the bottom of the screen until it fades or is clicked
+#[component]
+fn Toast() -> impl IntoView {
+    let sync = use_sync();
+    let shown = StoredValue::new(0u32);
+    Effect::new(move |_| {
+        if sync.notice.with(Option::is_none) {
+            return;
+        }
+        let now = shown.get_value() + 1;
+        shown.set_value(now);
+        let fade = move || {
+            if shown.try_get_value() == Some(now) {
+                sync.notice.try_set(None);
+            }
+        };
+        set_timeout(fade, TOAST_FOR);
+    });
+    move || {
+        sync.notice.get().map(|said| {
+            view! {
+                <div class="toast" role="alert" title="Dismiss" on:click=move |_| sync.notice.set(None)>
+                    {said}
+                </div>
+            }
+        })
+    }
+}
+// }}}

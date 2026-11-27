@@ -4,18 +4,21 @@
 //! (the client build, default `client/dist`), `PLINKO_INSECURE_COOKIES=1` for plain HTTP, and on
 //! the first run `PLINKO_ADMIN_EMAIL` and `PLINKO_ADMIN_PASSWORD`.
 
+// modules {{{
 use std::{path::PathBuf, sync::Arc};
 
 use plinko::{
+    common::short_id::ShortId,
     multitenancy::{
         tenant::Tenant,
         user::{Role, TenantLoginUser},
     },
     net::{actor, http},
     store::{self, Store},
-    types::short_id::ShortId,
 };
+// }}}
 
+// helpers {{{
 fn setting(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
@@ -23,7 +26,9 @@ fn setting(name: &str) -> Option<String> {
 fn required(name: &str) -> String {
     setting(name).unwrap_or_else(|| panic!("{name} is needed"))
 }
+// }}}
 
+// main {{{
 #[tokio::main]
 async fn main() {
     let name = required("PLINKO_TENANT");
@@ -57,3 +62,4 @@ async fn main() {
     eprintln!("listening on http://{listen}");
     axum::serve(listener, app).await.expect("the server runs");
 }
+// }}}

@@ -6,27 +6,35 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    availability::calendar::Calendar,
+    availability::{calendar::Calendar, rule_set::RuleSet, workload::Workload},
+    common::{
+        crud::Crud,
+        dates::TimeConstraint,
+        error::{PlinkoError, PlinkoResult},
+        short_id::ShortId,
+    },
     multitenancy::{
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
         user::{Role, TenantLoginUser, TenantUserVolatileState},
         user_group::TenantUserGroup,
     },
-    planner::{plan::Plan, plan_update::PlanUpdate},
-    scheduler::{
-        self,
-        state::{Baseline, TenantVolatileState},
+    planner::{
+        items::task::{Assignee, Status},
+        plan::Plan,
+        plan_update::PlanUpdate,
+        resources::user::NewPlanUser,
     },
+    scheduler::{self, Hints, state::TenantVolatileState},
     traits::entity::Entity,
-    types::{
-        crud::Crud,
-        error::{PlinkoError, PlinkoResult},
-        short_id::ShortId,
-        task::{Assignee, Status},
-        user::NewPlanUser,
-        workload::Workload,
-    },
 };
+// }}}
+
+// constants {{{
+/// How far before or after today a date in a plan may be
+pub const MAX_DAYS_FROM_TODAY: i64 = 10 * 366;
+
+/// The longest a task, buffer or delay may last, in days
+pub const MAX_DURATION: u32 = 10 * 366;
 // }}}
 
 /// Everything a tenant is, and so what a snapshot holds. The caches and the schedule are
@@ -45,9 +53,15 @@ pub struct Tenant {
     plan_calendars: HashMap<ShortId, Calendar<Workload>>,
     #[serde(skip)]
     schedule: Option<TenantVolatileState>,
+    /// While updates already saved are applied again, which were checked by the rules of their
+    /// day, so a check added since does not refuse them
     #[serde(skip)]
-    baselines: HashMap<ShortId, Baseline>,
+    pub(super) logged: bool,
+    /// What the last search found, for the next to start from
+    #[serde(skip)]
+    hints: Hints,
     pub(super) plans: HashMap<ShortId, Plan>,
+    pub(super) default_schedule: RuleSet<Workload>,
 }
 
 // impl Tenant{{{
@@ -84,8 +98,10 @@ impl Tenant {
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),
             schedule: None,
-            baselines: HashMap::new(),
+            logged: false,
+            hints: Hints::default(),
             plans: HashMap::new(),
+            default_schedule: RuleSet::default(),
         }
     }
 
@@ -99,6 +115,11 @@ impl Tenant {
 
     pub fn today(&self) -> NaiveDate {
         self.today
+    }
+
+    /// The availability a new user and a new plan start with
+    pub fn default_schedule(&self) -> &RuleSet<Workload> {
+        &self.default_schedule
     }
 
     pub fn users(&self) -> &HashMap<Uuid, TenantLoginUser> {
@@ -134,41 +155,27 @@ impl Tenant {
         self.schedule = Some(schedule);
     }
 
-    /// The plan on its own, as of the last `scheduler::prepare`. An update that changes a plan
-    /// drops its baseline, and one that changes anything else (people, availability, the clock)
-    /// drops them all.
-    pub fn baseline(&self, plan: &ShortId) -> Option<&Baseline> {
-        self.baselines.get(plan)
+    pub fn store_hints(&mut self, hints: Hints) {
+        self.hints = hints;
     }
 
-    /// Drops the baselines, which are worked out again by the next schedule
-    pub fn clear_baselines(&mut self) {
-        self.baselines.clear();
+    /// The choices the last search found better made the other way, which updates leave alone
+    pub fn hints(&self) -> &Hints {
+        &self.hints
     }
 
-    pub fn baselines(&self) -> &HashMap<ShortId, Baseline> {
-        &self.baselines
-    }
-
-    pub fn store_baseline(&mut self, plan: ShortId, baseline: Baseline) {
-        self.baselines.insert(plan, baseline);
+    /// Applies an update that was already accepted and saved, as on loading
+    pub fn apply_logged(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
+        self.logged = true;
+        let result = self.apply_update(u);
+        self.logged = false;
+        result
     }
 
     pub fn apply_update(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
-        let plan = match &u.update_type {
-            TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => Some(new.id),
-            TenantUpdateType::Plan(
-                PlanTenantUpdate::Remove(id) | PlanTenantUpdate::Update(id, _),
-            ) => Some(*id),
-            _ => None,
-        };
         let result = self.apply_update_unscheduled(u);
         if result.is_ok() {
             self.schedule = None;
-            match plan {
-                Some(plan) => drop(self.baselines.remove(&plan)),
-                None => self.baselines.clear(),
-            }
         }
         result
     }
@@ -189,11 +196,15 @@ impl Tenant {
                     !matches!(&update, Crud::Remove(id) if *id == u.actor),
                     u.actor,
                 )?;
-                let removed = match &update {
-                    Crud::Remove(id) => Some(*id),
-                    _ => None,
+                let (added, removed) = match &update {
+                    Crud::Add(new) => (Some(new.id), None),
+                    Crud::Remove(id) => (None, Some(*id)),
+                    Crud::Update(_) => (None, None),
                 };
                 TenantLoginUser::apply_crud(self, update)?;
+                if let Some(user) = added.and_then(|id| self.users.get_mut(&id)) {
+                    user.availability = self.default_schedule.clone();
+                }
                 removed.map(|id| self.volatile.remove(&id));
                 Ok(())
             }
@@ -210,6 +221,10 @@ impl Tenant {
                     .apply_update(update)?;
                 self.volatile.remove(&user);
                 Ok(())
+            }
+            TenantUpdateType::DefaultSchedule(update) => {
+                allow(is_admin, u.actor)?;
+                self.default_schedule.apply_update(update)
             }
             TenantUpdateType::Favourite(plan, starred) => {
                 self.authorize_plan(u.actor, is_admin, &plan)?;
@@ -243,11 +258,15 @@ impl Tenant {
         match update {
             PlanTenantUpdate::Add(new) => {
                 let mut plan = Plan::from(new);
+                plan.set_default_availability(self.default_schedule.clone());
                 plan.apply_update(PlanUpdate::User(Crud::Add(NewPlanUser { id: actor })))?;
                 self.insert_plan(plan)
             }
+            // only an admin deletes a whole plan
             PlanTenantUpdate::Remove(id) => {
-                self.authorize_plan(actor, is_admin, &id)?;
+                if !is_admin {
+                    return Err(PlinkoError::Forbidden(actor));
+                }
                 self.plan_calendars.remove(&id);
                 self.users
                     .values_mut()
@@ -262,6 +281,7 @@ impl Tenant {
                 self.ensure_plan_refs_exist(&update)?;
                 let mut update = *update;
                 self.set_status_dates(&id, &mut update);
+                self.check_ranges(&update)?;
                 let changes_availability = matches!(update, PlanUpdate::Availability(_));
                 self.plans
                     .get_mut(&id)
@@ -275,10 +295,11 @@ impl Tenant {
         }
     }
 
-    /// Putting a task on hold ends it on the day that happens (today), unless an end date came with the
-    /// update, and an update that leaves it on hold keeps that end. Resuming clears it again. A task
-    /// that has started begins today unless it has a start, and one completed or dropped ends today
-    /// likewise.
+    /// A task that has started begins today unless it has a start. Completing, dropping or putting
+    /// it on hold ends it today, unless the update brings a new end date, and an update that keeps
+    /// the status keeps the end. A task in progress has no end, so resuming clears it. A task put
+    /// back to not started has not run, so it has neither, and starting it again begins it today.
+    /// The client sends back the dates it has, so an end the task already had is not a new one.
     fn set_status_dates(&self, plan: &ShortId, update: &mut PlanUpdate) {
         let PlanUpdate::Task(Crud::Update(patch)) = update else {
             return;
@@ -290,26 +311,79 @@ impl Tenant {
         let Some(state) = &mut patch.persistent_state else {
             return;
         };
-        match (was.status, state.status) {
-            (Status::OnHold, Status::OnHold) => {
-                state.actual_end_date = state.actual_end_date.or(was.actual_end_date);
-            }
-            (_, Status::OnHold) => {
-                state.actual_end_date = state.actual_end_date.or(Some(self.today));
-            }
-            (Status::OnHold, Status::NotStarted | Status::InProgress) => {
-                state.actual_end_date = None;
-            }
-            _ => {}
+        if state.status == Status::NotStarted {
+            state.actual_start_date = None;
+            state.actual_end_date = None;
+            return;
         }
-        if state.status != Status::NotStarted {
-            let start = state.actual_start_date.or(was.actual_start_date);
-            state.actual_start_date = start.or(Some(self.today));
+        let start = state.actual_start_date.or(was.actual_start_date);
+        state.actual_start_date = start.or(Some(self.today));
+        let same = state.status == was.status;
+        let given = state
+            .actual_end_date
+            .filter(|end| same || Some(*end) != was.actual_end_date);
+        state.actual_end_date = match state.status {
+            Status::InProgress => None,
+            _ if same => given.or(was.actual_end_date).or(Some(self.today)),
+            _ => given.or(Some(self.today)),
+        };
+    }
+
+    /// Dates must be within `MAX_DAYS_FROM_TODAY` of today and durations at most `MAX_DURATION`,
+    /// which keeps the days the scheduler looks at a sane number, and a task cannot end before
+    /// it starts
+    fn check_ranges(&self, update: &PlanUpdate) -> PlinkoResult<()> {
+        if self.logged {
+            return Ok(());
         }
-        if matches!(state.status, Status::Completed | Status::Dropped) {
-            let end = state.actual_end_date.or(was.actual_end_date);
-            state.actual_end_date = end.or(Some(self.today));
+        let constraint = |c: Option<TimeConstraint>| {
+            let (from, until) = c.map(TimeConstraint::bounds).unwrap_or_default();
+            from.into_iter().chain(until)
+        };
+        let (dates, durations): (Vec<NaiveDate>, Vec<u32>) = match update {
+            PlanUpdate::Task(Crud::Update(p)) => {
+                let state = p.persistent_state.unwrap_or_default();
+                let (start, end) = (state.actual_start_date, state.actual_end_date);
+                if start.zip(end).is_some_and(|(start, end)| end < start) {
+                    let why = "a task cannot end before it starts".to_string();
+                    return Err(PlinkoError::OutOfRange(why));
+                }
+                let constrained = constraint(p.time_constraint.map(|c| c.constraint));
+                let dates = constrained.chain(start).chain(end).collect();
+                (dates, p.duration.into_iter().collect())
+            }
+            PlanUpdate::TaskGroup(Crud::Update(p)) => (
+                constraint(p.time_constraint.map(|c| c.constraint)).collect(),
+                Vec::new(),
+            ),
+            PlanUpdate::Milestone(Crud::Update(p)) => {
+                let actual = p.persistent_state.as_ref().and_then(|s| s.actual_date);
+                (
+                    constraint(p.time_constraint).chain(actual).collect(),
+                    Vec::new(),
+                )
+            }
+            PlanUpdate::PlanBuffer(Crud::Add(new)) => (Vec::new(), vec![new.duration]),
+            PlanUpdate::PlanBuffer(Crud::Update(p)) => (
+                p.set_start_day.flatten().into_iter().collect(),
+                p.duration.into_iter().collect(),
+            ),
+            PlanUpdate::PlanDelay(Crud::Add(new)) => (Vec::new(), vec![new.duration]),
+            PlanUpdate::PlanDelay(Crud::Update(p)) => {
+                (Vec::new(), p.duration.into_iter().collect())
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        let far = |date: &NaiveDate| (*date - self.today).num_days().abs() > MAX_DAYS_FROM_TODAY;
+        if let Some(date) = dates.iter().find(|d| far(d)) {
+            let why = format!("{date} is more than {MAX_DAYS_FROM_TODAY} days from today");
+            return Err(PlinkoError::OutOfRange(why));
         }
+        if let Some(days) = durations.iter().find(|d| **d > MAX_DURATION) {
+            let why = format!("{days} days is longer than the {MAX_DURATION} a duration may be");
+            return Err(PlinkoError::OutOfRange(why));
+        }
+        Ok(())
     }
 
     /// Admins and anyone in the plan, directly or through an assigned group, may change a plan
@@ -341,26 +415,33 @@ impl Tenant {
         visible.map(|(id, _)| *id).collect()
     }
 
-    /// The tenant as a user may see it: everyone and every group, and their plans. It has no
-    /// schedule, which a client is sent separately.
+    /// The tenant as a user may see it: everyone and every group, and their plans, with only
+    /// those plans among anyone's favourites. It has no schedule, which a client is sent
+    /// separately.
     pub fn visible_to(&self, user: &Uuid) -> Tenant {
         let visible = self.visible_plans(user);
+        let mut users = self.users.clone();
+        for user in users.values_mut() {
+            user.favourites.retain(|p| visible.contains(p));
+        }
         Tenant {
             id: self.id,
             name: self.name.clone(),
             today: self.today,
-            users: self.users.clone(),
+            users,
             user_groups: self.user_groups.clone(),
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),
             schedule: None,
-            baselines: HashMap::new(),
+            logged: false,
+            hints: Hints::default(),
             plans: self
                 .plans
                 .iter()
                 .filter(|(id, _)| visible.contains(id))
                 .map(|(id, plan)| (*id, plan.clone()))
                 .collect(),
+            default_schedule: self.default_schedule.clone(),
         }
     }
 
@@ -535,6 +616,8 @@ impl Tenant {
 }
 // }}}
 
+// allow {{{
 fn allow(permitted: bool, actor: Uuid) -> PlinkoResult<()> {
     permitted.then_some(()).ok_or(PlinkoError::Forbidden(actor))
 }
+// }}}

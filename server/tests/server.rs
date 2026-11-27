@@ -1,3 +1,4 @@
+// modules {{{
 use std::{sync::Arc, time::Duration};
 
 use axum::{
@@ -10,21 +11,24 @@ use futures_util::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use plinko::{
     codec,
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdateType},
         user::{NewTenantLoginUser, Role, TenantLoginUser},
     },
     net::{actor, http},
+    planner::resources::user::NewPlanUser,
     planner::{plan::NewPlan, plan_update::PlanUpdate},
     protocol::{ClientMessage, ServerMessage},
     store::Store,
-    types::{crud::Crud, short_id::ShortId, user::NewPlanUser},
 };
 use tokio_tungstenite::tungstenite::{self, client::IntoClientRequest};
 use tower::ServiceExt;
 use uuid::Uuid;
+// }}}
 
+// helpers {{{
 const PASSWORD: &str = "correct horse";
 
 struct Server {
@@ -90,7 +94,9 @@ fn cookie_of(headers: &axum::http::HeaderMap) -> String {
     let set = headers.get(header::SET_COOKIE).unwrap().to_str().unwrap();
     set.split(';').next().unwrap().to_string()
 }
+// }}}
 
+// logging_in_gives_a_session_that_logging_out_ends {{{
 #[tokio::test]
 async fn logging_in_gives_a_session_that_logging_out_ends() {
     let server = server().await;
@@ -140,7 +146,9 @@ async fn logging_in_gives_a_session_that_logging_out_ends() {
         StatusCode::UNAUTHORIZED
     );
 }
+// }}}
 
+// requests_from_other_origins_are_refused {{{
 #[tokio::test]
 async fn requests_from_other_origins_are_refused() {
     let server = server().await;
@@ -157,7 +165,9 @@ async fn requests_from_other_origins_are_refused() {
         .unwrap();
     assert_eq!(call(&server.app, login).await.0, StatusCode::OK);
 }
+// }}}
 
+// passwords_change_for_oneself_with_the_old_one_and_for_others_as_admin {{{
 #[tokio::test]
 async fn passwords_change_for_oneself_with_the_old_one_and_for_others_as_admin() {
     let server = server().await;
@@ -212,7 +222,9 @@ async fn passwords_change_for_oneself_with_the_old_one_and_for_others_as_admin()
         .unwrap();
     assert_eq!(call(&server.app, login).await.0, StatusCode::OK);
 }
+// }}}
 
+// helpers {{{
 type Socket =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
@@ -253,6 +265,18 @@ async fn quiet(socket: &mut Socket) -> bool {
         .is_err()
 }
 
+/// Whether the server closes the socket before long, after whatever else it sends
+async fn closes(socket: &mut Socket) -> bool {
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), socket.next()).await {
+            Err(_) => return false,
+            Ok(Some(Ok(tungstenite::Message::Binary(_)))) => {}
+            Ok(Some(Ok(tungstenite::Message::Close(_))) | None | Some(Err(_))) => return true,
+            Ok(Some(Ok(_))) => {}
+        }
+    }
+}
+
 async fn send(socket: &mut Socket, request: u32, update: TenantUpdateType) {
     let bytes = codec::encode(&ClientMessage::Update { request, update }).unwrap();
     socket
@@ -276,7 +300,9 @@ async fn answer(socket: &mut Socket, request: u32) -> (Result<u64, String>, Vec<
         }
     }
 }
+// }}}
 
+// the_socket_needs_a_session_and_starts_with_a_snapshot {{{
 #[tokio::test]
 async fn the_socket_needs_a_session_and_starts_with_a_snapshot() {
     let server = server().await;
@@ -294,7 +320,9 @@ async fn the_socket_needs_a_session_and_starts_with_a_snapshot() {
         ServerMessage::Schedule { seq: 0, .. }
     ));
 }
+// }}}
 
+// updates_are_applied_in_order_and_shared_with_those_who_may_see_them {{{
 #[tokio::test]
 async fn updates_are_applied_in_order_and_shared_with_those_who_may_see_them() {
     let server = server().await;
@@ -372,7 +400,146 @@ async fn updates_are_applied_in_order_and_shared_with_those_who_may_see_them() {
         }
     }
 }
+// }}}
 
+// starring_a_plan_is_only_shared_with_those_who_may_see_it {{{
+#[tokio::test]
+async fn starring_a_plan_is_only_shared_with_those_who_may_see_it() {
+    let server = server().await;
+    let address = listen(&server).await;
+    let token = server.handle.store.start_session(server.admin).unwrap();
+    let mut admin = connect(address, &token).await.unwrap();
+    let new = NewPlan {
+        id: ShortId::new(),
+        name: "Secret".to_string(),
+    };
+    send(
+        &mut admin,
+        1,
+        TenantUpdateType::Plan(PlanTenantUpdate::Add(new)),
+    )
+    .await;
+    assert_eq!(answer(&mut admin, 1).await.0, Ok(1));
+    let plan = *server
+        .handle
+        .store
+        .load()
+        .unwrap()
+        .0
+        .plans()
+        .keys()
+        .next()
+        .unwrap();
+    let new = NewTenantLoginUser {
+        id: Uuid::nil(),
+        name: "Member".to_string(),
+        email: "member@example.com".to_string(),
+        role: Role::Member,
+    };
+    send(&mut admin, 2, TenantUpdateType::User(Crud::Add(new))).await;
+    assert_eq!(answer(&mut admin, 2).await.0, Ok(2));
+    let member = server
+        .handle
+        .user_by_email("member@example.com".to_string())
+        .await
+        .unwrap();
+    let member_token = server.handle.store.start_session(member).unwrap();
+    let mut other = connect(address, &member_token).await.unwrap();
+    assert!(matches!(
+        next(&mut other).await,
+        ServerMessage::Snapshot { .. }
+    ));
+
+    send(&mut admin, 3, TenantUpdateType::Favourite(plan, true)).await;
+    assert_eq!(answer(&mut admin, 3).await.0, Ok(3));
+    let user = TenantUpdateType::User(Crud::Add(NewTenantLoginUser {
+        id: Uuid::nil(),
+        name: "Another".to_string(),
+        email: "another@example.com".to_string(),
+        role: Role::Member,
+    }));
+    send(&mut admin, 4, user).await;
+    assert_eq!(answer(&mut admin, 4).await.0, Ok(4));
+    // the member hears of the next update but not of the star
+    loop {
+        match next(&mut other).await {
+            ServerMessage::Update { seq: 4, .. } => break,
+            ServerMessage::Schedule { .. } => {}
+            _ => panic!("the member was sent the star or a snapshot"),
+        }
+    }
+}
+// }}}
+
+// logging_out_closes_the_sockets_of_that_session {{{
+#[tokio::test]
+async fn logging_out_closes_the_sockets_of_that_session() {
+    let server = server().await;
+    let address = listen(&server).await;
+    let login = post("/api/login", "")
+        .body(login_body("admin@example.com", PASSWORD))
+        .unwrap();
+    let cookie = cookie_of(&call(&server.app, login).await.1);
+    let token = cookie.strip_prefix("plinko_session=").unwrap();
+    let mut socket = connect(address, token).await.unwrap();
+    let other = server.handle.store.start_session(server.admin).unwrap();
+    let mut elsewhere = connect(address, &other).await.unwrap();
+    assert!(matches!(
+        next(&mut socket).await,
+        ServerMessage::Snapshot { .. }
+    ));
+    let logout = Request::post("/api/logout")
+        .header(header::COOKIE, &cookie)
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(call(&server.app, logout).await.0, StatusCode::NO_CONTENT);
+    assert!(closes(&mut socket).await);
+    // another session of the same person stays
+    assert!(matches!(
+        next(&mut elsewhere).await,
+        ServerMessage::Snapshot { .. }
+    ));
+    send(&mut elsewhere, 1, TenantUpdateType::SetToday(today())).await;
+    assert!(answer(&mut elsewhere, 1).await.0.is_err());
+}
+// }}}
+
+// removing_someone_ends_their_sessions_and_closes_their_sockets {{{
+#[tokio::test]
+async fn removing_someone_ends_their_sessions_and_closes_their_sockets() {
+    let server = server().await;
+    let address = listen(&server).await;
+    let token = server.handle.store.start_session(server.admin).unwrap();
+    let mut admin = connect(address, &token).await.unwrap();
+    let new = NewTenantLoginUser {
+        id: Uuid::nil(),
+        name: "Member".to_string(),
+        email: "member@example.com".to_string(),
+        role: Role::Member,
+    };
+    send(&mut admin, 1, TenantUpdateType::User(Crud::Add(new))).await;
+    assert_eq!(answer(&mut admin, 1).await.0, Ok(1));
+    let member = server
+        .handle
+        .user_by_email("member@example.com".to_string())
+        .await
+        .unwrap();
+    let member_token = server.handle.store.start_session(member).unwrap();
+    let mut other = connect(address, &member_token).await.unwrap();
+    assert!(matches!(
+        next(&mut other).await,
+        ServerMessage::Snapshot { .. }
+    ));
+
+    send(&mut admin, 2, TenantUpdateType::User(Crud::Remove(member))).await;
+    assert_eq!(answer(&mut admin, 2).await.0, Ok(2));
+    assert!(closes(&mut other).await);
+    let session = server.handle.store.session_user(&member_token).unwrap();
+    assert_eq!(session, None);
+}
+// }}}
+
+// a_burst_of_updates_ends_with_a_schedule_for_the_last {{{
 #[tokio::test]
 async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
     let server = server().await;
@@ -394,7 +561,9 @@ async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
         ServerMessage::Schedule { seq: 10, .. }
     ) {}
 }
+// }}}
 
+// the_server_sets_the_clock_to_today_and_nobody_else_does {{{
 #[tokio::test]
 async fn the_server_sets_the_clock_to_today_and_nobody_else_does() {
     // it starts on another day, which the server corrects as it starts and is not left to a client
@@ -413,3 +582,4 @@ async fn the_server_sets_the_clock_to_today_and_nobody_else_does() {
     }
     panic!("the clock was not set");
 }
+// }}}

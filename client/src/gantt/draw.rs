@@ -3,9 +3,10 @@
 //! dependencies of the item under the pointer as lines behind the bars. It draws from what it is
 //! given and keeps no state, and it hands back where everything ended up so the pointer can hit it.
 
+// modules {{{
 use crate::gantt::pen::Pen;
 use chrono::{Datelike, NaiveDate, Weekday};
-use plinko::types::dependency::PlanNode;
+use plinko::planner::items::dependency::PlanNode;
 
 use crate::{
     format,
@@ -17,7 +18,9 @@ use crate::{
     },
     model::Look,
 };
+// }}}
 
+// constants {{{
 const BACKGROUND: &str = "#1e1e1e";
 const HEADER: &str = "#252526";
 const WEEKEND: &str = "#1e1e1e";
@@ -39,7 +42,9 @@ const PROBLEM: &str = "#e65100";
 const GROUP_FILL: &str = "rgba(255,255,255,0.035)";
 const GROUP_LINE: &str = "#4a4a4c";
 const RADIUS: f64 = 6.0;
+// }}}
 
+// helpers {{{
 fn look_colour(look: Look) -> &'static str {
     match look {
         Look::NotStarted => "#555555",
@@ -56,6 +61,7 @@ fn milestone_colour(look: Look) -> &'static str {
         _ => "#888888",
     }
 }
+// }}}
 
 /// Everything one frame needs
 pub struct Frame<'a> {
@@ -68,15 +74,21 @@ pub struct Frame<'a> {
     pub today: NaiveDate,
     pub hover: Option<Mark>,
     pub selected: Option<Mark>,
+    /// What an item being edited waits for and what waits for it, which are outlined in place of
+    /// what the links say
+    pub staged: Option<&'a super::Staged>,
+    /// A task whose bar is drawn without its name, to leave its handles clear
+    pub nameless: Option<Mark>,
+    /// The item being edited, which is drawn faintly: it is where it was, not where it will be
+    pub ghosted: Option<Mark>,
     pub links: &'a [Link],
     /// Something to outline in red, and how strongly
     pub flash: Option<(Mark, f64, &'static str)>,
-    /// What to say about the item under the pointer, the title first
-    pub info: &'a [String],
     /// A short note by the pointer for a violation under it, and where the pointer is
     pub tip: Option<(&'a [String], (f64, f64))>,
 }
 
+// Frame supporting types {{{
 /// Where the things drawn are, for hit testing
 #[derive(Default)]
 pub struct Hits {
@@ -88,6 +100,54 @@ pub struct Hits {
     pub offset: (f64, f64),
 }
 
+/// Text that is drawn on top of the layers, since what it looks like depends on the pointer
+pub struct Label {
+    pub mark: Mark,
+    pub words: String,
+    pub x: f64,
+    pub y: f64,
+    pub font: &'static str,
+    pub colour: &'static str,
+    /// The colour while the item is under the pointer
+    pub hovered: &'static str,
+    pub clip: Option<Rect>,
+}
+
+/// What drawing the layers found: where things are, and the text to put on them
+#[derive(Default)]
+pub struct Found {
+    pub hits: Hits,
+    pub labels: Vec<Label>,
+}
+
+/// Where an item or group sits: its first day, its last day, and for a group its box
+#[derive(Clone, Copy)]
+struct Geometry {
+    start: (f64, f64),
+    end: (f64, f64),
+}
+
+/// The border an item gets for what it is to the item under the pointer or for being found
+/// What is outlined besides the item under the pointer
+struct Marked {
+    before: Vec<Mark>,
+    after: Vec<Mark>,
+    /// Everything inside the group under the pointer
+    inside: Vec<Mark>,
+    /// The group the item being edited is in
+    holds: Option<Mark>,
+    /// The ends of the chain from the selected item to the one under the pointer
+    chain: Vec<Mark>,
+}
+
+/// The shape an item is drawn in, to outline it again when something marks it
+enum Shape {
+    Round(Rect, f64),
+    Diamond(f64, f64, f64),
+}
+// }}}
+
+// impl Hits {{{
 impl Hits {
     fn shifted(&self, r: Rect) -> Rect {
         Rect {
@@ -134,34 +194,9 @@ impl Hits {
             .map(|(m, strip, arrow)| (*m, self.shifted(*strip), self.shifted(*arrow)))
     }
 }
+// }}}
 
-/// Text that is drawn on top of the layers, since what it looks like depends on the pointer
-pub struct Label {
-    pub mark: Mark,
-    pub words: String,
-    pub x: f64,
-    pub y: f64,
-    pub font: &'static str,
-    pub colour: &'static str,
-    /// The colour while the item is under the pointer
-    pub hovered: &'static str,
-    pub clip: Option<Rect>,
-}
-
-/// What drawing the layers found: where things are, and the text to put on them
-#[derive(Default)]
-pub struct Found {
-    pub hits: Hits,
-    pub labels: Vec<Label>,
-}
-
-/// Where an item or group sits: its first day, its last day, and for a group its box
-#[derive(Clone, Copy)]
-struct Geometry {
-    start: (f64, f64),
-    end: (f64, f64),
-}
-
+// helpers {{{
 fn path_round(ctx: &Pen, r: Rect, radius: f64) {
     let radius = radius.min(r.w / 2.0).min(r.h / 2.0);
     ctx.begin_path();
@@ -197,18 +232,9 @@ fn clip_rect(ctx: &Pen, r: Rect) {
     ctx.rect(r.x, r.y, r.w, r.h);
     ctx.clip();
 }
+// }}}
 
-/// The border an item gets for what it is to the item under the pointer or for being found
-/// What is outlined besides the item under the pointer
-struct Marked {
-    before: Vec<Mark>,
-    after: Vec<Mark>,
-    /// Everything inside the group under the pointer
-    inside: Vec<Mark>,
-    /// The ends of the chain from the selected item to the one under the pointer
-    chain: Vec<Mark>,
-}
-
+// impl Marked {{{
 impl Marked {
     fn of(frame: &Frame) -> Self {
         let linked = |role: Role| frame.links.iter().filter(move |l| l.role == role);
@@ -216,17 +242,22 @@ impl Marked {
         let group = placed
             .iter()
             .find(|p| p.kind == Kind::Group && Some(p.mark) == frame.hover);
+        // a group's start is only marked by its diamond, the group itself is not before, and
+        // the end of a group likewise
+        let before = linked(Role::Before)
+            .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
+            .map(|l| mark_of(l.from));
+        let after = linked(Role::After)
+            .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
+            .map(|l| mark_of(l.to));
+        let (before, after) = match frame.staged {
+            Some(staged) => (staged.before.clone(), staged.after.clone()),
+            None => (before.collect(), after.collect()),
+        };
         Self {
-            // a group's start is only marked by its diamond, the group itself is not before
-            before: linked(Role::Before)
-                .filter(|l| !matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_))))
-                .map(|l| mark_of(l.from))
-                .collect(),
-            // the end of a group is only marked by its diamond
-            after: linked(Role::After)
-                .filter(|l| !matches!(l.to, Anchor::End(PlanNode::TaskGroup(_))))
-                .map(|l| mark_of(l.to))
-                .collect(),
+            holds: frame.staged.and_then(|s| s.group),
+            before,
+            after,
             chain: linked(Role::Chain)
                 .flat_map(|l| [mark_of(l.from), mark_of(l.to)])
                 .collect(),
@@ -243,31 +274,38 @@ impl Marked {
         }
     }
 }
+// }}}
 
-fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(String, f64)> {
+// border {{{
+/// The outline of an item: its colour, how wide it is, and whether it has a glow in the colour
+/// of a target round it, which a target has when something else is its outline
+fn border(frame: &Frame, mark: Mark, target: bool, marked: &Marked) -> Option<(String, f64, bool)> {
     match frame.flash {
         Some((flashed, alpha, rgb)) if flashed == mark => {
-            return Some((format!("rgba({rgb},{alpha})"), 4.0));
+            return Some((format!("rgba({rgb},{alpha})"), 4.0, false));
         }
         _ => {}
     }
-    if marked.chain.contains(&mark) {
-        Some((CHAIN.to_string(), 3.5))
-    } else if target {
-        Some((TARGET.to_string(), 3.0))
+    let (colour, width) = if marked.chain.contains(&mark) {
+        (CHAIN, 3.5)
     } else if frame.hover == Some(mark) || frame.selected == Some(mark) {
-        Some((HOVERED.to_string(), 3.5))
-    } else if marked.inside.contains(&mark) {
-        Some((INSIDE.to_string(), 3.0))
+        (HOVERED, 3.5)
+    } else if marked.inside.contains(&mark) || marked.holds == Some(mark) {
+        (INSIDE, 3.0)
     } else if marked.before.contains(&mark) {
-        Some((BEFORE.to_string(), 3.0))
+        (BEFORE, 3.0)
     } else if marked.after.contains(&mark) {
-        Some((AFTER.to_string(), 3.0))
+        (AFTER, 3.0)
+    } else if target {
+        return Some((TARGET.to_string(), 3.0, false));
     } else {
-        None
-    }
+        return None;
+    };
+    Some((colour.to_string(), width, target))
 }
+// }}}
 
+// helpers {{{
 fn mark_of(anchor: Anchor) -> Mark {
     match anchor {
         Anchor::Start(node) | Anchor::End(node) => node,
@@ -289,7 +327,9 @@ fn visible(frame: &Frame, p: &Placed) -> bool {
     let (from, to) = (vp.x(offset(p.span.0)), vp.x(offset(p.span.1)));
     to + reach > 0.0 && from < frame.width + 40.0
 }
+// }}}
 
+// paint_back {{{
 /// The layer behind the items: the colour, today, the lines between days and the boxes of groups.
 /// It looks the same whatever the pointer does, so it is drawn once and reused.
 pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
@@ -335,7 +375,9 @@ pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
         }
     }
 }
+// }}}
 
+// paint_nodes {{{
 /// The layer of the items themselves, again the same whatever the pointer does
 pub fn paint_nodes(ctx: &Pen, frame: &Frame, found: &mut Found) {
     let start = frame.scene.origin;
@@ -352,13 +394,9 @@ pub fn paint_nodes(ctx: &Pen, frame: &Frame, found: &mut Found) {
         }
     }
 }
+// }}}
 
-/// The shape an item is drawn in, to outline it again when something marks it
-enum Shape {
-    Round(Rect, f64),
-    Diamond(f64, f64, f64),
-}
-
+// impl Shape {{{
 impl Shape {
     fn of(frame: &Frame, p: &Placed) -> Self {
         let start = frame.scene.origin;
@@ -383,18 +421,6 @@ impl Shape {
         }
     }
 
-    fn bounds(&self) -> Rect {
-        match *self {
-            Shape::Round(rect, _) => rect,
-            Shape::Diamond(x, y, r) => Rect {
-                x: x - r,
-                y: y - r,
-                w: 2.0 * r,
-                h: 2.0 * r,
-            },
-        }
-    }
-
     /// Whether any of it can be seen on a chart `width` by `height`
     fn shows(&self, width: f64, height: f64) -> bool {
         let (x, y, w, h) = match *self {
@@ -404,15 +430,24 @@ impl Shape {
         x + w > -4.0 && x < width + 4.0 && y + h > -4.0 && y < height + 4.0
     }
 }
+// }}}
 
+// paint_marks {{{
 /// What the pointer, the selection and a flash do to the items: their outlines, and the colour of
 /// the names that are drawn over the layers. `by` is how far the layers are from where they were drawn.
 pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
     let marked = Marked::of(frame);
-    let mut marks: Vec<Mark> = [frame.hover, frame.selected, frame.flash.map(|f| f.0)]
-        .into_iter()
-        .flatten()
-        .collect();
+    let flashed = frame.flash.map(|f| f.0);
+    let mut marks: Vec<Mark> = [
+        frame.hover,
+        frame.selected,
+        flashed,
+        marked.holds,
+        frame.nameless,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
     for list in [&marked.chain, &marked.inside, &marked.before, &marked.after] {
         marks.extend(list.iter().copied());
     }
@@ -429,11 +464,18 @@ pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
         if !shape.shows(frame.width, frame.height) {
             continue;
         }
-        // what depends on nothing begins where the plan does, shown like the end of a leaf
-        if frame.hover == Some(mark) && p.rooted && p.kind != Kind::Group {
-            edge_wash(ctx, shape.bounds(), ("167,139,250", 0.85), true, |c| {
-                shape.trace(c)
-            });
+        // the layer has the name on the bar, which the bar is drawn over again to be rid of
+        if frame.nameless == Some(mark) && p.kind == Kind::Task {
+            let ghost = frame.ghosted == Some(mark);
+            shape.trace(ctx);
+            if ghost {
+                ctx.set_fill_style_str(BACKGROUND);
+                ctx.fill();
+                ctx.set_global_alpha(0.4);
+            }
+            ctx.set_fill_style_str(look_colour(p.look));
+            ctx.fill();
+            ctx.set_global_alpha(1.0);
         }
         shape.trace(ctx);
         stroke_border(ctx, border(frame, mark, p.target, &marked));
@@ -462,17 +504,18 @@ pub fn paint_marks(ctx: &Pen, frame: &Frame, labels: &[Label], by: (f64, f64)) {
     ctx.restore();
     ctx.set_text_baseline("alphabetic");
 }
+// }}}
 
+// paint_notes {{{
 /// The panel about the item under the pointer and the note on a warning, over everything
 pub fn paint_notes(ctx: &Pen, frame: &Frame) {
-    if !frame.info.is_empty() {
-        paint_panel(ctx, frame.info, frame.height);
-    }
     if let Some((lines, pointer)) = frame.tip {
         paint_tip(ctx, lines, pointer, frame.width, frame.height);
     }
 }
+// }}}
 
+// paint_header {{{
 pub fn paint_header(ctx: &Pen, frame: &Frame) {
     let start = frame.scene.origin;
     let vp = frame.viewport;
@@ -527,7 +570,9 @@ pub fn paint_header(ctx: &Pen, frame: &Frame) {
     ctx.line_to(frame.width, HEADER_HEIGHT);
     ctx.stroke();
 }
+// }}}
 
+// paint_month {{{
 /// The name of a month, at the left of the month and held at the left of the chart while the month
 /// is partly off it, until the end of the month pushes it out
 fn paint_month(ctx: &Pen, frame: &Frame, start: NaiveDate, month: NaiveDate) {
@@ -545,7 +590,9 @@ fn paint_month(ctx: &Pen, frame: &Frame, start: NaiveDate, month: NaiveDate) {
         text(ctx, "#888", "13px sans-serif", &label, x, 15.0);
     }
 }
+// }}}
 
+// paint_group {{{
 fn paint_group(
     ctx: &Pen,
     frame: &Frame,
@@ -557,11 +604,9 @@ fn paint_group(
     path_round(ctx, rect, 8.0);
     ctx.set_fill_style_str(GROUP_FILL);
     ctx.fill();
-    let outline = border(frame, p.mark, p.target, marked);
-    ctx.set_stroke_style_str(outline.as_ref().map_or(GROUP_LINE, |(c, _)| c.as_str()));
-    ctx.set_line_width(outline.as_ref().map_or(1.0, |(_, w)| *w));
-    ctx.stroke();
-    ctx.set_line_width(1.0);
+    // a group always has a line round it, which an outline takes the place of
+    let line = Some((GROUP_LINE.to_string(), 1.0, false));
+    stroke_border(ctx, border(frame, p.mark, p.target, marked).or(line));
 
     // the name along the top lane of the group, with the arrow that folds it
     let lane_top = frame.viewport.lane_top(p.lane);
@@ -599,7 +644,9 @@ fn paint_group(
     });
     found.hits.headers.push((p.mark, strip, arrow));
 }
+// }}}
 
+// group_box {{{
 /// The box a group is drawn in, a little wider than its bar and as tall as its lanes
 fn group_box(frame: &Frame, p: &Placed) -> Rect {
     let start = frame.scene.origin;
@@ -616,7 +663,9 @@ fn group_box(frame: &Frame, p: &Placed) -> Rect {
         h: ROW_HEIGHT * p.lanes as f64 - 2.0 * inset,
     }
 }
+// }}}
 
+// locate {{{
 /// Where a line meets an item, and the box of a group
 fn locate(frame: &Frame, mark: Mark) -> Option<(Geometry, Option<Rect>)> {
     let p = frame.scene.placed(mark)?;
@@ -638,7 +687,9 @@ fn locate(frame: &Frame, mark: Mark) -> Option<(Geometry, Option<Rect>)> {
     };
     Some((geometry, None))
 }
+// }}}
 
+// paint_links {{{
 pub fn paint_links(ctx: &Pen, frame: &Frame) {
     ctx.set_line_width(1.5);
     let mut diamonds: Vec<(Mark, (f64, f64), &str)> = Vec::new();
@@ -704,45 +755,33 @@ pub fn paint_links(ctx: &Pen, frame: &Frame) {
     }
     ctx.set_line_width(1.0);
 }
+// }}}
 
+// helpers {{{
 /// `#rrggbb` with no opacity, to fade a gradient out without going through black
 fn faded(hex: &str) -> String {
     let channel = |i: usize| u8::from_str_radix(hex.get(i..i + 2).unwrap_or("00"), 16).unwrap_or(0);
     format!("rgba({},{},{},0)", channel(1), channel(3), channel(5))
 }
 
-fn stroke_border(ctx: &Pen, outline: Option<(String, f64)>) {
-    if let Some((colour, width)) = outline {
+fn stroke_border(ctx: &Pen, outline: Option<(String, f64, bool)>) {
+    if let Some((colour, width, glow)) = outline {
+        if glow {
+            ctx.set_global_alpha(0.55);
+            ctx.set_stroke_style_str(TARGET);
+            ctx.set_line_width(width + 6.0);
+            ctx.stroke();
+            ctx.set_global_alpha(1.0);
+        }
         ctx.set_stroke_style_str(&colour);
         ctx.set_line_width(width);
         ctx.stroke();
         ctx.set_line_width(1.0);
     }
 }
+// }}}
 
-/// The blue wash on the right of something nothing depends on, kept inside the path `shape` draws
-fn leaf_wash(ctx: &Pen, rect: Rect, shape: impl Fn(&Pen)) {
-    edge_wash(ctx, rect, ("30,136,229", 0.65), false, shape);
-}
-
-/// A colour (as `r,g,b` and opacity) fading in over the last 28 pixels of the right edge of
-/// `rect`, or the first of the left, kept inside the path `shape` draws
-fn edge_wash(ctx: &Pen, rect: Rect, (rgb, alpha): (&str, f64), left: bool, shape: impl Fn(&Pen)) {
-    let width = rect.w.min(28.0);
-    let (clear, solid) = if left {
-        (rect.x + width, rect.x)
-    } else {
-        (rect.x + rect.w - width, rect.x + rect.w)
-    };
-    let gradient = ctx.create_linear_gradient(clear, 0.0, solid, 0.0);
-    let _ = gradient.add_color_stop(0.0, &format!("rgba({rgb},0)"));
-    let _ = gradient.add_color_stop(1.0, &format!("rgba({rgb},{alpha})"));
-    // the gradient is clear before it starts, so filling the whole shape washes only the edge
-    shape(ctx);
-    ctx.set_fill_style_canvas_gradient(&gradient);
-    ctx.fill();
-}
-
+// paint_bar {{{
 fn paint_bar(
     ctx: &Pen,
     frame: &Frame,
@@ -753,15 +792,15 @@ fn paint_bar(
 ) {
     let rect = frame.viewport.bar(from, to, p.lane);
     if p.kind == Kind::Buffer {
-        paint_buffer(ctx, frame, p, rect, marked, hits);
+        match p.mark {
+            PlanNode::PlanDelay(_) => paint_delay(ctx, frame, p, rect, marked, hits),
+            _ => paint_buffer(ctx, frame, p, rect, marked, hits),
+        }
         return;
     }
     path_round(ctx, rect, RADIUS);
     ctx.set_fill_style_str(look_colour(p.look));
     ctx.fill();
-    if p.leaf {
-        leaf_wash(ctx, rect, |c| path_round(c, rect, RADIUS));
-    }
     path_round(ctx, rect, RADIUS);
     stroke_border(ctx, border(frame, p.mark, p.target, marked));
 
@@ -810,8 +849,11 @@ fn paint_bar(
         );
     }
 }
+// }}}
 
-/// A buffer is a dotted line between two dotted end bars, with its days written on it
+// paint_buffer {{{
+/// A buffer is the outline of a bar with nothing in it but its days: dotted until it has a day
+/// it is set to start on, then solid
 fn paint_buffer(
     ctx: &Pen,
     frame: &Frame,
@@ -820,12 +862,41 @@ fn paint_buffer(
     marked: &Marked,
     hits: &mut Hits,
 ) {
-    let middle = rect.y + rect.h / 2.0;
-    let reach = rect.h / 2.0;
-    // dotted until it has a day it is set to start on, then solid
     if !p.pinned {
         let _ = ctx.set_line_dash(&js_sys::Array::of2(&3.0.into(), &3.0.into()));
     }
+    ctx.set_stroke_style_str("#8a8a8a");
+    ctx.set_line_width(1.5);
+    path_round(ctx, rect, RADIUS);
+    ctx.stroke();
+    let _ = ctx.set_line_dash(&js_sys::Array::new());
+    ctx.set_line_width(1.0);
+    ctx.set_font("13px sans-serif");
+    let width = ctx.measure_text(&p.name).map_or(0.0, |m| m.width());
+    if width + 6.0 < rect.w {
+        ctx.set_text_baseline("middle");
+        text(
+            ctx,
+            "#bbb",
+            "13px sans-serif",
+            &p.name,
+            rect.x + (rect.w - width) / 2.0,
+            rect.y + rect.h / 2.0,
+        );
+        ctx.set_text_baseline("alphabetic");
+    }
+    path_round(ctx, rect, RADIUS);
+    stroke_border(ctx, border(frame, p.mark, p.target, marked));
+    hits.items.push((p.mark, rect));
+}
+// }}}
+
+// paint_delay {{{
+/// A delay is a dotted line between two dotted end bars, with its name written on it
+fn paint_delay(ctx: &Pen, frame: &Frame, p: &Placed, rect: Rect, marked: &Marked, hits: &mut Hits) {
+    let middle = rect.y + rect.h / 2.0;
+    let reach = rect.h / 2.0;
+    let _ = ctx.set_line_dash(&js_sys::Array::of2(&3.0.into(), &3.0.into()));
     ctx.set_stroke_style_str("#8a8a8a");
     ctx.set_line_width(1.5);
     ctx.begin_path();
@@ -838,7 +909,7 @@ fn paint_buffer(
     ctx.stroke();
     let _ = ctx.set_line_dash(&js_sys::Array::new());
     ctx.set_line_width(1.0);
-    // the days sit on the line, which stops for them
+    // the name sits on the line, which stops for it
     ctx.set_font("13px sans-serif");
     let width = ctx.measure_text(&p.name).map_or(0.0, |m| m.width());
     let label = Rect {
@@ -865,7 +936,9 @@ fn paint_buffer(
     stroke_border(ctx, border(frame, p.mark, p.target, marked));
     hits.items.push((p.mark, rect));
 }
+// }}}
 
+// paint_violation {{{
 fn paint_violation(ctx: &Pen, mark: Mark, x: f64, y: f64, hits: &mut Hits) {
     ctx.set_text_align("center");
     ctx.set_text_baseline("middle");
@@ -882,7 +955,9 @@ fn paint_violation(ctx: &Pen, mark: Mark, x: f64, y: f64, hits: &mut Hits) {
         },
     ));
 }
+// }}}
 
+// paint_milestone {{{
 fn paint_milestone(
     ctx: &Pen,
     frame: &Frame,
@@ -896,15 +971,6 @@ fn paint_milestone(
     path_diamond(ctx, cx, cy, r);
     ctx.set_fill_style_str(milestone_colour(p.look));
     ctx.fill();
-    if p.leaf {
-        let square = Rect {
-            x: cx - r,
-            y: cy - r,
-            w: r * 2.0,
-            h: r * 2.0,
-        };
-        leaf_wash(ctx, square, |c| path_diamond(c, cx, cy, r));
-    }
     path_diamond(ctx, cx, cy, r);
     stroke_border(ctx, border(frame, p.mark, p.target, marked));
     found.labels.push(Label {
@@ -930,69 +996,9 @@ fn paint_milestone(
         paint_violation(ctx, p.mark, cx + r + 10.0, cy, &mut found.hits);
     }
 }
+// }}}
 
-/// The panel at the bottom left that says what the item under the pointer is
-fn paint_panel(ctx: &Pen, lines: &[String], height: f64) {
-    let (pad, margin, title, body) = (10.0, 8.0, 20.0, 15.0);
-    ctx.set_font(&format!("{title}px sans-serif"));
-    let mut wide = ctx.measure_text(&lines[0]).map_or(0.0, |m| m.width());
-    ctx.set_font(&format!("{body}px sans-serif"));
-    for line in &lines[1..] {
-        wide = wide.max(ctx.measure_text(line).map_or(0.0, |m| m.width()));
-    }
-    let rows = (lines.len() - 1) as f64;
-    let h = pad * 2.0
-        + title * 1.25
-        + if rows > 0.0 {
-            4.0 + rows * (body * 1.4 + 4.0) - 4.0
-        } else {
-            0.0
-        };
-    let rect = Rect {
-        x: margin,
-        y: height - margin - h,
-        w: wide + pad * 2.0,
-        h,
-    };
-    ctx.set_fill_style_str("rgba(0,0,0,0.19)");
-    path_round(
-        ctx,
-        Rect {
-            x: rect.x + 2.0,
-            y: rect.y + 3.0,
-            ..rect
-        },
-        6.0,
-    );
-    ctx.fill();
-    path_round(ctx, rect, 6.0);
-    ctx.set_fill_style_str("rgba(30,30,30,0.86)");
-    ctx.fill();
-    ctx.set_stroke_style_str("#4a4a4a");
-    ctx.stroke();
-    ctx.set_text_baseline("top");
-    text(
-        ctx,
-        "#d4d4d4",
-        &format!("{title}px sans-serif"),
-        &lines[0],
-        rect.x + pad,
-        rect.y + pad,
-    );
-    for (i, line) in lines[1..].iter().enumerate() {
-        let y = rect.y + pad + title * 1.25 + 4.0 + i as f64 * (body * 1.4 + 4.0);
-        text(
-            ctx,
-            "#8a8a8a",
-            &format!("{body}px sans-serif"),
-            line,
-            rect.x + pad,
-            y,
-        );
-    }
-    ctx.set_text_baseline("alphabetic");
-}
-
+// paint_tip {{{
 /// A small note by the pointer for something that has gone wrong
 fn paint_tip(ctx: &Pen, lines: &[String], (mx, my): (f64, f64), width: f64, height: f64) {
     let (pad, line_h) = (7.0, 17.0);
@@ -1030,7 +1036,9 @@ fn paint_tip(ctx: &Pen, lines: &[String], (mx, my): (f64, f64), width: f64, heig
     }
     ctx.set_text_baseline("alphabetic");
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1059,3 +1067,4 @@ mod tests {
         );
     }
 }
+// }}}

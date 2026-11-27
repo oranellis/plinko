@@ -1,6 +1,7 @@
 //! The actor of a tenant. It is the only thing that changes the tenant, so updates have an order,
 //! which is the order they are logged in and sent to clients in.
 
+// modules {{{
 use std::{collections::HashMap, sync::Arc};
 
 use chrono::Utc;
@@ -8,6 +9,7 @@ use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::{
+    common::{crud::Crud, short_id::ShortId},
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
@@ -15,21 +17,25 @@ use crate::{
     },
     net::worker::{self, Applied},
     protocol::{Created, Profile, ServerMessage},
-    scheduler::state::TenantVolatileState,
+    scheduler::{solution::Solution, state::TenantVolatileState},
     store::Store,
-    types::short_id::ShortId,
 };
-
-pub type Subscriber = u64;
+// }}}
 
 pub enum Command {
-    /// A client connected as `user`. The answer is `None` if there is no such user.
+    /// A client connected as `user` with the session `token`. The answer is `None` if there is no
+    /// such user.
     Subscribe {
         user: Uuid,
+        token: String,
         out: mpsc::UnboundedSender<ServerMessage>,
         reply: oneshot::Sender<Option<Subscriber>>,
     },
     Unsubscribe(Subscriber),
+    /// A session ended, so its connections close
+    SessionEnded(String),
+    /// Every session of a user ended, so all their connections close
+    SessionsOfEnded(Uuid),
     Update {
         subscriber: Subscriber,
         request: u32,
@@ -45,12 +51,17 @@ pub enum Command {
     },
     /// Time to see whether the day has changed
     Tick,
-    /// From the scheduling thread
+    /// From the scheduling thread: the schedule as of update `seq`, and what was decided to
+    /// get it unless that is already saved
     Scheduled {
         seq: u64,
         schedule: TenantVolatileState,
+        solution: Option<Solution>,
     },
 }
+
+// Command supporting types {{{
+pub type Subscriber = u64;
 
 /// How to reach the actor
 #[derive(Clone)]
@@ -59,6 +70,7 @@ pub struct Handle {
     pub store: Arc<Store>,
 }
 
+// impl Handle {{{
 impl Handle {
     pub async fn user_by_email(&self, email: String) -> Option<Uuid> {
         let (reply, answer) = oneshot::channel();
@@ -77,18 +89,26 @@ impl Handle {
     pub async fn subscribe(
         &self,
         user: Uuid,
+        token: String,
         out: mpsc::UnboundedSender<ServerMessage>,
     ) -> Option<Subscriber> {
         let (reply, answer) = oneshot::channel();
-        self.commands
-            .send(Command::Subscribe { user, out, reply })
-            .ok()?;
+        let subscribe = Command::Subscribe {
+            user,
+            token,
+            out,
+            reply,
+        };
+        self.commands.send(subscribe).ok()?;
         answer.await.ok()?
     }
 }
+// }}}
 
+/// A client's socket, which closes once the actor drops `out`
 struct Connection {
     user: Uuid,
+    token: String,
     out: mpsc::UnboundedSender<ServerMessage>,
 }
 
@@ -102,13 +122,16 @@ struct Actor {
     schedule: Option<(u64, TenantVolatileState)>,
     scheduler: worker::Scheduler,
 }
+// }}}
 
+// start {{{
 /// Starts the actor for a tenant that has been saved in the store
-pub fn start(store: Arc<Store>) -> crate::types::error::PlinkoResult<Handle> {
+pub fn start(store: Arc<Store>) -> crate::common::error::PlinkoResult<Handle> {
     let (tenant, seq) = store.load()?;
     let (scheduler_copy, _) = store.load()?;
+    let saved = store.schedule_at(seq)?;
     let (commands, receiver) = mpsc::unbounded_channel();
-    let scheduler = worker::start(scheduler_copy, seq, commands.clone());
+    let scheduler = worker::start(scheduler_copy, seq, saved, commands.clone());
     let actor = Actor {
         tenant,
         store: store.clone(),
@@ -135,17 +158,29 @@ pub fn start(store: Arc<Store>) -> crate::types::error::PlinkoResult<Handle> {
     });
     Ok(Handle { commands, store })
 }
+// }}}
 
 // impl Actor {{{
 impl Actor {
     async fn run(mut self, mut commands: mpsc::UnboundedReceiver<Command>) {
         while let Some(command) = commands.recv().await {
             match command {
-                Command::Subscribe { user, out, reply } => {
-                    let _ = reply.send(self.subscribe(user, out));
+                Command::Subscribe {
+                    user,
+                    token,
+                    out,
+                    reply,
+                } => {
+                    let _ = reply.send(self.subscribe(user, token, out));
                 }
                 Command::Unsubscribe(id) => {
                     self.connections.remove(&id);
+                }
+                Command::SessionEnded(token) => {
+                    self.connections.retain(|_, c| c.token != token);
+                }
+                Command::SessionsOfEnded(user) => {
+                    self.connections.retain(|_, c| c.user != user);
                 }
                 Command::Update {
                     subscriber,
@@ -154,7 +189,7 @@ impl Actor {
                 } => self.update(subscriber, request, update),
                 Command::UserByEmail { email, reply } => {
                     let mut users = self.tenant.users().values();
-                    let found = users.find(|u| u.email().eq_ignore_ascii_case(&email));
+                    let found = users.find(|u| u.has_email(&email));
                     let _ = reply.send(found.map(|u| *u.id()));
                 }
                 Command::Profile { user, reply } => {
@@ -167,7 +202,11 @@ impl Actor {
                     let _ = reply.send(profile);
                 }
                 Command::Tick => self.tick(),
-                Command::Scheduled { seq, schedule } => self.scheduled(seq, schedule),
+                Command::Scheduled {
+                    seq,
+                    schedule,
+                    solution,
+                } => self.scheduled(seq, schedule, solution),
             }
         }
     }
@@ -195,12 +234,16 @@ impl Actor {
     fn subscribe(
         &mut self,
         user: Uuid,
+        token: String,
         out: mpsc::UnboundedSender<ServerMessage>,
     ) -> Option<Subscriber> {
         self.tenant.users().get(&user)?;
+        // the session may have ended since the socket was asked for
+        let live = self.store.session_user(&token).ok().flatten() == Some(user);
+        live.then_some(())?;
         let id = self.next_connection;
         self.next_connection += 1;
-        let connection = Connection { user, out };
+        let connection = Connection { user, token, out };
         let _ = connection.out.send(self.snapshot(user));
         self.send_schedule(&connection);
         self.connections.insert(id, connection);
@@ -249,6 +292,13 @@ impl Actor {
             .commit(&mut self.tenant, self.seq, staged)
             .map_err(|e| e.to_string())?;
         self.seq = seq;
+        // someone removed is logged out everywhere
+        if let TenantUpdateType::User(Crud::Remove(removed)) = copy.update_type {
+            if let Err(error) = self.store.end_sessions_of(removed) {
+                eprintln!("the sessions of a removed user did not end: {error}");
+            }
+            self.connections.retain(|_, c| c.user != removed);
+        }
         for (id, connection) in &self.connections {
             let visible = self.tenant.visible_plans(&connection.user);
             let message = if visible != before[id] {
@@ -291,7 +341,10 @@ impl Actor {
         }
     }
 
-    fn scheduled(&mut self, seq: u64, schedule: TenantVolatileState) {
+    fn scheduled(&mut self, seq: u64, schedule: TenantVolatileState, solution: Option<Solution>) {
+        if let Some(Err(error)) = solution.map(|s| self.store.save_schedule(seq, &s)) {
+            eprintln!("the schedule of update {seq} was not saved: {error}");
+        }
         self.schedule = Some((seq, schedule));
         for connection in self.connections.values() {
             self.send_schedule(connection);
@@ -300,13 +353,14 @@ impl Actor {
 }
 // }}}
 
+// plan_of {{{
 /// The plan an update is about, `None` for the tenant as a whole
 fn plan_of(update: &TenantUpdate) -> Option<ShortId> {
     match &update.update_type {
         TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => Some(new.id),
-        TenantUpdateType::Plan(PlanTenantUpdate::Update(id, _) | PlanTenantUpdate::Remove(id)) => {
-            Some(*id)
-        }
+        TenantUpdateType::Plan(PlanTenantUpdate::Update(id, _) | PlanTenantUpdate::Remove(id))
+        | TenantUpdateType::Favourite(id, _) => Some(*id),
         _ => None,
     }
 }
+// }}}

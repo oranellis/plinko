@@ -1,5 +1,7 @@
-use crate::types::error::{PlinkoError, PlinkoResult};
+// modules {{{
+use crate::common::error::{PlinkoError, PlinkoResult};
 use serde::{Deserialize, Serialize};
+// }}}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
@@ -7,7 +9,11 @@ pub struct Workload {
     value: u8,
 }
 
+// impl Workload {{{
 impl Workload {
+    pub const MIN: Workload = Workload { value: 0 };
+    pub const MAX: Workload = Workload { value: 8 };
+
     pub fn new(value: u8) -> PlinkoResult<Self> {
         if value <= 8 {
             Ok(Self { value })
@@ -16,8 +22,17 @@ impl Workload {
         }
     }
 
-    pub fn get(&self) -> u8 {
+    pub const fn new_const(value: u8) -> Workload {
+        assert!(Self::is_valid(value), "invalid workload");
+        Self { value }
+    }
+
+    pub const fn get(&self) -> u8 {
         self.value
+    }
+
+    const fn is_valid(value: u8) -> bool {
+        value <= 8
     }
 }
 
@@ -34,7 +49,9 @@ impl TryFrom<u8> for Workload {
         Self::new(value)
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,3 +69,4 @@ mod tests {
         assert!(Workload::new(9).is_err());
     }
 }
+// }}}

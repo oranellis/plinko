@@ -1,3 +1,4 @@
+// modules {{{
 use uuid::Uuid;
 
 use crate::{
@@ -6,18 +7,22 @@ use crate::{
         user::{NewTenantLoginUser, TenantLoginUserPatch},
         user_group::{NewTenantUserGroup, TenantUserGroupPatch},
     },
-    types::{
-        affinity::{AffinityPatch, NewAffinity},
-        data_block::{DataBlockPatch, NewDataBlock},
+    planner::items::{
         milestone::{MilestonePatch, NewMilestone},
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
-        tag::{NewTag, TagPatch},
-        target::{NewTarget, TargetPatch},
+        plan_delay::{NewPlanDelay, PlanDelayPatch},
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
+    },
+    planner::resources::{
+        affinity::{AffinityPatch, NewAffinity},
+        data_block::{DataBlockPatch, NewDataBlock},
+        tag::{NewTag, TagPatch},
+        target::{NewTarget, TargetPatch},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
     },
 };
+// }}}
 
 /// Update payloads that name the item they apply to
 pub trait Identified {
@@ -25,6 +30,7 @@ pub trait Identified {
     fn set_id(&mut self, id: Uuid);
 }
 
+// macros {{{
 macro_rules! identified {
     ($($ty:ty),* $(,)?) => {
         $(impl Identified for $ty {
@@ -37,6 +43,7 @@ macro_rules! identified {
         })*
     };
 }
+// }}}
 
 identified!(
     NewAffinity,
@@ -51,6 +58,8 @@ identified!(
     MilestonePatch,
     NewPlanBuffer,
     PlanBufferPatch,
+    NewPlanDelay,
+    PlanDelayPatch,
     NewTag,
     TagPatch,
     NewTarget,
@@ -65,6 +74,7 @@ identified!(
     TenantUserGroupPatch,
 );
 
+// impl NewRule {{{
 impl<V> Identified for NewRule<V> {
     fn id(&self) -> Uuid {
         self.id
@@ -73,7 +83,9 @@ impl<V> Identified for NewRule<V> {
         self.id = id;
     }
 }
+// }}}
 
+// impl RulePatch {{{
 impl<V> Identified for RulePatch<V> {
     fn id(&self) -> Uuid {
         self.id
@@ -82,3 +94,4 @@ impl<V> Identified for RulePatch<V> {
         self.id = id;
     }
 }
+// }}}

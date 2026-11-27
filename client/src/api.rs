@@ -1,10 +1,13 @@
 //! The HTTP side: logging in and out, and passwords. Everything else goes over the socket.
 
+// modules {{{
 use gloo_net::http::Request;
 use plinko::protocol::Profile;
 use serde::Serialize;
 use uuid::Uuid;
+// }}}
 
+// request types {{{
 #[derive(Serialize)]
 struct Login<'a> {
     email: &'a str,
@@ -17,7 +20,9 @@ struct ChangePassword<'a> {
     current: Option<&'a str>,
     new: &'a str,
 }
+// }}}
 
+// helpers {{{
 pub async fn login(email: &str, password: &str) -> Result<Profile, String> {
     let request = Request::post("/api/login")
         .json(&Login { email, password })
@@ -30,10 +35,14 @@ pub async fn login(email: &str, password: &str) -> Result<Profile, String> {
     }
 }
 
-pub async fn me() -> Option<Profile> {
-    let response = Request::get("/api/me").send().await.ok()?;
-    response.ok().then_some(())?;
-    response.json().await.ok()
+/// Who is logged in: `Ok(None)` if no one is, `Err` if the server could not be asked
+pub async fn me() -> Result<Option<Profile>, ()> {
+    let response = Request::get("/api/me").send().await.map_err(|_| ())?;
+    match response.status() {
+        200 => response.json().await.map(Some).map_err(|_| ()),
+        401 | 403 => Ok(None),
+        _ => Err(()),
+    }
 }
 
 pub async fn logout() {
@@ -57,3 +66,4 @@ pub async fn change_password(
         _ => Err("The password could not be changed".to_string()),
     }
 }
+// }}}

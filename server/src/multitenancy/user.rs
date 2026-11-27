@@ -5,19 +5,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
+    availability::workload::Workload,
     availability::{calendar::Calendar, rule_set::RuleSet},
+    common::{error::PlinkoResult, short_id::ShortId},
     helpers::functions::check_id_match,
     traits::patch::Patchable,
-    types::{error::PlinkoResult, short_id::ShortId, workload::Workload},
 };
 // }}}
-
-/// Admins see and edit everything, members create plans and edit the plans they are part of
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Role {
-    Admin,
-    Member,
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TenantLoginUser {
@@ -48,7 +42,7 @@ impl From<NewTenantLoginUser> for TenantLoginUser {
 impl TenantLoginUser {
     pub fn new(name: String, email: String, role: Role) -> Self {
         Self {
-            id: Uuid::now_v7(),
+            id: Uuid::new_v4(),
             name,
             email,
             role,
@@ -67,6 +61,11 @@ impl TenantLoginUser {
 
     pub fn email(&self) -> &str {
         &self.email
+    }
+
+    /// Whether the user logs in with `email`, which ignores case and spaces around it
+    pub fn has_email(&self, email: &str) -> bool {
+        self.email.trim().eq_ignore_ascii_case(email.trim())
     }
 
     pub fn role(&self) -> Role {
@@ -99,6 +98,14 @@ impl Patchable<TenantLoginUserPatch> for TenantLoginUser {
 }
 // }}}
 
+// TenantLoginUser supporting types {{{
+/// Admins see and edit everything, members create plans and edit the plans they are part of
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Role {
+    Admin,
+    Member,
+}
+
 /// Derived from a user's rules and rebuilt when they change, so it is never part of the user's
 /// own state
 #[derive(Clone, Debug, Default)]
@@ -121,3 +128,4 @@ pub struct TenantLoginUserPatch {
     pub email: Option<String>,
     pub role: Option<Role>,
 }
+// }}}

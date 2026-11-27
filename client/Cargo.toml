@@ -1,6 +1,6 @@
 [package]
 name = "plinko-client"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 [lib]
@@ -22,7 +22,7 @@ uuid = "1"
 wasm-bindgen = { version = "0.2", features = ["enable-interning"] }
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = [
-    "CanvasGradient", "CanvasRenderingContext2d", "DomRect", "Element", "HtmlButtonElement", "HtmlCanvasElement", "HtmlElement", "MouseEvent", "ResizeObserver",
+    "CanvasGradient", "CanvasRenderingContext2d", "DomRect", "Element", "HtmlButtonElement", "HtmlCanvasElement", "HtmlElement", "HtmlTextAreaElement", "MouseEvent", "ResizeObserver",
     "PointerEvent", "TextMetrics", "WheelEvent", "Window", "Document", "MediaQueryList", "Navigator",
     "Location", "Storage",
 ] }

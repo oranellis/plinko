@@ -27,19 +27,6 @@ impl<V: DayValue> Calendar<V> {
         self.start + chrono::Days::new(self.values.len().saturating_sub(1) as u64)
     }
 
-    /// The day after the `days`-th working day counting from `from`, `from` itself for no days,
-    /// or `None` if the calendar ends first
-    pub fn end_after_workdays(&self, from: NaiveDate, days: u32) -> Option<NaiveDate> {
-        let Some(last) = days.checked_sub(1) else {
-            return Some(from);
-        };
-        from.iter_days()
-            .take_while(|d| *d <= self.end())
-            .filter(|d| self.on(*d).is_some_and(|v| v.is_working()))
-            .nth(last as usize)
-            .map(|d| d + chrono::Days::new(1))
-    }
-
     pub fn covers(&self, from: NaiveDate, until: NaiveDate) -> bool {
         self.start <= from && until <= self.end()
     }
@@ -119,6 +106,7 @@ impl<V: DayValue> RuleSet<V> {
 }
 // }}}
 
+// rank_of {{{
 pub(super) fn rank_of<V>(kind: &RuleKind<V>) -> u8 {
     match kind {
         RuleKind::Weekly(_) | RuleKind::ResetWeekly => 0,
@@ -126,3 +114,4 @@ pub(super) fn rank_of<V>(kind: &RuleKind<V>) -> u8 {
         RuleKind::Holiday => 2,
     }
 }
+// }}}

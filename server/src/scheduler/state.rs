@@ -5,15 +5,18 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::NaiveDate;
 use uuid::Uuid;
 
-use crate::planner::graph::Vertex;
-use crate::types::{
-    common::{DateRange, TimeConstraint},
-    dependency::PlanNode,
-    milestone, plan_buffer,
-    short_id::ShortId,
-    task::{self, Assignee},
-    task_group,
-    workload::Workload,
+use crate::{
+    availability::workload::Workload,
+    common::{
+        dates::{NodeEnd, TimeConstraint},
+        short_id::ShortId,
+    },
+    planner::items::{
+        dependency::PlanNode,
+        milestone, plan_buffer, plan_delay,
+        task::{self, Assignee},
+        task_group,
+    },
 };
 // }}}
 
@@ -84,57 +87,7 @@ impl TenantVolatileState {
 }
 // }}}
 
-/// A plan scheduled on its own, with no other plan wanting its people: what other results are
-/// measured against
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct Baseline {
-    pub state: PlanVolatileState,
-    /// Days each node could finish later without moving a target or passing a hard date, counting
-    /// the people it shares with other work in the plan. Nodes that feed no target and have no
-    /// hard date of their own are left out. Negative when a hard date is already passed.
-    pub slack: HashMap<PlanNode, i64>,
-    /// The same against each target on its own, or the plan end alone when there are none
-    pub by_target: Vec<TargetSlack>,
-    /// The same against the plan end for every node, including ones feeding no target
-    pub plan_slack: HashMap<PlanNode, i64>,
-    /// Where every vertex of the plan sits when it is on its own
-    pub(crate) ranges: HashMap<Vertex, DateRange>,
-    /// The earliest each node with a hard date could start however free people are, from the
-    /// work before it and the days it takes
-    pub earliest: HashMap<PlanNode, NaiveDate>,
-}
-
-/// Slack of the nodes that lead to one target, `id` is `None` for the end of the plan
-#[derive(Clone, Debug, PartialEq)]
-pub struct TargetSlack {
-    pub id: Option<Uuid>,
-    pub priority: i32,
-    pub slack: HashMap<PlanNode, i64>,
-}
-
-impl PlanVolatileState {
-    /// Sets each forecast's baseline from the plan scheduled on its own
-    pub fn compare_to(&mut self, alone: &PlanVolatileState) {
-        for (id, forecast) in &mut self.targets {
-            if let Some(solo) = alone.targets.get(id) {
-                forecast.baseline = solo.forecast;
-            }
-        }
-        if let (Some(forecast), Some(solo)) = (&mut self.plan_end, &alone.plan_end) {
-            forecast.baseline = solo.forecast;
-        }
-    }
-
-    /// The day after the last day anything in the plan is scheduled, `None` if nothing is
-    pub fn end(&self) -> Option<NaiveDate> {
-        let tasks = self.tasks.values().map(|t| t.date_range.end());
-        let groups = self.task_groups.values().map(|g| g.date_range.end());
-        let buffers = self.plan_buffers.values().map(|b| b.date_range.end());
-        let milestones = self.milestones.values().map(|m| m.end());
-        tasks.chain(groups).chain(buffers).chain(milestones).max()
-    }
-}
-
+// TenantVolatileState supporting types {{{
 /// One plan's schedule. Items it could schedule are in the maps for their kind, the rest are in
 /// `unscheduled` with the reason.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -143,6 +96,7 @@ pub struct PlanVolatileState {
     pub task_groups: HashMap<Uuid, task_group::VolatileState>,
     pub milestones: HashMap<Uuid, milestone::VolatileState>,
     pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
+    pub plan_delays: HashMap<Uuid, plan_delay::VolatileState>,
     pub unscheduled: HashMap<PlanNode, UnscheduledReason>,
     /// Forecast of each of the plan's targets
     pub targets: HashMap<Uuid, TargetForecast>,
@@ -152,18 +106,12 @@ pub struct PlanVolatileState {
     pub constraint_violations: HashMap<PlanNode, ConstraintViolation>,
 }
 
-/// When a target lands as scheduled, against when its plan would land it with no other plans
+/// When a target lands as scheduled, against the earliest it could if nobody ever ran out of
+/// hours
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TargetForecast {
     pub forecast: NaiveDate,
     pub baseline: NaiveDate,
-}
-
-impl TargetForecast {
-    /// Days the target is later than the plan alone, never negative
-    pub fn delay(&self) -> i64 {
-        (self.forecast - self.baseline).num_days().max(0)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -185,21 +133,12 @@ pub enum UnscheduledReason {
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConstraintViolation {
     pub constraint: TimeConstraint,
+    /// Whether the constraint and `scheduled` are about the first or the last day of the item
+    pub end: NodeEnd,
     pub scheduled: NaiveDate,
-    /// The earliest it could start however free people are, if worked out. Starting later than
+    /// The earliest that day could be however free people are, if worked out. Being later than
     /// the date but no later than this is not something scheduling could have avoided.
     pub earliest: Option<NaiveDate>,
-}
-
-impl ConstraintViolation {
-    /// Days the node starts later than the date and than it had to
-    pub fn avoidable(&self) -> i64 {
-        let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = self.constraint else {
-            return 0;
-        };
-        let reachable = self.earliest.map_or(date, |e| e.max(date));
-        (self.scheduled - reachable).num_days().max(0)
-    }
 }
 
 /// A person's work across every plan, to see what they are assigned on past, present and
@@ -212,20 +151,65 @@ pub struct UserSchedule {
     pub bottleneck: f32,
 }
 
-impl UserSchedule {
-    pub fn booked_on(&self, day: NaiveDate) -> u32 {
-        let assignments = self.assignments.get(&day).into_iter().flatten();
-        assignments.map(|a| u32::from(a.hours.get())).sum()
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UserAssignment {
     pub plan: ShortId,
     pub task: Uuid,
     pub hours: Workload,
 }
+// }}}
 
+// impl PlanVolatileState {{{
+impl PlanVolatileState {
+    /// The day after the last day anything in the plan is scheduled, `None` if nothing is
+    pub fn end(&self) -> Option<NaiveDate> {
+        let tasks = self.tasks.values().map(|t| t.date_range.end());
+        let groups = self.task_groups.values().map(|g| g.date_range.end());
+        let buffers = self.plan_buffers.values().map(|b| b.date_range.end());
+        let milestones = self.milestones.values().map(|m| m.end());
+        let delays = self.plan_delays.values().map(|d| d.date_range.end());
+        tasks
+            .chain(groups)
+            .chain(buffers)
+            .chain(delays)
+            .chain(milestones)
+            .max()
+    }
+}
+// }}}
+
+// impl TargetForecast {{{
+impl TargetForecast {
+    /// Days the target is later than the earliest it could be, never negative
+    pub fn delay(&self) -> i64 {
+        (self.forecast - self.baseline).num_days().max(0)
+    }
+}
+// }}}
+
+// impl ConstraintViolation {{{
+impl ConstraintViolation {
+    /// Days the node starts later than the date and than it had to
+    pub fn avoidable(&self) -> i64 {
+        let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = self.constraint else {
+            return 0;
+        };
+        let reachable = self.earliest.map_or(date, |e| e.max(date));
+        (self.scheduled - reachable).num_days().max(0)
+    }
+}
+// }}}
+
+// impl UserSchedule {{{
+impl UserSchedule {
+    pub fn booked_on(&self, day: NaiveDate) -> u32 {
+        let assignments = self.assignments.get(&day).into_iter().flatten();
+        assignments.map(|a| u32::from(a.hours.get())).sum()
+    }
+}
+// }}}
+
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -245,3 +229,4 @@ mod tests {
         assert_eq!(early.delay(), 0);
     }
 }
+// }}}

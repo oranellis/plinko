@@ -1,14 +1,17 @@
 //! A date picker: a button that opens a calendar, with the date written in the chosen format.
 
+// modules {{{
 use chrono::{Datelike, NaiveDate};
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsValue;
 
 use crate::{
     format::{self, WeekStart, use_date_format, use_preferences},
-    ui::use_sync,
+    ui::use_today,
 };
+// }}}
 
+// helpers {{{
 /// The first day of the month `months` away from `day`'s
 fn month_shifted(day: NaiveDate, months: i32) -> NaiveDate {
     let index = day.year() * 12 + day.month0() as i32 + months;
@@ -25,7 +28,9 @@ fn month_cells(first: NaiveDate, week: WeekStart) -> Vec<Option<NaiveDate>> {
     cells.extend((1..=days).filter_map(|d| first.with_day(d)).map(Some));
     cells
 }
+// }}}
 
+// DatePicker {{{
 /// A date that is picked from a calendar. With `clearable` it can be taken away again.
 #[component]
 pub fn DatePicker(
@@ -34,16 +39,12 @@ pub fn DatePicker(
     #[prop(optional)] clearable: bool,
     #[prop(optional)] disabled: Option<Signal<bool>>,
 ) -> impl IntoView {
-    let sync = use_sync();
     let layout = use_date_format();
     let week = use_preferences().week_start;
-    let today = sync
-        .tenant
-        .with_untracked(|t| t.as_ref().map(|t| t.today()))
-        .unwrap_or_default();
+    let today = use_today();
     let open = RwSignal::new(false);
     crate::escape::on_escape(move || open.get(), Callback::new(move |()| open.set(false)));
-    let shown = RwSignal::new(today);
+    let shown = RwSignal::new(today.get_untracked());
     let anchor = RwSignal::new((0.0, 0.0));
     let button = NodeRef::<html::Button>::new();
     let show = move |_| {
@@ -57,7 +58,10 @@ pub fn DatePicker(
             let x = r.left().min(width - 272.0).max(4.0);
             anchor.set((x, (r.bottom() + 2.0).min(height - 320.0).max(4.0)));
         }
-        shown.set(month_shifted(value.get_untracked().unwrap_or(today), 0));
+        shown.set(month_shifted(
+            value.get_untracked().unwrap_or(today.get_untracked()),
+            0,
+        ));
         open.set(true);
     };
     let pick = move |day: Option<NaiveDate>| {
@@ -111,7 +115,7 @@ pub fn DatePicker(
                             .map(|cell| match cell {
                                 None => view! { <span></span> }.into_any(),
                                 Some(day) => {
-                                    let is_today = day == today;
+                                    let is_today = move || day == today.get();
                                     let chosen = move || value.get() == Some(day);
                                     view! {
                                         <button
@@ -131,7 +135,7 @@ pub fn DatePicker(
                     }}
                 </div>
                 <div class="foot">
-                    <button type="button" class="plain" on:click=move |_| pick(Some(today))>"Today"</button>
+                    <button type="button" class="plain" on:click=move |_| pick(Some(today.get_untracked()))>"Today"</button>
                     {clearable.then(|| view! {
                         <button type="button" class="plain" on:click=move |_| pick(None)>"Clear"</button>
                     })}
@@ -140,7 +144,9 @@ pub fn DatePicker(
         </Show>
     }
 }
+// }}}
 
+// DateInput {{{
 /// A date that is always there
 #[component]
 pub fn DateInput(
@@ -155,23 +161,9 @@ pub fn DateInput(
         />
     }
 }
+// }}}
 
-/// A date that can be left empty
-#[component]
-pub fn OptionalDate(
-    value: RwSignal<Option<NaiveDate>>,
-    #[prop(optional)] disabled: Option<Signal<bool>>,
-) -> impl IntoView {
-    view! {
-        <DatePicker
-            value=value
-            on_change=Callback::new(move |d| value.set(d))
-            clearable=true
-            disabled=disabled.unwrap_or_else(|| Signal::stored(false))
-        />
-    }
-}
-
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,3 +199,4 @@ mod tests {
         assert_eq!(cells.iter().take_while(|c| c.is_none()).count(), 5);
     }
 }
+// }}}

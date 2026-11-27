@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
-use crate::{traits::patch::Patchable, types::error::PlinkoResult};
+use crate::{common::error::PlinkoResult, traits::patch::Patchable};
 // }}}
 
 /// A tenant user's place in a plan, with the plan's tags they hold
@@ -36,21 +36,10 @@ impl Patchable<PlanUserDataPatch> for PlanUserData {
 }
 // }}}
 
+// PlanUserData supporting types {{{
 /// A tenant user group assigned to a plan, so anyone in it can be allocated tasks
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanUserGroupData;
-
-impl From<NewPlanUserGroup> for PlanUserGroupData {
-    fn from(_: NewPlanUserGroup) -> Self {
-        Self
-    }
-}
-
-impl Patchable<PlanUserGroupPatch> for PlanUserGroupData {
-    fn apply_patch(&mut self, _patch: PlanUserGroupPatch) -> PlinkoResult<()> {
-        Ok(())
-    }
-}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct NewPlanUserGroup {
@@ -72,3 +61,18 @@ pub struct PlanUserDataPatch {
     pub id: Uuid,
     pub tags: Option<HashSet<Uuid>>,
 }
+// }}}
+
+// impl PlanUserGroupData {{{
+impl From<NewPlanUserGroup> for PlanUserGroupData {
+    fn from(_: NewPlanUserGroup) -> Self {
+        Self
+    }
+}
+
+impl Patchable<PlanUserGroupPatch> for PlanUserGroupData {
+    fn apply_patch(&mut self, _patch: PlanUserGroupPatch) -> PlinkoResult<()> {
+        Ok(())
+    }
+}
+// }}}

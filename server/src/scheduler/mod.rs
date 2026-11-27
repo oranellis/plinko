@@ -1,236 +1,258 @@
-// modules {{{
-use std::{borrow::Cow, cmp::Reverse, collections::HashMap};
+//! The scheduler. A tenant is lowered to one network: vertices are day boundaries ("these
+//! things are done") and arcs are what takes days between them. Arcs are placed one at a time
+//! as early as they fit, the most urgent first, then contested choices are tried the other way
+//! and the best schedule is kept. See `docs/scheduler.md`.
 
+// modules {{{
 use chrono::{Days, NaiveDate};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
-    multitenancy::{tenant::Tenant, tenant_update::TenantUpdate},
+    common::short_id::ShortId,
+    multitenancy::tenant::Tenant,
+    planner::items::{dependency::PlanNode, task::Worker},
     scheduler::{
-        ledger::{Ledger, MAX_FILL_DAYS},
-        plan_solver::PlanSolver,
-        state::{Baseline, TenantVolatileState},
+        arc::ArcId,
+        network::Network,
+        objective::Late,
+        pass::{Context, Overrides, Pass, Rules},
+        solution::Solution,
+        state::TenantVolatileState,
+        table::{RowKey, Table},
     },
-    types::short_id::ShortId,
 };
 // }}}
 
-mod combined;
-pub mod fill;
-pub mod impact;
-mod incremental;
+pub mod arc;
+pub mod bits;
+pub mod bound;
+pub mod day;
+pub mod justify;
 pub mod ledger;
-mod network;
-mod plan_solver;
-mod repair;
-pub use repair::PlanRepairs;
-mod slack;
+pub mod lower;
+pub mod network;
+pub mod objective;
+pub mod pass;
+pub mod search;
+pub mod solution;
 pub mod state;
 pub mod status;
+pub mod table;
+pub mod write;
 
-/// Caches what a run reads: calendars from the earliest day any plan has history on until the
-/// search horizon, and the baseline of each plan that has none. Call it before `solve_tenant` and
-/// after any update.
-pub fn prepare(tenant: &mut Tenant) {
+// constants {{{
+/// The table covers the work in the tenant end to end this many times over past today
+const HORIZON_FACTOR: u32 = 4;
+
+/// The fewest and the most days past today a table covers
+const HORIZON: (u32, u32) = (120, 3650);
+// }}}
+
+/// A schedule and what the search decided to get it
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Solved {
+    pub state: TenantVolatileState,
+    pub solution: Solution,
+}
+
+// Solved supporting types {{{
+/// What a search found better done differently, by the ids of what it is about so it outlives
+/// the run
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Hints {
+    /// The first waits until the second is placed
+    pub after: Vec<(Item, Item)>,
+    /// The person a worker of a task resolves to
+    pub people: Vec<(Item, Worker, Uuid)>,
+    /// The hard date of a node counts as this many days sooner when deciding what goes first
+    pub sooner: Vec<(Item, i64)>,
+}
+
+/// A node of a plan
+pub type Item = (ShortId, PlanNode);
+// }}}
+
+// schedule {{{
+/// Schedules the tenant and keeps the result on it, for `Tenant::schedule`. The search starts
+/// from the hints the last schedule left.
+pub fn schedule(tenant: &mut Tenant) -> Solution {
+    let hints = tenant.hints().clone();
+    let solved = solve(tenant, &hints);
+    tenant.store_schedule(solved.state);
+    tenant.store_hints(solved.solution.hints.clone());
+    solved.solution
+}
+
+/// Puts the schedule a stored solution gives on the tenant, without searching
+pub fn restore(tenant: &mut Tenant, solution: &Solution) {
+    let solved = expand(tenant, solution);
+    tenant.store_schedule(solved.state);
+    tenant.store_hints(solved.solution.hints);
+}
+// }}}
+
+// solve {{{
+/// Schedules the tenant, starting from the hints of the last schedule
+pub fn solve(tenant: &mut Tenant, hints: &Hints) -> Solved {
+    over(tenant, |ctx, earliest| {
+        let found = search::search(ctx, earliest, overrides(ctx.net, ctx.table, hints));
+        let hints = self::hints(ctx.net, ctx.table, &found.overrides);
+        (found.pass, hints)
+    })
+}
+
+/// The schedule a solution gives for the tenant it was found for. Every task is put where the
+/// solution has it and the rest follows, so nothing is searched for and the result is the same
+/// every time.
+pub fn expand(tenant: &mut Tenant, solution: &Solution) -> Solved {
+    over(tenant, |ctx, _| {
+        let overrides = solution.overrides(ctx.net, ctx.table);
+        let rules = Rules {
+            overrides: Some(&overrides),
+            ..Rules::default()
+        };
+        let mut pass = Pass::new(ctx, &rules);
+        pass.run(ctx, &rules, None);
+        (pass, solution.hints.clone())
+    })
+}
+
+/// Builds what a pass runs on and writes the schedule of the pass `place` gives. If work runs
+/// past the days looked at, more are looked at.
+fn over(tenant: &mut Tenant, place: impl Fn(&Context, &Pass) -> (Pass, Hints)) -> Solved {
     let today = tenant.today();
-    let plans = tenant.plans().values();
-    let history = plans.flat_map(|p| {
-        p.tasks()
+    let tasks = || tenant.plans().values().flat_map(|p| p.tasks().values());
+    let history = tasks().filter_map(|t| t.persistent_state().actual_start_date);
+    // a hard date before the first day reads as that day, which has to be before today for it
+    // to be missed, and is the day itself for recent ones
+    let soonest = today.checked_sub_days(Days::new(u64::from(HORIZON.0)));
+    let hard = hard_dates(tenant).map(|d| d.max(soonest.unwrap_or(today)));
+    let origin = history.chain(hard).chain([today]).min().unwrap_or(today);
+    let waits = tenant.plans().values().flat_map(|p| {
+        let delays = p.plan_delays().values().map(|d| *d.duration());
+        delays.chain(p.plan_buffers().values().map(|b| *b.duration()))
+    });
+    let work: u64 = tasks()
+        .map(|t| t.duration())
+        .chain(waits)
+        .map(u64::from)
+        .sum();
+    let ahead = work.saturating_mul(u64::from(HORIZON_FACTOR));
+    let mut ahead = ahead.clamp(u64::from(HORIZON.0), u64::from(HORIZON.1)) as u32;
+    loop {
+        let until = today.checked_add_days(Days::new(u64::from(ahead)));
+        let until = until.unwrap_or(NaiveDate::MAX);
+        tenant.refresh_calendars(origin, until);
+        let days = (until - origin).num_days() as usize + 1;
+        let mut table = Table::from_tenant(tenant, origin, days);
+        let net = lower::lower(tenant, &mut table);
+        let mut ctx = Context::new(&net, &table);
+        let earliest = bound::earliest(&ctx);
+        bound::prioritise(&mut ctx, &earliest);
+        let (pass, hints) = place(&ctx, &earliest);
+        // whether work ran out of days that more days could give it
+        if (pass.overflow || earliest.overflow) && ahead < HORIZON.1 {
+            ahead = (ahead * 2).min(HORIZON.1);
+            continue;
+        }
+        return Solved {
+            state: write::write(&ctx, tenant, &earliest, &pass),
+            solution: Solution::of(&ctx, &pass, hints),
+        };
+    }
+}
+
+/// The latest dates of every task, group and milestone
+fn hard_dates(tenant: &Tenant) -> impl Iterator<Item = NaiveDate> + '_ {
+    tenant.plans().values().flat_map(|p| {
+        let tasks = p.tasks().values().map(|t| t.time_constraint().constraint);
+        let groups = p
+            .task_groups()
             .values()
-            .filter_map(|t| t.persistent_state().actual_start_date)
-    });
-    let from = history.chain([today]).min().unwrap_or(today);
-    tenant.refresh_calendars(from, today + Days::new(u64::from(MAX_FILL_DAYS)));
-    let missing: Vec<_> = tenant
-        .plans()
-        .keys()
-        .filter(|id| tenant.baseline(id).is_none())
-        .copied()
-        .collect();
-    // each plan on its own, so each on its own thread
-    let solved: Vec<_> = std::thread::scope(|scope| {
-        let running: Vec<_> = missing
+            .map(|g| g.time_constraint().constraint);
+        let milestones = p.milestones().values().map(|m| m.time_constraint());
+        tasks
+            .chain(groups)
+            .chain(milestones)
+            .filter_map(|c| c.bounds().1)
+    })
+}
+// }}}
+
+// hints {{{
+fn arc_of(net: &Network, item: &Item) -> Option<ArcId> {
+    let plan = net.plans.iter().position(|p| p.id == item.0)?;
+    net.lowered.get(&(plan as u32, item.1))?.arc
+}
+
+fn item_of(net: &Network, arc: ArcId) -> Item {
+    let arc = net.arc(arc);
+    (net.plans[arc.plan as usize].id, arc.node)
+}
+
+/// The hints that still mean something in this network, as overrides
+fn overrides(net: &Network, table: &Table, hints: &Hints) -> Overrides {
+    let mut overrides = Overrides::default();
+    for (first, then) in &hints.after {
+        if let (Some(first), Some(then)) = (arc_of(net, first), arc_of(net, then)) {
+            overrides.after.entry(first).or_default().push(then);
+        }
+    }
+    for (item, worker, user) in &hints.people {
+        let arc = arc_of(net, item);
+        let work = arc.and_then(|a| net.arc(a).work());
+        let slot = work.and_then(|w| w.slots.iter().position(|s| s.worker == *worker));
+        if let (Some(arc), Some(slot), Some(row)) = (arc, slot, table.row(&RowKey::User(*user))) {
+            overrides.people.insert((arc, slot), row);
+        }
+    }
+    for (item, days) in &hints.sooner {
+        let plan = net.plans.iter().position(|p| p.id == item.0);
+        let lowered = plan.and_then(|p| net.lowered.get(&(p as u32, item.1)));
+        // the date of work is on its arc, any other is on the vertex the node ends at
+        let late = lowered.map(|l| l.arc.map_or(Late::Vertex(l.end), Late::Arc));
+        overrides.sooner.extend(late.map(|late| (late, *days)));
+    }
+    overrides
+}
+
+fn hints(net: &Network, table: &Table, overrides: &Overrides) -> Hints {
+    let mut hints = Hints::default();
+    for (first, others) in &overrides.after {
+        let pairs = others
             .iter()
-            .map(|id| {
-                let tenant = &*tenant;
-                (*id, scope.spawn(move || baseline(tenant, id)))
-            })
-            .collect();
-        running
-            .into_iter()
-            .map(|(id, r)| (id, r.join().expect("a schedule does not panic")))
-            .collect()
-    });
-    for (id, solved) in solved {
-        tenant.store_baseline(id, solved);
+            .map(|then| (item_of(net, *first), item_of(net, *then)));
+        hints.after.extend(pairs);
     }
-}
-
-/// Schedules the tenant and keeps the result on it, for `Tenant::schedule`. The server runs this
-/// after every update, `Tenant::apply_and_schedule` does.
-pub fn schedule(tenant: &mut Tenant) -> Fixes {
-    prepare(tenant);
-    let (state, fixes) = solve_with_fixes(tenant);
-    tenant.store_schedule(state);
-    fixes
-}
-
-/// What repair rounds changed in each plan, which a later run that places only some of the work
-/// keeps so that it does not undo what they did
-pub type Fixes = HashMap<ShortId, PlanRepairs>;
-
-/// The order plans are placed in: the one that finishes last on its own first, then by id
-fn plan_order(tenant: &Tenant, end: impl Fn(&ShortId) -> Option<NaiveDate>) -> Vec<ShortId> {
-    let mut order: Vec<_> = tenant
-        .plans()
-        .keys()
-        .map(|id| (Reverse(end(id)), *id))
-        .collect();
-    order.sort();
-    order.into_iter().map(|(_, id)| id).collect()
-}
-
-/// How a schedule was brought up to date
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Refreshed {
-    /// Nothing the updates changed is scheduled, so it is as it was
-    Unchanged,
-    /// Only what the updates changed and what depends on it was placed again
-    Partly,
-    /// Everything was scheduled again
-    Fully,
-}
-
-/// Keeps a tenant's schedule up to date as updates arrive: apply updates through it, then ask for
-/// the schedule. The schedule of the last run is kept, so a few changes cost placing those
-/// changes, not placing everything again. It drifts from what a full run gives, so run `schedule`
-/// now and then to bring it back.
-#[derive(Default)]
-pub struct Tracker {
-    /// The schedule and baselines before the updates applied since the last run
-    last: Option<(Option<TenantVolatileState>, HashMap<ShortId, Baseline>)>,
-    change: impact::Change,
-    /// How much trouble the schedule had when it was last worked out in full, which what is
-    /// placed again may not get much past
-    trouble: Option<i64>,
-    fixes: Fixes,
-}
-
-/// How much worse than the last full run an incremental one may leave the schedule, half and
-/// this much besides, before everything is scheduled again
-const DRIFT: i64 = 30;
-
-impl Tracker {
-    /// Applies an update to the tenant, noting what it may change in the schedule
-    pub fn apply(
-        &mut self,
-        tenant: &mut Tenant,
-        update: TenantUpdate,
-    ) -> crate::types::error::PlinkoResult<()> {
-        let last = self
-            .last
-            .get_or_insert_with(|| (tenant.schedule().cloned(), tenant.baselines().clone()));
-        let _ = last;
-        let mut change = self.change.clone();
-        change.note(tenant, &update.update_type);
-        let applied = tenant.apply_update(update);
-        if applied.is_ok() {
-            self.change = change;
+    for ((arc, slot), row) in &overrides.people {
+        let worker = net.arc(*arc).work().map(|w| w.slots[*slot].worker);
+        if let (Some(worker), RowKey::User(user)) = (worker, table.key(*row)) {
+            hints.people.push((item_of(net, *arc), worker, user));
         }
-        applied
     }
-
-    /// Brings the tenant's schedule up to date and keeps it on the tenant
-    pub fn schedule(&mut self, tenant: &mut Tenant) -> Refreshed {
-        let change = std::mem::take(&mut self.change);
-        let Some((previous, stale)) = self.last.take() else {
-            // nothing applied since, so the schedule is the one on the tenant unless it has none
-            if tenant.schedule().is_some() {
-                return Refreshed::Unchanged;
-            }
-            return self.full(tenant);
+    for (late, days) in &overrides.sooner {
+        let item = match late {
+            Late::Arc(arc) => Some(item_of(net, *arc)),
+            // the first node in id order, whatever the order of the map
+            Late::Vertex(v) => net
+                .lowered
+                .iter()
+                .filter(|(_, l)| l.end == *v && l.arc.is_none())
+                .map(|((plan, node), _)| (net.plans[*plan as usize].id, *node))
+                .min_by_key(|(plan, node)| (*plan, node.id())),
         };
-        // what is still right, which an update drops, comes back
-        for (id, baseline) in stale {
-            if tenant.plans().contains_key(&id) && tenant.baseline(&id).is_none() {
-                tenant.store_baseline(id, baseline);
-            }
-        }
-        let Some(previous) = previous else {
-            return self.full(tenant);
-        };
-        if change.is_none() {
-            tenant.store_schedule(previous);
-            return Refreshed::Unchanged;
-        }
-        // a plan that changed is scheduled against its baseline from before, which is close
-        // enough until a full run, but a plan with none is worked out
-        prepare(tenant);
-        let base = *self
-            .trouble
-            .get_or_insert_with(|| incremental::trouble(&previous));
-        if let Some(state) = incremental::reschedule(tenant, &previous, &change, &self.fixes)
-            && incremental::trouble(&state) <= base + DRIFT + base / 2
-        {
-            tenant.store_schedule(state);
-            return Refreshed::Partly;
-        }
-        self.full(tenant)
+        hints.sooner.extend(item.map(|item| (item, *days)));
     }
-
-    /// Takes a schedule of everything on the tenant as the one later runs keep close to
-    pub fn refined(&mut self, tenant: &Tenant, fixes: Fixes) {
-        self.trouble = tenant.schedule().map(incremental::trouble);
-        self.fixes = fixes;
-    }
-
-    /// Schedules everything, which the next runs may not drift far from
-    fn full(&mut self, tenant: &mut Tenant) -> Refreshed {
-        tenant.clear_baselines();
-        let fixes = schedule(tenant);
-        self.refined(tenant, fixes);
-        Refreshed::Fully
-    }
+    hints
+        .sooner
+        .sort_by_key(|(item, days)| (item.0, item.1.id(), *days));
+    hints
+        .after
+        .sort_by_key(|(a, b)| (a.0, a.1.id(), b.0, b.1.id()));
+    hints
+        .people
+        .sort_by_key(|(item, _, user)| (item.0, item.1.id(), *user));
+    hints
 }
-
-/// The plan scheduled with every person's hours to itself
-fn baseline(tenant: &Tenant, plan: &ShortId) -> Baseline {
-    let mut ledger = Ledger::from_tenant(tenant, tenant.today());
-    PlanSolver::new(tenant, &tenant.plans()[plan], None).solve_alone(&mut ledger)
-}
-
-/// Schedules every plan in the tenant, from what `prepare` cached.
-///
-/// Plans share one ledger of people's hours and are placed together, see `combined::solve`. Where
-/// nothing else decides, the plan that finishes last when scheduled alone goes first, then the
-/// one with the earlier start date, then the lower id. Each forecast is compared with the plan on
-/// its own.
-pub fn solve_tenant(tenant: &Tenant) -> TenantVolatileState {
-    solve_with_fixes(tenant).0
-}
-
-fn solve_with_fixes(tenant: &Tenant) -> (TenantVolatileState, Fixes) {
-    let baselines: HashMap<ShortId, Cow<Baseline>> = tenant
-        .plans()
-        .keys()
-        .map(|id| {
-            let cached = tenant.baseline(id).map(Cow::Borrowed);
-            (
-                *id,
-                cached.unwrap_or_else(|| Cow::Owned(baseline(tenant, id))),
-            )
-        })
-        .collect();
-    let ids = plan_order(tenant, |id| baselines[id].state.end());
-    let outcome = repair::solve(tenant, &ids, &baselines);
-    let fixes = ids
-        .iter()
-        .enumerate()
-        .map(|(i, id)| (*id, outcome.repairs.of(i)))
-        .collect();
-    let plans = ids.into_iter().zip(outcome.states).collect();
-    let mut state = TenantVolatileState::from_plans(plans);
-    for (user, schedule) in &mut state.users {
-        schedule.bottleneck = outcome.ledger.load(user);
-    }
-    (state, fixes)
-}
+// }}}

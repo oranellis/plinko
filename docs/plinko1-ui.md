@@ -248,8 +248,7 @@ Only for the item under the pointer, never all at once, and only direct links.
   part in the gaps and the ends are hidden under the bars. Magenta `rgba(252,30,241,.66)` is
   "comes before", cyan `rgba(7,252,215,.66)` is "comes after", and the two ends get the matching
   magenta or cyan 3 px outline, with the hovered item outlined blue `#1e88e5`.
-- The lag of a dependency is not drawn, and a dependent that starts later than its predecessor ends
-  just gets a longer line. Plan Start counts as a predecessor (and the hovered Plan Start lights up the
+- A dependent that starts later than its predecessor ends just gets a longer line. Plan Start counts as a predecessor (and the hovered Plan Start lights up the
   items that depend on it). Dropped tasks never take part, and a line is skipped if either end has
   no dates.
 - Only the lane geometry matters for finding the ends: the line goes from item centre to item
@@ -313,8 +312,7 @@ The v1 rules assume things v2 data changes. These are facts to decide against, n
   own start.
 - **Violations and unmet dates:** v1's orange `!` and tooltip map directly onto v2's constraint
   violations (constraint kind, required date, scheduled date).
-- **Dependency lines:** v2 dependencies carry a lag in calendar days and a node can depend on a
-  group's end. The v1 straight line from the end of one to the start of the other still works, with
+- **Dependency lines:** a v2 node can depend on a group's end. The v1 straight line from the end of one to the start of the other still works, with
   the question of what a group's end and start are.
 
 ## Allocation
@@ -391,8 +389,7 @@ The v1 rules assume things v2 data changes. These are facts to decide against, n
 - **Worker editor:** rows with a `T`/`P` toggle (tags, or a specific person), a picker for the
   user or the tags (a multi select of tags, with "Any (no tags required)"), and the workload in
   days. A new row defaults to a tag worker with one day.
-- **Dependency editor:** a bordered list showing 3½ rows (36 each), each row a target picker, a lag
-  input (positive delays, negative leads) and `×`, empty text "No dependencies added yet", a `+`
+- **Dependency editor:** a bordered list showing 3½ rows (36 each), each row a target picker and `×`, empty text "No dependencies added yet", a `+`
   button that opens the picker on the new row. Items sort by name, Plan Start purple, the target
   gold.
 - **Floating picker** and **date picker** are portal popups placed below their field, or above if

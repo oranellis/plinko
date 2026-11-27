@@ -2,26 +2,24 @@
 //! left and a row of days runs across, each task showing the hours it takes you that day as a bar, and the
 //! row at the top showing the hours you have each day and how many of them are booked.
 
+// modules {{{
 use chrono::{Datelike, Days, NaiveDate, Weekday};
 use leptos::{html, prelude::*};
-use plinko::{
-    scheduler::state::PlanVolatileState,
-    types::{dependency::PlanNode, short_id::ShortId},
-};
+use plinko::{planner::items::dependency::PlanNode, scheduler::state::PlanVolatileState};
 use uuid::Uuid;
 use wasm_bindgen::JsCast;
 
 use crate::{
     format,
     gantt::info::info,
-    guard::{ConfirmLeave, Guard},
     icons::{Icon, IconKind},
     mine::{MyTask, use_tasks_of},
-    nav::Route,
-    plan::{ItemPane, blank_click},
+    nav::{PlanTab, Reveal, Route, navigate},
     ui::use_sync,
 };
+// }}}
 
+// constants {{{
 /// How wide a day is and the column of names, which scrolling is worked out from
 const DAY_WIDTH: f64 = 36.0;
 /// How wide the column of names starts, and the least and most it can be dragged to
@@ -41,7 +39,9 @@ const AHEAD: u64 = 4;
 /// the room around the two names in it (padding and the gap between them)
 const TASK_SHARE: f64 = 0.65;
 const NAME_ROOM: f64 = 22.0 + 10.0 + 6.0;
+// }}}
 
+// helpers {{{
 /// How wide `text` is drawn in `font`, measured on a canvas that is not shown
 fn text_width(font: &str, text: &str) -> f64 {
     thread_local! {
@@ -74,7 +74,9 @@ fn task_column(room: f64, longest_task: f64, longest_plan: f64) -> f64 {
     }
     task.clamp(0.0, room)
 }
+// }}}
 
+// constants {{{
 /// The hours a day holds, which the pies and bars are drawn against
 const FULL_DAY: u8 = 8;
 /// How tall a full day's bar is
@@ -85,14 +87,19 @@ const COLOURS: [&str; 10] = [
     "#4a90d9", "#7ed321", "#f5a623", "#d0021b", "#9b59b6", "#1abc9c", "#e67e22", "#2ecc71",
     "#e74c3c", "#3498db",
 ];
+// }}}
 
+// colour_of {{{
 fn colour_of(task: Uuid) -> &'static str {
     COLOURS[(task.as_u128() % COLOURS.len() as u128) as usize]
 }
+// }}}
 
+// HourPie {{{
 /// A day as a pie of eight slices, one to an hour, with the hours booked filled in. A day with
 /// nothing booked has no pie. The slices are green when the hours booked are all the hours the
-/// person has, orange while there are still hours left, and red when they are overbooked.
+/// person has, orange while there are still hours left, and red when they are overbooked. Hours
+/// past the eight go round a ring outside it.
 #[component]
 fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoView {
     let colour = if booked > u32::from(capacity) {
@@ -112,26 +119,51 @@ fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoV
             view! { <path d=slice(i) fill=fill stroke=fill stroke-width="0.8" stroke-linejoin="round" /> }
         })
         .collect_view();
+    // the hours past a full pie go round a ring outside it, which the pie shrinks to make room for
+    let over = booked
+        .saturating_sub(u32::from(FULL_DAY))
+        .min(u32::from(FULL_DAY)) as u8;
+    let ring = (over > 0).then(|| {
+        let arcs = (0..over)
+            .map(|i| view! { <path d=arc(i, 12.0) fill="none" stroke=colour stroke-width="2" /> })
+            .collect_view();
+        view! { <circle cx="13" cy="13" r="12" fill="none" stroke="#2f2f31" stroke-width="2" />{arcs} }
+    });
+    let shrink = (over > 0).then_some("translate(13 13) scale(0.8) translate(-13 -13)");
     view! {
         <svg class="pie" width="26" height="26" viewBox="0 0 26 26">
             <title>{title}</title>
-            {slices}
+            <g transform=shrink>{slices}</g>
+            {ring}
         </svg>
     }
 }
+// }}}
 
-/// The path of slice `i` of eight, which starts at the top and goes round clockwise
-fn slice(i: u8) -> String {
-    let (centre, radius) = (13.0_f64, 11.0_f64);
-    let at = |turn: f64| {
-        let angle =
-            (turn / f64::from(FULL_DAY)) * std::f64::consts::TAU - std::f64::consts::FRAC_PI_2;
-        (centre + radius * angle.cos(), centre + radius * angle.sin())
-    };
-    let ((x0, y0), (x1, y1)) = (at(f64::from(i)), at(f64::from(i) + 1.0));
-    format!("M{centre} {centre} L{x0:.2} {y0:.2} A{radius} {radius} 0 0 1 {x1:.2} {y1:.2} Z")
+// arc {{{
+/// The edge of slice `i` of eight on a circle of `radius`, for the ring of hours overbooked
+fn arc(i: u8, radius: f64) -> String {
+    let ((x0, y0), (x1, y1)) = (point(i, radius), point(i + 1, radius));
+    format!("M{x0:.2} {y0:.2} A{radius} {radius} 0 0 1 {x1:.2} {y1:.2}")
 }
 
+/// Where the edge between slices `i - 1` and `i` meets a circle of `radius`
+fn point(i: u8, radius: f64) -> (f64, f64) {
+    let centre = 13.0_f64;
+    let angle =
+        (f64::from(i) / f64::from(FULL_DAY)) * std::f64::consts::TAU - std::f64::consts::FRAC_PI_2;
+    (centre + radius * angle.cos(), centre + radius * angle.sin())
+}
+// }}}
+
+// slice {{{
+/// The path of slice `i` of eight, which starts at the top and goes round clockwise
+fn slice(i: u8) -> String {
+    format!("M13 13 L{} Z", arc(i, 11.0).trim_start_matches('M'))
+}
+// }}}
+
+// Allocations {{{
 #[component]
 pub fn Allocations(
     /// Whose, yours when left out
@@ -279,18 +311,10 @@ pub fn Allocations(
         lines.insert(1.min(lines.len()), format!("Plan: {}", task.plan_name));
         lines.join("\n")
     };
-    let open = RwSignal::new(None::<(ShortId, PlanNode)>);
-    let fresh = RwSignal::new(None::<Uuid>);
-    let guard = Guard::new();
-    let close = Callback::new(move |()| open.set(None));
-    let blank = move || {
-        if open.get_untracked().is_some() {
-            guard.then(close);
-        }
-    };
+    // a click on a task goes to its plan, with the task selected in the middle of the chart
+    let reveal = expect_context::<Reveal>().0;
     view! {
         <div class="plan">
-            <ConfirmLeave guard=guard />
             <div class="bar allocbar">
                 {of.is_some().then(|| view! {
                     <a class="toolbar-btn" href=Route::People.path() title="Back to people" aria-label="Back">
@@ -301,7 +325,7 @@ pub fn Allocations(
                 <button type="button" on:click=move |_| to_today()>"Today"</button>
             </div>
             <div class="workspace">
-                <div class="main" on:click=move |ev| if blank_click(&ev) { blank() }>
+                <div class="main">
                     <Show
                         when=move || mine.with(|m| !m.is_empty())
                         fallback=move || view! { <p class="empty">{if of.is_some() { "No tasks are scheduled for them." } else { "No tasks are scheduled for you." }}</p> }
@@ -375,9 +399,12 @@ pub fn Allocations(
                                         let by_day = task.days.clone();
                                         let colour = colour_of(id);
                                         view! {
-                                            <tr class:picked=move || open.with(|o| o.is_some_and(|(_, n)| n.id() == id))>
+                                            <tr>
                                                 <td class="name" title=title>
-                                                    <button type="button" class="plain" on:click=move |_| guard.then(Callback::new(move |()| open.set(Some((plan, PlanNode::Task(id))))))>
+                                                    <button type="button" class="plain" on:click=move |_| {
+                                                        reveal.set(Some((plan, id)));
+                                                        navigate(Route::Plan(plan, PlanTab::Gantt, None));
+                                                    }>
                                                         <strong>{task.name.clone()}</strong>
                                                         <span class="small">{task.plan_name.clone()}</span>
                                                     </button>
@@ -430,22 +457,13 @@ pub fn Allocations(
                         ></div>
                     </Show>
                 </div>
-                {move || {
-                    open.get().map(|(plan, node)| view! {
-                        <ItemPane
-                            plan=plan
-                            node=node
-                            fresh=fresh
-                            guard=guard
-                            on_close=Callback::new(move |_| open.set(None))
-                        />
-                    })
-                }}
             </div>
         </div>
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -476,3 +494,4 @@ mod tests {
         assert!(slice(2).contains("L24.00 13.00"));
     }
 }
+// }}}

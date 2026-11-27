@@ -1,7 +1,7 @@
 // modules{{{
 use std::fmt::Debug;
 
-use crate::types::workload::Workload;
+use crate::availability::workload::Workload;
 // }}}
 
 /// What a rule set decides for each day: hours of availability, or whether a day is allowed
@@ -13,13 +13,14 @@ pub trait DayValue: Copy + Debug + Default + PartialEq + 'static {
     fn default_week() -> [Self; 7];
 }
 
+// impl DayValue {{{
 impl DayValue for Workload {
     fn is_working(&self) -> bool {
         self.get() >= 1
     }
 
     fn default_week() -> [Self; 7] {
-        [8, 8, 8, 8, 8, 0, 0].map(|h| Workload::new(h).expect("default hours are valid"))
+        [8, 8, 8, 8, 8, 0, 0].map(Workload::new_const)
     }
 }
 
@@ -32,3 +33,4 @@ impl DayValue for bool {
         [true; 7]
     }
 }
+// }}}

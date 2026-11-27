@@ -4,21 +4,24 @@ use uuid::Uuid;
 
 use crate::{
     availability::rule_set::RuleSetUpdate,
-    planner::plan::PlanSchedulerDataPatch,
-    types::{
-        affinity::{AffinityPatch, NewAffinity},
-        crud::Crud,
-        data_block::{DataBlockPatch, NewDataBlock},
-        dependency::{Dependency, PlanNode},
+    availability::workload::Workload,
+    common::crud::Crud,
+    planner::items::{
+        dependency::PlanNode,
         milestone::{MilestonePatch, NewMilestone},
         parent::Parent,
         plan_buffer::{NewPlanBuffer, PlanBufferPatch},
-        tag::{NewTag, TagPatch},
-        target::{NewTarget, TargetPatch},
+        plan_delay::{NewPlanDelay, PlanDelayPatch},
         task::{NewTask, TaskPatch},
         task_group::{NewTaskGroup, TaskGroupPatch},
+    },
+    planner::plan::PlanSchedulerDataPatch,
+    planner::resources::{
+        affinity::{AffinityPatch, NewAffinity},
+        data_block::{DataBlockPatch, NewDataBlock},
+        tag::{NewTag, TagPatch},
+        target::{NewTarget, TargetPatch},
         user::{NewPlanUser, NewPlanUserGroup, PlanUserDataPatch, PlanUserGroupPatch},
-        workload::Workload,
     },
 };
 // }}}
@@ -29,6 +32,7 @@ pub enum PlanUpdate {
     TaskGroup(Crud<NewTaskGroup, TaskGroupPatch>),
     Milestone(Crud<NewMilestone, MilestonePatch>),
     PlanBuffer(Crud<NewPlanBuffer, PlanBufferPatch>),
+    PlanDelay(Crud<NewPlanDelay, PlanDelayPatch>),
     User(Crud<NewPlanUser, PlanUserDataPatch>),
     UserGroup(Crud<NewPlanUserGroup, PlanUserGroupPatch>),
     Tag(Crud<NewTag, TagPatch>),
@@ -43,9 +47,10 @@ pub enum PlanUpdate {
     SchedulerData(PlanSchedulerDataPatch),
 }
 
+// impl PlanUpdate {{{
 impl PlanUpdate {
     /// Replaces the dependencies of an item and changes nothing else
-    pub fn set_dependencies(node: PlanNode, dependencies: Vec<Dependency>) -> Self {
+    pub fn set_dependencies(node: PlanNode, dependencies: Vec<PlanNode>) -> Self {
         Self::rewire(node, None, Some(dependencies))
     }
 
@@ -53,14 +58,13 @@ impl PlanUpdate {
     pub fn rewire(
         node: PlanNode,
         parent: Option<Parent>,
-        dependencies: Option<Vec<Dependency>>,
+        dependencies: Option<Vec<PlanNode>>,
     ) -> Self {
         match node {
             PlanNode::Task(id) => PlanUpdate::Task(Crud::Update(TaskPatch {
                 id,
                 name: None,
                 parent,
-                mode: None,
                 duration: None,
                 time_constraint: None,
                 dependencies,
@@ -84,7 +88,15 @@ impl PlanUpdate {
                 set_start_day: None,
                 duration: None,
             })),
+            PlanNode::PlanDelay(id) => PlanUpdate::PlanDelay(Crud::Update(PlanDelayPatch {
+                id,
+                name: None,
+                parent,
+                dependencies,
+                duration: None,
+            })),
             PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Update(TaskGroupPatch {
+                time_constraint: None,
                 id,
                 name: None,
                 dependencies,
@@ -99,6 +111,7 @@ impl PlanUpdate {
             PlanNode::Task(id) => PlanUpdate::Task(Crud::Remove(id)),
             PlanNode::Milestone(id) => PlanUpdate::Milestone(Crud::Remove(id)),
             PlanNode::PlanBuffer(id) => PlanUpdate::PlanBuffer(Crud::Remove(id)),
+            PlanNode::PlanDelay(id) => PlanUpdate::PlanDelay(Crud::Remove(id)),
             PlanNode::TaskGroup(id) => PlanUpdate::TaskGroup(Crud::Remove(id)),
         }
     }
@@ -119,6 +132,11 @@ impl PlanUpdate {
             {
                 Some(PlanNode::PlanBuffer(p.id))
             }
+            PlanUpdate::PlanDelay(Crud::Update(p))
+                if p.dependencies.is_some() || p.parent.is_some() =>
+            {
+                Some(PlanNode::PlanDelay(p.id))
+            }
             PlanUpdate::TaskGroup(Crud::Update(p))
                 if p.dependencies.is_some() || p.parent.is_some() =>
             {
@@ -136,6 +154,7 @@ impl PlanUpdate {
             PlanUpdate::TaskGroup(update) => update.assign_id(),
             PlanUpdate::Milestone(update) => update.assign_id(),
             PlanUpdate::PlanBuffer(update) => update.assign_id(),
+            PlanUpdate::PlanDelay(update) => update.assign_id(),
             PlanUpdate::Tag(update) => update.assign_id(),
             PlanUpdate::Target(update) => update.assign_id(),
             PlanUpdate::Affinity(update) => update.assign_id(),
@@ -147,3 +166,4 @@ impl PlanUpdate {
         }
     }
 }
+// }}}

@@ -1,17 +1,22 @@
 mod allocations;
 mod api;
 mod availability;
+mod card;
 mod chart_edit;
 mod context;
 mod data;
 mod datepicker;
+mod draft;
 mod editor;
 mod escape;
+mod finder;
 mod format;
 mod forms;
+mod fuzzy;
 mod gantt;
 mod glide;
 mod guard;
+mod help;
 mod home;
 mod icons;
 mod login;
@@ -42,7 +47,8 @@ fn App() -> impl IntoView {
     format::provide_preferences();
     let booted = RwSignal::new(false);
     spawn_local(async move {
-        if let Some(profile) = api::me().await {
+        // a server that cannot be reached shows the login, which says so
+        if let Ok(Some(profile)) = api::me().await {
             sync.me.set(Some(profile));
             sync.connect();
         }

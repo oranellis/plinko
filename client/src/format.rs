@@ -1,12 +1,16 @@
 //! Dates and numbers as people read them.
 
+// modules {{{
 use chrono::{Datelike, NaiveDate};
 use leptos::prelude::*;
+// }}}
 
+// constants {{{
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 pub const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// }}}
 
 /// How dates are written where they are typed or picked
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -17,6 +21,7 @@ pub enum DateFormat {
     YearMonthDay,
 }
 
+// impl DateFormat {{{
 impl DateFormat {
     pub const ALL: [DateFormat; 3] = [
         DateFormat::DayMonthYear,
@@ -41,7 +46,9 @@ impl DateFormat {
         }
     }
 }
+// }}}
 
+// DateFormat supporting types {{{
 /// The day calendars start their weeks on
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WeekStart {
@@ -50,6 +57,15 @@ pub enum WeekStart {
     Sunday,
 }
 
+/// What a person has chosen for how things look, kept in this browser between visits
+#[derive(Clone, Copy)]
+pub struct Preferences {
+    pub date_format: RwSignal<DateFormat>,
+    pub week_start: RwSignal<WeekStart>,
+}
+// }}}
+
+// impl WeekStart {{{
 impl WeekStart {
     pub const ALL: [WeekStart; 2] = [WeekStart::Monday, WeekStart::Sunday];
 
@@ -77,17 +93,14 @@ impl WeekStart {
         names
     }
 }
+// }}}
 
-/// What a person has chosen for how things look, kept in this browser between visits
-#[derive(Clone, Copy)]
-pub struct Preferences {
-    pub date_format: RwSignal<DateFormat>,
-    pub week_start: RwSignal<WeekStart>,
-}
-
+// constants {{{
 const DATE_FORMAT: &str = "plinko.date_format";
 const WEEK_START: &str = "plinko.week_start";
+// }}}
 
+// provide_preferences {{{
 /// Reads the saved choices and keeps saving them. Call once, above everything that shows dates.
 pub fn provide_preferences() {
     let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
@@ -117,7 +130,9 @@ pub fn provide_preferences() {
         week_start,
     });
 }
+// }}}
 
+// helpers {{{
 pub fn use_preferences() -> Preferences {
     expect_context()
 }
@@ -152,7 +167,9 @@ pub fn delay(days: i64) -> String {
         n => format!("{n} days late"),
     }
 }
+// }}}
 
+// tests {{{
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,3 +208,4 @@ mod tests {
         assert_eq!(delay(5), "5 days late");
     }
 }
+// }}}

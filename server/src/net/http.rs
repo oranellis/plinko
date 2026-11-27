@@ -2,6 +2,7 @@
 //! the browser sends it with the WebSocket as well. Anything that changes state or opens the
 //! socket must come from the page's own origin.
 
+// modules {{{
 use std::{path::PathBuf, sync::Arc};
 
 use axum::{
@@ -26,9 +27,12 @@ use crate::{
     protocol::{ClientMessage, Profile},
     store::{Store, auth::SESSION_LIFETIME},
 };
+// }}}
 
+// constants {{{
 const COOKIE: &str = "plinko_session";
 const MIN_PASSWORD_LENGTH: usize = 8;
+// }}}
 
 #[derive(Clone)]
 struct AppState {
@@ -37,6 +41,24 @@ struct AppState {
     secure_cookies: bool,
 }
 
+// AppState supporting types {{{
+#[derive(Deserialize)]
+struct Login {
+    email: String,
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct ChangePassword {
+    /// Whose password, the caller's own if left out
+    user: Option<Uuid>,
+    /// The caller's current password, needed to change their own
+    current: Option<String>,
+    new: String,
+}
+// }}}
+
+// router {{{
 /// The routes, serving the client from `files` if given
 pub fn router(handle: Handle, files: Option<PathBuf>, secure_cookies: bool) -> Router {
     let state = AppState {
@@ -58,6 +80,7 @@ pub fn router(handle: Handle, files: Option<PathBuf>, secure_cookies: bool) -> R
         None => app,
     }
 }
+// }}}
 
 // helpers {{{
 fn same_origin(headers: &HeaderMap) -> bool {
@@ -94,7 +117,7 @@ fn session_cookie(state: &AppState, token: &str, lifetime: u64) -> (HeaderName, 
 /// Runs the store call off the async threads, since hashing a password takes a while
 async fn blocking<T: Send + 'static>(
     store: &Arc<Store>,
-    call: impl FnOnce(&Store) -> crate::types::error::PlinkoResult<T> + Send + 'static,
+    call: impl FnOnce(&Store) -> crate::common::error::PlinkoResult<T> + Send + 'static,
 ) -> Option<T> {
     let store = store.clone();
     tokio::task::spawn_blocking(move || call(&store).ok())
@@ -103,12 +126,7 @@ async fn blocking<T: Send + 'static>(
 }
 // }}}
 
-#[derive(Deserialize)]
-struct Login {
-    email: String,
-    password: String,
-}
-
+// login {{{
 async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -135,17 +153,22 @@ async fn login(
         None => StatusCode::UNAUTHORIZED.into_response(),
     }
 }
+// }}}
 
+// logout {{{
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     if !same_origin(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
     if let Some(token) = token(&headers) {
         let _ = state.handle.store.end_session(&token);
+        let _ = state.handle.commands.send(Command::SessionEnded(token));
     }
     ([session_cookie(&state, "", 0)], StatusCode::NO_CONTENT).into_response()
 }
+// }}}
 
+// me {{{
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let Some(user) = user_of(&state, &headers).await else {
         return StatusCode::UNAUTHORIZED.into_response();
@@ -155,16 +178,9 @@ async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
         None => StatusCode::UNAUTHORIZED.into_response(),
     }
 }
+// }}}
 
-#[derive(Deserialize)]
-struct ChangePassword {
-    /// Whose password, the caller's own if left out
-    user: Option<Uuid>,
-    /// The caller's current password, needed to change their own
-    current: Option<String>,
-    new: String,
-}
-
+// password {{{
 /// Anyone may change their own password given the current one, an admin may set anyone's
 async fn password(
     State(state): State<AppState>,
@@ -201,6 +217,7 @@ async fn password(
     if set.is_none() {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
+    let _ = state.handle.commands.send(Command::SessionsOfEnded(target));
     if target != me {
         return StatusCode::NO_CONTENT.into_response();
     }
@@ -213,7 +230,9 @@ async fn password(
         None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
+// }}}
 
+// socket {{{
 async fn socket(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -222,30 +241,41 @@ async fn socket(
     if !same_origin(&headers) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let Some(user) = user_of(&state, &headers).await else {
+    let (Some(token), Some(user)) = (token(&headers), user_of(&state, &headers).await) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
-    upgrade.on_upgrade(move |socket| serve(state.handle, user, socket))
+    upgrade.on_upgrade(move |socket| serve(state.handle, user, token, socket))
 }
+// }}}
 
-/// Sends a client what the actor says and gives the actor what the client asks for
-async fn serve(handle: Handle, user: Uuid, socket: WebSocket) {
+// serve {{{
+/// Sends a client what the actor says and gives the actor what the client asks for, until either
+/// side closes: the actor does when the session ends
+async fn serve(handle: Handle, user: Uuid, token: String, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
     let (out, mut outgoing) = mpsc::unbounded_channel();
-    let Some(subscriber) = handle.subscribe(user, out).await else {
+    let Some(subscriber) = handle.subscribe(user, token, out).await else {
         return;
     };
-    let sending = tokio::spawn(async move {
+    let mut sending = tokio::spawn(async move {
         while let Some(message) = outgoing.recv().await {
             let Ok(bytes) = codec::encode(&message) else {
                 continue;
             };
             if sink.send(Message::Binary(bytes.into())).await.is_err() {
-                break;
+                return;
             }
         }
+        let _ = sink.send(Message::Close(None)).await;
     });
-    while let Some(Ok(message)) = stream.next().await {
+    loop {
+        let message = tokio::select! {
+            message = stream.next() => message,
+            _ = &mut sending => break,
+        };
+        let Some(Ok(message)) = message else {
+            break;
+        };
         match message {
             Message::Binary(bytes) => {
                 let Ok(ClientMessage::Update { request, update }) = codec::decode(&bytes) else {
@@ -267,3 +297,4 @@ async fn serve(handle: Handle, user: Uuid, socket: WebSocket) {
     let _ = handle.commands.send(Command::Unsubscribe(subscriber));
     sending.abort();
 }
+// }}}

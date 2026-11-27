@@ -1,18 +1,22 @@
 //! What the panel says about the item under the pointer: its name as the title, then its details,
 //! in the way Plinko 1 worded them.
 
+// modules {{{
 use plinko::{
+    common::dates::NodeEnd,
     multitenancy::tenant::Tenant,
-    planner::plan::Plan,
-    scheduler::state::PlanVolatileState,
-    types::{
+    planner::items::{
         dependency::PlanNode,
         task::{Status, Worker},
     },
+    planner::plan::Plan,
+    scheduler::state::PlanVolatileState,
 };
 
 use crate::{format, forms, gantt::arrange::Mark, model::node_name};
+// }}}
 
+// helpers {{{
 pub fn status_label(status: Status) -> &'static str {
     match status {
         Status::NotStarted => "Not started",
@@ -30,7 +34,9 @@ fn last_day(range: (chrono::NaiveDate, chrono::NaiveDate)) -> chrono::NaiveDate 
         .filter(|d| *d >= range.0)
         .unwrap_or(range.0)
 }
+// }}}
 
+// worker_name {{{
 fn worker_name(tenant: &Tenant, plan: &Plan, worker: &Worker) -> String {
     let user = |id| {
         tenant
@@ -54,7 +60,9 @@ fn worker_name(tenant: &Tenant, plan: &Plan, worker: &Worker) -> String {
         Worker::Placeholder => "(unassigned)".to_string(),
     }
 }
+// }}}
 
+// info {{{
 pub fn info(
     tenant: &Tenant,
     plan: &Plan,
@@ -109,6 +117,17 @@ pub fn info(
                 ));
             }
         }
+        PlanNode::PlanDelay(id) => {
+            lines.push("Delay".to_string());
+            if let Some(d) = state.and_then(|s| s.plan_delays.get(&id)) {
+                let range = (d.date_range.start(), d.date_range.end());
+                lines.push(format!(
+                    "From {} to {}",
+                    format::day(range.0),
+                    format::day(last_day(range))
+                ));
+            }
+        }
         PlanNode::TaskGroup(id) => {
             lines.push("Task group".to_string());
             if let Some(g) = state.and_then(|s| s.task_groups.get(&id)) {
@@ -126,21 +145,29 @@ pub fn info(
     }
     lines
 }
+// }}}
 
+// violation {{{
 /// What the small warning beside an item says
 pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
     let Some(v) = state.and_then(|s| s.constraint_violations.get(&mark)) else {
         return Vec::new();
     };
     let (kind, date) = forms::constraint_parts(v.constraint);
+    // a milestone is one day, the rest have a first and a last
+    let day = match (mark, v.end) {
+        (PlanNode::Milestone(_), _) => "date",
+        (_, NodeEnd::Start) => "start date",
+        (_, NodeEnd::End) => "end date",
+    };
     let title = match kind {
-        "fixed" => "Fixed date violated",
-        "latest" => "Latest date exceeded",
-        _ => "Earliest date not met",
+        "fixed" => format!("Fixed {day} violated"),
+        "latest" => format!("Latest {day} exceeded"),
+        _ => format!("Earliest {day} not met"),
     };
     let required = date.map(format::iso).unwrap_or_default();
     let mut lines = vec![
-        title.to_string(),
+        title,
         format!("Required: {required}"),
         format!("Scheduled: {}", format::iso(v.scheduled)),
     ];
@@ -150,3 +177,4 @@ pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
     }
     lines
 }
+// }}}

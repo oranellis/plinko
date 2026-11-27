@@ -1,34 +1,39 @@
+// modules {{{
 use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, NaiveDate};
 use plinko::{
+    availability::workload::Workload,
+    common::{
+        crud::Crud,
+        dates::{DateRange, TimeConstraint},
+        short_id::ShortId,
+    },
     multitenancy::{
         tenant::Tenant,
         tenant_update::{PlanTenantUpdate, TenantUpdate, TenantUpdateType},
+    },
+    planner::items::{
+        milestone::{MilestonePatch, NewMilestone},
+        parent::Parent,
+        task::{Assignee, VolatileState},
     },
     planner::{
         plan::{NewPlan, Plan},
         plan_update::PlanUpdate,
     },
     scheduler::state::{PlanVolatileState, TenantVolatileState},
-    types::{
-        common::{DateRange, TimeConstraint},
-        crud::Crud,
-        milestone::{MilestonePatch, NewMilestone},
-        parent::Parent,
-        short_id::ShortId,
-        task::{Assignee, VolatileState},
-        workload::Workload,
-    },
 };
 use uuid::Uuid;
+// }}}
 
+// helpers {{{
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
 
 fn hours(h: u8) -> Workload {
-    Workload::new(h).unwrap()
+    Workload::new_const(h)
 }
 
 fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {
@@ -45,12 +50,14 @@ fn task_state(assignments: &[(Assignee, &[(NaiveDate, u8)])]) -> VolatileState {
         workers: HashMap::new(),
     }
 }
+// }}}
 
+// user_schedules_are_derived_from_assignments_across_plans {{{
 #[test]
 fn user_schedules_are_derived_from_assignments_across_plans() {
-    let (alice, bob) = (Uuid::now_v7(), Uuid::now_v7());
+    let (alice, bob) = (Uuid::new_v4(), Uuid::new_v4());
     let (plan_a, plan_b) = (ShortId::new(), ShortId::new());
-    let (task_a, task_b) = (Uuid::now_v7(), Uuid::now_v7());
+    let (task_a, task_b) = (Uuid::new_v4(), Uuid::new_v4());
     let monday = d(2024, 1, 1);
 
     let mut in_a = PlanVolatileState::default();
@@ -80,7 +87,9 @@ fn user_schedules_are_derived_from_assignments_across_plans() {
     assert_eq!(state.users[&bob].booked_on(monday), 8);
     assert_eq!(state.users.len(), 2, "placeholders have no schedule");
 }
+// }}}
 
+// update {{{
 fn update(actor: Uuid, update_type: TenantUpdateType) -> TenantUpdate {
     TenantUpdate {
         time: DateTime::from_timestamp(978307200, 0).unwrap(),
@@ -88,7 +97,9 @@ fn update(actor: Uuid, update_type: TenantUpdateType) -> TenantUpdate {
         update_type,
     }
 }
+// }}}
 
+// a_successful_update_clears_the_stored_schedule {{{
 #[test]
 fn a_successful_update_clears_the_stored_schedule() {
     let mut tenant = Tenant::new(ShortId::new(), "Tenant".to_string(), d(2024, 1, 1));
@@ -111,14 +122,16 @@ fn a_successful_update_clears_the_stored_schedule() {
     tenant.apply_update(update(root, add)).unwrap();
     assert!(tenant.schedule().is_none());
 }
+// }}}
 
+// milestones_have_a_time_constraint {{{
 #[test]
 fn milestones_have_a_time_constraint() {
     let mut plan = Plan::from(NewPlan {
         id: ShortId::new(),
         name: "Plan".to_string(),
     });
-    let id = Uuid::now_v7();
+    let id = Uuid::new_v4();
     let new = NewMilestone {
         id,
         name: "Launch".to_string(),
@@ -144,3 +157,4 @@ fn milestones_have_a_time_constraint() {
     let constraint = plan.milestones()[&id].time_constraint();
     assert_eq!(constraint, TimeConstraint::Fixed(d(2024, 3, 1)));
 }
+// }}}
