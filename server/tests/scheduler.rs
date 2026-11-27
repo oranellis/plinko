@@ -450,6 +450,35 @@ fn work_in_progress_runs_up_to_today_even_past_its_duration() {
 }
 // }}}
 
+// work_can_start_today_once_work_in_progress_has_its_hours {{{
+#[test]
+fn work_can_start_today_once_work_in_progress_has_its_hours() {
+    let mut world = World::new();
+    let (alice, bob, carol) = (world.user(), world.user(), world.user());
+    let going = world.task(5, &[(user(alice), 8)], &[]);
+    world.set_state(going, Status::InProgress, Some(1), None);
+    let waits = world.task(1, &[(user(alice), 8)], &[]);
+    let free = world.task(1, &[(user(bob), 8)], &[]);
+    let done = world.task(2, &[(user(carol), 8)], &[]);
+    world.set_state(done, Status::Completed, Some(2), Some(3));
+    let reached = world.milestone(&[]);
+    let next = world.task(
+        1,
+        &[(user(carol), 8)],
+        &[after(PlanNode::Milestone(reached))],
+    );
+    world.apply(TenantUpdateType::SetToday(d(3)));
+    let state = world.solve();
+    // alice has today taken, bob does not
+    assert_eq!(span(&state, waits).0, d(8));
+    assert_eq!(span(&state, free), (d(3), d(4)));
+    // a milestone with nothing to wait on is today, and what follows it can start today, on
+    // hours that finished work no longer holds
+    assert_eq!(state.milestones[&reached].date, d(3));
+    assert_eq!(span(&state, next), (d(3), d(4)));
+}
+// }}}
+
 // completed_work_is_inferred_from_its_dates {{{
 #[test]
 fn completed_work_is_inferred_from_its_dates() {
@@ -467,9 +496,8 @@ fn completed_work_is_inferred_from_its_dates() {
     let state = world.solve();
     assert_eq!(state.tasks[&done].date_range.start(), day(18));
     assert_eq!(state.tasks[&done].date_range.end(), day(21));
-    let days: Vec<_> = days_of(&state, done, alice);
-    assert_eq!(days, [(day(18), 8), (day(19), 8), (day(20), 8)]);
-    // history takes no hours from the future
+    // finished work holds no hours
+    assert!(days_of(&state, done, alice).is_empty());
     assert_eq!(span(&state, next), (d(1), d(2)));
 }
 // }}}

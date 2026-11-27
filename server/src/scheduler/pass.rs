@@ -391,12 +391,10 @@ impl Pass {
                     self.open(ctx, rules, id, work, from)
                 }
                 Progress::Active { begun } => self.active(ctx, rules, id, work, begun),
+                // finished work holds no hours, so its people are free from today on
                 Progress::Done { begun, ended } => {
                     let rows = self.people(ctx, rules, id, work, begun, &mut None)?;
-                    let (asks, valid) = ctx.valid(id, work, &rows);
-                    let days: Vec<Day> = valid.days(begun, ended).collect();
-                    self.take(rules, &asks, &days, id);
-                    Ok(placed(begun, ended, rows, days))
+                    Ok(placed(begun, ended, rows, Vec::new()))
                 }
             },
         }

@@ -11,7 +11,7 @@ use crate::{
     planner::{
         items::{
             dependency::PlanNode,
-            milestone,
+            milestone::{self, DerivedStatus},
             parent::Parent,
             plan_buffer, plan_delay,
             task::{self, Assignee},
@@ -128,10 +128,18 @@ impl Writer<'_> {
         let statuses = milestone_statuses(plan);
         for (id, item) in plan.milestones() {
             let node = PlanNode::Milestone(*id);
-            let at = self.lowered(node).and_then(|l| self.at(self.pass, l.end));
+            let lowered = self.lowered(node);
+            let at = lowered.and_then(|l| self.at(self.pass, l.end));
+            // only one reached by work that happened can be before today
+            let root = self.ctx.net.root;
+            let waited = lowered.is_some_and(|l| self.ctx.net.vertex(l.end).after != [root]);
+            let happened = waited && statuses[id] == DerivedStatus::Completed;
             match at {
                 Some(at) => {
-                    let date = self.day_before(at);
+                    let mut date = self.day_before(at);
+                    if !happened {
+                        date = date.max(self.date(self.ctx.table.today));
+                    }
                     let state = milestone::VolatileState {
                         derived_status: statuses[id],
                         date,

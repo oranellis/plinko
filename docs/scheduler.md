@@ -37,12 +37,13 @@ Written: `TenantVolatileState { plans, users }` (`scheduler/state.rs`).
 ### Date conventions
 
 - `DateRange` ends are exclusive. Durations are days, allocations 0 to 8 hours a day.
-- Work that has not started cannot start before tomorrow.
+- Work that has not started can start today, on hours work in progress leaves free.
 - An item's dependencies are the nodes whose end it waits for. Besides them, an item in a group
   waits for the group to start, and a top level item with no dependencies starts with the plan,
   today. Neither is listed.
-- A milestone is shown on the last day of what it depends on, never before today unless it has
-  already happened. What follows it starts the day after.
+- A milestone is shown on the last day of what it depends on, never before today unless work
+  that happened reached it. What follows it starts the day after, or today if nothing has to
+  happen first.
 - A time constraint on a task or group is for its first or its last day (`NodeConstraint`). A
   milestone's is for its one day.
 
@@ -55,9 +56,10 @@ Written: `TenantVolatileState { plans, users }` (`scheduler/state.rs`).
   takes working days of the plan's default availability.
 - **Statuses:** not started is scheduled. In progress starts on its actual start whatever it
   depends on, has its hours on every day it could be worked up to today (so it can run past its
-  duration), then what is left of its days. Completed and on hold are fixed to their actual days.
-  Dropped is unscheduled (`Dropped`) and what depends on it starts where it would have. History
-  takes no hours from today on except on today itself.
+  duration), then what is left of its days. Completed and on hold are fixed to their actual days
+  and hold no hours on any of them. Dropped is unscheduled (`Dropped`) and what depends on it
+  starts where it would have. In progress work is placed before anything that has not started, so
+  it has first claim on today.
 - **Recorded workers** (`Task.actual_workers`) replace the worker they are recorded for. They are
   filled in from the last schedule when a task starts (`Tenant::fill_defaults`).
 - **Milestones** take no time. Their status is derived (`scheduler/status.rs`).

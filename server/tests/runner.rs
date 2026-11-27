@@ -97,8 +97,8 @@ fn updates_are_staged_applied_and_scheduled() {
 
     // every applied update leaves a current schedule
     let scheduled = &tenant.schedule().unwrap().plans[&plan].tasks[&task];
-    assert_eq!(scheduled.date_range.start(), day(2));
-    assert_eq!(tenant.schedule().unwrap().users[&bob].booked_on(day(2)), 8);
+    assert_eq!(scheduled.date_range.start(), day(1));
+    assert_eq!(tenant.schedule().unwrap().users[&bob].booked_on(day(1)), 8);
 
     // staging fills in the people last scheduled, so the logged update holds them
     let started = TaskPatch {

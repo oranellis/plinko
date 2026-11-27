@@ -152,9 +152,9 @@ impl Lowering<'_> {
         Day::of(date, self.table.origin)
     }
 
-    /// The first day work that has not started can be on, tomorrow
+    /// The first day work that has not started can be on, today
     fn now(&self) -> Day {
-        self.table.today.next()
+        self.table.today
     }
 
     /// The vertex for something in a group that has started (`anchor`, none at the top level)
@@ -267,8 +267,9 @@ impl Lowering<'_> {
         self.net.lowered.insert((self.index, node), lowered);
     }
 
-    /// A milestone is the vertex after what it depends on. Its date is the last day before the
-    /// vertex, never before today unless it has already happened.
+    /// A milestone is the vertex after what it depends on, never before the start of today unless
+    /// it has already happened. It is shown on the day before the vertex, or today if that is
+    /// the start of today.
     fn milestone(&mut self, milestone: &Milestone, start: VertexId, end: VertexId) {
         let happened = self.statuses[milestone.id()] == DerivedStatus::Completed;
         let now = (!happened || start == self.net.root).then_some(self.now());
