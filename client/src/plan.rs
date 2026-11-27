@@ -1170,7 +1170,7 @@ fn ModeStack(modes: Signal<Vec<Mode>>) -> impl IntoView {
                 let (icon, said, tone) = mode.shown();
                 view! {
                     <div class=format!("mode fadein {tone}") style=format!("--i:{i}") title=said aria-label=said>
-                        <Icon kind=icon size=20 />
+                        <Icon kind=icon size=40 />
                     </div>
                 }
             } />
