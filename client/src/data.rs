@@ -138,8 +138,17 @@ pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
         sync.plan(plan, PlanUpdate::Data(node, Crud::Add(new)));
     };
     let description = RwSignal::new(state.get_untracked().map(|s| s.0).unwrap_or_default());
+    // sent when it is left or the window closes, if it is not what was sent last
+    let sent = StoredValue::new(description.get_untracked());
+    let describe = move || {
+        let now = description.get_untracked();
+        if sent.with_value(|s| *s != now) {
+            sent.set_value(now.clone());
+            sync.plan(plan, PlanUpdate::Describe(node, Some(now)));
+        }
+    };
     view! {
-        <Modal title=title on_close=on_close>
+        <Modal title=title on_close=Callback::new(move |()| { describe(); on_close.run(()) })>
             <div class="data">
                 <div class="databar">
                     <span class="small">"Description"</span>
@@ -161,7 +170,7 @@ pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
                     placeholder="What this is about"
                     prop:value=move || description.get()
                     on:input=move |ev| description.set(event_target_value(&ev))
-                    on:change=move |_| sync.plan(plan, PlanUpdate::Describe(node, Some(description.get_untracked())))
+                    on:change=move |_| describe()
                 ></textarea>
                 <For each=move || state.get().map(|s| s.1).unwrap_or_default() key=|b| format!("{b:?}") children=move |block| {
                     view! { <BlockEditor plan=plan node=node block=block /> }

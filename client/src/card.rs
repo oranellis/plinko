@@ -420,7 +420,12 @@ pub fn Card(
                                         on:blur=move |_| typed()
                                         on:keydown=move |ev| match ev.key().as_str() {
                                             "Enter" => { ev.prevent_default(); ev.stop_propagation(); typed(); }
-                                            "Escape" => { ev.stop_propagation(); typing.set(false); }
+                                            // what was typed is dropped, so going away does not keep it as leaving the box would
+                                            "Escape" => {
+                                                ev.stop_propagation();
+                                                if let Some(input) = days_box.get_untracked() { input.set_value(""); }
+                                                typing.set(false);
+                                            }
                                             _ => {}
                                         }
                                     />

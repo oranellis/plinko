@@ -263,10 +263,12 @@ pub fn Gantt(
         }
         set_timeout(
             move || {
-                let Some(found) = scene.with_untracked(|s| {
+                // the chart may have gone by now
+                let found = scene.try_with_untracked(|s| {
                     let placed = s.arrangement.placed.iter().find(|p| p.mark == mark)?;
                     Some(((placed.span.0 - s.origin).num_days() as f64, placed.lane))
-                }) else {
+                });
+                let Some(found) = found.flatten() else {
                     return;
                 };
                 let (Some(current), Some(b)) =
