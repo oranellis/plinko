@@ -133,10 +133,16 @@ fn over(tenant: &mut Tenant, place: impl Fn(&Context, &Pass) -> (Pass, Hints)) -
         let delays = p.plan_delays().values().map(|d| *d.duration());
         delays.chain(p.plan_buffers().values().map(|b| *b.duration()))
     });
-    let work: u32 = tasks().map(|t| t.duration()).chain(waits).sum();
-    let mut ahead = (work * HORIZON_FACTOR).clamp(HORIZON.0, HORIZON.1);
+    let work: u64 = tasks()
+        .map(|t| t.duration())
+        .chain(waits)
+        .map(u64::from)
+        .sum();
+    let ahead = work.saturating_mul(u64::from(HORIZON_FACTOR));
+    let mut ahead = ahead.clamp(u64::from(HORIZON.0), u64::from(HORIZON.1)) as u32;
     loop {
-        let until = today + Days::new(u64::from(ahead));
+        let until = today.checked_add_days(Days::new(u64::from(ahead)));
+        let until = until.unwrap_or(NaiveDate::MAX);
         tenant.refresh_calendars(origin, until);
         let days = (until - origin).num_days() as usize + 1;
         let mut table = Table::from_tenant(tenant, origin, days);

@@ -177,7 +177,7 @@ impl Valid {
 
     /// The `n`-th set day counting from `from`, itself included, `n` at least 1
     pub fn nth_from(&self, from: Day, n: u32) -> Option<Day> {
-        self.select(self.rank(from) + n.checked_sub(1)?)
+        self.select(self.rank(from).checked_add(n.checked_sub(1)?)?)
     }
 
     /// The `n`-th set day counting back from the last before `to`, `n` at least 1
@@ -225,6 +225,7 @@ mod tests {
         assert_eq!(valid.nth_from(Day(2), 5), Some(Day(8)));
         assert_eq!(valid.nth_back(Day(9), 5), Some(Day(2)));
         assert_eq!(valid.nth_from(Day(190), 20), None);
+        assert_eq!(valid.nth_from(Day(190), u32::MAX), None);
         assert_eq!(valid.nth_back(Day(2), 5), None);
     }
 

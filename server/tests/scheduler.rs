@@ -1183,6 +1183,31 @@ fn a_date_already_missed_counts_as_missed_however_long_ago() {
 }
 // }}}
 
+// work_too_long_or_too_late_for_any_day_finds_none {{{
+#[test]
+fn work_too_long_or_too_late_for_any_day_finds_none() {
+    let mut world = World::new();
+    let alice = world.user();
+    let long = world.task(u32::MAX, &[(user(alice), 8)], &[]);
+    let late = world.task(1, &[(user(alice), 8)], &[]);
+    world.patch(late, |p| {
+        p.time_constraint = Some(TimeConstraint::Earliest(NaiveDate::MAX).into())
+    });
+    let by = world.task(1, &[(user(alice), 8)], &[]);
+    world.patch(by, |p| {
+        p.time_constraint = Some(on_end(TimeConstraint::Latest(NaiveDate::MAX)))
+    });
+    let state = world.solve();
+    for task in [long, late] {
+        assert_eq!(
+            state.unscheduled[&node(task)],
+            UnscheduledReason::NoCapacity
+        );
+    }
+    assert_eq!(span(&state, by), (d(1), d(2)));
+}
+// }}}
+
 // on_end {{{
 /// A constraint on the last day
 fn on_end(constraint: TimeConstraint) -> NodeConstraint {

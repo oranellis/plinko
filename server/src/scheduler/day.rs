@@ -15,12 +15,14 @@ impl Day {
         Day(u32::try_from((date - origin).num_days()).unwrap_or(0))
     }
 
+    /// The date of the day, the last date there is for one past it
     pub fn date(self, origin: NaiveDate) -> NaiveDate {
-        origin + Days::new(u64::from(self.0))
+        let date = origin.checked_add_days(Days::new(u64::from(self.0)));
+        date.unwrap_or(NaiveDate::MAX)
     }
 
     pub fn next(self) -> Self {
-        Day(self.0 + 1)
+        Day(self.0.saturating_add(1))
     }
 
     pub fn index(self) -> usize {
@@ -41,6 +43,13 @@ mod tests {
         assert_eq!(Day::of(later, origin), Day(31));
         assert_eq!(Day(31).date(origin), later);
         assert_eq!(Day::of(origin - Days::new(3), origin), Day(0));
+    }
+
+    #[test]
+    fn days_past_the_last_date_stay_on_it() {
+        let last = Day::of(NaiveDate::MAX, NaiveDate::MIN);
+        assert_eq!(last.next().date(NaiveDate::MIN), NaiveDate::MAX);
+        assert_eq!(Day(u32::MAX).next(), Day(u32::MAX));
     }
 }
 // }}}
