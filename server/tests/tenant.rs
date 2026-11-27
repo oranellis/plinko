@@ -692,6 +692,9 @@ fn people_star_the_plans_they_are_in_for_themselves() {
     assert!(tenant.users()[&root].favourites().contains(&plan));
     // the star is theirs alone
     assert!(tenant.users()[&member].favourites().is_empty());
+    // and only those who may see the plan see it starred
+    let seen = |tenant: &Tenant, by| tenant.visible_to(&by).users()[&root].favourites().len();
+    assert_eq!((seen(&tenant, root), seen(&tenant, member)), (1, 0));
     apply(&mut tenant, root, star(plan, false)).unwrap();
     assert!(tenant.users()[&root].favourites().is_empty());
 

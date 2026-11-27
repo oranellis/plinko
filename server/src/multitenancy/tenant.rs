@@ -396,15 +396,20 @@ impl Tenant {
         visible.map(|(id, _)| *id).collect()
     }
 
-    /// The tenant as a user may see it: everyone and every group, and their plans. It has no
-    /// schedule, which a client is sent separately.
+    /// The tenant as a user may see it: everyone and every group, and their plans, with only
+    /// those plans among anyone's favourites. It has no schedule, which a client is sent
+    /// separately.
     pub fn visible_to(&self, user: &Uuid) -> Tenant {
         let visible = self.visible_plans(user);
+        let mut users = self.users.clone();
+        for user in users.values_mut() {
+            user.favourites.retain(|p| visible.contains(p));
+        }
         Tenant {
             id: self.id,
             name: self.name.clone(),
             today: self.today,
-            users: self.users.clone(),
+            users,
             user_groups: self.user_groups.clone(),
             volatile: HashMap::new(),
             plan_calendars: HashMap::new(),

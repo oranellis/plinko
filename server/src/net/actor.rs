@@ -323,9 +323,8 @@ impl Actor {
 fn plan_of(update: &TenantUpdate) -> Option<ShortId> {
     match &update.update_type {
         TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => Some(new.id),
-        TenantUpdateType::Plan(PlanTenantUpdate::Update(id, _) | PlanTenantUpdate::Remove(id)) => {
-            Some(*id)
-        }
+        TenantUpdateType::Plan(PlanTenantUpdate::Update(id, _) | PlanTenantUpdate::Remove(id))
+        | TenantUpdateType::Favourite(id, _) => Some(*id),
         _ => None,
     }
 }

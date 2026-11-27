@@ -390,6 +390,75 @@ async fn updates_are_applied_in_order_and_shared_with_those_who_may_see_them() {
 }
 // }}}
 
+// starring_a_plan_is_only_shared_with_those_who_may_see_it {{{
+#[tokio::test]
+async fn starring_a_plan_is_only_shared_with_those_who_may_see_it() {
+    let server = server().await;
+    let address = listen(&server).await;
+    let token = server.handle.store.start_session(server.admin).unwrap();
+    let mut admin = connect(address, &token).await.unwrap();
+    let new = NewPlan {
+        id: ShortId::new(),
+        name: "Secret".to_string(),
+    };
+    send(
+        &mut admin,
+        1,
+        TenantUpdateType::Plan(PlanTenantUpdate::Add(new)),
+    )
+    .await;
+    assert_eq!(answer(&mut admin, 1).await.0, Ok(1));
+    let plan = *server
+        .handle
+        .store
+        .load()
+        .unwrap()
+        .0
+        .plans()
+        .keys()
+        .next()
+        .unwrap();
+    let new = NewTenantLoginUser {
+        id: Uuid::nil(),
+        name: "Member".to_string(),
+        email: "member@example.com".to_string(),
+        role: Role::Member,
+    };
+    send(&mut admin, 2, TenantUpdateType::User(Crud::Add(new))).await;
+    assert_eq!(answer(&mut admin, 2).await.0, Ok(2));
+    let member = server
+        .handle
+        .user_by_email("member@example.com".to_string())
+        .await
+        .unwrap();
+    let member_token = server.handle.store.start_session(member).unwrap();
+    let mut other = connect(address, &member_token).await.unwrap();
+    assert!(matches!(
+        next(&mut other).await,
+        ServerMessage::Snapshot { .. }
+    ));
+
+    send(&mut admin, 3, TenantUpdateType::Favourite(plan, true)).await;
+    assert_eq!(answer(&mut admin, 3).await.0, Ok(3));
+    let user = TenantUpdateType::User(Crud::Add(NewTenantLoginUser {
+        id: Uuid::nil(),
+        name: "Another".to_string(),
+        email: "another@example.com".to_string(),
+        role: Role::Member,
+    }));
+    send(&mut admin, 4, user).await;
+    assert_eq!(answer(&mut admin, 4).await.0, Ok(4));
+    // the member hears of the next update but not of the star
+    loop {
+        match next(&mut other).await {
+            ServerMessage::Update { seq: 4, .. } => break,
+            ServerMessage::Schedule { .. } => {}
+            _ => panic!("the member was sent the star or a snapshot"),
+        }
+    }
+}
+// }}}
+
 // a_burst_of_updates_ends_with_a_schedule_for_the_last {{{
 #[tokio::test]
 async fn a_burst_of_updates_ends_with_a_schedule_for_the_last() {
