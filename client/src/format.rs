@@ -158,15 +158,6 @@ pub fn day(date: NaiveDate) -> String {
 pub fn iso(date: NaiveDate) -> String {
     date.format("%Y-%m-%d").to_string()
 }
-
-/// `3 days late`, `on time`
-pub fn delay(days: i64) -> String {
-    match days {
-        0 => "on time".to_string(),
-        1 => "1 day late".to_string(),
-        n => format!("{n} days late"),
-    }
-}
 // }}}
 
 // tests {{{
@@ -199,13 +190,6 @@ mod tests {
         assert_eq!(WeekStart::Sunday.offset(sunday), 0);
         assert_eq!(WeekStart::Sunday.weekdays()[0], "Sun");
         assert_eq!(WeekStart::Monday.weekdays()[0], "Mon");
-    }
-
-    #[test]
-    fn delays_and_durations_are_worded() {
-        assert_eq!(delay(0), "on time");
-        assert_eq!(delay(1), "1 day late");
-        assert_eq!(delay(5), "5 days late");
     }
 }
 // }}}

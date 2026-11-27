@@ -22,9 +22,10 @@ use crate::{
 pub struct Card {
     pub id: ShortId,
     pub name: String,
-    tasks: usize,
-    /// When it finishes and how late that is compared with the plan on its own
-    forecast: Option<(NaiveDate, i64)>,
+    /// Tasks, groups, milestones, buffers and delays
+    items: usize,
+    /// When the last of the plan's targets is forecast to land, if it has any
+    last_target: Option<NaiveDate>,
     problems: usize,
     /// Starred by the person signed in
     pub favourite: bool,
@@ -53,10 +54,14 @@ pub fn use_cards() -> Memo<Vec<Card>> {
                         Card {
                             id: *plan.id(),
                             name: plan.name().to_string(),
-                            tasks: plan.tasks().len(),
-                            forecast: state
-                                .and_then(|s| s.plan_end)
-                                .map(|e| (e.forecast, e.delay())),
+                            items: plan.tasks().len()
+                                + plan.task_groups().len()
+                                + plan.milestones().len()
+                                + plan.plan_buffers().len()
+                                + plan.plan_delays().len(),
+                            last_target: state
+                                .filter(|_| !plan.targets().is_empty())
+                                .and_then(|s| s.targets.values().map(|t| t.forecast).max()),
                             problems: state
                                 .map_or(0, |s| s.unscheduled.len() + s.constraint_violations.len()),
                             favourite: starred.contains(plan.id()),
@@ -85,11 +90,12 @@ pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
                     <li>
                         <a class="card" href=Route::Plan(id, crate::nav::PlanTab::Gantt, None).path()>
                             <strong>{card.name.clone()}</strong>
-                            <span>{format!("{} tasks", card.tasks)}</span>
-                            {card.forecast.map(|(end, late)| view! {
-                                <span class:late={late > 0}>
-                                    {format!("Finishes {} · {}", format::day(end), format::delay(late))}
-                                </span>
+                            <span>{match card.items {
+                                1 => "1 item".to_string(),
+                                n => format!("{n} items"),
+                            }}</span>
+                            {card.last_target.map(|end| view! {
+                                <span>{format!("Last Target Finishes: {}", format::day(end))}</span>
                             })}
                             {(card.problems > 0).then(|| view! {
                                 <span class="problem">{format!("⚠ {} need attention", card.problems)}</span>
