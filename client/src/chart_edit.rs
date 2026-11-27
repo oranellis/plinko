@@ -253,8 +253,10 @@ pub fn editing(plan: ShortId) -> Editing {
                 .unwrap_or_default()
         })
     });
+    // read so that what shows it follows the plan: holding an item or letting it go need not
+    // move anything on the chart
     let pin = Callback::new(move |node: PlanNode| {
-        sync.tenant.with_untracked(|t| {
+        sync.tenant.with(|t| {
             let p = t.as_ref()?.plans().get(&plan)?;
             let held = match node {
                 PlanNode::Task(id) => p.tasks().get(&id)?.time_constraint(),
