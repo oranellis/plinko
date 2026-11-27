@@ -537,7 +537,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 Some(task.persistent_state().status)
             });
             let to = match key {
-                'n' => now.map(crate::context::next),
+                's' => now.map(crate::context::next),
+                'n' => Some(Status::NotStarted),
                 'i' => Some(Status::InProgress),
                 'o' => Some(Status::OnHold),
                 'c' => Some(Status::Completed),
@@ -599,14 +600,14 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         match (key, editing, chosen.get_untracked()) {
             ('a', _, _) => menu.set(true),
             // the next status of a task is one more press away, and a buffer is pinned
-            ('n', _, _) => match item {
+            ('s', _, _) => match item {
                 Some(PlanNode::Task(_)) => statuses.set(true),
                 Some(PlanNode::PlanBuffer(buffer)) => {
                     crate::context::toggle_pin(sync, plan, buffer)
                 }
                 _ => return false,
             },
-            ('s', _, _) => searching.set(true),
+            ('/', _, _) => searching.set(true),
             ('t', _, _) => jump.update(|n| *n += 1),
             ('d', Some(_), _) => light(Pick::Before),
             ('f', Some(_), _) => light(Pick::After),
