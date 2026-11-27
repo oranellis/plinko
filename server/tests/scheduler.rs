@@ -75,6 +75,8 @@ struct World {
     root: Uuid,
     plan: ShortId,
     next: u128,
+    /// Updates go in as if saved before today's checks, to try what those would refuse
+    saved: bool,
 }
 
 impl World {
@@ -86,6 +88,7 @@ impl World {
             root,
             plan: ShortId::new(),
             next: 1,
+            saved: false,
         };
         let new = NewPlan {
             id: world.plan,
@@ -106,7 +109,10 @@ impl World {
             actor: self.root,
             update_type,
         };
-        self.tenant.apply_update(update).unwrap();
+        match self.saved {
+            true => self.tenant.apply_logged(update).unwrap(),
+            false => self.tenant.apply_update(update).unwrap(),
+        }
     }
 
     fn plan_update(&mut self, update: PlanUpdate) {
@@ -1187,6 +1193,8 @@ fn a_date_already_missed_counts_as_missed_however_long_ago() {
 #[test]
 fn work_too_long_or_too_late_for_any_day_finds_none() {
     let mut world = World::new();
+    // updates refuse these now, but a log from before could hold them
+    world.saved = true;
     let alice = world.user();
     let long = world.task(u32::MAX, &[(user(alice), 8)], &[]);
     let late = world.task(1, &[(user(alice), 8)], &[]);
