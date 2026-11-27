@@ -262,8 +262,11 @@ impl Tenant {
                 plan.apply_update(PlanUpdate::User(Crud::Add(NewPlanUser { id: actor })))?;
                 self.insert_plan(plan)
             }
+            // only an admin deletes a whole plan
             PlanTenantUpdate::Remove(id) => {
-                self.authorize_plan(actor, is_admin, &id)?;
+                if !is_admin {
+                    return Err(PlinkoError::Forbidden(actor));
+                }
                 self.plan_calendars.remove(&id);
                 self.users
                     .values_mut()

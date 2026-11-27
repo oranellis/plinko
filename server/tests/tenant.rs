@@ -189,6 +189,11 @@ fn members_only_edit_their_own_plans() {
     plan_update(&mut tenant, alice, plan, PlanUpdate::User(Crud::Add(new))).unwrap();
     add_task(&mut tenant, bob, plan).unwrap();
 
+    // but only an admin deletes it
+    let remove = TenantUpdateType::Plan(PlanTenantUpdate::Remove(plan));
+    assert!(apply(&mut tenant, alice, remove.clone()).is_err());
+    assert!(tenant.plans().contains_key(&plan));
+
     // only users that exist in the tenant can be added to a plan
     let ghost = NewPlanUser { id: Uuid::new_v4() };
     let ghost = PlanUpdate::User(Crud::Add(ghost));

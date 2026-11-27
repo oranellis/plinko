@@ -112,10 +112,13 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
             <People plan=plan />
             <Tags plan=plan />
             <Affinities plan=plan />
-            <section>
-                <h2>"Plan Management"</h2>
-                <button type="button" class="danger" on:click=move |_| deleting.set(true)>"Delete Plan"</button>
-            </section>
+            // only an admin may delete a plan
+            <Show when=move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin))>
+                <section>
+                    <h2>"Plan Management"</h2>
+                    <button type="button" class="danger" on:click=move |_| deleting.set(true)>"Delete Plan"</button>
+                </section>
+            </Show>
             {move || deleting.get().then(|| {
                 let name = sync.tenant.with_untracked(|t| {
                     t.as_ref().and_then(|t| t.plans().get(&plan)).map(|p| p.name().to_string())
