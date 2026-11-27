@@ -914,6 +914,14 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         }
         true
     });
+    // one that leaves what is being edited alone, which asks nothing first
+    let keeps = move |label: &'static str, kind: IconKind, on: Callback<()>| {
+        view! {
+            <button type="button" class="toolbar-btn keeps" title=label aria-label=label on:click=move |_| on.run(())>
+                <Icon kind=kind />
+            </button>
+        }
+    };
     let icon_button = move |label: &'static str, kind: IconKind, on: Callback<()>| {
         view! {
             <button type="button" class="toolbar-btn" title=label aria-label=label on:click=move |_| on.run(())>
@@ -935,10 +943,10 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         >
                             {icon_button("Back to plans", IconKind::Back, Callback::new(move |_| navigate(Route::Plans)))}
                             <Show when=move || tab.get() == PlanTab::Gantt>
-                                {icon_button("Jump to today", IconKind::Today, Callback::new(move |_| jump.update(|n| *n += 1)))}
+                                {keeps("Jump to today", IconKind::Today, Callback::new(move |_| jump.update(|n| *n += 1)))}
                             </Show>
                             <AddMenu on_add=Callback::new(move |kind: Kind| add(kind)) pinned=menu />
-                            {icon_button("Search", IconKind::Search, Callback::new(move |_| searching.set(true)))}
+                            {keeps("Search", IconKind::Search, Callback::new(move |_| searching.set(true)))}
                         </Show>
                     </div>
                     <span class="toolbar-title">
@@ -948,7 +956,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         <Show when=move || { unplaced.get() > 0 }>
                             <button
                                 type="button"
-                                class="toolbar-btn problem"
+                                class="toolbar-btn problem keeps"
                                 title="Not scheduled"
                                 aria-label="Items that are not scheduled"
                                 on:click=move |_| listing.set(true)
@@ -1227,7 +1235,7 @@ fn AddMenu(
     view! {
         // hovering opens it for a mouse only, a touch also sends a hover that nothing ends
         <div
-            class="addmenu"
+            class="addmenu keeps"
             on:pointerenter=move |ev| over.set(ev.pointer_type() == "mouse")
             on:pointerleave=move |_| over.set(false)
         >

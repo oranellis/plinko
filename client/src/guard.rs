@@ -13,6 +13,8 @@ use crate::{
 // constants {{{
 /// Where what is being edited is, and the question about it: clicks in there are part of the edit
 const EDITING: &str = ".contextbar, .infopanel, .workerwin, .modal";
+/// Controls that leave what is being edited alone, like the search or jumping to today
+const KEEPS: &str = ".keeps, .helpbutton";
 // }}}
 
 #[derive(Clone, Copy)]
@@ -77,9 +79,12 @@ impl Guard {
                 let target = ev
                     .target()
                     .and_then(|t| t.dyn_into::<web_sys::Element>().ok());
+                // a link goes somewhere else wherever it is, as one in the search does
                 let control = target.and_then(|t| {
-                    let editing = t.closest(EDITING).ok().flatten().is_some();
-                    t.closest("a, button").ok().flatten().filter(|_| !editing)
+                    let within = |at: &str| t.closest(at).ok().flatten().is_some();
+                    let control = t.closest("a[href], button").ok().flatten()?;
+                    let link = control.tag_name().eq_ignore_ascii_case("a");
+                    (link || !(within(EDITING) || within(KEEPS))).then_some(control)
                 });
                 let Some(control) = control.and_then(|c| c.dyn_into::<web_sys::HtmlElement>().ok())
                 else {
@@ -135,20 +140,28 @@ pub fn ConfirmLeave(guard: Guard, on_save: Callback<()>) -> impl IntoView {
         then.run(());
     };
     let stay = Callback::new(move |()| guard.asking.set(None));
-    // enter saves, so that it is the same key as saves an edit
+    // enter saves, so that it is the same key as saves an edit. It is heard before anything else
+    // is, so the name box under the question does not save as well, except on one of its
+    // buttons, where enter is that button
     let on_key =
         Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |ev: web_sys::KeyboardEvent| {
             let asked = guard
                 .asking
                 .try_with_untracked(Option::is_some)
                 .unwrap_or(false);
-            if asked && ev.key() == "Enter" {
+            let on_button = ev
+                .target()
+                .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                .is_some_and(|t| t.closest(".modal button").ok().flatten().is_some());
+            if asked && ev.key() == "Enter" && !on_button {
                 ev.prevent_default();
+                ev.stop_propagation();
                 leave(true);
             }
         });
     if let Some(window) = web_sys::window() {
-        let _ = window.add_event_listener_with_callback("keydown", on_key.as_ref().unchecked_ref());
+        let heard = on_key.as_ref().unchecked_ref();
+        let _ = window.add_event_listener_with_callback_and_bool("keydown", heard, true);
     }
     on_key.forget();
     let choice = move |label: &'static str,
