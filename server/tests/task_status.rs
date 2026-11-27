@@ -173,6 +173,40 @@ fn an_end_date_sent_with_the_hold_is_kept() {
 }
 // }}}
 
+// a_reopened_task_forgets_its_end_and_completing_it_again_ends_it_today {{{
+#[test]
+fn a_reopened_task_forgets_its_end_and_completing_it_again_ends_it_today() {
+    let mut s = setup();
+    set_today(&mut s, 3);
+    set_state(&mut s, with(Status::Completed, Some(2), None));
+    assert_eq!(state(&s), with(Status::Completed, Some(2), Some(3)));
+    // the client sends back the dates it has with the new status
+    set_state(&mut s, with(Status::InProgress, Some(2), Some(3)));
+    assert_eq!(state(&s), with(Status::InProgress, Some(2), None));
+    set_today(&mut s, 8);
+    set_state(&mut s, with(Status::Completed, Some(2), None));
+    assert_eq!(state(&s), with(Status::Completed, Some(2), Some(8)));
+    set_state(&mut s, with(Status::Dropped, Some(2), Some(8)));
+    set_state(&mut s, with(Status::InProgress, Some(2), Some(8)));
+    assert_eq!(state(&s), with(Status::InProgress, Some(2), None));
+}
+// }}}
+
+// a_completed_task_put_on_hold_ends_today_unless_given_a_new_end {{{
+#[test]
+fn a_completed_task_put_on_hold_ends_today_unless_given_a_new_end() {
+    let mut s = setup();
+    set_today(&mut s, 3);
+    set_state(&mut s, with(Status::Completed, Some(2), None));
+    set_today(&mut s, 6);
+    set_state(&mut s, with(Status::OnHold, Some(2), Some(3)));
+    assert_eq!(state(&s), with(Status::OnHold, Some(2), Some(6)));
+    // a different end date is one the user picked
+    set_state(&mut s, with(Status::Completed, Some(2), Some(5)));
+    assert_eq!(state(&s), with(Status::Completed, Some(2), Some(5)));
+}
+// }}}
+
 // the_clock_moves_by_update {{{
 #[test]
 fn the_clock_moves_by_update() {

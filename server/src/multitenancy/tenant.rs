@@ -269,11 +269,11 @@ impl Tenant {
         }
     }
 
-    /// Putting a task on hold ends it on the day that happens (today), unless an end date came with the
-    /// update, and an update that leaves it on hold keeps that end. Resuming clears it again. A task
-    /// that has started begins today unless it has a start, and one completed or dropped ends today
-    /// likewise. A task put back to not started has not run, so it has neither, and starting it
-    /// again begins it today.
+    /// A task that has started begins today unless it has a start. Completing, dropping or putting
+    /// it on hold ends it today, unless the update brings a new end date, and an update that keeps
+    /// the status keeps the end. A task in progress has no end, so resuming clears it. A task put
+    /// back to not started has not run, so it has neither, and starting it again begins it today.
+    /// The client sends back the dates it has, so an end the task already had is not a new one.
     fn set_status_dates(&self, plan: &ShortId, update: &mut PlanUpdate) {
         let PlanUpdate::Task(Crud::Update(patch)) = update else {
             return;
@@ -285,18 +285,6 @@ impl Tenant {
         let Some(state) = &mut patch.persistent_state else {
             return;
         };
-        match (was.status, state.status) {
-            (Status::OnHold, Status::OnHold) => {
-                state.actual_end_date = state.actual_end_date.or(was.actual_end_date);
-            }
-            (_, Status::OnHold) => {
-                state.actual_end_date = state.actual_end_date.or(Some(self.today));
-            }
-            (Status::OnHold, Status::NotStarted | Status::InProgress) => {
-                state.actual_end_date = None;
-            }
-            _ => {}
-        }
         if state.status == Status::NotStarted {
             state.actual_start_date = None;
             state.actual_end_date = None;
@@ -304,10 +292,15 @@ impl Tenant {
         }
         let start = state.actual_start_date.or(was.actual_start_date);
         state.actual_start_date = start.or(Some(self.today));
-        if matches!(state.status, Status::Completed | Status::Dropped) {
-            let end = state.actual_end_date.or(was.actual_end_date);
-            state.actual_end_date = end.or(Some(self.today));
-        }
+        let same = state.status == was.status;
+        let given = state
+            .actual_end_date
+            .filter(|end| same || Some(*end) != was.actual_end_date);
+        state.actual_end_date = match state.status {
+            Status::InProgress => None,
+            _ if same => given.or(was.actual_end_date).or(Some(self.today)),
+            _ => given.or(Some(self.today)),
+        };
     }
 
     /// Admins and anyone in the plan, directly or through an assigned group, may change a plan
