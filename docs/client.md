@@ -114,7 +114,7 @@ On the chart, typed at the page and not into a box:
 | Key | Does |
 | --- | --- |
 | `a` | lists what can be added, where `t` `m` `g` `b` `d` then add a task, milestone, group, buffer or delay |
-| `s` | opens the search, where the arrows move down the list, and enter or a click selects the item and shows it on the chart |
+| `s` | opens the search, where the arrows move down the list, and enter or a click selects the item and shows it on the chart; while what an item waits for, what waits for it or its group is being picked, it picks the item instead, ticking what is picked |
 | `t` | jumps to today |
 | `e` | edits the selected item |
 | `n` | lists the statuses of the selected or edited task, where `n` again moves it on to the next and `i` `o` `c` `d` put it in progress, on hold, complete or dropped; for a buffer it pins or unpins the start |

@@ -162,6 +162,7 @@ input.search.nothing { border-color: var(--danger); }
 .results li button:hover, .results li button.at { background: var(--raised); }
 .results li button.at { box-shadow: inset 3px 0 0 var(--accent); }
 .results .glyph { color: var(--muted); }
+.results .picked { margin-left: auto; color: var(--accent); }
 .results .none { color: var(--faint); text-align: center; padding: 12px 0; font-size: 13px; }
 
 /* the list view */

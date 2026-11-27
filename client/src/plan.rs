@@ -421,7 +421,44 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         });
     });
     // what a search picked is selected, and put in the middle of the chart
+    // what is picked while the search is used for picking: what the item waits for, or what
+    // waits for it, staged for one being edited and in the plan for one only selected
+    let picked = Signal::derive(move || {
+        if let Some(d) = draft.get() {
+            return match d.pick {
+                Some(Pick::Before) => d.dependencies,
+                Some(Pick::After) => d.dependents,
+                _ => Vec::new(),
+            };
+        }
+        let Some((own, pick)) = live.get() else {
+            return Vec::new();
+        };
+        sync.tenant.with(|t| {
+            let Some(p) = t.as_ref().and_then(|t| t.plans().get(&plan)) else {
+                return Vec::new();
+            };
+            match pick {
+                Pick::Before => model::dependencies(p, own),
+                Pick::After => model::dependents(p, own),
+                _ => Vec::new(),
+            }
+        })
+    });
     let on_found = Callback::new(move |node: PlanNode| {
+        // while something is being picked it is a pick, as a click on the item would be: the
+        // search stays for picking more, and a group, which is one, ends it
+        let picking = draft
+            .with_untracked(|d| d.as_ref().and_then(|d| d.pick))
+            .or(live.with_untracked(|l| l.map(|l| l.1)));
+        if let Some(pick @ (Pick::Before | Pick::After | Pick::Group)) = picking
+            && (live_click(Some(node)) || card_click(Some(node)))
+        {
+            if pick == Pick::Group {
+                searching.set(false);
+            }
+            return;
+        }
         searching.set(false);
         selected.set(Some(node));
         let placed = scene.with_untracked(|s| s.arrangement.placed.iter().any(|p| p.mark == node));
@@ -791,7 +828,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                     }
                 })}
                 <Show when=move || searching.get()>
-                    <SearchWindow plan=plan on_found=on_found on_close=Callback::new(move |_| searching.set(false)) />
+                    <SearchWindow plan=plan on_found=on_found picked=picked on_close=Callback::new(move |_| searching.set(false)) />
                 </Show>
                 <Show when=move || listing.get()>
                     <UnplacedWindow
@@ -974,6 +1011,8 @@ pub fn blank_click(ev: &leptos::ev::MouseEvent) -> bool {
 fn SearchWindow(
     plan: ShortId,
     on_found: Callback<PlanNode>,
+    /// What is picked, while the search picks: these are marked in the list
+    picked: Signal<Vec<PlanNode>>,
     on_close: Callback<()>,
 ) -> impl IntoView {
     let sync = use_sync();
@@ -1057,6 +1096,7 @@ fn SearchWindow(
                             >
                                 <span class="glyph">{glyph}</span>
                                 {name}
+                                {move || picked.with(|p| p.contains(&node)).then(|| view! { <span class="picked">"✓"</span> })}
                             </button>
                         </li>
                     }
