@@ -24,7 +24,7 @@ use uuid::Uuid;
 use crate::{
     datepicker::DateInput,
     format::{self, use_preferences},
-    ui::{Field, Hours, Select, options, use_sync},
+    ui::{Field, Hours, Select, options, use_today},
 };
 // }}}
 
@@ -311,7 +311,6 @@ pub fn RuleCalendar<V: Value>(
     #[prop(into)] rules: Signal<Option<RuleSet<V>>>,
     send: Callback<RuleSetUpdate<V>>,
 ) -> impl IntoView {
-    let sync = use_sync();
     // a draft outlives the part of the page that was showing when it was made
     let owner = StoredValue::new(Owner::current());
     let make = move |day, rule: Option<&Rule<V>>| match owner.get_value() {
@@ -319,10 +318,7 @@ pub fn RuleCalendar<V: Value>(
         None => Draft::new::<V>(day, rule),
     };
     let week_start = use_preferences().week_start;
-    let today = sync
-        .tenant
-        .with_untracked(|t| t.as_ref().map(|t| t.today()))
-        .unwrap_or_default();
+    let today = use_today();
     let selected = RwSignal::new(None::<NaiveDate>);
     let editing = RwSignal::new(None::<Draft>);
     let scroller = NodeRef::<html::Div>::new();
@@ -339,7 +335,9 @@ pub fn RuleCalendar<V: Value>(
                 .map(Rule::start_day)
                 .min()
         });
-        earliest.map_or(month_index(today), |e| month_index(e.min(today))) - SLACK / 3
+        earliest.map_or(month_index(today.get()), |e| {
+            month_index(e.min(today.get()))
+        }) - SLACK / 3
     });
     // the calendar goes on past the last rule and past wherever has been scrolled to, and shrinks
     // back when scrolled back
@@ -353,7 +351,7 @@ pub fn RuleCalendar<V: Value>(
                 .map(|r| r.stop_day().unwrap_or(r.start_day()))
                 .max()
         });
-        let wanted = latest.map_or(0, month_index).max(month_index(today)) + 12;
+        let wanted = latest.map_or(0, month_index).max(month_index(today.get())) + 12;
         wanted.max(seen() + SLACK)
     });
     let in_view = Memo::new(move |_| {
@@ -402,7 +400,8 @@ pub fn RuleCalendar<V: Value>(
     };
     let to_today = move || {
         if let Some(element) = scroller.get_untracked() {
-            let at = f64::from(month_index(today) - first.get_untracked()) * MONTH_HEIGHT;
+            let at = f64::from(month_index(today.get_untracked()) - first.get_untracked())
+                * MONTH_HEIGHT;
             element.set_scroll_top(at as i32);
             measure();
         }
@@ -413,7 +412,7 @@ pub fn RuleCalendar<V: Value>(
         }
     });
     let edit = move |id: Uuid| {
-        let day = selected.get_untracked().unwrap_or(today);
+        let day = selected.get_untracked().unwrap_or(today.get_untracked());
         let draft = rules.with_untracked(|set| {
             set.as_ref()
                 .and_then(|s| s.rules().get(&id))
@@ -427,7 +426,7 @@ pub fn RuleCalendar<V: Value>(
                 <div class="calbar">
                     <button type="button" on:click=move |_| {
                         to_today();
-                        selected.set(Some(today));
+                        selected.set(Some(today.get_untracked()));
                         editing.set(None);
                     }>"Today"</button>
                 </div>
@@ -469,7 +468,7 @@ pub fn RuleCalendar<V: Value>(
                                 </p>
                                 <Show when=move || selected.get().is_some()>
                                     <button type="button" class="add" on:click=move |_| {
-                                        let day = selected.get_untracked().unwrap_or(today);
+                                        let day = selected.get_untracked().unwrap_or(today.get_untracked());
                                         editing.set(Some(make(day, None)));
                                     }>"+ New rule"</button>
                                 </Show>
@@ -516,7 +515,7 @@ pub fn RuleCalendar<V: Value>(
 /// A day of the calendar: shaded by what it is worth, with a dot on the day a rule was made
 fn day_cell<V: Value>(
     day: NaiveDate,
-    today: NaiveDate,
+    today: Memo<NaiveDate>,
     levels: Memo<HashMap<NaiveDate, u8>>,
     marked: Memo<std::collections::HashSet<NaiveDate>>,
     selected: RwSignal<Option<NaiveDate>>,
@@ -531,7 +530,7 @@ fn day_cell<V: Value>(
             type="button"
             class="day"
             style=move || format!("--shade:{}", f32::from(level.get()) / f32::from(V::MAX))
-            class:today=day == today
+            class:today=move || day == today.get()
             class:picked=move || picked.get()
             class:marked=move || mark.get()
             title=move || format!("{}: {}", format::day(day), V::level_text(level.get()))

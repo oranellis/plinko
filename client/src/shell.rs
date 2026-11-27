@@ -75,19 +75,28 @@ pub fn Shell() -> impl IntoView {
             sync.end();
         });
     };
-    let link = move |label: &'static str, icon: IconKind, to: Route, active: Signal<bool>| {
-        view! {
-            <a href=to.path() class:active=move || active.get()>
-                <Icon kind=icon size=16 />
-                {label}
-            </a>
-        }
-    };
+    let link =
+        move |label: &'static str, icon: IconKind, to: Signal<Route>, active: Signal<bool>| {
+            view! {
+                <a href=move || to.get().path() class:active=move || active.get()>
+                    <Icon kind=icon size=16 />
+                    {label}
+                </a>
+            }
+        };
     let on_home = Signal::derive(move || route.get() == Route::Home);
     let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
     let on_allocations = Signal::derive(move || route.get() == Route::Allocations);
-    let me = sync.me.get_untracked().map(|m| m.id).unwrap_or_default();
-    let mine = Route::Availability(Availability::User(me));
+    // whoever is logged in now
+    let mine = Signal::derive(move || {
+        let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
+        Route::Availability(Availability::User(me.unwrap_or_default()))
+    });
+    let (plans, allocations, people) = (
+        Signal::stored(Route::Plans),
+        Signal::stored(Route::Allocations),
+        Signal::stored(Route::People),
+    );
     let on_availability = Signal::derive(move || matches!(route.get(), Route::Availability(_)));
     // a person's allocations are looked at from the people page, so that stays lit
     let on_people =
@@ -101,10 +110,10 @@ pub fn Shell() -> impl IntoView {
                 </a>
                 <span class="tenant">{name}</span>
                 <nav class="tabs" aria-label="Main">
-                {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
-                    {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
+                {link("Plans", IconKind::Gantt, plans, on_plans)}
+                    {link("Allocations", IconKind::Allocation, allocations, on_allocations)}
                     {link("Availability", IconKind::Resources, mine, on_availability)}
-                    <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
+                    <Show when=admin>{link("People", IconKind::Users, people, on_people)}</Show>
                 </nav>
                 <Status />
                 <HelpButton />
@@ -125,10 +134,10 @@ pub fn Shell() -> impl IntoView {
                 }}
             </main>
             <nav class="bottom" aria-label="Main">
-                {link("Plans", IconKind::Gantt, Route::Plans, on_plans)}
-                {link("Allocations", IconKind::Allocation, Route::Allocations, on_allocations)}
+                {link("Plans", IconKind::Gantt, plans, on_plans)}
+                {link("Allocations", IconKind::Allocation, allocations, on_allocations)}
                 {link("Availability", IconKind::Resources, mine, on_availability)}
-                <Show when=admin>{link("People", IconKind::Users, Route::People, on_people)}</Show>
+                <Show when=admin>{link("People", IconKind::Users, people, on_people)}</Show>
             </nav>
         </div>
     }

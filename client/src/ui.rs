@@ -14,6 +14,16 @@ use crate::{
 pub fn use_sync() -> Sync {
     expect_context::<Sync>()
 }
+
+/// The tenant's today, which moves on at midnight while the page is open
+pub fn use_today() -> Memo<chrono::NaiveDate> {
+    let sync = use_sync();
+    Memo::new(move |_| {
+        sync.tenant
+            .with(|t| t.as_ref().map(|t| t.today()))
+            .unwrap_or_default()
+    })
+}
 // }}}
 
 // Back {{{
