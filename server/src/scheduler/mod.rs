@@ -234,15 +234,13 @@ fn hints(net: &Network, table: &Table, overrides: &Overrides) -> Hints {
     for (late, days) in &overrides.sooner {
         let item = match late {
             Late::Arc(arc) => Some(item_of(net, *arc)),
-            Late::Vertex(v) => {
-                let mut ending = net
-                    .lowered
-                    .iter()
-                    .filter(|(_, l)| l.end == *v && l.arc.is_none());
-                ending
-                    .next()
-                    .map(|((plan, node), _)| (net.plans[*plan as usize].id, *node))
-            }
+            // the first node in id order, whatever the order of the map
+            Late::Vertex(v) => net
+                .lowered
+                .iter()
+                .filter(|(_, l)| l.end == *v && l.arc.is_none())
+                .map(|((plan, node), _)| (net.plans[*plan as usize].id, *node))
+                .min_by_key(|(plan, node)| (*plan, node.id())),
         };
         hints.sooner.extend(item.map(|item| (item, *days)));
     }
