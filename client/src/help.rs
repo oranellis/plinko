@@ -94,10 +94,10 @@ const PAGES: &[Page] = &[(
                 &[
                     (
                         &["←", "→"],
-                        "Move the day a day either way, or move the pointer",
+                        "Move the day a day either way, as h and l do, or move the pointer",
                     ),
                     (&["enter"], "Put it there, as a click on a day does"),
-                    (&["e", "f", "l"], "Hold it no earlier, exactly, or no later"),
+                    (&["e", "f", "d"], "Hold it no earlier, exactly, or no later (a deadline)"),
                     (&["c"], "Go round holding its start, its end, or nothing"),
                     (&["escape"], "Leave it where it was"),
                 ],

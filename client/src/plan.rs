@@ -33,6 +33,37 @@ use crate::{
 // }}}
 
 // types {{{
+/// What the page is in the middle of, shown at the top left of the chart
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Mode {
+    Creating,
+    Editing,
+    Adding,
+    Statuses,
+    Workers,
+    Moving,
+    Picking(Pick),
+}
+
+impl Mode {
+    fn shown(self) -> (IconKind, &'static str, &'static str) {
+        match self {
+            Mode::Creating => (IconKind::Plus, "Creating", ""),
+            Mode::Editing => (IconKind::Pencil, "Editing", ""),
+            Mode::Adding => (IconKind::Plus, "Choosing what to add", ""),
+            Mode::Statuses => (IconKind::Play, "Choosing its status", ""),
+            Mode::Workers => (IconKind::Person, "On its workers", ""),
+            Mode::Moving => (IconKind::Move, "Moving its days", ""),
+            Mode::Picking(Pick::Before) => {
+                (IconKind::Circle, "Picking what it waits for", "before")
+            }
+            Mode::Picking(Pick::After) => (IconKind::Circle, "Picking what waits for it", "after"),
+            Mode::Picking(Pick::Group) => (IconKind::AddGroup, "Picking its group", ""),
+            Mode::Picking(Pick::Day) => (IconKind::Timer, "Picking the day it is held to", "day"),
+        }
+    }
+}
+
 /// What of the days of an item the keys move
 #[derive(Clone, Copy, PartialEq)]
 enum Moving {
@@ -789,9 +820,19 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             draft.with_untracked(|d| d.as_ref().map(|d| (d.new, d.pick, d.pin().is_some())));
         if let Some((_, Some(Pick::Day), _)) = editing {
             let held = match key {
+                // vim's move it a day, as the arrows do
+                'h' | 'l' => {
+                    let by = if key == 'h' { -1 } else { 1 };
+                    draft.update(|d| {
+                        if let Some(d) = d {
+                            d.aim_by(by)
+                        }
+                    });
+                    return true;
+                }
                 'e' => Held::Earliest,
                 'f' => Held::Fixed,
-                'l' => Held::Latest,
+                'd' => Held::Latest,
                 // again, it goes round: the other end, then not held, which lets go of it
                 'c' => {
                     crate::context::hold_next(sync, plan, draft);
@@ -1034,6 +1075,33 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                         task.map(|_| view! { <WorkersWindow plan=plan draft=draft cursor=workers open_row=open_row /> })
                     }}
                     <Show when=move || tab.get() == PlanTab::Gantt>
+                        <ModeStack modes=Signal::derive(move || {
+                            // what the page is doing, the first under the rest
+                            let mut modes = Vec::new();
+                            let (pick, editing) = draft.with(|d| match d {
+                                Some(d) => (d.pick, Some(d.new)),
+                                None => (None, None),
+                            });
+                            match editing {
+                                Some(true) => modes.push(Mode::Creating),
+                                Some(false) => modes.push(Mode::Editing),
+                                None => {}
+                            }
+                            if menu.get() {
+                                modes.push(Mode::Adding);
+                            }
+                            if statuses.get() {
+                                modes.push(Mode::Statuses);
+                            }
+                            if workers.with(Option::is_some) {
+                                modes.push(Mode::Workers);
+                            }
+                            if moving.with(Option::is_some) {
+                                modes.push(Mode::Moving);
+                            }
+                            modes.extend(pick.or(live.get().map(|l| l.1)).map(Mode::Picking));
+                            modes
+                        }) />
                         <card::Hint
                             draft=draft
                             live=Signal::derive(move || live.get().map(|l| l.1))
@@ -1087,6 +1155,26 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                 </Show>
             </div>
         </Show>
+    }
+}
+// }}}
+
+// ModeStack {{{
+/// What the page is in the middle of, as boxes at the top left of the chart, each one it went
+/// into from the one before laid over that, down and to the right
+#[component]
+fn ModeStack(modes: Signal<Vec<Mode>>) -> impl IntoView {
+    view! {
+        <div class="modestack" aria-live="polite">
+            <For each=move || modes.get().into_iter().enumerate() key=|m| *m children=move |(i, mode)| {
+                let (icon, said, tone) = mode.shown();
+                view! {
+                    <div class=format!("mode fadein {tone}") style=format!("--i:{i}") title=said aria-label=said>
+                        <Icon kind=icon size=20 />
+                    </div>
+                }
+            } />
+        </div>
     }
 }
 // }}}

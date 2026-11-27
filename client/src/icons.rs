@@ -174,6 +174,10 @@ pub fn Icon(
             <circle cx="8" cy="11.1" r="0.75" fill="currentColor" />
         }
         .into_any(),
+        IconKind::Move => view! {
+            <path d="M2.5 8H13.5M4.8 5.7L2.5 8L4.8 10.3M11.2 5.7L13.5 8L11.2 10.3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+        }
+        .into_any(),
         IconKind::Timer => view! {
             <circle cx="8" cy="9" r="4.7" stroke="currentColor" stroke-width="1.2" fill="none" />
             <path d="M8 6.4V9H10M6.6 2.4H9.4M8 2.4V4.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none" />
@@ -245,6 +249,7 @@ pub enum IconKind {
     Close,
     Bin,
     Timer,
+    Move,
     Help,
     Plus,
     Play,

@@ -121,6 +121,14 @@ h2.section { margin: 16px 0 8px; color: var(--muted); font-size: 13px; text-tran
 }
 .toolbar-title-text { overflow: hidden; text-overflow: ellipsis; }
 .main { flex: 1; min-width: 0; min-height: 0; overflow: auto; position: relative; }
+/* what the page is in the middle of, at the top left of the chart: a box for each, each laid
+   over the one it was gone into from, down and to the right */
+.modestack { position: absolute; left: 10px; top: 72px; z-index: 22; pointer-events: none; }
+.modestack .mode { position: absolute; left: calc(var(--i) * 12px); top: calc(var(--i) * 12px); z-index: var(--i); width: 40px; height: 40px; display: grid; place-items: center; background: #181818; border: 1.5px solid var(--line); border-radius: 10px; box-shadow: 0 3px 10px rgba(0, 0, 0, 0.55); color: var(--text); }
+.modestack .mode:last-child { border-color: var(--accent); color: #fff; }
+.modestack .mode.before { color: #fc1ef1; }
+.modestack .mode.after { color: #07fcd7; }
+.modestack .mode.day { color: #c8e63c; }
 canvas.gantt { width: 100%; height: 100%; display: block; touch-action: none; background: var(--bg); }
 
 /* floating windows and the pane beside the chart */

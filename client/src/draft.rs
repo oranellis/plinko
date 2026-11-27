@@ -71,7 +71,7 @@ pub struct Draft {
 
 // Draft supporting types {{{
 /// A handle of the card that can be lit
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Pick {
     /// The item waits for what is clicked
     Before,
