@@ -642,6 +642,25 @@ fn slot(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.stroke();
 }
 
+/// The ends of an item that the keys are moving: a bar of light in each, start and or end
+pub fn paint_moving(ctx: &Pen, rect: Rect, start: bool, end: bool) {
+    ctx.save();
+    ctx.set_stroke_style_str(COLOUR);
+    ctx.set_line_width(4.0);
+    ctx.set_line_cap("round");
+    let middle = rect.y + rect.h / 2.0;
+    let reach = rect.h / 2.0 + 3.0;
+    for (on, x) in [(start, rect.x), (end, rect.x + rect.w)] {
+        if on {
+            ctx.begin_path();
+            ctx.move_to(x, middle - reach);
+            ctx.line_to(x, middle + reach);
+            ctx.stroke();
+        }
+    }
+    ctx.restore();
+}
+
 fn dot(ctx: &Pen, (x, y): (f64, f64), colour: &str) {
     ctx.set_fill_style_str(colour);
     ctx.begin_path();

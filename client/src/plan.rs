@@ -405,10 +405,8 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
             Moving::All if started => edits.shift_dates.run((node, days)),
             Moving::Start if started => edits.restart.run((node, days)),
             Moving::End => edits.resize.run((node, days)),
-            _ => sync.notice.set(Some(
-                "Only the days a task has really run can be moved, the schedule places the rest"
-                    .to_string(),
-            )),
+            // the rest is where the schedule puts it
+            _ => {}
         }
     };
     let on_moving =
@@ -982,6 +980,18 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 spot=spot
                                 probe=probe
                                 hovered=hovered
+                                moving=Signal::derive(move || {
+                                    let (node, how) = moving.get()?;
+                                    // only what can move is lit: the end of anything that lasts,
+                                    // and the start of a task that has started
+                                    let started = edits.dated.run(node);
+                                    let (start, end) = match how {
+                                        Moving::All => (started, started),
+                                        Moving::Start => (started, false),
+                                        Moving::End => (false, true),
+                                    };
+                                    Some((node, start, end))
+                                })
                                 gripped=Signal::derive(move || live.get().map(|(node, pick)| {
                                     (node, match pick {
                                         Pick::Before => Some(false),

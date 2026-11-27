@@ -95,6 +95,9 @@ pub fn Gantt(
     /// items answer to: the right one, or the left
     #[prop(optional, into)]
     gripped: Option<Signal<Option<Gripped>>>,
+    /// An item whose days the keys are moving, and whether its start and its end move
+    #[prop(optional, into)]
+    moving: Option<Signal<Option<(Mark, bool, bool)>>>,
     /// What went wrong for an item that misses its date
     violation: Callback<Mark, Vec<String>>,
     on_open: Callback<PlanNode>,
@@ -648,6 +651,10 @@ pub fn Gantt(
         if let Some(pin) = pinned.zip(held).and_then(|(n, p)| pin_view(n, p, false)) {
             shift::paint_pin(ctx, &signed(pin));
         }
+        let moved = moving.and_then(|m| m.get());
+        if let Some(((_, start, end), rect)) = moved.and_then(|m| Some((m, rect_of(m.0)?))) {
+            shift::paint_moving(ctx, rect, start, end);
+        }
         if editing_shift || gripped.is_some() {
             let shifted = editing_shift && near.is_some() || live.is_some();
             let handles = gripped
@@ -797,6 +804,7 @@ pub fn Gantt(
             staged.map(|s| s.track()),
             spot.map(|s| s.track()),
             held_out.map(|h| h.track()),
+            moving.map(|m| m.track()),
         );
         // the pointer matters while something follows it: a drag, the handles, a note on a warning
         let warns = hovered
