@@ -25,7 +25,7 @@ use crate::gantt::{
     arrange::{Arrangement, Mark},
     draw::{Frame, Hits, paint_header, paint_links, paint_marks, paint_notes},
     layout::{Bounds, DAY_WIDTH, Rect, Viewport},
-    links::{Link, Role},
+    links::{Anchor, Link, Role},
     scene::Scene,
     shift::{Drag, DragView, Editing, Grips, Handle, Held, Overlay, Pin, PinView},
 };
@@ -397,10 +397,32 @@ pub fn Gantt(
             (Some(a), Some(b)) if a != b => editing.chain.run((a, b)),
             _ => Vec::new(),
         };
-        if chain.is_empty() {
-            hovered.or(picked).map(|m| links.run(m)).unwrap_or_default()
-        } else {
-            chain
+        let looked = hovered.or(picked);
+        // the item being edited has its links as they would be once it is saved, from where it
+        // is now, and keeps those to the end of a group it ends
+        let staged = staged
+            .and_then(|s| s.get())
+            .and_then(|s| Some((s.item.filter(|item| Some(*item) == looked)?, s)));
+        match (chain.is_empty(), staged) {
+            (false, _) => chain,
+            (true, Some((node, staged))) => {
+                let before = staged.before.iter().map(|other| Link {
+                    from: Anchor::End(*other),
+                    to: Anchor::Start(node),
+                    role: Role::Before,
+                });
+                let after = staged.after.iter().map(|other| Link {
+                    from: Anchor::End(node),
+                    to: Anchor::Start(*other),
+                    role: Role::After,
+                });
+                let groups = links.run(node).into_iter().filter(|l| {
+                    matches!(l.to, Anchor::End(PlanNode::TaskGroup(_)))
+                        || matches!(l.from, Anchor::Start(PlanNode::TaskGroup(_)))
+                });
+                before.chain(after).chain(groups).collect()
+            }
+            (true, None) => looked.map(|m| links.run(m)).unwrap_or_default(),
         }
     });
     // what the pointer is on, for the page to say more about
@@ -1183,7 +1205,7 @@ fn linked_to(links: Callback<Mark, Vec<Link>>, selected: Mark, node: PlanNode) -
     links.run(selected).iter().any(|l| {
         matches!(l.role, Role::Before | Role::After)
             && [l.from, l.to].iter().any(|a| match a {
-                links::Anchor::Start(n) | links::Anchor::End(n) => *n == node && selected != node,
+                Anchor::Start(n) | Anchor::End(n) => *n == node && selected != node,
             })
     })
 }
