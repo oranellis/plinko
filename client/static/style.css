@@ -89,7 +89,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* plans */
 .cards { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
-.card.allcard { border-style: dashed; }
 .card { display: grid; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; text-decoration: none; color: var(--text); }
 .card:hover { background: var(--raised); border-color: var(--accent); }
 .cards li { position: relative; min-width: 0; }
@@ -100,6 +99,9 @@ button.star:hover { background: var(--raised); color: #8a7a2a; }
 button.star.on { color: #ffd600; }
 h2.section { margin: 16px 0 8px; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
 .card strong { padding-right: 28px; font-size: 15px; color: var(--title); }
+.card.allcard { border-style: dashed; background: color-mix(in srgb, var(--panel) 35%, var(--bg)); place-content: center; text-align: center; }
+.card.allcard:hover { background: var(--panel); }
+.card.allcard strong { padding-right: 0; }
 .card span { font-size: 13px; color: var(--muted); }
 .empty img { width: 80px; height: 80px; display: block; margin: 0 auto 8px; }
 .empty .title { font-size: 24px; font-weight: 600; color: var(--title); }
