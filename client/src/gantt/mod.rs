@@ -23,7 +23,7 @@ use web_sys::{CanvasRenderingContext2d, PointerEvent, WheelEvent};
 
 use crate::gantt::{
     arrange::{Arrangement, Mark},
-    draw::{Frame, Hits, paint_header, paint_links, paint_marks, paint_notes},
+    draw::{Frame, Hits, paint_header, paint_links, paint_marks, paint_names, paint_notes},
     layout::{Bounds, Rect, Viewport},
     links::{Anchor, Link, Role},
     scene::Scene,
@@ -128,6 +128,7 @@ pub fn Gantt(
     /// Set to a way of asking what item is at a point of the window, while the chart is there
     #[prop(optional)]
     probe: Option<crate::card::Probe>,
+    #[prop(optional)] readonly: bool,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
     let held_out = gripped;
@@ -548,6 +549,7 @@ pub fn Gantt(
                 paint_links(ctx, &frame);
                 layers.blit(ctx, at, false);
                 paint_marks(ctx, &frame, &layers.labels, at);
+                paint_names(ctx, &frame);
                 paint_header(ctx, &frame);
                 paint_notes(ctx, &frame);
             });
@@ -828,10 +830,11 @@ pub fn Gantt(
             let held = held_out.and_then(|h| h.get_untracked()).map(|h| h.0);
             let gripped = nearby
                 .get_untracked()
-                .filter(|_| ev.shift_key())
+                .filter(|_| ev.shift_key() && !readonly)
                 .or(held)
                 .or_else(pinned);
-            let shifted = ev.shift_key() && nearby.get_untracked().is_some() || held.is_some();
+            let shifted =
+                ev.shift_key() && !readonly && nearby.get_untracked().is_some() || held.is_some();
             let on_handle =
                 gripped.and_then(|node| handles_of(node, shifted).at(x, y).map(|h| (node, h)));
             if let Some(node) = band_at(x, y).filter(|_| on_handle.is_none()) {
@@ -913,7 +916,7 @@ pub fn Gantt(
     let moved = move |ev: PointerEvent| {
         let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
         pointer.set((x, y));
-        shift.set(ev.shift_key());
+        shift.set(ev.shift_key() && !readonly);
         if drag.get_untracked().is_some() {
             return;
         }
@@ -929,7 +932,7 @@ pub fn Gantt(
         if banded.get_untracked() != on_band {
             banded.set(on_band);
         }
-        if ev.shift_key() {
+        if ev.shift_key() && !readonly {
             // handles show for the item the pointer is near, and stay while it is on one
             let on_handle = nearby
                 .get_untracked()
@@ -1043,7 +1046,7 @@ pub fn Gantt(
                 match done {
                     Drag::Link { node, right } => editing.pick.run((node, right)),
                     Drag::Flag { node, .. } => editing.daying.run(node),
-                    _ => tap(x, y, ev.shift_key()),
+                    _ => tap(x, y, ev.shift_key() && !readonly),
                 }
                 return;
             }
@@ -1100,7 +1103,7 @@ pub fn Gantt(
             })
             .unwrap_or_default();
         if tapped {
-            tap(x, y, ev.shift_key());
+            tap(x, y, ev.shift_key() && !readonly);
             return;
         }
         let empty = gesture.with_value(|g| g.touches.is_empty());

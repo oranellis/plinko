@@ -37,6 +37,7 @@ impl PlanTab {
 pub enum Route {
     Home,
     Plans,
+    AllPlans,
     /// A plan, and the item open in its editor
     Plan(ShortId, PlanTab, Option<Uuid>),
     /// Everyone: you at the top, then the others and the groups
@@ -56,7 +57,7 @@ pub enum Availability {
     Default,
 }
 
-/// A task to show when the chart of its plan opens, asked for from another page
+/// An item to show when the chart of its plan opens, asked for from another page
 #[derive(Clone, Copy)]
 pub struct Reveal(pub RwSignal<Option<(ShortId, Uuid)>>);
 // }}}
@@ -67,6 +68,7 @@ impl Route {
         match self {
             Route::Home => "#/".to_string(),
             Route::Plans => "#/plans".to_string(),
+            Route::AllPlans => "#/plans/all".to_string(),
             Route::Plan(plan, tab, open) => {
                 let open = open.map(|id| format!("/{id}")).unwrap_or_default();
                 format!("#/plan/{plan}/{}{open}", tab.name())
@@ -93,6 +95,7 @@ impl Route {
                 Route::Plan(plan, tab.unwrap_or(PlanTab::Gantt), open)
             }
             ["plans"] => Route::Plans,
+            ["plans", "all"] => Route::AllPlans,
             ["people"] => Route::People,
             ["people", "new-starters", "hours"] => Route::Availability(Availability::Default),
             ["people", user, "allocations"] => {
@@ -144,6 +147,7 @@ mod tests {
         for route in [
             Route::Home,
             Route::Plans,
+            Route::AllPlans,
             Route::Plan(plan, PlanTab::List, None),
             Route::Plan(plan, PlanTab::Gantt, Some(item)),
             Route::People,

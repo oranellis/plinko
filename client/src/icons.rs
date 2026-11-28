@@ -34,6 +34,11 @@ pub fn Icon(
             <circle cx="2.6" cy="12" r="0.9" fill="currentColor" />
         }
         .into_any(),
+        IconKind::Eye => view! {
+            <path d="M1.2 8 C3.2 4.3 5.5 3 8 3 C10.5 3 12.8 4.3 14.8 8 C12.8 11.7 10.5 13 8 13 C5.5 13 3.2 11.7 1.2 8 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" />
+            <circle cx="8" cy="8" r="2.3" fill="currentColor" />
+        }
+        .into_any(),
         IconKind::Allocation => view! {
             <rect x="2" y="2" width="3" height="7" rx="1" fill="currentColor" />
             <rect x="6.5" y="2" width="3" height="11" rx="1" fill="currentColor" />
@@ -220,6 +225,7 @@ pub enum IconKind {
     Back,
     Gantt,
     List,
+    Eye,
     Allocation,
     Settings,
     Resources,

@@ -27,6 +27,7 @@ use crate::{
 enum Page {
     Home,
     Plans,
+    AllPlans,
     Plan(plinko::common::short_id::ShortId),
     Allocations(uuid::Uuid),
     People,
@@ -50,6 +51,7 @@ pub fn Shell() -> impl IntoView {
     let page = Memo::new(move |_| match route.get() {
         Route::Home => Page::Home,
         Route::Plans => Page::Plans,
+        Route::AllPlans => Page::AllPlans,
         Route::Plan(plan, _, _) => Page::Plan(plan),
         Route::People => Page::People,
         Route::Allocations(user) => Page::Allocations(user),
@@ -89,7 +91,12 @@ pub fn Shell() -> impl IntoView {
             }
         };
     let on_home = Signal::derive(move || route.get() == Route::Home);
-    let on_plans = Signal::derive(move || matches!(route.get(), Route::Plans | Route::Plan(..)));
+    let on_plans = Signal::derive(move || {
+        matches!(
+            route.get(),
+            Route::Plans | Route::AllPlans | Route::Plan(..)
+        )
+    });
     let (plans, people) = (Signal::stored(Route::Plans), Signal::stored(Route::People));
     // a person's allocations and hours are reached from the people page, so that stays lit
     let on_people = Signal::derive(move || {
@@ -124,6 +131,7 @@ pub fn Shell() -> impl IntoView {
                     _ if !allowed.get() => view! { <p>"Only admins can see this."</p> }.into_any(),
                     Page::Home => view! { <Home /> }.into_any(),
                     Page::Plans => view! { <Plans /> }.into_any(),
+                    Page::AllPlans => view! { <crate::allplans::AllPlans /> }.into_any(),
                     Page::Plan(plan) => view! { <PlanPage plan=plan /> }.into_any(),
                     Page::Allocations(of) => view! { <Allocations of=of /> }.into_any(),
                     Page::People => view! { <People /> }.into_any(),

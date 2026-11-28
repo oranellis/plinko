@@ -87,7 +87,7 @@ pub fn initials(name: &str) -> String {
     }
 }
 
-fn face_of(id: Uuid) -> &'static str {
+pub fn face_of(id: Uuid) -> &'static str {
     FACES[(id.as_u128() % FACES.len() as u128) as usize]
 }
 

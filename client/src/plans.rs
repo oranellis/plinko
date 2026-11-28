@@ -79,10 +79,28 @@ pub fn use_cards() -> Memo<Vec<Card>> {
 // PlanCards {{{
 /// Plans as cards, each with a star to favourite it
 #[component]
-pub fn PlanCards(#[prop(into)] cards: Signal<Vec<Card>>) -> impl IntoView {
+pub fn PlanCards(
+    #[prop(into)] cards: Signal<Vec<Card>>,
+    #[prop(optional, into)] all: Option<Signal<Vec<Card>>>,
+) -> impl IntoView {
     let sync = use_sync();
     view! {
         <ul class="cards">
+            {move || all.map(|all| all.get()).filter(|all| !all.is_empty()).map(|all| {
+                let items: usize = all.iter().map(|c| c.items).sum();
+                let last = all.iter().filter_map(|c| c.last_target).max();
+                view! {
+                    <li>
+                        <a class="card allcard" href=Route::AllPlans.path()>
+                            <strong>"All plans"</strong>
+                            <span>{format!("{items} items in {} plans", all.len())}</span>
+                            {last.map(|end| view! {
+                                <span>{format!("Last Target Finishes: {}", format::day(end))}</span>
+                            })}
+                        </a>
+                    </li>
+                }
+            })}
             <For each=move || cards.get() key=|c| crate::ui::hashed(c) children=move |card| {
                 let id = card.id;
                 let starred = card.favourite;
@@ -157,7 +175,7 @@ pub fn Plans() -> impl IntoView {
             <PlanCards cards=favourites />
             <h2 class="section">"Other Plans"</h2>
         </Show>
-        <PlanCards cards=others />
+        <PlanCards cards=others all=cards />
         <Show when=move || creating.get()>
             <NewPlanForm on_close=Callback::new(move |_| creating.set(false)) />
         </Show>

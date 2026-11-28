@@ -41,7 +41,10 @@ const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
 const PROBLEM: &str = "#e65100";
 const GROUP_FILL: &str = "rgba(255,255,255,0.035)";
 const GROUP_LINE: &str = "#4a4a4c";
+const PLAN_FILL: &str = "rgba(74,144,217,0.07)";
 const RADIUS: f64 = 6.0;
+const BAND: &str = "rgba(255,255,255,0.045)";
+const BAND_LINE: &str = "#48484c";
 // }}}
 
 // helpers {{{
@@ -367,6 +370,7 @@ pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
         }
         ctx.stroke();
     }
+    paint_bands(ctx, frame);
     let marked = Marked::of(frame);
     for p in &frame.scene.arrangement.placed {
         if p.kind == Kind::Group && visible(frame, p) {
@@ -374,6 +378,169 @@ pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
             paint_group(ctx, frame, p, rect, &marked, found);
         }
     }
+}
+// }}}
+
+// paint_bands {{{
+fn paint_bands(ctx: &Pen, frame: &Frame) {
+    let vp = frame.viewport;
+    let start = frame.scene.origin;
+    let (first, last) = vp.visible_days(frame.width);
+    for section in &frame.scene.sections {
+        let top = vp.lane_top(section.lane);
+        let bottom = top + ROW_HEIGHT * section.lanes as f64;
+        if bottom <= frame.top || top >= frame.height {
+            continue;
+        }
+        ctx.set_fill_style_str(BAND);
+        ctx.fill_rect(0.0, top, frame.width, ROW_HEIGHT);
+        ctx.set_stroke_style_str(BAND_LINE);
+        ctx.begin_path();
+        ctx.move_to(0.0, top + 0.5);
+        ctx.line_to(frame.width, top + 0.5);
+        ctx.stroke();
+        let skip = (section.from - start).num_days();
+        let radius = (vp.day_width.min(ROW_HEIGHT) / 2.0 - 4.0).min(11.0);
+        if radius >= 3.0 {
+            for offset in first.max(skip)..=last {
+                let Some((booked, capacity)) = section.days.get((offset - skip) as usize) else {
+                    continue;
+                };
+                if *booked == 0 {
+                    continue;
+                }
+                let cx = vp.x(offset as f64) + vp.day_width / 2.0;
+                paint_pie(
+                    ctx,
+                    (cx, top + ROW_HEIGHT / 2.0),
+                    radius,
+                    *booked,
+                    *capacity,
+                );
+            }
+        }
+        if let Some((lane, runs)) = &section.other {
+            for (from, to) in runs {
+                let offset = |d: &NaiveDate| (*d - start).num_days() as f64;
+                let rect = vp.bar(offset(from), offset(to), *lane);
+                if rect.x + rect.w < 0.0 || rect.x > frame.width {
+                    continue;
+                }
+                paint_hatched(ctx, rect);
+            }
+        }
+    }
+}
+
+/// Green when booked for exactly their hours, orange under, red over; hours past eight go round a ring
+fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, booked: u32, capacity: u8) {
+    use std::f64::consts::{FRAC_PI_2, TAU};
+    let colour = match booked.cmp(&u32::from(capacity)) {
+        std::cmp::Ordering::Greater => "#e57373",
+        std::cmp::Ordering::Equal => "#43c463",
+        std::cmp::Ordering::Less => "#c98a3c",
+    };
+    let over = booked.saturating_sub(8).min(8);
+    let inner = if over > 0 { radius * 0.78 } else { radius };
+    // one sector for what is booked over a disc for the day, so no seams show between hours
+    ctx.begin_path();
+    let _ = ctx.arc(cx, cy, inner, 0.0, TAU);
+    ctx.set_fill_style_str("#2f2f31");
+    ctx.fill();
+    ctx.begin_path();
+    ctx.move_to(cx, cy);
+    let share = f64::from(booked.min(8)) / 8.0;
+    let _ = ctx.arc(cx, cy, inner, -FRAC_PI_2, TAU * share - FRAC_PI_2);
+    ctx.close_path();
+    ctx.set_fill_style_str(colour);
+    ctx.fill();
+    if over > 0 {
+        ctx.set_line_width(1.5);
+        ctx.set_stroke_style_str(colour);
+        ctx.begin_path();
+        let _ = ctx.arc(
+            cx,
+            cy,
+            radius - 0.75,
+            -FRAC_PI_2,
+            TAU * f64::from(over) / 8.0 - FRAC_PI_2,
+        );
+        ctx.stroke();
+        ctx.set_line_width(1.0);
+    }
+}
+
+fn paint_hatched(ctx: &Pen, rect: Rect) {
+    ctx.save();
+    path_round(ctx, rect, RADIUS);
+    ctx.set_fill_style_str("#3a3a3c");
+    ctx.fill();
+    ctx.clip();
+    ctx.set_stroke_style_str("#555");
+    ctx.set_line_width(4.0);
+    ctx.begin_path();
+    let mut x = rect.x - rect.h;
+    while x < rect.x + rect.w {
+        ctx.move_to(x, rect.y + rect.h);
+        ctx.line_to(x + rect.h, rect.y);
+        x += 8.0;
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.set_line_width(1.0);
+}
+// }}}
+
+// paint_names {{{
+/// Held at the left edge, and at the top while the rest of the band is in sight
+pub fn paint_names(ctx: &Pen, frame: &Frame) {
+    let vp = frame.viewport;
+    ctx.set_text_baseline("middle");
+    for section in &frame.scene.sections {
+        let top = vp.lane_top(section.lane);
+        let bottom = top + ROW_HEIGHT * section.lanes as f64;
+        let y = top.max(frame.top).min(bottom - ROW_HEIGHT);
+        if bottom <= frame.top || y >= frame.height {
+            continue;
+        }
+        ctx.set_font("bold 13px sans-serif");
+        let width = ctx.text_width(&section.name);
+        let pill = Rect {
+            x: 6.0,
+            y: y + 6.0,
+            w: width + 44.0,
+            h: ROW_HEIGHT - 12.0,
+        };
+        path_round(ctx, pill, pill.h / 2.0);
+        ctx.set_fill_style_str("rgba(30,30,32,0.94)");
+        ctx.fill();
+        ctx.set_stroke_style_str(BAND_LINE);
+        ctx.stroke();
+        let (cx, cy) = (pill.x + pill.h / 2.0, pill.y + pill.h / 2.0);
+        ctx.begin_path();
+        let _ = ctx.arc(cx, cy, pill.h / 2.0 - 3.0, 0.0, std::f64::consts::TAU);
+        ctx.set_fill_style_str(crate::person::face_of(section.who));
+        ctx.fill();
+        ctx.set_text_align("center");
+        text(
+            ctx,
+            "#fff",
+            "bold 10px sans-serif",
+            &crate::person::initials(&section.name),
+            cx,
+            cy + 0.5,
+        );
+        ctx.set_text_align("left");
+        text(
+            ctx,
+            "#ddd",
+            "bold 13px sans-serif",
+            &section.name,
+            pill.x + pill.h + 6.0,
+            cy + 0.5,
+        );
+    }
+    ctx.set_text_baseline("alphabetic");
 }
 // }}}
 
@@ -602,7 +769,8 @@ fn paint_group(
     found: &mut Found,
 ) {
     path_round(ctx, rect, 8.0);
-    ctx.set_fill_style_str(GROUP_FILL);
+    let plan = frame.scene.is_plan(p.mark);
+    ctx.set_fill_style_str(if plan { PLAN_FILL } else { GROUP_FILL });
     ctx.fill();
     // a group always has a line round it, which an outline takes the place of
     let line = Some((GROUP_LINE.to_string(), 1.0, false));
@@ -627,13 +795,18 @@ fn paint_group(
     } else {
         format!("▾  {}", p.name)
     };
+    let plan = frame.scene.is_plan(p.mark);
     found.labels.push(Label {
         mark: p.mark,
         words: label,
         x: rect.x + 8.0,
         y: lane_top + ROW_HEIGHT / 2.0,
-        font: "13px sans-serif",
-        colour: "#aaa",
+        font: if plan {
+            "bold 13px sans-serif"
+        } else {
+            "13px sans-serif"
+        },
+        colour: if plan { "#ddd" } else { "#aaa" },
         hovered: "#f5d040",
         clip: Some(Rect {
             x: rect.x + 4.0,

@@ -182,6 +182,29 @@ pub struct Editing {
     pub chain: Callback<(PlanNode, PlanNode), Vec<Link>>,
 }
 
+impl Editing {
+    pub fn none() -> Self {
+        Self {
+            link: Callback::new(|_| {}),
+            unlink: Callback::new(|_| {}),
+            moved: Callback::new(|_| {}),
+            dated: Callback::new(|_| false),
+            ended: Callback::new(|_| false),
+            shift_dates: Callback::new(|_| {}),
+            pin: Callback::new(|_| None),
+            constrain: Callback::new(|_| {}),
+            aim: Callback::new(|_| {}),
+            hold: Callback::new(|_| {}),
+            daying: Callback::new(|_| {}),
+            restart: Callback::new(|_| {}),
+            resize: Callback::new(|_| {}),
+            duration: Callback::new(|_| 0),
+            pick: Callback::new(|_| {}),
+            chain: Callback::new(|_| Vec::new()),
+        }
+    }
+}
+
 /// The handles an item has, with where each is, and the item they belong to
 #[derive(Clone, Debug, Default)]
 pub struct Grips {

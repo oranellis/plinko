@@ -1,4 +1,5 @@
 mod allocations;
+mod allplans;
 mod api;
 mod availability;
 mod card;
@@ -33,6 +34,7 @@ mod settings;
 mod shell;
 mod sync;
 mod ui;
+mod views;
 
 use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -46,6 +48,7 @@ fn App() -> impl IntoView {
     provide_context(sync);
     provide_context(nav::Reveal(RwSignal::new(None)));
     format::provide_preferences();
+    views::provide_views();
     let booted = RwSignal::new(false);
     spawn_local(async move {
         // a server that cannot be reached shows the login, which says so

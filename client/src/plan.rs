@@ -119,36 +119,62 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         sync.schedule
             .with(|s| f(s.as_ref().and_then(|(_, s)| s.plans.get(&plan))))
     };
+    let (view, set_view) = crate::views::use_view(format!("plan:{plan}"));
+    let me = Memo::new(move |_| sync.me.with(|m| m.as_ref().map(|m| m.id)));
     let rows = Memo::new(move |_| {
         let mut rows = Vec::new();
+        let only = me.get().filter(|_| view.get().mine);
         with_state(&mut |state| {
             rows = collapsed.with(|collapsed| {
                 sync.tenant.with(|t| {
-                    t.as_ref()
-                        .and_then(|t| t.plans().get(&plan))
-                        .map(|p| model::rows(p, state, collapsed))
-                        .unwrap_or_default()
+                    let Some(p) = t.as_ref().and_then(|t| t.plans().get(&plan)) else {
+                        return Vec::new();
+                    };
+                    let mut rows = model::rows(p, state, collapsed);
+                    if let Some(who) = only {
+                        let keep = scene::related(p, state, who);
+                        rows.retain(|r| keep.contains(&r.node));
+                    }
+                    rows
                 })
             });
         });
         rows
     });
     let scene = Memo::new(move |_| {
-        let mut built = None;
-        with_state(&mut |state| {
-            built = collapsed.with(|collapsed| {
-                sync.tenant.with(|t| {
-                    let plan = t.as_ref().and_then(|t| t.plans().get(&plan))?;
-                    Some(scene::build(plan, state, collapsed, t.as_ref()?.today()))
+        let options = view.get();
+        let only = me.get().filter(|_| options.mine);
+        sync.schedule
+            .with(|schedule| {
+                let schedule = schedule.as_ref().map(|(_, s)| s);
+                collapsed.with(|collapsed| {
+                    sync.tenant.with(|t| {
+                        let t = t.as_ref()?;
+                        let shown = [scene::Shown {
+                            id: plan,
+                            plan: t.plans().get(&plan)?,
+                            state: schedule.and_then(|s| s.plans.get(&plan)),
+                        }];
+                        let split = options.split.then(|| {
+                            crate::views::people(t, &shown, me.get(), false, options.mine)
+                        });
+                        let load = crate::views::load_of(t, schedule);
+                        let options = scene::Options {
+                            boxed: false,
+                            only,
+                            split,
+                            load: &load,
+                        };
+                        Some(scene::compose(&shown, &options, collapsed, t.today()))
+                    })
                 })
-            });
-        });
-        built.unwrap_or_else(|| {
-            scene::Scene::empty(
-                sync.tenant
-                    .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default()),
-            )
-        })
+            })
+            .unwrap_or_else(|| {
+                scene::Scene::empty(
+                    sync.tenant
+                        .with(|t| t.as_ref().map(|t| t.today()).unwrap_or_default()),
+                )
+            })
     });
     let name = Memo::new(move |_| {
         sync.tenant.with(|t| {
@@ -189,8 +215,12 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
     // a task asked for from another page is put in the middle of the chart
     let reveal = RwSignal::new(None::<Mark>);
     let asked = expect_context::<crate::nav::Reveal>().0;
-    if let Some((_, task)) = asked.get_untracked().filter(|(of, _)| *of == plan) {
-        reveal.set(Some(PlanNode::Task(task)));
+    if let Some((_, id)) = asked.get_untracked().filter(|(of, _)| *of == plan) {
+        let node = sync.tenant.with_untracked(|t| {
+            let p = t.as_ref()?.plans().get(&plan)?;
+            model::nodes(p).into_iter().find(|n| n.id() == id)
+        });
+        reveal.set(node);
         asked.set(None);
     }
     let revealed = reveal.get_untracked();
@@ -989,6 +1019,9 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                                 <Icon kind=IconKind::Alert />
                                 <span class="badge">{move || unplaced.get()}</span>
                             </button>
+                        </Show>
+                        <Show when=move || tab.get() != PlanTab::Settings>
+                            <crate::views::ViewButton options=view on_change=set_view />
                         </Show>
                         {move || {
                             let (kind, label, to) = if tab.get() == PlanTab::List {
