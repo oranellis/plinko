@@ -454,7 +454,7 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
     }
     ctx.set_fill_style_str("#2f2f31");
     ctx.fill();
-    // this chart's hours first in colour, then those on other plans hatched grey, which reach out
+    // this chart's hours first in colour, then those on other plans dotted grey, which reach out
     // to the border
     if shown > 0 {
         sector(0, shown, inner);
@@ -467,16 +467,24 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
         ctx.set_fill_style_str("#3e3e42");
         ctx.fill();
         ctx.clip();
-        ctx.set_stroke_style_str("#a0a0a6");
-        ctx.set_line_width(1.6);
+        ctx.set_fill_style_str("#a8a8ae");
         ctx.begin_path();
-        let mut x = cx - 2.0 * outline;
-        while x < cx + outline {
-            ctx.move_to(x, cy + outline);
-            ctx.line_to(x + 2.0 * outline, cy - outline);
-            x += 4.5;
+        // dots on a staggered grid, every other row shifted by half a step
+        let step = 3.6;
+        let mut row = 0;
+        let mut y = cy - outline;
+        while y <= cy + outline {
+            let shift = if row % 2 == 0 { 0.0 } else { step / 2.0 };
+            let mut x = cx - outline + shift;
+            while x <= cx + outline {
+                ctx.move_to(x + 0.9, y);
+                let _ = ctx.arc(x, y, 0.9, 0.0, TAU);
+                x += step;
+            }
+            y += step * 0.87;
+            row += 1;
         }
-        ctx.stroke();
+        ctx.fill();
         ctx.restore();
     }
     // a border round every pie; a day of fewer than eight hours has it round the hours there are,
