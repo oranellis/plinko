@@ -73,6 +73,13 @@ pub fn use_cards() -> Memo<Vec<Card>> {
 }
 // }}}
 
+/// A non-breaking space when there is no target, so every card has the same lines
+fn target_line(last: Option<NaiveDate>) -> String {
+    last.map_or("\u{a0}".to_string(), |end| {
+        format!("Last Target Finishes: {}", format::day(end))
+    })
+}
+
 // PlanCards {{{
 #[component]
 pub fn PlanCards(
@@ -90,9 +97,7 @@ pub fn PlanCards(
                         <a class="card allcard" href=Route::AllPlans.path()>
                             <strong>"All plans"</strong>
                             <span>{format!("{items} items in {} plans", all.len())}</span>
-                            {last.map(|end| view! {
-                                <span>{format!("Last Target Finishes: {}", format::day(end))}</span>
-                            })}
+                            <span>{target_line(last)}</span>
                         </a>
                     </li>
                 }
@@ -108,9 +113,7 @@ pub fn PlanCards(
                                 1 => "1 item".to_string(),
                                 n => format!("{n} items"),
                             }}</span>
-                            {card.last_target.map(|end| view! {
-                                <span>{format!("Last Target Finishes: {}", format::day(end))}</span>
-                            })}
+                            <span>{target_line(card.last_target)}</span>
                             {(card.problems > 0).then(|| view! {
                                 <span class="problem">{format!("⚠ {} need attention", card.problems)}</span>
                             })}

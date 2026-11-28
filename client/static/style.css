@@ -93,7 +93,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .card:hover { background: var(--raised); border-color: var(--accent); }
 .cards li { position: relative; min-width: 0; }
 .card { min-width: 0; overflow-wrap: anywhere; }
-.card { height: 100%; align-content: start; }
+.card { height: 100%; min-height: 118px; align-content: start; }
 button.star { position: absolute; top: 10px; right: 10px; background: none; padding: 2px 6px; min-height: 0; font-size: 18px; line-height: 1; color: #555; }
 button.star:hover { background: var(--raised); color: #8a7a2a; }
 button.star.on { color: #ffd600; }
