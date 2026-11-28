@@ -91,13 +91,12 @@ pub fn PlanCards(
         <ul class="cards">
             {move || all.map(|all| all.get()).filter(|all| !all.is_empty()).map(|all| {
                 let items: usize = all.iter().map(|c| c.items).sum();
-                let last = all.iter().filter_map(|c| c.last_target).max();
                 view! {
                     <li>
                         <a class="card allcard" href=Route::AllPlans.path()>
                             <strong>"All plans"</strong>
                             <span>{format!("{items} items in {} plans", all.len())}</span>
-                            <span>{target_line(last)}</span>
+
                         </a>
                     </li>
                 }
