@@ -1001,16 +1001,15 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                             </button>
                         </Show>
                         <Show when=move || tab.get() != PlanTab::Settings>
-                            <crate::views::ViewButton options=view on_change=set_view />
+                            <crate::views::ViewButton
+                                options=view
+                                on_change=set_view
+                                list=(
+                                    Signal::derive(move || tab.get() == PlanTab::List),
+                                    Callback::new(move |list: bool| go(if list { PlanTab::List } else { PlanTab::Gantt }, None)),
+                                )
+                            />
                         </Show>
-                        {move || {
-                            let (kind, label, to) = if tab.get() == PlanTab::List {
-                                (IconKind::Gantt, "Show the Gantt chart", PlanTab::Gantt)
-                            } else {
-                                (IconKind::List, "Show a list", PlanTab::List)
-                            };
-                            icon_button(label, kind, Callback::new(move |_| go(to, None)))
-                        }}
                         <button
                             type="button"
                             class="toolbar-btn"

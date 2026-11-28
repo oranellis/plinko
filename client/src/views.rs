@@ -153,7 +153,13 @@ pub fn load_of<'a>(
 
 // ViewButton {{{
 #[component]
-pub fn ViewButton(options: Signal<ViewOptions>, on_change: Callback<ViewOptions>) -> impl IntoView {
+pub fn ViewButton(
+    options: Signal<ViewOptions>,
+    on_change: Callback<ViewOptions>,
+    /// Whether the plan shows as a list, for a chart that has one
+    #[prop(optional)]
+    list: Option<(Signal<bool>, Callback<bool>)>,
+) -> impl IntoView {
     let open = RwSignal::new(false);
     crate::escape::on_escape(move || open.get(), Callback::new(move |()| open.set(false)));
     let toggle = move |label: &'static str,
@@ -176,7 +182,9 @@ pub fn ViewButton(options: Signal<ViewOptions>, on_change: Callback<ViewOptions>
             </button>
         }
     };
-    let filtered = move || options.get() != ViewOptions::default();
+    let filtered = move || {
+        options.get() != ViewOptions::default() || list.is_some_and(|(listed, _)| listed.get())
+    };
     view! {
         <div class="viewmenu keeps">
             <button
@@ -194,6 +202,21 @@ pub fn ViewButton(options: Signal<ViewOptions>, on_change: Callback<ViewOptions>
             <Show when=move || open.get()>
                 <div class="menu-backdrop" on:click=move |_| open.set(false)></div>
                 <div class="viewpop">
+                    {list.map(|(listed, set_listed)| view! {
+                        <button
+                            type="button"
+                            class="viewopt"
+                            class:on=move || listed.get()
+                            aria-pressed=move || listed.get().to_string()
+                            on:click=move |_| {
+                                set_listed.run(!listed.get_untracked());
+                                open.set(false);
+                            }
+                        >
+                            "List view"
+                        </button>
+                        <hr class="viewsep" />
+                    })}
                     {toggle("My items", |o| o.mine, |o, on| *o = ViewOptions { mine: on, split: o.split && !on })}
                     {toggle("Split by person", |o| o.split, |o, on| *o = ViewOptions { split: on, mine: o.mine && !on })}
                 </div>
