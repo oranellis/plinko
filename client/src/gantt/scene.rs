@@ -28,7 +28,9 @@ pub struct Scene {
     /// The day offset after the last day anything is on
     pub last_day: f64,
     pub sections: Vec<Section>,
-    /// Filled only when plans are boxed
+    /// Each plan's own lanes, when plans are shown as sections
+    pub plan_bands: Vec<PlanBand>,
+    /// Filled only when plans are shown as sections
     pub owners: HashMap<Uuid, ShortId>,
     /// The first copy, as split views can place an item more than once
     index: HashMap<Mark, usize>,
@@ -53,6 +55,33 @@ pub struct Section {
     pub lanes: usize,
     pub from: NaiveDate,
     pub days: Vec<Load>,
+}
+
+/// A plan's lanes, headed by a lane with its name
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlanBand {
+    pub id: ShortId,
+    pub name: String,
+    pub collapsed: bool,
+    pub lane: usize,
+    pub lanes: usize,
+}
+
+/// A made-up id for a plan's row, which no item can have, for folding it like a group
+pub fn plan_mark(plan: ShortId) -> Uuid {
+    let mut bytes = [0u8; 16];
+    bytes[0] = 0xb0;
+    for (i, b) in plan.to_string().bytes().take(15).enumerate() {
+        bytes[i + 1] = b;
+    }
+    Uuid::from_bytes(bytes)
+}
+
+/// Lanes counted from the top of whatever holds them
+#[derive(Default)]
+struct Block {
+    arrangement: Arrangement,
+    bands: Vec<PlanBand>,
 }
 
 /// A day of a person's: `shown` of the hours `booked` are on the plans on the chart
@@ -101,15 +130,10 @@ impl Scene {
             unplaced: Vec::new(),
             last_day: 0.0,
             sections: Vec::new(),
+            plan_bands: Vec::new(),
             owners: HashMap::new(),
             index: HashMap::new(),
         }
-    }
-
-    pub fn is_plan(&self, mark: Mark) -> bool {
-        self.owners
-            .get(&mark.id())
-            .is_some_and(|plan| plan_mark(*plan) == mark.id())
     }
 
     pub fn placed(&self, mark: Mark) -> Option<&Placed> {
@@ -165,12 +189,54 @@ pub fn compose(
         if keep.as_ref().is_some_and(HashSet::is_empty) {
             return Vec::new();
         }
-        let entries = plan_entries(shown, keep.as_ref(), collapsed);
-        if options.boxed {
-            boxed(shown, entries, collapsed).into_iter().collect()
-        } else {
-            entries
+        plan_entries(shown, keep.as_ref(), collapsed)
+    };
+    let block_for = |who: Option<Uuid>| -> Block {
+        if !options.boxed {
+            let entries: Vec<Entry> = plans.iter().flat_map(|s| entries_for(s, who)).collect();
+            return Block {
+                arrangement: arrange(&entries),
+                bands: Vec::new(),
+            };
         }
+        let mut block = Block::default();
+        let mut lane = 0;
+        // folded plans go under the open ones, as just their row
+        let folded = |shown: &&Shown| collapsed.contains(&plan_mark(shown.id));
+        let ordered = plans
+            .iter()
+            .filter(|s| !folded(s))
+            .chain(plans.iter().filter(folded));
+        for shown in ordered {
+            let entries = entries_for(shown, who);
+            if entries.is_empty() {
+                continue;
+            }
+            let collapsed = folded(&shown);
+            let inner = if collapsed {
+                Arrangement::default()
+            } else {
+                arrange(&entries)
+            };
+            block
+                .arrangement
+                .placed
+                .extend(inner.placed.into_iter().map(|mut p| {
+                    p.lane += lane + 1;
+                    p
+                }));
+            let lanes = 1 + inner.lanes;
+            block.bands.push(PlanBand {
+                id: shown.id,
+                name: shown.plan.name().to_string(),
+                collapsed,
+                lane,
+                lanes,
+            });
+            lane += lanes;
+        }
+        block.arrangement.lanes = lane;
+        block
     };
     let mut unplaced = Vec::new();
     if !options.boxed {
@@ -183,41 +249,30 @@ pub fn compose(
     }
     unplaced.sort_by(|a, b| a.name.cmp(&b.name).then(a.node.id().cmp(&b.node.id())));
 
-    let (arrangement, drafts) = match &options.split {
-        None => {
-            let entries: Vec<Entry> = plans
-                .iter()
-                .flat_map(|shown| entries_for(shown, options.only))
-                .collect();
-            (arrange(&entries), Vec::new())
-        }
+    let (block, drafts) = match &options.split {
+        None => (block_for(options.only), Vec::new()),
         Some(people) => {
-            let drafts: Vec<(Uuid, String, Arrangement)> = people
+            let drafts: Vec<(Uuid, String, Block)> = people
                 .iter()
-                .map(|(who, name)| {
-                    let entries: Vec<Entry> = plans
-                        .iter()
-                        .flat_map(|shown| entries_for(shown, Some(*who)))
-                        .collect();
-                    (*who, name.clone(), arrange(&entries))
-                })
+                .map(|(who, name)| (*who, name.clone(), block_for(Some(*who))))
                 .collect();
-            (Arrangement::default(), drafts)
+            (Block::default(), drafts)
         }
     };
-    let spans = arrangement
+    let spans = block
+        .arrangement
         .placed
         .iter()
-        .chain(drafts.iter().flat_map(|d| d.2.placed.iter()))
+        .chain(drafts.iter().flat_map(|d| d.2.arrangement.placed.iter()))
         .map(|p| p.span);
     let first = spans.clone().map(|s| s.0).min();
     let origin = first.map_or(today, |first| first.min(today));
     let last = spans.map(|s| s.1).max().unwrap_or(origin);
 
-    let (arrangement, sections) = if options.split.is_some() {
+    let (arrangement, plan_bands, sections) = if options.split.is_some() {
         lay_out(plans, options, drafts, origin, last.max(today))
     } else {
-        (arrangement, Vec::new())
+        (block.arrangement, block.bands, Vec::new())
     };
     let mut index = HashMap::new();
     for (i, p) in arrangement.placed.iter().enumerate() {
@@ -238,6 +293,7 @@ pub fn compose(
         arrangement,
         unplaced,
         sections,
+        plan_bands,
         owners,
         index,
     }
@@ -248,13 +304,14 @@ pub fn compose(
 fn lay_out(
     plans: &[Shown],
     options: &Options,
-    drafts: Vec<(Uuid, String, Arrangement)>,
+    drafts: Vec<(Uuid, String, Block)>,
     origin: NaiveDate,
     last: NaiveDate,
-) -> (Arrangement, Vec<Section>) {
+) -> (Arrangement, Vec<PlanBand>, Vec<Section>) {
     let from = origin - Days::new(LOAD_BEHIND);
     let to = last + Days::new(LOAD_AHEAD);
     let mut placed = Vec::new();
+    let mut bands = Vec::new();
     let mut sections = Vec::new();
     let mut lane = 0;
     for (who, name, inner) in drafts {
@@ -289,10 +346,14 @@ fn lay_out(
             })
             .collect();
         let first_inner = lane + 1;
-        let lanes = 1 + inner.lanes;
-        placed.extend(inner.placed.into_iter().map(|mut p| {
+        let lanes = 1 + inner.arrangement.lanes;
+        placed.extend(inner.arrangement.placed.into_iter().map(|mut p| {
             p.lane += first_inner;
             p
+        }));
+        bands.extend(inner.bands.into_iter().map(|mut b| {
+            b.lane += first_inner;
+            b
         }));
         sections.push(Section {
             who,
@@ -310,6 +371,7 @@ fn lay_out(
             placed,
             lanes: lane,
         },
+        bands,
         sections,
     )
 }
@@ -352,18 +414,6 @@ pub fn related(plan: &Plan, state: Option<&PlanVolatileState>, who: Uuid) -> Has
         }
     }
     keep
-}
-// }}}
-
-// plan_mark {{{
-/// A fake id for a plan's box that no item can have
-pub fn plan_mark(plan: ShortId) -> Uuid {
-    let mut bytes = [0u8; 16];
-    bytes[0] = 0xb0;
-    for (i, b) in plan.to_string().bytes().take(15).enumerate() {
-        bytes[i + 1] = b;
-    }
-    Uuid::from_bytes(bytes)
 }
 // }}}
 
@@ -414,23 +464,6 @@ fn unplaced_of(shown: &Shown, keep: Option<&HashSet<PlanNode>>) -> Vec<Unplaced>
         .collect()
 }
 
-fn boxed(shown: &Shown, members: Vec<Entry>, collapsed: &HashSet<Uuid>) -> Option<Entry> {
-    let start = members.iter().map(|e| e.span.0).min()?;
-    let end = members.iter().map(|e| e.span.1).max()?;
-    let mark = plan_mark(shown.id);
-    Some(Entry {
-        node: PlanNode::TaskGroup(mark),
-        name: shown.plan.name().to_string(),
-        kind: Kind::Group,
-        span: (start, end),
-        look: model::Look::NotStarted,
-        violated: false,
-        pinned: false,
-        target: false,
-        members,
-        collapsed: collapsed.contains(&mark),
-    })
-}
 // }}}
 
 // impl Context {{{

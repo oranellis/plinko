@@ -402,6 +402,7 @@ pub fn Gantt(
     }
 
     let layers = StoredValue::new_local(None::<layers::Layers>);
+    let plan_rows = StoredValue::new_local(Vec::<(Mark, Rect, Rect)>::new());
     let scene_gen = StoredValue::new_local(0u64);
     // bumps the generation only when the scene's drawing actually changes
     let drawn = StoredValue::new_local(None::<(NaiveDate, Arrangement, Vec<Section>)>);
@@ -523,7 +524,7 @@ pub fn Gantt(
                 paint_links(ctx, &frame);
                 layers.blit(ctx, at, false);
                 paint_marks(ctx, &frame, &layers.labels, at);
-                paint_names(ctx, &frame);
+                plan_rows.set_value(paint_names(ctx, &frame));
                 paint_header(ctx, &frame);
                 paint_notes(ctx, &frame);
             });
@@ -984,7 +985,18 @@ pub fn Gantt(
                 .run((node, pin.end, flagged(node, pin.end, x).day));
             return;
         }
-        if let Some((node, fold)) = hit(x, y) {
+        let plan_row = plan_rows.with_value(|rows| {
+            rows.iter()
+                .find(|(_, _, row)| row.contains(x, y))
+                .map(|(mark, name, _)| (*mark, name.contains(x, y)))
+        });
+        if let Some((mark, on_name)) = plan_row {
+            if on_name {
+                on_open.run(mark);
+            } else {
+                on_toggle.run(mark);
+            }
+        } else if let Some((node, fold)) = hit(x, y) {
             let on_violation = hits.with_value(|h| h.violations().any(|(_, r)| r.contains(x, y)));
             let chosen = selected.get_untracked();
             match (fold, on_violation) {

@@ -38,10 +38,10 @@ const AFTER_LINE: &str = "rgba(7,252,215,0.66)";
 const PROBLEM: &str = "#e65100";
 const GROUP_FILL: &str = "rgba(255,255,255,0.035)";
 const GROUP_LINE: &str = "#4a4a4c";
-const PLAN_FILL: &str = "rgba(74,144,217,0.07)";
 const RADIUS: f64 = 6.0;
 const BAND: &str = "rgba(255,255,255,0.045)";
 const BAND_LINE: &str = "#48484c";
+const PLAN_LINE: &str = "rgba(255,255,255,0.09)";
 // }}}
 
 // helpers {{{
@@ -357,6 +357,16 @@ pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
         ctx.stroke();
     }
     paint_bands(ctx, frame);
+    ctx.set_stroke_style_str(PLAN_LINE);
+    ctx.begin_path();
+    for band in &frame.scene.plan_bands {
+        let y = vp.lane_top(band.lane) + 0.5;
+        if y > 0.0 && y < frame.height {
+            ctx.move_to(0.0, y);
+            ctx.line_to(frame.width, y);
+        }
+    }
+    ctx.stroke();
     let marked = Marked::of(frame);
     for p in &frame.scene.arrangement.placed {
         if p.kind == Kind::Group && visible(frame, p) {
@@ -488,9 +498,46 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
 
 // paint_names {{{
 /// Sticky at the left edge, and at the top while the band is in sight
-pub fn paint_names(ctx: &Pen, frame: &Frame) {
+/// Gives each plan row's mark, its name (which opens the plan) and the whole row (which folds it)
+pub fn paint_names(ctx: &Pen, frame: &Frame) -> Vec<(Mark, Rect, Rect)> {
     let vp = frame.viewport;
     ctx.set_text_baseline("middle");
+    let mut rows = Vec::new();
+    for band in &frame.scene.plan_bands {
+        let top = vp.lane_top(band.lane);
+        if top + ROW_HEIGHT <= frame.top || top >= frame.height {
+            continue;
+        }
+        let cy = top + ROW_HEIGHT / 2.0;
+        let font = "bold 13px sans-serif";
+        ctx.set_font(font);
+        let width = ctx.text_width(&band.name);
+        let colour = if band.collapsed { "#8a8a8e" } else { "#d8d8d8" };
+        text(ctx, colour, font, &band.name, 12.0, cy + 0.5);
+        let arrow = if band.collapsed { "▸" } else { "▾" };
+        text(
+            ctx,
+            "#8a8a8e",
+            "12px sans-serif",
+            arrow,
+            12.0 + width + 8.0,
+            cy + 0.5,
+        );
+        let mark = PlanNode::TaskGroup(crate::gantt::scene::plan_mark(band.id));
+        let name = Rect {
+            x: 6.0,
+            y: top,
+            w: width + 12.0,
+            h: ROW_HEIGHT,
+        };
+        let row = Rect {
+            x: 0.0,
+            y: top,
+            w: frame.width,
+            h: ROW_HEIGHT,
+        };
+        rows.push((mark, name, row));
+    }
     for section in &frame.scene.sections {
         let top = vp.lane_top(section.lane);
         let bottom = top + ROW_HEIGHT * section.lanes as f64;
@@ -547,6 +594,7 @@ pub fn paint_names(ctx: &Pen, frame: &Frame) {
         );
     }
     ctx.set_text_baseline("alphabetic");
+    rows
 }
 // }}}
 
@@ -770,8 +818,7 @@ fn paint_group(
     found: &mut Found,
 ) {
     path_round(ctx, rect, 8.0);
-    let plan = frame.scene.is_plan(p.mark);
-    ctx.set_fill_style_str(if plan { PLAN_FILL } else { GROUP_FILL });
+    ctx.set_fill_style_str(GROUP_FILL);
     ctx.fill();
     let line = Some((GROUP_LINE.to_string(), 1.0, false));
     stroke_border(ctx, border(frame, p.mark, p.target, marked).or(line));
@@ -794,18 +841,13 @@ fn paint_group(
     } else {
         format!("▾  {}", p.name)
     };
-    let plan = frame.scene.is_plan(p.mark);
     found.labels.push(Label {
         mark: p.mark,
         words: label,
         x: rect.x + 8.0,
         y: lane_top + ROW_HEIGHT / 2.0,
-        font: if plan {
-            "bold 13px sans-serif"
-        } else {
-            "13px sans-serif"
-        },
-        colour: if plan { "#ddd" } else { "#aaa" },
+        font: "13px sans-serif",
+        colour: "#aaa",
         hovered: "#f5d040",
         clip: Some(Rect {
             x: rect.x + 4.0,
