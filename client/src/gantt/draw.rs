@@ -42,6 +42,7 @@ const RADIUS: f64 = 6.0;
 const BAND: &str = "rgba(255,255,255,0.045)";
 const BAND_LINE: &str = "#48484c";
 const PLAN_LINE: &str = "rgba(255,255,255,0.09)";
+const FOLDED: &str = "rgba(255,255,255,0.045)";
 // }}}
 
 // helpers {{{
@@ -357,13 +358,24 @@ pub fn paint_back(ctx: &Pen, frame: &Frame, found: &mut Found) {
         ctx.stroke();
     }
     paint_bands(ctx, frame);
+    // a line over each open plan but the first of its run; folded plans are shaded strips
+    // instead, apart from each other, with the day lines showing through
     ctx.set_stroke_style_str(PLAN_LINE);
+    ctx.set_fill_style_str(FOLDED);
     ctx.begin_path();
+    let mut above: Option<usize> = None;
     for band in &frame.scene.plan_bands {
-        let y = vp.lane_top(band.lane) + 0.5;
-        if y > 0.0 && y < frame.height {
-            ctx.move_to(0.0, y);
-            ctx.line_to(frame.width, y);
+        let top = vp.lane_top(band.lane);
+        let follows = above == Some(band.lane);
+        above = Some(band.lane + band.lanes);
+        if top + ROW_HEIGHT < 0.0 || top > frame.height {
+            continue;
+        }
+        if band.collapsed {
+            ctx.fill_rect(0.0, top + 2.0, frame.width, ROW_HEIGHT - 4.0);
+        } else if follows {
+            ctx.move_to(0.0, top + 0.5);
+            ctx.line_to(frame.width, top + 0.5);
         }
     }
     ctx.stroke();
@@ -553,19 +565,22 @@ pub fn paint_names(ctx: &Pen, frame: &Frame) -> Vec<(Mark, Rect, Rect)> {
             w: width + if section.face { 44.0 } else { 24.0 },
             h: ROW_HEIGHT - 12.0,
         };
-        path_round(ctx, pill, pill.h / 2.0);
-        ctx.set_fill_style_str("rgba(30,30,32,0.94)");
-        ctx.fill();
-        ctx.set_stroke_style_str(BAND_LINE);
-        ctx.stroke();
         let (cx, cy) = (pill.x + pill.h / 2.0, pill.y + pill.h / 2.0);
+        if section.face {
+            path_round(ctx, pill, pill.h / 2.0);
+            ctx.set_fill_style_str("rgba(30,30,32,0.94)");
+            ctx.fill();
+            ctx.set_stroke_style_str(BAND_LINE);
+            ctx.stroke();
+        }
+        // a name alone is set in line with the plan names, with no pill
         if !section.face {
             text(
                 ctx,
                 "#ddd",
                 "bold 13px sans-serif",
                 &section.name,
-                pill.x + 12.0,
+                12.0,
                 cy + 0.5,
             );
             continue;
