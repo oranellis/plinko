@@ -424,30 +424,29 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
     let _ = ctx.arc(cx, cy, inner, 0.0, TAU);
     ctx.set_fill_style_str("#2f2f31");
     ctx.fill();
-    // hours on plans not on the chart come first, hatched grey, then the chart's own
-    let elsewhere = booked - shown;
-    if elsewhere > 0 {
+    // this chart's hours first in colour, then those on other plans hatched grey
+    if shown > 0 {
+        sector(0, shown);
+        ctx.set_fill_style_str(colour);
+        ctx.fill();
+    }
+    if booked > shown && shown < 8 {
         ctx.save();
-        sector(0, elsewhere);
-        ctx.set_fill_style_str("#4a4a4c");
+        sector(shown, booked);
+        ctx.set_fill_style_str("#3e3e42");
         ctx.fill();
         ctx.clip();
-        ctx.set_stroke_style_str("#7a7a7e");
-        ctx.set_line_width(1.2);
+        ctx.set_stroke_style_str("#a0a0a6");
+        ctx.set_line_width(1.6);
         ctx.begin_path();
         let mut x = cx - 2.0 * inner;
         while x < cx + inner {
             ctx.move_to(x, cy + inner);
             ctx.line_to(x + 2.0 * inner, cy - inner);
-            x += 3.0;
+            x += 4.5;
         }
         ctx.stroke();
         ctx.restore();
-    }
-    if elsewhere < 8 && shown > 0 {
-        sector(elsewhere, booked);
-        ctx.set_fill_style_str(colour);
-        ctx.fill();
     }
     // a day of fewer than eight hours is outlined round the hours there are, cutting in to the
     // centre where the rest of the pie could never be filled
