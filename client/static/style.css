@@ -251,8 +251,8 @@ a.quiet:hover { color: var(--accent-hover); }
 .person-part-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .person-part-head h3 { margin: 0; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .more-link { justify-self: end; }
-.booked { display: grid; gap: 4px; min-width: 0; }
-.booked.none { display: none; }
+.nextdays { display: grid; gap: 4px; min-width: 0; }
+.nextdays.none { display: none; }
 .brow { display: grid; grid-template-columns: repeat(var(--days), minmax(0, 1fr)); column-gap: 2px; align-items: center; min-width: 0; }
 .brow > * { grid-row: 1; }
 .brow.pies { min-height: 26px; }

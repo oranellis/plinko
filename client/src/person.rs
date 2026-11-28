@@ -403,7 +403,7 @@ fn Booked(who: Uuid) -> impl IntoView {
                 <span class=move || format!("busy {}", said.get().1)>{move || said.get().0}</span>
             </div>
             // a row each, every one the same columns, a column a day, the tasks packed into lanes
-            <div class="booked" style=format!("--days:{AHEAD}") class:none=nothing>
+            <div class="nextdays" style=format!("--days:{AHEAD}") class:none=nothing>
                 <div class="brow">
                     {move || load.get().into_iter().enumerate().map(|(i, d)| {
                         let weekend = matches!(d.day.weekday(), Weekday::Sat | Weekday::Sun);
