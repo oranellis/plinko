@@ -11,8 +11,7 @@ use crate::{
 };
 // }}}
 
-/// A named set of days that tasks linked to it may be worked on, described with the same rules
-/// as availability but with a yes or no for each day. Until rules change it, every day is allowed.
+/// Days that linked tasks may be worked on. Every day is allowed until rules change it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Affinity {
     id: Uuid,

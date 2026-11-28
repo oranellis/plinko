@@ -38,7 +38,6 @@ use crate::{
 // }}}
 
 // write {{{
-/// The schedule a finished pass gives, as dates on the tenant's own nodes
 pub fn write(ctx: &Context, tenant: &Tenant, earliest: &Pass, pass: &Pass) -> TenantVolatileState {
     let mut plans = HashMap::new();
     for (index, info) in ctx.net.plans.iter().enumerate() {
@@ -77,7 +76,6 @@ pub fn write(ctx: &Context, tenant: &Tenant, earliest: &Pass, pass: &Pass) -> Te
 }
 // }}}
 
-/// One plan's part of a pass being written
 struct Writer<'a> {
     ctx: &'a Context<'a>,
     plan: &'a Plan,
@@ -85,7 +83,7 @@ struct Writer<'a> {
     earliest: &'a Pass,
     pass: &'a Pass,
     statuses: HashMap<Uuid, DerivedStatus>,
-    /// The vertices of milestones that have not happened
+    /// Vertices of milestones that have not happened
     pending: HashSet<VertexId>,
 }
 
@@ -95,7 +93,7 @@ impl Writer<'_> {
         day.date(self.ctx.table.origin)
     }
 
-    /// The day before a vertex, which is the day what ends on it is shown on
+    /// What ends on a vertex is shown on the day before it
     fn day_before(&self, day: Day) -> NaiveDate {
         self.date(Day(day.0.saturating_sub(1)))
     }
@@ -108,8 +106,8 @@ impl Writer<'_> {
         pass.time[v.0 as usize]
     }
 
-    /// The day what ends on a vertex is shown on: the day before it, but never before today
-    /// unless work that happened decides it, then the last day of that work
+    /// The day before the vertex, but never before today unless work that happened decides it,
+    /// then the last day of that work
     fn shown(&self, pass: &Pass, v: VertexId) -> Option<NaiveDate> {
         let (at, today) = (self.at(pass, v)?, self.ctx.table.today);
         let end = match at > today {
@@ -119,8 +117,8 @@ impl Writer<'_> {
         Some(end.map_or(self.date(today), |end| self.day_before(end)))
     }
 
-    /// The end of the latest work that happened before a vertex, through what it waits on. The
-    /// start of today is not work, and a milestone that has not happened is today at the soonest.
+    /// End of the latest work before the vertex, through what it waits on. The start of today is
+    /// not work, and a milestone that has not happened is today at the soonest.
     fn happened(&self, pass: &Pass, v: VertexId) -> Option<Day> {
         let (mut stack, mut seen, mut last) = (vec![v], HashSet::new(), None);
         while let Some(v) = stack.pop() {
@@ -150,7 +148,6 @@ impl Writer<'_> {
         DateRange::new(self.date(placed.start), self.date(placed.end))
     }
 
-    /// Why a node with an arc has no place
     fn reason(&self, node: PlanNode) -> UnscheduledReason {
         let known = self.ctx.net.unscheduled.get(&(self.index, node)).copied();
         let arc = self.lowered(node).and_then(|l| l.arc);
@@ -256,8 +253,6 @@ impl Writer<'_> {
         Some(state)
     }
 
-    /// Records a violation if a hard date is passed by the day of the node it is about, the
-    /// first or the last of `range`
     fn violation(
         &self,
         out: &mut PlanVolatileState,
@@ -277,7 +272,7 @@ impl Writer<'_> {
         if scheduled <= date {
             return;
         }
-        // the soonest it could have been with everyone free, by the same reading of its day
+        // with everyone free, by the same reading of its day
         let soonest = match (node, end) {
             (PlanNode::Milestone(_), _) => {
                 let lowered = self.lowered(node);
@@ -297,8 +292,7 @@ impl Writer<'_> {
         out.constraint_violations.insert(node, violation);
     }
 
-    /// Groups cover their members, so they go once everything else has its range, the ones
-    /// inside others first
+    /// Groups cover their members, so they go last, innermost first
     fn groups(&self, out: &mut PlanVolatileState) {
         let mut members: HashMap<Uuid, Vec<PlanNode>> = HashMap::new();
         collect::<task::Task>(self.plan, &mut members);
@@ -309,7 +303,7 @@ impl Writer<'_> {
         let mut left: Vec<Uuid> = self.plan.task_groups().keys().copied().collect();
         left.sort();
         while !left.is_empty() {
-            let inner = |id: &Uuid| {
+            let subgroups_done = |id: &Uuid| {
                 let inside = members.get(id).into_iter().flatten();
                 let mut groups = inside.filter_map(|n| match n {
                     PlanNode::TaskGroup(g) => Some(g),
@@ -317,7 +311,7 @@ impl Writer<'_> {
                 });
                 groups.all(|g| !left.contains(g))
             };
-            let Some(id) = left.iter().copied().find(inner) else {
+            let Some(id) = left.iter().copied().find(subgroups_done) else {
                 break;
             };
             left.retain(|g| *g != id);
@@ -347,7 +341,6 @@ impl Writer<'_> {
         }
     }
 
-    /// When each target and the plan itself land, against the earliest they could
     fn forecasts(&self, out: &mut PlanVolatileState) {
         let info = &self.ctx.net.plans[self.index as usize];
         let forecast = |v: VertexId| {
@@ -374,7 +367,6 @@ fn collect<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<PlanNode>>)
     }
 }
 
-/// The days a scheduled node is shown over, a milestone as its one day
 fn range_of(out: &PlanVolatileState, node: &PlanNode) -> Option<DateRange> {
     match node {
         PlanNode::Task(id) => Some(out.tasks.get(id)?.date_range),

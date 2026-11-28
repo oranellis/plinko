@@ -1,5 +1,4 @@
-//! Choices in a form as text, and back. A select holds a string, so everything a select picks
-//! has a way to be written down and read again.
+//! Form choices to and from the strings a select holds.
 
 // modules {{{
 use chrono::NaiveDate;
@@ -31,7 +30,6 @@ pub fn parse_worker(text: &str) -> Option<Worker> {
     }
 }
 
-/// The kind of constraint a form has, and the day for the kinds that have one
 pub fn constraint_parts(constraint: TimeConstraint) -> (&'static str, Option<NaiveDate>) {
     match constraint {
         TimeConstraint::None => ("none", None),

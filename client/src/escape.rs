@@ -1,4 +1,4 @@
-//! The escape key, which closes whatever was opened last: a popover, a window or the edit pane.
+//! The escape key closes whatever was opened last.
 
 // modules {{{
 use std::cell::{Cell, RefCell};
@@ -9,14 +9,14 @@ use wasm_bindgen::{JsCast, closure::Closure};
 
 // state {{{
 thread_local! {
-    /// What is open, the last on top, each with what escape does to it
+    /// Last on top
     static OPEN: RefCell<Vec<(u32, Callback<()>)>> = const { RefCell::new(Vec::new()) };
     static NEXT: Cell<u32> = const { Cell::new(0) };
 }
 // }}}
 
 // helpers {{{
-/// Starts listening to the keyboard, once for the whole app
+/// Call once for the whole app
 pub fn listen() {
     let on_key = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(|ev: web_sys::KeyboardEvent| {
         if ev.key() != "Escape" || ev.default_prevented() {
@@ -34,8 +34,8 @@ pub fn listen() {
     on_key.forget();
 }
 
-/// While `active`, escape runs `close` unless something opened later is on top of it. What it
-/// reads changing without it opening or closing keeps its place.
+/// While `active`, escape runs `close` unless something opened later is on top. `active` is
+/// memoised so a change that keeps it true keeps its place in the stack.
 pub fn on_escape(active: impl Fn() -> bool + Send + Sync + 'static, close: Callback<()>) {
     let active = Memo::new(move |_| active());
     Effect::new(move |_| {

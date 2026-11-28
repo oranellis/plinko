@@ -1,8 +1,4 @@
-//! The server of one tenant. Settings come from the environment:
-//! `PLINKO_TENANT` (the tenant's name, always needed, its files are in `data/<name>` under the
-//! directory the server runs from), `PLINKO_LISTEN` (default `0.0.0.0:3000`, every interface), `PLINKO_FILES`
-//! (the client build, default `client/dist`), `PLINKO_INSECURE_COOKIES=1` for plain HTTP, and on
-//! the first run `PLINKO_ADMIN_EMAIL` and `PLINKO_ADMIN_PASSWORD`.
+//! Serves one tenant, stored in `data/<PLINKO_TENANT>` under the working directory.
 
 // modules {{{
 use std::{path::PathBuf, sync::Arc};

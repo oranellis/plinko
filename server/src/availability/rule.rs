@@ -11,30 +11,28 @@ use crate::{
 // }}}
 
 // constants {{{
-/// Rules may only start within this range, which keeps the calendars built from them a sane size
+/// Bounded so the calendars built from rules stay a sane size
 pub const RULE_START_RANGE: std::ops::RangeInclusive<NaiveDate> =
     NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()..=NaiveDate::from_ymd_opt(2100, 12, 31).unwrap();
 
-/// The longest a rule's name may be
 pub const MAX_NAME: usize = 60;
 
-/// The weekly schedule every rule set starts with, from before any date that matters, so there is
-/// always one to change. It cannot be removed or moved.
+/// The weekly schedule every rule set starts with, so there is always one to change. It cannot be
+/// removed or moved.
 pub const DEFAULT_RULE: Uuid = Uuid::max();
 
-/// The day the default weekly schedule starts on, which is outside `RULE_START_RANGE`
+/// Deliberately outside `RULE_START_RANGE`
 pub const EPOCH: NaiveDate = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
 // }}}
 
-/// Something that sets availability from `start_day` going forward until `stop_day`
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Rule<V> {
     id: Uuid,
     start_day: NaiveDate,
-    /// The first day the rule no longer applies
+    /// Exclusive: the first day the rule no longer applies
     stop_day: Option<NaiveDate>,
     kind: RuleKind<V>,
-    /// What the rule is called, empty to go by its kind. At most `MAX_NAME` characters.
+    /// Empty to go by its kind
     name: String,
 }
 
@@ -72,13 +70,11 @@ impl<V> Rule<V> {
         &self.name
     }
 
-    /// Whether the rule has started and not been stopped on `day`
     pub fn is_in_effect(&self, day: NaiveDate) -> bool {
         self.start_day <= day && self.stop_day.is_none_or(|stop| day < stop)
     }
 
-    /// Whether the rule has a say in `day`: a weekly schedule or holiday that is in effect, or a
-    /// day an override sets
+    /// Unlike `is_in_effect`, an override only applies on the days it sets
     pub fn applies_on(&self, day: NaiveDate) -> bool {
         self.is_in_effect(day)
             && match &self.kind {
@@ -125,14 +121,11 @@ impl<V> Patchable<RulePatch<V>> for Rule<V> {
 /// holidays. A rule that starts later wins over an earlier one of its kind.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RuleKind<V> {
-    /// Replaces the weekly schedule
     Weekly(WeeklySchedule<V>),
-    /// Sets a run of days from the start day, and again each time it comes round
     Override(DayOverride<V>),
-    /// Sets the default value (no availability, or no days allowed) from the start day up to the
-    /// stop day, which a holiday must have
+    /// Sets the default value (no availability, or no days allowed). Must have a stop day.
     Holiday,
-    /// Goes back to the default weekly schedule from the start day, until another weekly schedule
+    /// Back to the default weekly schedule until another weekly schedule
     ResetWeekly,
 }
 
@@ -141,7 +134,7 @@ pub struct WeeklySchedule<V>([V; 7]);
 
 // impl WeeklySchedule{{{
 impl<V: DayValue> WeeklySchedule<V> {
-    /// One value per day, Monday first
+    /// Monday first
     pub fn new(values: [V; 7]) -> Self {
         Self(values)
     }
@@ -152,7 +145,7 @@ impl<V: DayValue> WeeklySchedule<V> {
 }
 
 impl WeeklySchedule<Workload> {
-    /// Hours per day, Monday first
+    /// Monday first
     pub fn from_hours(hours: [u8; 7]) -> PlinkoResult<Self> {
         let [mon, tue, wed, thu, fri, sat, sun] = hours.map(Workload::new);
         Ok(Self([mon?, tue?, wed?, thu?, fri?, sat?, sun?]))
@@ -166,9 +159,8 @@ impl<V: DayValue> Default for WeeklySchedule<V> {
 }
 // }}}
 
-/// Sets `value` on `days` calendar days from the rule's start day, and on the same again every
-/// `every` after that until the rule's stop day (the occurrences are cut off there). With no
-/// `every` it happens once.
+/// Sets `value` on `days` calendar days from the rule's start day, repeating every `every` (once
+/// without it). The rule's stop day cuts occurrences off.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DayOverride<V> {
     pub days: u32,
@@ -180,7 +172,7 @@ pub struct DayOverride<V> {
 pub struct Every {
     pub n: u32,
     pub unit: Unit,
-    /// For aligned months: count weekdays from the end of the month instead of from its start
+    /// For aligned months: count weekdays from the end of the month
     #[serde(default)]
     pub from_end: bool,
 }
@@ -190,17 +182,16 @@ pub enum Unit {
     Day,
     Week,
     Month,
-    /// Months by the weekday: the second Monday of each, say, rather than the same day number
+    /// By weekday, e.g. the second Monday of each month, rather than the same day number
     MonthAligned,
     Year,
 }
 
 // impl Every {{{
 impl Every {
-    /// The first day of the occurrence that starts last on or before `day`, counting from `start`.
-    /// Months and years go by the day of the month, so the 31st falls on the last day of a shorter
-    /// month. Aligned months go by which weekday of the month `start` is, such as the second Monday,
-    /// or counting from the end of the month, the second last. A month without one has its last.
+    /// The first day of the latest occurrence starting on or before `day`. Months and years keep the
+    /// day of the month, clamped to a shorter month's last day. Aligned months keep `start`'s
+    /// weekday index (from the start or end), falling back to the month's last such weekday.
     fn occurrence(&self, start: NaiveDate, day: NaiveDate) -> Option<NaiveDate> {
         let n = i64::from(self.n.max(1));
         let elapsed = (day - start).num_days();
@@ -226,7 +217,6 @@ impl Every {
             .find(|occurrence| *occurrence <= day)
     }
 
-    /// The occurrence `months` months after `start`
     fn in_month(&self, start: NaiveDate, months: u32) -> Option<NaiveDate> {
         if self.unit != Unit::MonthAligned {
             return start.checked_add_months(Months::new(months));
@@ -270,7 +260,6 @@ impl Every {
 
 // impl DayOverride {{{
 impl<V> DayOverride<V> {
-    /// Whether `day` is one of the days set, for a rule that starts on `start`
     pub fn sets(&self, start: NaiveDate, day: NaiveDate) -> bool {
         let first = match &self.every {
             None => Some(start),
@@ -285,7 +274,7 @@ impl<V> DayOverride<V> {
 pub struct NewRule<V> {
     pub id: Uuid,
     pub start_day: NaiveDate,
-    /// The first day the rule no longer applies on, if it ends
+    /// Exclusive
     #[serde(default)]
     pub stop_day: Option<NaiveDate>,
     pub kind: RuleKind<V>,

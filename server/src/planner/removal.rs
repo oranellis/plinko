@@ -1,5 +1,5 @@
-//! Taking an item out of a plan without breaking the chains through it: what waited on it waits
-//! on what it waited on, and a group's members move up into the group's parent.
+//! Removing an item without breaking the chains through it: what waited on it waits on what it
+//! waited on, and a group's members move up into the group's parent.
 
 // modules {{{
 use uuid::Uuid;
@@ -28,7 +28,6 @@ fn placed<T: PlanItem>(plan: &Plan, id: Uuid) -> (Parent, Vec<PlanNode>) {
         })
 }
 
-/// Where an item is, and what it depends on
 pub(super) fn placement(plan: &Plan, node: PlanNode) -> (Parent, Vec<PlanNode>) {
     match node {
         PlanNode::Task(id) => placed::<Task>(plan, id),
@@ -55,10 +54,7 @@ pub(super) fn all_nodes(plan: &Plan) -> Vec<PlanNode> {
 
 // impl Plan {{{
 impl Plan {
-    /// The updates that remove `node` and leave the rest of the plan connected, the last of them
-    /// removes it. Whatever depended on it depends on what it depended on.
-    /// For a group the members move up into its parent, taking its dependencies as their start,
-    /// and what depended on the group depends on each member.
+    /// The last update is the removal itself. What depended on a group depends on each member.
     pub fn removal(&self, node: PlanNode) -> Vec<PlanUpdate> {
         let (parent, deps) = placement(self, node);
         let nodes = all_nodes(self);
@@ -72,8 +68,7 @@ impl Plan {
         };
         let mut updates = Vec::new();
 
-        // the members waited for the group's start, so they wait for what it waited for, unless
-        // they wait for another member which does
+        // members take the group's dependencies, unless they wait on another member which does
         for member in &members {
             let (_, own) = placement(self, *member);
             let moved = match own.iter().any(|d| members.contains(d)) {
@@ -83,17 +78,15 @@ impl Plan {
             updates.push(PlanUpdate::rewire(*member, Some(parent), Some(moved)));
         }
 
-        // what waited on it waits on what it stood for
-        let mine = node;
         for other in nodes.iter().filter(|n| **n != node) {
             let (_, own) = placement(self, *other);
-            if !own.contains(&mine) {
+            if !own.contains(&node) {
                 continue;
             }
             let replaced: Vec<PlanNode> = own
                 .into_iter()
                 .flat_map(|d| {
-                    if d != mine {
+                    if d != node {
                         return vec![d];
                     }
                     match members.is_empty() {

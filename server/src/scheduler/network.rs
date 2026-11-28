@@ -14,8 +14,7 @@ use crate::{
 };
 // }}}
 
-/// Every plan of a tenant as one network of vertices (day boundaries) and the arcs between
-/// them, indexed densely so a run is array lookups
+/// Every plan of a tenant as one network, indexed densely so a run is array lookups
 #[derive(Clone, Debug, Default)]
 pub struct Network {
     pub vertices: Vec<Vertex>,
@@ -24,45 +23,41 @@ pub struct Network {
     pub root: VertexId,
     /// In id order
     pub plans: Vec<PlanInfo>,
-    /// Where each plan node went, by the position of its plan
+    /// Keyed by the index of the plan in `plans`
     pub lowered: HashMap<(u32, PlanNode), Lowered>,
-    /// What is left out before scheduling, like dropped tasks or tasks no one can work
+    /// Left out before scheduling, like dropped tasks or tasks no one can work
     pub unscheduled: HashMap<(u32, PlanNode), UnscheduledReason>,
-    /// Every vertex after everything it waits on
+    /// Topological: every vertex after everything it waits on
     pub order: Vec<VertexId>,
 }
 
 // Network supporting types {{{
-/// A vertex in `Network::vertices`
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct VertexId(pub u32);
 
-/// A day boundary that waits on other vertices and on arcs: "these things are done". Nodes with
-/// the same dependencies share one, so only what belongs to a single milestone or group (their
-/// `earliest`) is ever on a vertex of its own.
+/// A day boundary: "these things are done". Nodes with the same dependencies share one, so only
+/// a milestone's or group's own `earliest` ever needs a vertex of its own.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Vertex {
-    /// The start of the group this is in, which it waits for like the rest. It is not what makes
-    /// it scheduled: with other things to wait on and none of them scheduled, it is not either.
+    /// The start of its group, waited for like the rest. It does not make the vertex scheduled:
+    /// with other inputs and none of them scheduled, it is not either.
     pub anchor: Option<VertexId>,
     pub after: Vec<VertexId>,
     pub incoming: Vec<ArcId>,
     /// The vertices that wait on this one
     pub next: Vec<VertexId>,
     pub outgoing: Vec<ArcId>,
-    /// Not before this day
     pub earliest: Option<Day>,
-    /// A hard date not to pass, which limits what comes before it without moving anything
+    /// Limits what comes before it without moving anything
     pub deadline: Option<Day>,
     /// Where it is whatever it waits on
     pub pinned: Option<Day>,
 }
 
-/// What a plan aims for
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanInfo {
     pub id: ShortId,
-    /// Waits on everything in the plan, so its time is the plan's end
+    /// Waits on everything in the plan
     pub end: VertexId,
     /// Days added to how late the plan's goals count as
     pub priority: i64,
@@ -76,7 +71,7 @@ pub struct Target {
     pub priority: i64,
 }
 
-/// Where a plan node went: a milestone has the same start and end, a group spans its members
+/// A milestone has the same start and end, a group spans its members
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Lowered {
     pub start: VertexId,
@@ -87,12 +82,11 @@ pub struct Lowered {
 
 // impl Vertex {{{
 impl Vertex {
-    /// The vertices it waits on, the start of its group among them
+    /// Its group's start included
     pub fn before(&self) -> impl Iterator<Item = VertexId> + '_ {
         self.after.iter().copied().chain(self.anchor)
     }
 
-    /// How many things it waits on
     pub fn inputs(&self) -> usize {
         self.before().count() + self.incoming.len()
     }
@@ -127,8 +121,8 @@ impl Network {
         (0..self.arcs.len() as u32).map(ArcId)
     }
 
-    /// Fills in what follows each vertex and the order to visit them in, once everything is
-    /// added. Vertices on a cycle are left out of the order.
+    /// Fills in the back links and `order` once everything is added. Vertices on a cycle are
+    /// left out of the order.
     pub fn link(&mut self) {
         for v in &mut self.vertices {
             v.next.clear();
@@ -177,7 +171,6 @@ pub mod tests {
         table::RowId,
     };
 
-    /// A wait of `days` from `start` to a vertex of its own
     pub fn wait(net: &mut Network, start: VertexId, days: u32) -> VertexId {
         let end = net.add_vertex(Vertex::default());
         net.add_arc(Arc {

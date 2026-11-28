@@ -3,7 +3,7 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 // }}}
 
-/// The days from `start` up to but not including `end`, so a zero length range has equal ends
+/// `end` is exclusive
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DateRange {
     start: NaiveDate,
@@ -37,18 +37,15 @@ pub enum TimeConstraint {
     Fixed(NaiveDate),
 }
 
-/// Which end of a task or group a time constraint is about
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NodeEnd {
-    /// Its first day
     #[default]
     Start,
-    /// Its last day
+    /// The last day, not the day after
     End,
 }
 
-/// A time constraint on the first or the last day of a task or group. A milestone is a single
-/// day, so it has a plain `TimeConstraint`.
+/// A milestone is a single day, so it has a plain `TimeConstraint` instead
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NodeConstraint {
     pub constraint: TimeConstraint,
@@ -58,7 +55,7 @@ pub struct NodeConstraint {
 
 // impl TimeConstraint {{{
 impl TimeConstraint {
-    /// The day the constrained day may not be before, and the day it may not be after
+    /// Inclusive (earliest, latest)
     pub fn bounds(self) -> (Option<NaiveDate>, Option<NaiveDate>) {
         match self {
             TimeConstraint::None => (None, None),
@@ -72,7 +69,6 @@ impl TimeConstraint {
 
 // impl NodeConstraint {{{
 impl NodeConstraint {
-    /// The bounds if the constraint is about `end`, none otherwise
     pub fn bounds_on(self, end: NodeEnd) -> (Option<NaiveDate>, Option<NaiveDate>) {
         match self.end == end {
             true => self.constraint.bounds(),
@@ -82,7 +78,6 @@ impl NodeConstraint {
 }
 
 impl From<TimeConstraint> for NodeConstraint {
-    /// A constraint on the start
     fn from(constraint: TimeConstraint) -> Self {
         Self {
             constraint,

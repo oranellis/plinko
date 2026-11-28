@@ -1,5 +1,4 @@
-//! Where the user is, kept in the address (`#/plan/AbCdEfGh/gantt`) so links and the back button
-//! work.
+//! Routes, kept in the URL hash (`#/plan/AbCdEfGh/gantt`) so links and the back button work.
 
 // modules {{{
 use leptos::prelude::*;
@@ -38,14 +37,11 @@ pub enum Route {
     Home,
     Plans,
     AllPlans,
-    /// A plan, and the item open in its editor
+    /// The `Uuid` is the item open in the editor
     Plan(ShortId, PlanTab, Option<Uuid>),
-    /// Everyone: you at the top, then the others and the groups
     People,
-    /// What a person is down for, reached from their card
     Allocations(Uuid),
     Preferences,
-    /// Availability of a user, the plan default of a plan, or the default of the tenant
     Availability(Availability),
 }
 
@@ -57,7 +53,7 @@ pub enum Availability {
     Default,
 }
 
-/// An item to show when the chart of its plan opens, asked for from another page
+/// An item to show once its plan's chart opens, set from another page
 #[derive(Clone, Copy)]
 pub struct Reveal(pub RwSignal<Option<(ShortId, Uuid)>>);
 // }}}
@@ -123,7 +119,6 @@ pub fn navigate(route: Route) {
     }
 }
 
-/// The current route, following the address
 pub fn use_route() -> RwSignal<Route> {
     let read = || {
         let hash = web_sys::window().and_then(|w| w.location().hash().ok());

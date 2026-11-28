@@ -20,7 +20,6 @@ pub struct TenantLoginUser {
     email: String,
     role: Role,
     pub(super) availability: RuleSet<Workload>,
-    /// The plans the person has starred, which only they change
     #[serde(default)]
     pub(super) favourites: HashSet<ShortId>,
 }
@@ -63,7 +62,7 @@ impl TenantLoginUser {
         &self.email
     }
 
-    /// Whether the user logs in with `email`, which ignores case and spaces around it
+    /// Ignores case and surrounding spaces
     pub fn has_email(&self, email: &str) -> bool {
         self.email.trim().eq_ignore_ascii_case(email.trim())
     }
@@ -106,8 +105,7 @@ pub enum Role {
     Member,
 }
 
-/// Derived from a user's rules and rebuilt when they change, so it is never part of the user's
-/// own state
+/// Derived from a user's rules and rebuilt when they change, so never saved
 #[derive(Clone, Debug, Default)]
 pub struct TenantUserVolatileState {
     pub calendar: Option<Calendar<Workload>>,

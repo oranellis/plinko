@@ -1,5 +1,4 @@
-//! The server for one tenant: an actor that owns the tenant and takes updates in order, a worker
-//! thread that schedules, and the HTTP and WebSocket front.
+//! The server for one tenant: its actor, scheduling thread and HTTP/WebSocket front.
 
 pub mod actor;
 pub mod http;

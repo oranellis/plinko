@@ -12,8 +12,8 @@ use crate::{
 };
 // }}}
 
-/// A point in the dependency graph. A task group has two: its start (the group's own dependencies)
-/// and its end, which is `Node(PlanNode::TaskGroup)` and depends on the start and every member.
+/// A task group is two vertices: its start, holding the group's own dependencies, and its end,
+/// `Node(PlanNode::TaskGroup)`, which depends on the start and every member.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Vertex {
     Node(PlanNode),
@@ -22,7 +22,7 @@ pub(crate) enum Vertex {
 
 // impl Vertex {{{
 impl Vertex {
-    /// A total order over vertices, for results that must not depend on map order
+    /// So results do not depend on map order
     pub(crate) fn key(&self) -> (u8, Uuid) {
         match self {
             Vertex::GroupStart(id) => (0, *id),
@@ -43,7 +43,7 @@ impl From<PlanNode> for Vertex {
 // }}}
 
 // Vertex supporting types {{{
-/// A dependency of a vertex, on today when `from` is `None`
+/// `from` is `None` for a dependency on today
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Edge {
     pub from: Option<Vertex>,
@@ -54,8 +54,7 @@ pub(crate) struct Graph<'a> {
     members: HashMap<Uuid, Vec<PlanNode>>,
 }
 
-/// Whether a chain of dependencies leads from `from` back to `to` (today when `None`), with the
-/// answers kept for the next question about the same `to`
+/// Memoised reachability between vertices, `None` standing for today
 struct Reach<'a, 'p> {
     graph: &'a Graph<'p>,
     known: HashMap<(Vertex, Option<Vertex>), bool>,
@@ -74,12 +73,11 @@ impl<'a> Graph<'a> {
         Self { plan, members }
     }
 
-    /// The vertices that `v` waits on
     fn waits_on(&self, v: Vertex) -> Vec<Vertex> {
         self.edges(v).into_iter().filter_map(|e| e.from).collect()
     }
 
-    /// Every vertex of the plan, in a fixed order
+    /// In a fixed order
     pub(crate) fn vertices(&self) -> Vec<Vertex> {
         let plan = self.plan;
         let mut all: Vec<Vertex> = [
@@ -98,7 +96,6 @@ impl<'a> Graph<'a> {
         all
     }
 
-    /// What `v` waits on
     pub(crate) fn edges(&self, v: Vertex) -> Vec<Edge> {
         match v {
             Vertex::GroupStart(id) => self.item_edges::<TaskGroup>(id),
@@ -120,8 +117,8 @@ impl<'a> Graph<'a> {
         let Some(item) = T::entities(self.plan).get(&id) else {
             return Vec::new();
         };
-        // its dependencies in the order it has them, then the start of its parent, which every
-        // item waits for: the enclosing group's start, or today (`None`) at the top level
+        // in the item's own order, then its parent's start, which every item waits for: the
+        // enclosing group's start, or today at the top level. `simplified` relies on this order.
         let start = match item.parent() {
             Parent::Node(group) => Some(Vertex::GroupStart(group)),
             Parent::Plan => None,
@@ -145,8 +142,7 @@ fn collect_members<T: PlanItem>(plan: &Plan, members: &mut HashMap<Uuid, Vec<Pla
 // }}}
 
 // cycle check {{{
-/// Whether any dependency path leads from `node` back to itself. Only cycles through the changed
-/// node can be new, so this is all that needs checking after an update.
+/// Only cycles through the changed node can be new, so this is all an update needs checking
 pub fn has_cycle_through(plan: &Plan, node: PlanNode) -> bool {
     let graph = Graph::new(plan);
     let roots: Vec<Vertex> = match node {
@@ -185,7 +181,7 @@ impl Reach<'_, '_> {
         if let Some(known) = self.known.get(&(from, to)) {
             return *known;
         }
-        // a cycle would loop for ever, and is not a chain
+        // provisional false stops a cycle recursing for ever
         self.known.insert((from, to), false);
         let leads = self
             .graph
@@ -199,19 +195,18 @@ impl Reach<'_, '_> {
 // }}}
 
 // simplified {{{
-/// The dependencies the items touching `touched` can do without: those another dependency of the
-/// same item already implies. A chain a to b to c makes a direct a to c redundant. Gives each changed item with the
-/// dependencies to keep, in order.
+/// Drops dependencies another dependency of the same item already implies (a→b→c makes a direct
+/// a→c redundant). Returns each changed item with the dependencies to keep, in order.
 pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<PlanNode>)> {
     let graph = Graph::new(plan);
     let vertices = graph.vertices();
-    let mut waiting: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
+    let mut dependents: HashMap<Vertex, Vec<Vertex>> = HashMap::new();
     for v in &vertices {
         for from in graph.waits_on(*v) {
-            waiting.entry(from).or_default().push(*v);
+            dependents.entry(from).or_default().push(*v);
         }
     }
-    // everything that waits on the touched item, itself included, can have gained a shortcut
+    // only the touched item and what waits on it can have gained a shortcut
     let mut affected: HashSet<Vertex> = HashSet::new();
     let mut pending = match touched {
         PlanNode::TaskGroup(id) => vec![Vertex::GroupStart(id), touched.into()],
@@ -219,7 +214,7 @@ pub fn simplified(plan: &Plan, touched: PlanNode) -> Vec<(PlanNode, Vec<PlanNode
     };
     while let Some(v) = pending.pop() {
         if affected.insert(v) {
-            pending.extend(waiting.get(&v).into_iter().flatten());
+            pending.extend(dependents.get(&v).into_iter().flatten());
         }
     }
     let mut reach = Reach {

@@ -1,5 +1,4 @@
-//! The dependency lines shown for the item under the pointer: what it waits for, and what waits
-//! for it. Which ends they join is worked out here and where they are is drawn from it.
+//! Which dependency lines to show for the hovered item.
 
 // modules {{{
 use std::collections::HashMap;
@@ -13,23 +12,18 @@ use plinko::{
 use crate::{gantt::arrange::Mark, model};
 // }}}
 
-/// A place a line can end
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Anchor {
-    /// The first day of an item, a group's left edge
     Start(PlanNode),
-    /// The last day of an item, a group's right edge
     End(PlanNode),
 }
 
 // Anchor supporting types {{{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
-    /// Comes before the item under the pointer
     Before,
-    /// Comes after it
     After,
-    /// Sits on the longest chain between the selected item and the one under the pointer
+    /// On the longest chain between the selected and the hovered item
     Chain,
 }
 
@@ -42,13 +36,11 @@ pub struct Link {
 // }}}
 
 // links {{{
-/// Only the direct links of the item, one step either way. An item inside a group that depends on
-/// nothing is linked to the start of the group, which is what it waits for. At the top level that
-/// is no line, the item just begins when the plan does.
-pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> Vec<Link> {
+/// Direct links only, one step either way. An item in a group with no dependencies waits for the
+/// group's start; at the top level it starts with the plan, which gets no line.
+pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, node: Mark) -> Vec<Link> {
     let mut out = Vec::new();
     let nodes = model::nodes(plan);
-    let node = hovered;
     let deps = model::dependencies(plan, node);
     let ends = deps.iter().map(|before| Anchor::End(*before));
     let start = match model::parent_of(plan, node) {
@@ -71,7 +63,7 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
             });
         }
     }
-    // what ends a group ends it, and the group ends with it
+    // the last item in a group ends the group
     if let Some(group) = model::ends_groups(plan, state, node).first().copied() {
         out.push(Link {
             from: Anchor::End(node),
@@ -84,19 +76,19 @@ pub fn links(plan: &Plan, state: Option<&PlanVolatileState>, hovered: Mark) -> V
 // }}}
 
 // chain {{{
-/// The longest chain of dependencies between two items, in either direction, as links
+/// The longest dependency chain between two items, in either direction
 pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
     let nodes = model::nodes(plan);
     let longest = |from: PlanNode, to: PlanNode| {
         let mut known = HashMap::new();
         path(plan, &nodes, from, to, &mut known)
     };
-    let nodes = [longest(a, b), longest(b, a)]
+    let steps = [longest(a, b), longest(b, a)]
         .into_iter()
         .flatten()
         .max_by_key(Vec::len)
         .unwrap_or_default();
-    nodes
+    steps
         .windows(2)
         .map(|w| Link {
             from: Anchor::End(w[0]),
@@ -108,7 +100,7 @@ pub fn chain(plan: &Plan, a: PlanNode, b: PlanNode) -> Vec<Link> {
 // }}}
 
 // path {{{
-/// The longest run of items from `from` to `to`, each waiting on the one before
+/// Memoised in `known` by start node
 fn path(
     plan: &Plan,
     nodes: &[PlanNode],

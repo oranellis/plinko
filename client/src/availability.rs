@@ -1,7 +1,4 @@
-//! Editing when people work: the rules for a person, for the placeholders of a plan, or the ones
-//! new users and plans start with, and the days an affinity allows. The rules are the ones the
-//! scheduler uses, so the calendar shown is what it will schedule against. Both a full page and a
-//! window over the current page.
+//! Editing working hours (people, plan placeholders, defaults) and an affinity's allowed days.
 
 // modules {{{
 use leptos::prelude::*;
@@ -22,7 +19,6 @@ use crate::{
 // }}}
 
 // hours_of {{{
-/// The hours rules of a person or plan, and a way to change them
 fn hours_of(
     of: Of,
 ) -> (
@@ -74,7 +70,6 @@ fn title_of(of: Of) -> Signal<String> {
 // }}}
 
 // Availability {{{
-/// The calendar as a page of its own, for changing your hours
 #[component]
 pub fn Availability(of: Of) -> impl IntoView {
     let (rules, send) = hours_of(of);
@@ -98,7 +93,6 @@ pub fn Availability(of: Of) -> impl IntoView {
 // }}}
 
 // AvailabilityWindow {{{
-/// The calendar in a window over the page it was opened from
 #[component]
 pub fn AvailabilityWindow(of: Of, on_close: Callback<()>) -> impl IntoView {
     let (rules, send) = hours_of(of);
@@ -111,7 +105,6 @@ pub fn AvailabilityWindow(of: Of, on_close: Callback<()>) -> impl IntoView {
 // }}}
 
 // AffinityWindow {{{
-/// The days an affinity lets work happen on, in a window
 #[component]
 pub fn AffinityWindow(plan: ShortId, affinity: Uuid, on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();

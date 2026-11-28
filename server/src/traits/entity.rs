@@ -12,7 +12,7 @@ use crate::{
 };
 // }}}
 
-/// A collection of things stored in a container `C` (a plan or a tenant) and changed with `Crud`
+/// `C` is the container, a plan or a tenant
 pub trait Entity<C>: Sized + Clone + Patchable<Self::Patch> {
     type New: Identified + Into<Self>;
     type Patch: Identified;
@@ -20,17 +20,16 @@ pub trait Entity<C>: Sized + Clone + Patchable<Self::Patch> {
     fn entities(container: &C) -> &HashMap<Uuid, Self>;
     fn entities_mut(container: &mut C) -> &mut HashMap<Uuid, Self>;
 
-    /// Checked after every add or update, a failure reverts the change
+    /// Checked after every add or update; a failure reverts the change
     fn validate(_container: &C, _id: Uuid) -> PlinkoResult<()> {
         Ok(())
     }
 
-    /// Whether something else still refers to the entity, which blocks removal
+    /// Blocks removal
     fn in_use(_container: &C, _id: Uuid) -> bool {
         false
     }
 
-    /// Applies the change then validates it, putting the entity back as it was on failure
     fn apply_crud(container: &mut C, update: Crud<Self::New, Self::Patch>) -> PlinkoResult<()> {
         match update {
             Crud::Add(new) => {

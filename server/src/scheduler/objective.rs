@@ -10,7 +10,7 @@ use crate::{
 };
 // }}}
 
-/// How good a schedule is, lower is better and an earlier field always outweighs a later one
+/// Lower is better, compared field by field in order
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Objective {
     /// Work that found no days at all
@@ -27,14 +27,13 @@ pub struct Objective {
 }
 
 // Objective supporting types {{{
-/// Something a schedule is judged on that is not where it should be
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Late {
     Vertex(VertexId),
     Arc(ArcId),
 }
 
-/// A schedule's score and what is behind the first part of it that is not zero
+/// `late` is what is behind the first nonzero part of the objective
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Score {
     pub objective: Objective,
@@ -43,8 +42,7 @@ pub struct Score {
 // }}}
 
 // overdue {{{
-/// Days a vertex is past its hard date, or work that has not started is past the worse of the
-/// dates for its start and its end, 0 if none is missed
+/// Days past the hard date; for open work the worse of its start and end dates
 pub fn overdue(ctx: &Context, pass: &Pass, late: Late) -> i64 {
     let over = |at: Day, limit: Option<Day>| {
         limit.map_or(0, |l| (i64::from(at.0) - i64::from(l.0)).max(0))
@@ -67,7 +65,6 @@ pub fn overdue(ctx: &Context, pass: &Pass, late: Late) -> i64 {
 // }}}
 
 // score {{{
-/// Scores a finished pass against the earliest schedule
 pub fn score(ctx: &Context, earliest: &Pass, pass: &Pass) -> Score {
     let net = ctx.net;
     let mut objective = Objective::default();

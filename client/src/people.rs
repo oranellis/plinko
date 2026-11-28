@@ -1,5 +1,4 @@
-//! Everyone in the tenant: you at the top, with your work and hours, then everyone else as
-//! cards, and the groups they are in. Everyone can look; admins change other people.
+//! Everyone in the tenant and their groups; only admins change other people.
 
 // modules {{{
 use std::collections::HashSet;
@@ -42,10 +41,9 @@ struct Group {
     members: Vec<Uuid>,
 }
 
-/// What the form for a person changes
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FormMode {
-    /// Someone new, with a password to start with
+    /// Someone new, with a starting password
     New,
     /// Name, email and whether they are an admin
     Details,
@@ -185,13 +183,11 @@ pub fn People() -> impl IntoView {
 // }}}
 
 // PersonCard {{{
-/// Someone as a card: who they are and how booked their next two weeks are, which opens their
-/// window
 #[component]
 fn PersonCard(id: Uuid, name: String) -> impl IntoView {
     let open = use_open_person();
     let load = use_load(id, AHEAD);
-    let said = Memo::new(move |_| load.with(|l| busy(l)));
+    let summary = Memo::new(move |_| load.with(|l| busy(l)));
     let label = name.clone();
     view! {
         <button type="button" class="personcard" on:click=move |_| open.run(id)>
@@ -208,14 +204,13 @@ fn PersonCard(id: Uuid, name: String) -> impl IntoView {
                     view! { <i class:over=over style=format!("height:{}%", (share / 1.2 * 100.0).max(4.0))></i> }
                 }).collect_view()}
             </span>
-            <span class=move || format!("busy {}", said.get().1)>{move || said.get().0}</span>
+            <span class=move || format!("busy {}", summary.get().1)>{move || summary.get().0}</span>
         </button>
     }
 }
 // }}}
 
 // NewStarters {{{
-/// The hours new people and plans start with, as a card of their own
 #[component]
 fn NewStarters() -> impl IntoView {
     let sync = use_sync();
@@ -281,16 +276,16 @@ pub fn PersonForm(which: Option<Uuid>, mode: FormMode, on_close: Callback<()>) -
     let password = RwSignal::new(String::new());
     let failure = RwSignal::new(None::<String>);
     let busy = RwSignal::new(false);
-    // a new person once they are added, while their password is still being set
+    // set once the person is added, so a retry only sets the password
     let added = RwSignal::new(None::<Uuid>);
-    // the server wants the current password for your own, which Preferences asks for
+    // the server wants your current password for your own, so Preferences handles that
     let yourself = which.is_some() && which == sync.me.with_untracked(|m| m.as_ref().map(|m| m.id));
-    // only an admin makes others admins, and not themselves any less of one
+    // admins promote others but cannot demote themselves
     let can_promote = sync
         .me
         .with_untracked(|m| m.as_ref().is_some_and(|m| m.admin))
         && !yourself;
-    let (details, secret_too) = match mode {
+    let (edits_details, sets_password) = match mode {
         FormMode::New => (true, true),
         FormMode::Details => (true, false),
         FormMode::Password => (false, true),
@@ -308,8 +303,8 @@ pub fn PersonForm(which: Option<Uuid>, mode: FormMode, on_close: Callback<()>) -
             Role::Member
         };
         let secret = password.get_untracked();
-        // as the server has it, so a new person is not added without one
-        if secret_too && secret.chars().count() < 8 {
+        // the server's rule, checked first so a new person is not added without a password
+        if sets_password && secret.chars().count() < 8 {
             failure.set(Some(
                 "The password must be at least 8 characters".to_string(),
             ));
@@ -321,7 +316,7 @@ pub fn PersonForm(which: Option<Uuid>, mode: FormMode, on_close: Callback<()>) -
         failure.set(None);
         match &existing {
             Some((id, old_name, old_email, old_admin)) => {
-                if details {
+                if edits_details {
                     let patch = TenantLoginUserPatch {
                         id: *id,
                         name: (*old_name != name.get_untracked()).then(|| name.get_untracked()),
@@ -330,7 +325,7 @@ pub fn PersonForm(which: Option<Uuid>, mode: FormMode, on_close: Callback<()>) -
                     };
                     sync.send(TenantUpdateType::User(Crud::Update(patch)));
                 }
-                if !secret_too {
+                if !sets_password {
                     on_close.run(());
                     return;
                 }
@@ -367,7 +362,6 @@ pub fn PersonForm(which: Option<Uuid>, mode: FormMode, on_close: Callback<()>) -
                         busy.try_set(false);
                     });
                 };
-                // saving again after that only tries the password again
                 if let Some(id) = added.get_untracked() {
                     set_password(id, secret);
                     return;
@@ -387,24 +381,24 @@ pub fn PersonForm(which: Option<Uuid>, mode: FormMode, on_close: Callback<()>) -
     view! {
         <Modal title=title on_close=on_close>
             <form class="form" on:submit=save>
-                {details.then(|| view! {
+                {edits_details.then(|| view! {
                     <Field label="Name"><Text value=name on_input=Callback::new(move |v| name.set(v)) /></Field>
                     <Field label="Email"><Text value=email on_input=Callback::new(move |v| email.set(v)) kind="email" /></Field>
                 })}
-                {(details && (can_promote || which.is_none())).then(|| view! {
+                {(edits_details && (can_promote || which.is_none())).then(|| view! {
                     <label class="check">
                         <input type="checkbox" prop:checked=move || admin.get() on:change=move |ev| admin.set(event_target_checked(&ev)) />
                         "Admin (can manage people and see every plan)"
                     </label>
                 })}
-                {(details && yourself).then(|| view! {
+                {(edits_details && yourself).then(|| view! {
                     <p class="small">
                         "Your own password is changed in "
                         <a href=Route::Preferences.path() on:click=move |_| on_close.run(())>"Preferences"</a>
                         ", given the current one"
                     </p>
                 })}
-                {secret_too.then(|| view! {
+                {sets_password.then(|| view! {
                     <Field label="Password, at least 8 characters">
                         <Text value=password on_input=Callback::new(move |v| password.set(v)) kind="password" />
                     </Field>
@@ -442,7 +436,6 @@ fn GroupForm(
             .unwrap_or_default(),
     );
     let adding = RwSignal::new(String::new());
-    // the people not in the group yet
     let addable = Signal::derive(move || {
         people
             .get()

@@ -1,4 +1,4 @@
-//! Where you land: what you are doing today and next, and the plans you go to most.
+//! The landing page: today's and upcoming work, and quick access plans.
 
 // modules {{{
 use chrono::{Days, NaiveDate};
@@ -16,11 +16,11 @@ use crate::{
 // }}}
 
 // constants {{{
-/// The fewest tasks still to start that are shown, if there are that many
+/// The fewest upcoming tasks shown, if there are that many
 const UPCOMING: usize = 4;
 
-/// How many days ahead the upcoming work is laid out over, a column for each starting tomorrow on,
-/// with one more for what starts later. Everything starting within them is shown.
+/// Days ahead in the upcoming grid, a column each from tomorrow, plus one for later.
+/// Everything starting within them is shown.
 const DAYS: u64 = 7;
 // }}}
 
@@ -34,7 +34,6 @@ pub fn Home() -> impl IntoView {
             .unwrap_or_default()
     };
     let mine = use_my_tasks();
-    // the most overdue come first in both lists
     let doing = Memo::new(move |_| {
         let mut list: Vec<MyTask> = mine.with(|m| {
             m.iter()
@@ -53,7 +52,6 @@ pub fn Home() -> impl IntoView {
                 .collect()
         });
         list.sort_by_key(|t| (t.start, t.end));
-        // all that start in the coming week, and the next ones after if that is under the fewest
         let week = list.partition_point(|t| t.start <= today() + Days::new(DAYS));
         list.truncate(week.max(UPCOMING));
         list
@@ -107,8 +105,7 @@ pub fn Home() -> impl IntoView {
                 >
                     <ul class="work">
                         <For each=move || next.get() key=|t| crate::ui::hashed(t) children=move |t| {
-                            // under the day it starts on, today and what is late with tomorrow's,
-                            // and what is further off in the last column
+                            // late and today's tasks go in tomorrow's column
                             let ahead = (t.start - today()).num_days().clamp(1, DAYS as i64 + 1);
                             view! { <Row task=t today=today() column=(ahead - 1) as usize /> }
                         } />
@@ -126,12 +123,11 @@ pub fn Home() -> impl IntoView {
 // }}}
 
 // Row {{{
-/// A task with the button that moves it on: finish what is in progress, start what is waiting
 #[component]
 fn Row(
     task: MyTask,
     today: NaiveDate,
-    /// The day of the upcoming grid the start button sits in, none for a plain row
+    /// The upcoming grid column, none for a plain row
     #[prop(optional)]
     column: Option<usize>,
 ) -> impl IntoView {

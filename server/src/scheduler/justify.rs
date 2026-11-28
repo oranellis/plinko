@@ -10,9 +10,9 @@ use crate::scheduler::{
 // }}}
 
 // justify {{{
-/// A schedule from one that is finished: everything is pushed as late as it can go without any
-/// goal ending later, then placed again as early as it can go in the order that left. Work that
-/// went early only because what mattered more was not ready yet ends up behind it.
+/// Pushes everything as late as it goes without any goal ending later, then places it again as
+/// early as it goes in that order. Work that went early only because what mattered more was not
+/// ready yet ends up behind it.
 pub fn justify(ctx: &Context, pass: &Pass) -> Pass {
     let starts = late_starts(ctx, pass);
     let rules = Rules {
@@ -27,9 +27,9 @@ pub fn justify(ctx: &Context, pass: &Pass) -> Pass {
 // }}}
 
 // late_starts {{{
-/// Where each arc starts when all are as late as they can be: no goal later than it is, no hard
-/// date passed that is kept now, and nothing before what it depends on. Arcs go in order of
-/// their ends, the last first, so each makes room for what comes before it.
+/// Starts with everything as late as it can be: no goal later than now, no kept hard date passed,
+/// nothing before what it depends on. Arcs go last end first, so each makes room for what comes
+/// before it.
 fn late_starts(ctx: &Context, pass: &Pass) -> Vec<i64> {
     let net = ctx.net;
     let at = |v: VertexId| pass.time[v.0 as usize].map_or(i64::MAX, |d| i64::from(d.0));
@@ -87,7 +87,7 @@ fn late_starts(ctx: &Context, pass: &Pass) -> Vec<i64> {
     starts
 }
 
-/// Moves an arc to end by `by` if that is later than it is, and gives where it starts
+/// Moves an arc later to end by `by`, giving its start
 fn push_late(
     ctx: &Context,
     pass: &Pass,

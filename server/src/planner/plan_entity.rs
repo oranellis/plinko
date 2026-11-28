@@ -28,7 +28,6 @@ use crate::{
 };
 // }}}
 
-/// What every node of a plan says about itself, which `Plan::node` gives for any id
 pub trait AbstractPlanNode {
     fn id(&self) -> Uuid;
     fn parent(&self) -> Parent;
@@ -36,7 +35,6 @@ pub trait AbstractPlanNode {
     fn node_type(&self) -> PlanNodeType;
 }
 
-/// A schedulable entity with a parent and dependencies, and so a place in the dependency graph
 pub trait PlanItem: Entity<Plan> + AbstractPlanNode {
     fn node(id: Uuid) -> PlanNode;
     fn workers(&self) -> Vec<Worker> {
@@ -45,7 +43,7 @@ pub trait PlanItem: Entity<Plan> + AbstractPlanNode {
     fn affinities(&self) -> Vec<Uuid> {
         Vec::new()
     }
-    /// The workers a person has been recorded for, which must be ones the item asks for
+    /// Must be a subset of `workers`
     fn recorded_workers(&self) -> Vec<Worker> {
         Vec::new()
     }
@@ -236,7 +234,6 @@ impl Entity<Plan> for Target {
 
 // impl Plan {{{
 impl Plan {
-    /// The node with the id, of whichever kind it is
     pub fn node(&self, id: &Uuid) -> Option<&dyn AbstractPlanNode> {
         let node: Option<&dyn AbstractPlanNode> = self
             .tasks

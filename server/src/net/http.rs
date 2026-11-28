@@ -1,6 +1,4 @@
-//! HTTP: logging in and out, the WebSocket, and the client's files. Sessions are a cookie, so
-//! the browser sends it with the WebSocket as well. Anything that changes state or opens the
-//! socket must come from the page's own origin.
+//! HTTP: logging in and out, passwords, the WebSocket, and the client's files.
 
 // modules {{{
 use std::{path::PathBuf, sync::Arc};
@@ -37,7 +35,7 @@ const MIN_PASSWORD_LENGTH: usize = 8;
 #[derive(Clone)]
 struct AppState {
     handle: Handle,
-    /// The session cookie is only sent over HTTPS, unless this is a local test
+    /// Off only for local tests over plain HTTP
     secure_cookies: bool,
 }
 
@@ -50,16 +48,15 @@ struct Login {
 
 #[derive(Deserialize)]
 struct ChangePassword {
-    /// Whose password, the caller's own if left out
+    /// The caller's own if left out
     user: Option<Uuid>,
-    /// The caller's current password, needed to change their own
+    /// Needed to change one's own
     current: Option<String>,
     new: String,
 }
 // }}}
 
 // router {{{
-/// The routes, serving the client from `files` if given
 pub fn router(handle: Handle, files: Option<PathBuf>, secure_cookies: bool) -> Router {
     let state = AppState {
         handle,
@@ -83,6 +80,8 @@ pub fn router(handle: Handle, files: Option<PathBuf>, secure_cookies: bool) -> R
 // }}}
 
 // helpers {{{
+/// The session cookie goes with every request, the WebSocket too, so anything that changes state
+/// or opens the socket must come from the page's own origin
 fn same_origin(headers: &HeaderMap) -> bool {
     let Some(origin) = headers.get(header::ORIGIN) else {
         // not a browser
@@ -114,7 +113,7 @@ fn session_cookie(state: &AppState, token: &str, lifetime: u64) -> (HeaderName, 
     (header::SET_COOKIE, value)
 }
 
-/// Runs the store call off the async threads, since hashing a password takes a while
+/// Off the async threads, since hashing a password takes a while
 async fn blocking<T: Send + 'static>(
     store: &Arc<Store>,
     call: impl FnOnce(&Store) -> crate::common::error::PlinkoResult<T> + Send + 'static,
@@ -249,8 +248,7 @@ async fn socket(
 // }}}
 
 // serve {{{
-/// Sends a client what the actor says and gives the actor what the client asks for, until either
-/// side closes: the actor does when the session ends
+/// Until either side closes; the actor closes when the session ends
 async fn serve(handle: Handle, user: Uuid, token: String, socket: WebSocket) {
     let (mut sink, mut stream) = socket.split();
     let (out, mut outgoing) = mpsc::unbounded_channel();

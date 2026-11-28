@@ -1,4 +1,4 @@
-//! The frame around every page: where you are, who you are, and how the connection is doing.
+//! The frame around every page.
 
 // modules {{{
 use leptos::{prelude::*, task::spawn_local};
@@ -41,13 +41,12 @@ pub fn Shell() -> impl IntoView {
     let sync = use_sync();
     let route = use_route();
     provide_context(route);
-    // a person's window over the page goes when the page changes
     let person = provide_person_window();
     Effect::new(move |_| {
         route.track();
         person.set(None);
     });
-    // changing tab or opening an item stays on the same page, so its state is kept
+    // a tab change or opening an item keeps the same page, so its state survives
     let page = Memo::new(move |_| match route.get() {
         Route::Home => Page::Home,
         Route::Plans => Page::Plans,
@@ -63,16 +62,15 @@ pub fn Shell() -> impl IntoView {
             .with(|t| t.as_ref().map(|t| t.name().to_string()).unwrap_or_default())
     };
     let admin = move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin));
-    // everyone sees everyone, but only an admin changes the hours of other people and the
-    // default ones, wherever the address says to go
+    // only an admin edits other people's hours and the defaults, even by typed address
     let allowed = Memo::new(move |_| {
         let me = sync.me.with(|m| m.as_ref().map(|m| m.id));
-        let admins = match page.get() {
+        let needs_admin = match page.get() {
             Page::Availability(Availability::Default) => true,
             Page::Availability(Availability::User(user)) => Some(user) != me,
             _ => false,
         };
-        !admins || admin()
+        !needs_admin || admin()
     });
     let _ = Role::Admin;
     let logout = move |()| {
@@ -98,7 +96,7 @@ pub fn Shell() -> impl IntoView {
         )
     });
     let (plans, people) = (Signal::stored(Route::Plans), Signal::stored(Route::People));
-    // a person's allocations and hours are reached from the people page, so that stays lit
+    // allocations and hours are reached from the people page, so that tab stays lit
     let on_people = Signal::derive(move || {
         matches!(
             route.get(),
@@ -149,7 +147,6 @@ pub fn Shell() -> impl IntoView {
 // }}}
 
 // UserMenu {{{
-/// The person circle at the top right, and the menu it opens
 #[component]
 fn UserMenu(on_logout: Callback<()>) -> impl IntoView {
     let sync = use_sync();
@@ -188,7 +185,6 @@ fn UserMenu(on_logout: Callback<()>) -> impl IntoView {
 // }}}
 
 // account_names {{{
-/// The name and email of the person signed in, which follow their profile as it changes
 fn account_names(sync: crate::sync::Sync) -> (Signal<String>, Signal<String>) {
     let me = move || sync.me.with(|m| m.as_ref().map(|m| m.id));
     let name = move || {
@@ -222,22 +218,20 @@ pub fn open_plan(plan: plinko::common::short_id::ShortId) {
 // }}}
 
 // Toast {{{
-/// How long the last thing that went wrong stays at the bottom of the screen
 const TOAST_FOR: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// The last thing that went wrong, at the bottom of the screen until it fades or is clicked
 #[component]
 fn Toast() -> impl IntoView {
     let sync = use_sync();
-    let shown = StoredValue::new(0u32);
+    let notices_shown = StoredValue::new(0u32);
     Effect::new(move |_| {
         if sync.notice.with(Option::is_none) {
             return;
         }
-        let now = shown.get_value() + 1;
-        shown.set_value(now);
+        let this_notice = notices_shown.get_value() + 1;
+        notices_shown.set_value(this_notice);
         let fade = move || {
-            if shown.try_get_value() == Some(now) {
+            if notices_shown.try_get_value() == Some(this_notice) {
                 sync.notice.try_set(None);
             }
         };

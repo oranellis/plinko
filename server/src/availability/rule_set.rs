@@ -21,7 +21,6 @@ use crate::{
 };
 // }}}
 
-/// How much someone can work on each day, as a set of rules over a default weekly schedule
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RuleSet<V> {
     pub(super) rules: HashMap<Uuid, Rule<V>>,
@@ -34,7 +33,6 @@ pub enum RuleSetUpdate<V> {
 }
 
 impl<V> RuleSetUpdate<V> {
-    /// Gives any new rule a fresh id, see `Crud::assign_id`
     pub fn assign_ids(&mut self) {
         match self {
             RuleSetUpdate::Rule(update) => update.assign_id(),
@@ -64,14 +62,14 @@ impl<V: DayValue> RuleSet<V> {
         }
     }
 
-    /// The value on `day`. Use `calendar` to read many days.
+    /// Use `calendar` to read many days
     pub fn value_on(&self, day: NaiveDate) -> V {
         self.calendar(day, day)
             .on(day)
             .expect("calendar covers the day")
     }
 
-    /// Every rule with a say in `day`, lowest priority first
+    /// Lowest priority first
     pub fn active_rules(&self, day: NaiveDate) -> Vec<&Rule<V>> {
         let mut rules: Vec<_> = self.rules.values().filter(|r| r.applies_on(day)).collect();
         rules.sort_by_key(|r| (rank_of(r.kind()), r.start_day(), *r.id()));
@@ -95,7 +93,7 @@ impl<V: DayValue> Entity<RuleSet<V>> for Rule<V> {
     fn validate(set: &RuleSet<V>, id: Uuid) -> PlinkoResult<()> {
         let rule = &set.rules[&id];
         let invalid = if id == DEFAULT_RULE {
-            // the default stays a weekly schedule from the epoch, whose days only can change
+            // only the default's days may change
             rule.start_day() != EPOCH
                 || rule.stop_day().is_some()
                 || !matches!(rule.kind(), RuleKind::Weekly(_))

@@ -1,4 +1,4 @@
-//! What is particular to the person signed in: their name, password and how dates look.
+//! The signed-in person's name, password and date display.
 
 // modules {{{
 use leptos::{prelude::*, task::spawn_local};

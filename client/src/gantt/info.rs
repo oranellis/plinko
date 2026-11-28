@@ -1,5 +1,4 @@
-//! What the panel says about the item under the pointer: its name as the title, then its details,
-//! in the way Plinko 1 worded them.
+//! The hover panel's lines for an item, worded as Plinko 1 did.
 
 // modules {{{
 use plinko::{
@@ -27,6 +26,7 @@ pub fn status_label(status: Status) -> &'static str {
     }
 }
 
+/// Ranges end on the day after the last
 fn last_day(range: (chrono::NaiveDate, chrono::NaiveDate)) -> chrono::NaiveDate {
     range
         .1
@@ -67,9 +67,8 @@ pub fn info(
     tenant: &Tenant,
     plan: &Plan,
     state: Option<&PlanVolatileState>,
-    mark: Mark,
+    node: Mark,
 ) -> Vec<String> {
-    let node = mark;
     let mut lines = vec![node_name(plan, node)];
     let violated = state.is_some_and(|s| s.constraint_violations.contains_key(&node));
     match node {
@@ -148,13 +147,11 @@ pub fn info(
 // }}}
 
 // violation {{{
-/// What the small warning beside an item says
 pub fn violation(state: Option<&PlanVolatileState>, mark: Mark) -> Vec<String> {
     let Some(v) = state.and_then(|s| s.constraint_violations.get(&mark)) else {
         return Vec::new();
     };
     let (kind, date) = forms::constraint_parts(v.constraint);
-    // a milestone is one day, the rest have a first and a last
     let day = match (mark, v.end) {
         (PlanNode::Milestone(_), _) => "date",
         (_, NodeEnd::Start) => "start date",

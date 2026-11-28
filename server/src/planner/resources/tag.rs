@@ -51,8 +51,6 @@ pub struct NewTag {
     pub name: String,
 }
 
-// Bit weaksauce because there is only one thing you can change, maybe later I'll add groups or
-// something which will make this worth it
 #[derive(Clone, Serialize, Deserialize)]
 pub struct TagPatch {
     pub id: Uuid,

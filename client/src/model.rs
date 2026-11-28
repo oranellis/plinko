@@ -1,4 +1,4 @@
-//! A plan as rows to show: the tree of groups and items in order, with where each is scheduled.
+//! A plan flattened into display rows.
 
 // modules {{{
 use std::collections::{HashMap, HashSet};
@@ -52,11 +52,11 @@ pub struct Row {
     pub node: PlanNode,
     pub depth: u32,
     pub name: String,
-    /// First day and the day after the last, a milestone is the one day it lands on
+    /// Start and the day after the end; a milestone is its one day
     pub span: Option<(NaiveDate, NaiveDate)>,
     pub look: Look,
     pub unscheduled: Option<UnscheduledReason>,
-    /// Starts after the date a constraint asks for
+    /// Starts later than its constraint allows
     pub violated: bool,
     pub has_members: bool,
     pub collapsed: bool,
@@ -99,7 +99,7 @@ pub fn parent_of(plan: &Plan, node: PlanNode) -> Parent {
     .unwrap_or(Parent::Plan)
 }
 
-/// The group a node is directly in, found in the plan as the client holds it
+/// The group a node is directly in
 pub fn parent_of_in(
     sync: crate::sync::Sync,
     plan: plinko::common::short_id::ShortId,
@@ -114,7 +114,7 @@ pub fn parent_of_in(
     })
 }
 
-/// What waits for a node, by name
+/// The nodes depending on `node`, sorted by name
 pub fn dependents(plan: &Plan, node: PlanNode) -> Vec<PlanNode> {
     let mut found: Vec<(String, PlanNode)> = nodes(plan)
         .into_iter()
@@ -125,7 +125,6 @@ pub fn dependents(plan: &Plan, node: PlanNode) -> Vec<PlanNode> {
     found.into_iter().map(|(_, n)| n).collect()
 }
 
-/// What a node depends on
 pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<PlanNode> {
     match node {
         PlanNode::Task(id) => plan.tasks().get(&id).map(|t| t.dependencies().clone()),
@@ -146,7 +145,6 @@ pub fn dependencies(plan: &Plan, node: PlanNode) -> Vec<PlanNode> {
     .unwrap_or_default()
 }
 
-/// Every node of the plan
 pub fn nodes(plan: &Plan) -> Vec<PlanNode> {
     let tasks = plan.tasks().keys().map(|id| PlanNode::Task(*id));
     let milestones = plan.milestones().keys().map(|id| PlanNode::Milestone(*id));
@@ -209,8 +207,8 @@ pub fn look_of(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -
 // }}}
 
 // rows {{{
-/// The plan's items in order, groups first with what is in them below, each level by when it
-/// starts. What is not scheduled comes last. Members of a collapsed group are left out.
+/// Depth first, each level by start with the unscheduled last. Members of collapsed groups are
+/// left out.
 pub fn rows(plan: &Plan, state: Option<&PlanVolatileState>, collapsed: &HashSet<Uuid>) -> Vec<Row> {
     let mut children: HashMap<Parent, Vec<PlanNode>> = HashMap::new();
     for node in nodes(plan) {
@@ -245,7 +243,7 @@ impl Context<'_> {
                 PlanNode::TaskGroup(id) => Some(id),
                 _ => None,
             };
-            let members = group.is_some_and(|id| self.children.contains_key(&Parent::Node(id)));
+            let has_members = group.is_some_and(|id| self.children.contains_key(&Parent::Node(id)));
             let is_collapsed = group.is_some_and(|id| self.collapsed.contains(&id));
             rows.push(Row {
                 node,
@@ -257,7 +255,7 @@ impl Context<'_> {
                 violated: self
                     .state
                     .is_some_and(|s| s.constraint_violations.contains_key(&node)),
-                has_members: members,
+                has_members,
                 collapsed: is_collapsed,
             });
             if let (Some(id), false) = (group, is_collapsed) {
@@ -269,7 +267,6 @@ impl Context<'_> {
 // }}}
 
 // helpers {{{
-/// What it is that keeps an item off the schedule, in words
 pub fn reason(reason: UnscheduledReason) -> &'static str {
     match reason {
         UnscheduledReason::Dropped => "Dropped",
@@ -280,8 +277,7 @@ pub fn reason(reason: UnscheduledReason) -> &'static str {
     }
 }
 
-/// Every group that ends with the node, innermost first: its group when it ends on the group's
-/// last day, then that group's own group when the group ends on its last day too, and so on
+/// The enclosing groups that end on the same day as `node`, innermost first
 pub fn ends_groups(
     plan: &Plan,
     state: Option<&PlanVolatileState>,
@@ -296,7 +292,6 @@ pub fn ends_groups(
     groups
 }
 
-/// The group a node is in when it ends on the group's last day, so the group ends with it
 fn ends_group(plan: &Plan, state: Option<&PlanVolatileState>, node: PlanNode) -> Option<PlanNode> {
     let Parent::Node(group) = parent_of(plan, node) else {
         return None;

@@ -78,7 +78,7 @@ impl Patchable<PlanBufferPatch> for PlanBuffer {
 // }}}
 
 // PlanBuffer supporting types {{{
-/// Written by the scheduler for every buffer it could schedule
+/// Absent when the scheduler could not place the buffer
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub date_range: DateRange,

@@ -11,8 +11,7 @@ use crate::{
 };
 // }}}
 
-/// A wait of `duration` calendar days that begins when what it depends on ends. Like a task with
-/// no work and no time constraint, the schedule never moves it for anything but its dependencies.
+/// A wait of `duration` calendar days from when its dependencies end; nothing else moves it
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PlanDelay {
     id: Uuid,
@@ -79,7 +78,7 @@ impl Patchable<PlanDelayPatch> for PlanDelay {
 // }}}
 
 // PlanDelay supporting types {{{
-/// Written by the scheduler for every delay it could schedule, see `PlanDelay::place`
+/// Absent when the scheduler could not place the delay
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub date_range: DateRange,

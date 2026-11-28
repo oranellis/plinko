@@ -30,20 +30,19 @@ use crate::{
 // }}}
 
 // constants {{{
-/// How far before or after today a date in a plan may be
 pub const MAX_DAYS_FROM_TODAY: i64 = 10 * 366;
 
-/// The longest a task, buffer or delay may last, in days
+/// In days
 pub const MAX_DURATION: u32 = 10 * 366;
 // }}}
 
-/// Everything a tenant is, and so what a snapshot holds. The caches and the schedule are
-/// derived and left out, so a loaded tenant needs `scheduler::schedule` before it has them.
+/// What a snapshot holds. The caches and the schedule are derived and not saved, so a loaded
+/// tenant needs `scheduler::schedule` before it has them.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Tenant {
     id: ShortId,
     name: String,
-    /// The current day, which only changes by update (the server runner sends one each day)
+    /// Only changes by update; the server runner sends one each day
     today: NaiveDate,
     pub(super) users: HashMap<Uuid, TenantLoginUser>,
     pub(super) user_groups: HashMap<Uuid, TenantUserGroup>,
@@ -53,8 +52,8 @@ pub struct Tenant {
     plan_calendars: HashMap<ShortId, Calendar<Workload>>,
     #[serde(skip)]
     schedule: Option<TenantVolatileState>,
-    /// While updates already saved are applied again, which were checked by the rules of their
-    /// day, so a check added since does not refuse them
+    /// Set while replaying saved updates, which were checked by the rules of their day, so a
+    /// check added since does not refuse them
     #[serde(skip)]
     pub(super) logged: bool,
     /// What the last search found, for the next to start from
@@ -75,12 +74,6 @@ impl Tenant {
         Self::new_with_login(id, name, today, root_user)
     }
 
-    /// Create a new tenant with a specific initial login
-    ///
-    /// * `id`: A unique ID for the tenant
-    /// * `name`: A friendly name for the tenant
-    /// * `today`: The day it starts on
-    /// * `user`: An initial user to populate the tenant with
     pub fn new_with_login(
         id: ShortId,
         name: String,
@@ -146,7 +139,7 @@ impl Tenant {
         }
     }
 
-    /// The last scheduler result, which any successful update clears until the next run
+    /// Cleared by any successful update until the next run
     pub fn schedule(&self) -> Option<&TenantVolatileState> {
         self.schedule.as_ref()
     }
@@ -164,7 +157,6 @@ impl Tenant {
         &self.hints
     }
 
-    /// Applies an update that was already accepted and saved, as on loading
     pub fn apply_logged(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
         self.logged = true;
         let result = self.apply_update(u);
@@ -262,7 +254,6 @@ impl Tenant {
                 plan.apply_update(PlanUpdate::User(Crud::Add(NewPlanUser { id: actor })))?;
                 self.insert_plan(plan)
             }
-            // only an admin deletes a whole plan
             PlanTenantUpdate::Remove(id) => {
                 if !is_admin {
                     return Err(PlinkoError::Forbidden(actor));
@@ -329,9 +320,7 @@ impl Tenant {
         };
     }
 
-    /// Dates must be within `MAX_DAYS_FROM_TODAY` of today and durations at most `MAX_DURATION`,
-    /// which keeps the days the scheduler looks at a sane number, and a task cannot end before
-    /// it starts
+    /// The limits keep the number of days the scheduler looks at sane
     fn check_ranges(&self, update: &PlanUpdate) -> PlinkoResult<()> {
         if self.logged {
             return Ok(());
@@ -386,7 +375,6 @@ impl Tenant {
         Ok(())
     }
 
-    /// Admins and anyone in the plan, directly or through an assigned group, may change a plan
     fn authorize_plan(&self, actor: Uuid, is_admin: bool, id: &ShortId) -> PlinkoResult<()> {
         let plan = self
             .plans
@@ -403,8 +391,6 @@ impl Tenant {
                 .any(|g| self.group_members(*g).contains(user))
     }
 
-    /// The plans a user may see and change: all of them for an admin, otherwise the ones they
-    /// are in
     pub fn visible_plans(&self, user: &Uuid) -> HashSet<ShortId> {
         let is_admin = self
             .users
@@ -415,9 +401,8 @@ impl Tenant {
         visible.map(|(id, _)| *id).collect()
     }
 
-    /// The tenant as a user may see it: everyone and every group, and their plans, with only
-    /// those plans among anyone's favourites. It has no schedule, which a client is sent
-    /// separately.
+    /// Everyone and every group, but only the user's visible plans, in favourites too. Has no
+    /// schedule, which a client is sent separately.
     pub fn visible_to(&self, user: &Uuid) -> Tenant {
         let visible = self.visible_plans(user);
         let mut users = self.users.clone();
@@ -468,8 +453,7 @@ impl Tenant {
         missing.map_or(Ok(()), |id| Err(PlinkoError::ItemDoesNotExist(id)))
     }
 
-    /// Turns what a client asked for into the update to log and apply: new items get fresh ids
-    /// and the defaults from the last schedule are filled in, see `fill_defaults`
+    /// Gives new items fresh ids and fills in the defaults from the last schedule
     pub fn stage(
         &self,
         time: DateTime<Utc>,
@@ -479,8 +463,7 @@ impl Tenant {
         self.stage_from(self.schedule.as_ref(), time, actor, update_type)
     }
 
-    /// `stage` with a schedule that is not the stored one, for a server whose schedule trails
-    /// its updates
+    /// For a server whose schedule trails its updates
     pub fn stage_from(
         &self,
         schedule: Option<&TenantVolatileState>,
@@ -497,8 +480,7 @@ impl Tenant {
         }
     }
 
-    /// The updates to make after `update` to drop the dependencies it made redundant. Applying
-    /// them leaves nothing more to do.
+    /// Drops the dependencies `update` made redundant. Applying them leaves nothing more to do.
     pub fn simplifications(&self, update: &TenantUpdateType) -> Vec<TenantUpdateType> {
         let TenantUpdateType::Plan(PlanTenantUpdate::Update(id, inner)) = update else {
             return Vec::new();
@@ -512,18 +494,14 @@ impl Tenant {
             .collect()
     }
 
-    /// Applies an update then schedules again, so `schedule` is up to date. Nothing changes if
-    /// the update is refused.
     pub fn apply_and_schedule(&mut self, u: TenantUpdate) -> PlinkoResult<()> {
         self.apply_update(u)?;
         scheduler::schedule(self);
         Ok(())
     }
 
-    /// Fills in what a task update leaves out that comes from the last schedule, so it is part of
-    /// the update that is logged (applying an update cannot depend on volatile state). When a task
-    /// goes in progress, on hold or completed with no one recorded, the people last scheduled
-    /// for it are recorded. `stage` does it with `TenantUpdateType::assign_ids`.
+    /// A task that starts with no one recorded records the people last scheduled for it. This
+    /// goes into the logged update because applying one cannot depend on volatile state.
     pub fn fill_defaults(&self, update: &mut TenantUpdateType) {
         self.fill_defaults_from(self.schedule.as_ref(), update);
     }
@@ -565,18 +543,18 @@ impl Tenant {
             .map(|(id, _)| id)
     }
 
-    /// A user's availability calendar, as of the last `refresh_calendars`
+    /// As of the last `refresh_calendars`
     pub fn calendar(&self, user: &Uuid) -> Option<&Calendar<Workload>> {
         self.volatile.get(user)?.calendar.as_ref()
     }
 
-    /// A plan's default availability calendar, as of the last `refresh_calendars`
+    /// As of the last `refresh_calendars`
     pub fn plan_calendar(&self, plan: &ShortId) -> Option<&Calendar<Workload>> {
         self.plan_calendars.get(plan)
     }
 
-    /// Makes sure every user and plan default has a calendar covering `from..=until`, rebuilding
-    /// only those whose rules changed since or that do not cover the range
+    /// Rebuilds only the calendars dropped since their rules changed, or not covering
+    /// `from..=until`
     pub fn refresh_calendars(&mut self, from: NaiveDate, until: NaiveDate) {
         for (id, user) in &self.users {
             let state = self.volatile.entry(*id).or_default();
@@ -597,7 +575,7 @@ impl Tenant {
         }
     }
 
-    /// Everyone in the group or any group below it
+    /// Includes the members of groups below it
     pub fn group_members(&self, group: Uuid) -> HashSet<Uuid> {
         let mut members = HashSet::new();
         let mut pending = vec![group];

@@ -2,20 +2,19 @@
 use chrono::{Days, NaiveDate};
 // }}}
 
-/// A day as an offset from the origin of a run, so the scheduler indexes rows instead of doing
-/// date arithmetic. As the time of a vertex it is the boundary before that day: an arc over
-/// `[start, end)` works the days `start..end`, and what follows it can start on `end`.
+/// Days since the origin of a run. As a vertex time it is the boundary before that day: an arc
+/// over `[start, end)` works `start..end`, and what follows can start on `end`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Day(pub u32);
 
 // impl Day {{{
 impl Day {
-    /// The day of `date`, the origin for dates before it
+    /// Dates before the origin clamp to it
     pub fn of(date: NaiveDate, origin: NaiveDate) -> Self {
         Day(u32::try_from((date - origin).num_days()).unwrap_or(0))
     }
 
-    /// The date of the day, the last date there is for one past it
+    /// Days past the last date there is clamp to it
     pub fn date(self, origin: NaiveDate) -> NaiveDate {
         let date = origin.checked_add_days(Days::new(u64::from(self.0)));
         date.unwrap_or(NaiveDate::MAX)

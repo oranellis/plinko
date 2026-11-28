@@ -1,8 +1,5 @@
-//! Where things go on the Gantt, as Plinko 1 did it: no row per task. Items are packed into shared
-//! lanes, a lane holding as many items as fit one after another with at least one empty day
-//! between. A group is a block of lanes of its own, its members packed together inside it, so the
-//! group can be drawn as one rounded rectangle around them. All of it is worked out from the dates,
-//! and nothing here knows how anything is drawn.
+//! Packs items into shared lanes with at least one empty day between neighbours; a group takes a
+//! block of lanes of its own so it can be drawn as one box around its members.
 
 // modules {{{
 use chrono::NaiveDate;
@@ -19,7 +16,6 @@ pub struct Arrangement {
 }
 
 // Arrangement supporting types {{{
-/// What can be shown on the chart
 pub type Mark = PlanNode;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,7 +26,6 @@ pub enum Kind {
     Group,
 }
 
-/// Something to place, with what the drawing needs to know about it
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
     pub node: PlanNode,
@@ -40,10 +35,9 @@ pub struct Entry {
     pub span: (NaiveDate, NaiveDate),
     pub look: Look,
     pub violated: bool,
-    /// For a buffer: it has a day it is set to start on
+    /// For a buffer: it has a set start day
     pub pinned: bool,
     pub target: bool,
-    /// For a group, what is in it
     pub members: Vec<Entry>,
     pub collapsed: bool,
 }
@@ -56,22 +50,21 @@ pub struct Placed {
     pub span: (NaiveDate, NaiveDate),
     pub look: Look,
     pub violated: bool,
-    /// For a buffer: it has a day it is set to start on
+    /// For a buffer: it has a set start day
     pub pinned: bool,
     pub target: bool,
     pub lane: usize,
-    /// How many groups it is inside
     pub depth: u32,
-    /// For a group: the lanes it takes, its name's lane included
+    /// For a group: its lanes, the name lane included
     pub lanes: usize,
-    /// For a group: how many levels of groups are inside it, so outer ones are drawn larger
+    /// For a group: levels of groups nested inside, so outer boxes are drawn larger
     pub levels: u32,
     pub members: usize,
     pub collapsed: bool,
 }
 
-/// The days after which each lane is free. An item may start on a day after its lane is free,
-/// which leaves at least one empty day after the item before it.
+/// The exclusive end of what is in each lane; an item fits only when it starts after it, which
+/// leaves an empty day between.
 #[derive(Default)]
 struct Lanes {
     free: Vec<NaiveDate>,
@@ -84,7 +77,7 @@ impl Lanes {
         (lane..lane + height).all(|l| self.free.get(l).is_none_or(|free| start > *free))
     }
 
-    /// Takes the first lanes with room for `height` lanes from `start` to `end`, returning the first
+    /// Returns the first of `height` adjacent lanes taken
     fn place(&mut self, start: NaiveDate, end: NaiveDate, height: usize) -> usize {
         let lane = (0..).find(|l| self.fits(*l, height, start)).unwrap_or(0);
         if self.free.len() < lane + height {
@@ -124,7 +117,6 @@ fn sort_key(entry: &Entry) -> (NaiveDate, &str, Uuid) {
 // }}}
 
 // pack {{{
-/// Packs the entries into `lanes`, groups with their members, and returns what they placed
 fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>) {
     let mut sorted: Vec<&Entry> = entries.iter().collect();
     sorted.sort_by(|a, b| sort_key(a).cmp(&sort_key(b)));
@@ -162,7 +154,6 @@ fn pack(entries: &[Entry], depth: u32, lanes: &mut Lanes, out: &mut Vec<Placed>)
 // }}}
 
 // arrange {{{
-/// Packs a plan's items
 pub fn arrange(entries: &[Entry]) -> Arrangement {
     let mut lanes = Lanes::default();
     let mut out = Vec::new();

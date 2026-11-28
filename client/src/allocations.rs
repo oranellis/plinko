@@ -1,6 +1,4 @@
-//! Every task you are down for, across all plans, in the order they start. Your tasks are down the
-//! left and a row of days runs across, each task showing the hours it takes you that day as a bar, and the
-//! row at the top showing the hours you have each day and how many of them are booked.
+//! One person's tasks across all plans, with the hours each takes them per day.
 
 // modules {{{
 use chrono::{Datelike, Days, NaiveDate, Weekday};
@@ -20,29 +18,26 @@ use crate::{
 // }}}
 
 // constants {{{
-/// How wide a day is and the column of names, which scrolling is worked out from
 const DAY_WIDTH: f64 = 36.0;
-/// How wide the column of names starts, and the least and most it can be dragged to
 const NAME_WIDTH: f64 = 240.0;
 const NAME_LEAST: f64 = 96.0;
-/// On a screen narrower than this the names start as a share of it, so the days have room
+/// On a narrow screen the names start as this share of it
 const NAME_SHARE: f64 = 0.38;
-/// The room kept for days when the names are dragged wider
+/// Kept for the days when the names are dragged wider
 const DAYS_ROOM: f64 = 80.0;
 const NAME_MOST: f64 = 600.0;
-/// The weeks shown from before the current one
+/// Weeks shown before the earliest task or today
 const BEFORE: u64 = 2;
 /// The fewest weeks shown, and how many more than the scroll has reached
 const LEAST: u64 = 12;
 const AHEAD: u64 = 4;
-/// How much of a name cell goes to the task name before the plan name is given its width, and
-/// the room around the two names in it (padding and the gap between them)
+/// The task name's starting share of a name cell; padding plus the gap between the two names
 const TASK_SHARE: f64 = 0.65;
 const NAME_ROOM: f64 = 22.0 + 10.0 + 6.0;
 // }}}
 
 // helpers {{{
-/// How wide `text` is drawn in `font`, measured on a canvas that is not shown
+/// Measured on an offscreen canvas
 fn text_width(font: &str, text: &str) -> f64 {
     thread_local! {
         static CONTEXT: Option<web_sys::CanvasRenderingContext2d> = web_sys::window()
@@ -60,15 +55,12 @@ fn text_width(font: &str, text: &str) -> f64 {
     })
 }
 
-/// How wide the task names get out of a name cell `room` wide: 65% to start with, then the line
-/// between the names moves to where one side has all the width its longest name needs
+/// Starts at `TASK_SHARE` of `room`, then gives either side no more than its longest name needs
 fn task_column(room: f64, longest_task: f64, longest_plan: f64) -> f64 {
     let mut task = room * TASK_SHARE;
-    // the plan names need less than what is left, so the task names have the rest
     if longest_plan < room - task {
         task = room - longest_plan;
     }
-    // the task names need less than that, so they have only what they need
     if longest_task < task {
         task = longest_task;
     }
@@ -77,12 +69,10 @@ fn task_column(room: f64, longest_task: f64, longest_plan: f64) -> f64 {
 // }}}
 
 // constants {{{
-/// The hours a day holds, which the pies and bars are drawn against
+/// The hours the pies and bars are drawn against
 const FULL_DAY: u8 = 8;
-/// How tall a full day's bar is
 const BAR_ROOM: f64 = 30.0;
 
-/// The colours tasks are drawn in, one of them for each task, the same each time
 const COLOURS: [&str; 10] = [
     "#4a90d9", "#7ed321", "#f5a623", "#d0021b", "#9b59b6", "#1abc9c", "#e67e22", "#2ecc71",
     "#e74c3c", "#3498db",
@@ -96,10 +86,8 @@ pub fn colour_of(task: Uuid) -> &'static str {
 // }}}
 
 // HourPie {{{
-/// A day as a pie of eight slices, one to an hour, with the hours booked filled in. A day with
-/// nothing booked has no pie. The slices are green when the hours booked are all the hours the
-/// person has, orange while there are still hours left, and red when they are overbooked. Hours
-/// past the eight go round a ring outside it.
+/// Eight slices, one per hour booked; green when fully booked, orange under, red over. Hours past
+/// eight go round an outer ring.
 #[component]
 pub fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl IntoView {
     let colour = if booked > u32::from(capacity) {
@@ -119,7 +107,7 @@ pub fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl I
             view! { <path d=slice(i) fill=fill stroke=fill stroke-width="0.8" stroke-linejoin="round" /> }
         })
         .collect_view();
-    // the hours past a full pie go round a ring outside it, which the pie shrinks to make room for
+    // the pie shrinks to make room for the ring
     let over = booked
         .saturating_sub(u32::from(FULL_DAY))
         .min(u32::from(FULL_DAY)) as u8;
@@ -141,13 +129,12 @@ pub fn HourPie(booked: u32, capacity: u8, #[prop(into)] title: String) -> impl I
 // }}}
 
 // arc {{{
-/// The edge of slice `i` of eight on a circle of `radius`, for the ring of hours overbooked
 fn arc(i: u8, radius: f64) -> String {
     let ((x0, y0), (x1, y1)) = (point(i, radius), point(i + 1, radius));
     format!("M{x0:.2} {y0:.2} A{radius} {radius} 0 0 1 {x1:.2} {y1:.2}")
 }
 
-/// Where the edge between slices `i - 1` and `i` meets a circle of `radius`
+/// Where the edge between slices `i - 1` and `i` meets the circle
 fn point(i: u8, radius: f64) -> (f64, f64) {
     let centre = 13.0_f64;
     let angle =
@@ -157,7 +144,7 @@ fn point(i: u8, radius: f64) -> (f64, f64) {
 // }}}
 
 // slice {{{
-/// The path of slice `i` of eight, which starts at the top and goes round clockwise
+/// Slices start at the top and go clockwise
 fn slice(i: u8) -> String {
     format!("M13 13 L{} Z", arc(i, 11.0).trim_start_matches('M'))
 }
@@ -165,10 +152,7 @@ fn slice(i: u8) -> String {
 
 // Allocations {{{
 #[component]
-pub fn Allocations(
-    /// Whose
-    of: Uuid,
-) -> impl IntoView {
+pub fn Allocations(of: Uuid) -> impl IntoView {
     let sync = use_sync();
     let mine = use_tasks_of(Some(of));
     let yours = move || sync.me.with(|m| m.as_ref().map(|m| m.id)) == Some(of);
@@ -192,7 +176,6 @@ pub fn Allocations(
     let scroller = NodeRef::<html::Div>::new();
     let grip = NodeRef::<html::Div>::new();
     let name_width = RwSignal::new(NAME_WIDTH);
-    // where the line between the task names and the plan names falls
     let task_width = Memo::new(move |_| {
         let longest = |font: &str, name: &dyn Fn(&MyTask) -> String| {
             mine.with(|m| {
@@ -209,7 +192,6 @@ pub fn Allocations(
             plans + 4.0,
         )
     });
-    // dragging the edge of the names by the grip over it, which a finger can take hold of
     let dragging = RwSignal::new(false);
     let drag_to = move |ev: &leptos::ev::PointerEvent| {
         let Some(s) = scroller.get_untracked() else {
@@ -222,7 +204,7 @@ pub fn Allocations(
         let most = NAME_MOST.min((width - DAYS_ROOM).max(NAME_LEAST));
         name_width.set((f64::from(ev.client_x()) - left).clamp(NAME_LEAST, most));
     };
-    // weeks shown, which grow as the table is scrolled forward and shrink as it comes back
+    // grows as the table is scrolled forward and shrinks as it comes back
     let weeks = RwSignal::new(LEAST);
     let first = Memo::new(move |_| {
         let today = today.get();
@@ -248,14 +230,12 @@ pub fn Allocations(
     let to_today = move || {
         if let Some(element) = scroller.get_untracked() {
             let at = (today.get_untracked() - first.get_untracked()).num_days() as f64 * DAY_WIDTH;
-            // today a little in from the names
             element.set_scroll_left((at - 2.0 * DAY_WIDTH).max(0.0) as i32);
             measure();
         }
     };
     Effect::new(move |_| {
         if let Some(element) = scroller.get() {
-            // on a small screen the names start narrower, and the days get the rest
             let width = f64::from(element.client_width());
             if width > 0.0 {
                 name_width.set((width * NAME_SHARE).clamp(NAME_LEAST, NAME_WIDTH));
@@ -269,7 +249,7 @@ pub fn Allocations(
             .map(|d| first + Days::new(d))
             .collect::<Vec<NaiveDate>>()
     });
-    // the hours the person has and has booked each day shown
+    // (booked, capacity) for each day shown
     let hours = Memo::new(move |_| {
         let me = who()?;
         let days = days.get();
@@ -292,8 +272,7 @@ pub fn Allocations(
             })
         })
     });
-    // what is said of a task when the pointer rests on it, as in the chart
-    let said = move |task: &MyTask| {
+    let tooltip = move |task: &MyTask| {
         let lines = sync.schedule.with(|s| {
             let state: Option<&PlanVolatileState> =
                 s.as_ref().and_then(|(_, s)| s.plans.get(&task.plan));
@@ -313,7 +292,6 @@ pub fn Allocations(
         lines.insert(1.min(lines.len()), format!("Plan: {}", task.plan_name));
         lines.join("\n")
     };
-    // a click on a task goes to its plan, with the task selected in the middle of the chart
     let reveal = expect_context::<Reveal>().0;
     view! {
         <div class="plan">
@@ -337,7 +315,7 @@ pub fn Allocations(
                             node_ref=scroller
                             on:scroll=move |_| measure()
                             on:wheel=move |ev| {
-                                // sideways, by the wheel's own sideways or with shift, eases in and out
+                                // horizontal wheel, or shift and wheel, scrolls sideways with easing
                                 let by = if ev.delta_x() != 0.0 { ev.delta_x() } else if ev.shift_key() { ev.delta_y() } else { 0.0 };
                                 if by != 0.0 {
                                     ev.prevent_default();
@@ -356,7 +334,7 @@ pub fn Allocations(
                                         {move || {
                                             let days = days.get();
                                             days.iter().enumerate().map(|(i, d)| {
-                                                // a month is named once, over all of its days that are shown
+                                                // a month is named once, spanning its shown days
                                                 let starts = i == 0 || d.day() == 1;
                                                 let shown = days[i..].iter().take_while(|x| x.month() == d.month() && x.year() == d.year()).count();
                                                 let label = format!("{} {}", format::month(*d), d.year());
@@ -395,7 +373,7 @@ pub fn Allocations(
                                 <tbody>
                                     <For each=move || mine.get() key=|t| crate::ui::hashed(t) children=move |task| {
                                         let (plan, id) = (task.plan, task.task);
-                                        let title = said(&task);
+                                        let title = tooltip(&task);
                                         let by_day = task.days.clone();
                                         let colour = colour_of(id);
                                         view! {
@@ -411,7 +389,6 @@ pub fn Allocations(
                                                 </td>
                                                 {move || days.get().into_iter().map(|d| {
                                                     let worked = by_day.get(&d).copied().unwrap_or(0);
-                                                    // the bar grows from the bottom of the day with the hours, up to a full day
                                                     let height = f64::from(worked.min(FULL_DAY)) / f64::from(FULL_DAY) * BAR_ROOM + 2.0;
                                                     view! {
                                                         <td

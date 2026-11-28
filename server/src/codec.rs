@@ -1,6 +1,5 @@
-//! The binary format of updates, snapshots and schedules on the wire and in storage. MessagePack
-//! with field names, so a field added with a default later still reads old data, and with map
-//! keys of any type, which `HashMap<Worker, Workload>` needs.
+//! Wire and storage format: MessagePack with field names, so fields added later with a default
+//! still read old data, and with non-string map keys, which `HashMap<Worker, Workload>` needs.
 
 // modules {{{
 use serde::{Serialize, de::DeserializeOwned};

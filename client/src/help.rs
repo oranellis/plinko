@@ -1,5 +1,4 @@
-//! The help window from the top right of every page: what each page does with the keyboard, a
-//! page of it each, listed down the left.
+//! The keyboard help window.
 
 // modules {{{
 use leptos::prelude::*;
@@ -12,16 +11,13 @@ use crate::{
 // }}}
 
 // constants {{{
-/// Keys, and what they do
 type Keys = &'static [(&'static [&'static str], &'static str)];
-/// The box a mode has at the top left of the chart: its icon, and the colour it is in
+/// The mode box at the top left of the chart: its icon and its tone class
 type Shown = Option<(IconKind, &'static str)>;
-/// A mode with its box and its keys, a heading with its modes, and a page with its headings
 type Mode = (Shown, &'static str, Keys);
 type Heading = (&'static str, &'static [Mode]);
 type Page = (&'static str, &'static [Heading]);
 
-/// The pages of the help: each has headings, and under those what the keys do in each mode
 const PAGES: &[Page] = &[(
     "Plan view",
     &[(
@@ -206,8 +202,7 @@ const PAGES: &[Page] = &[(
 // }}}
 
 // HelpButton {{{
-/// The question mark at the top right, and the window it opens, which `?` opens too from
-/// anywhere that is not being typed into
+/// `?` also opens it, unless typing into a field
 #[component]
 pub fn HelpButton() -> impl IntoView {
     let open = RwSignal::new(false);
@@ -266,7 +261,6 @@ fn HelpWindow(on_close: Callback<()>) -> impl IntoView {
                         <h3>{*heading}</h3>
                         {modes.iter().map(|(shown, mode, keys)| view! {
                             <h4>
-                                // the box the mode has at the top left of the chart
                                 {shown.map(|(icon, tone)| view! {
                                     <span class=format!("modebox {tone}")><Icon kind=icon size=16 /></span>
                                 })}

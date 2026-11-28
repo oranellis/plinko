@@ -1,6 +1,4 @@
-//! The extra information of an item: its description, which every one has, and the data blocks it
-//! can be given, at most one of each kind: a to-do list, links and a budget. Changes are saved as
-//! each box is left.
+//! An item's description and data blocks (at most one of each kind), saved as each box is left.
 
 // modules {{{
 use leptos::prelude::*;
@@ -22,7 +20,7 @@ use crate::{
 // }}}
 
 // constants {{{
-/// The kinds of block, in the order they are listed, with what they are called
+/// (kind, label), in the order they are listed
 const KINDS: [(&str, &str); 3] = [
     ("todo", "To-do list"),
     ("links", "Links"),
@@ -53,7 +51,6 @@ fn empty(kind: &str) -> BlockContent {
 // }}}
 
 // data_of {{{
-/// What an item says about itself: its description, and the data blocks it holds
 fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
     let (description, blocks) = match node {
         PlanNode::Task(id) => {
@@ -82,7 +79,7 @@ fn data_of(plan: &Plan, node: PlanNode) -> Option<(String, Vec<DataBlock>)> {
 // }}}
 
 // blocks_said {{{
-/// The kinds of data block an item holds, by what they are called
+/// The labels of the block kinds an item holds
 pub fn blocks_said(plan: &Plan, node: PlanNode) -> Vec<&'static str> {
     let blocks = data_of(plan, node)
         .map(|(_, blocks)| blocks)
@@ -93,7 +90,7 @@ pub fn blocks_said(plan: &Plan, node: PlanNode) -> Vec<&'static str> {
 // }}}
 
 // has_data {{{
-/// Whether an item can hold data, which buffers and delays cannot
+/// Buffers and delays cannot
 pub fn has_data(node: PlanNode) -> bool {
     !matches!(node, PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_))
 }
@@ -182,7 +179,6 @@ pub fn DataWindow(plan: ShortId, node: PlanNode, on_close: Callback<()>) -> impl
 // }}}
 
 // BlockEditor {{{
-/// One block, saved as each box in it is left
 #[component]
 fn BlockEditor(plan: ShortId, node: PlanNode, block: DataBlock) -> impl IntoView {
     let sync = use_sync();
@@ -307,7 +303,7 @@ fn Links(links: Vec<Link>, send: Callback<BlockContent>) -> impl IntoView {
 // }}}
 
 // helpers {{{
-/// Money is kept in minor units, shown here as the main unit with two decimals
+/// Money is kept in minor units; shown as the main unit with two decimals
 fn shown(minor: i64) -> String {
     format!("{}.{:02}", minor / 100, (minor % 100).abs())
 }

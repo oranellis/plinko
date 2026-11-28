@@ -1,6 +1,4 @@
-//! Editing with the mouse while shift is held: handles appear by the item the pointer is near,
-//! a dot on each edge to drag a dependency to another item, one in the middle to move it in or
-//! out of a group, and a grip inside the right edge of tasks and buffers to change how long they run.
+//! Shift-held mouse editing: the handles by the item near the pointer, and their drags.
 
 // modules {{{
 use crate::gantt::pen::Pen;
@@ -14,29 +12,25 @@ use crate::gantt::{arrange::Kind, layout::Rect, links::Link};
 // constants {{{
 /// How close the pointer has to be to an item for its handles to show
 pub const REACH: f64 = 22.0;
-/// The colours of a dependency dragged from the left edge (what comes before) and the right
+/// Dependency colours from the left edge (what comes before) and the right
 const BEFORE: &str = "#fc1ef1";
 const AFTER: &str = "#07fcd7";
-/// Handles are light grey with a dark grey middle
 const LIGHT: &str = "#c4c4c9";
 const LIT: &str = "#ececf0";
 const DARK: &str = "#3a3a3e";
-/// The colour of the day an item is held to
 const PIN: &str = "#c8e63c";
 const PIN_BAND: &str = "rgba(200,230,60,0.13)";
 const PIN_GONE: &str = "rgba(200,230,60,0)";
-/// How far along each edge the mark of an item that is held to a day goes, and how round the
-/// corner of an item is
+/// Length of the pinned mark along each edge
 const TAG: f64 = 18.0;
 const CORNER: f64 = 6.0;
-/// The panel and the lines of the bars of buttons on the page
+/// Matching the page's button bars
 const PANEL: &str = "#181818";
 const LINE: &str = "#3a3a3c";
 // }}}
 
 // helpers {{{
-/// How far from a handle's middle it can be taken: half its width and half its height, a good
-/// deal more than what is drawn
+/// Half the hit box's width and height, well beyond what is drawn
 fn reach(handle: Handle) -> (f64, f64) {
     match handle {
         Handle::Move => (0.0, 0.0),
@@ -51,30 +45,28 @@ fn direction(right: bool) -> &'static str {
 }
 // }}}
 // constants {{{
-/// How wide and high a button for how a day is held is, with the room around it
+/// The side of a hold button, including the room around it
 pub const HOLD_BUTTON: f64 = 44.0;
-/// How near the edge of the chart a drag starts scrolling it
+/// How near the chart's edge a drag starts scrolling it
 pub const EDGE: f64 = 36.0;
 const COLOUR: &str = "#1e88e5";
 // }}}
 
-/// What dragging an item's handle does
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Handle {
-    /// A dependency from the item's edge, to the item it is dropped on
+    /// A dependency from the item's edge to the item it is dropped on
     Link { right: bool },
-    /// Moves the item into the group it is dropped on
+    /// Into the group it is dropped on
     Move,
-    /// Changes how many days it runs, or the day it really ended
+    /// Its duration, or the day it actually ended
     Resize,
-    /// Changes the day it really started
+    /// The day it actually started
     Start,
-    /// A click holds it this way
+    /// Clicked, not dragged
     Hold(Held),
 }
 
 // Handle supporting types {{{
-/// A handle being dragged, and what it was grabbed from
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Drag {
     Link {
@@ -84,16 +76,14 @@ pub enum Drag {
     Move(PlanNode),
     Resize {
         node: PlanNode,
-        /// The day offset of the last day it runs
         last_day: i64,
         duration: u32,
     },
     Start {
         node: PlanNode,
-        /// The day offset of the first day it ran
         first_day: i64,
     },
-    /// The held day, taken to another
+    /// The held day, dragged to another
     Flag {
         node: PlanNode,
         end: bool,
@@ -105,7 +95,7 @@ pub enum Drag {
     },
 }
 
-/// The day an item is held to: no earlier, no later or exactly, by its first day or its last
+/// The day an item is held to, by its first day or by its last when `end`
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Pin {
     pub day: NaiveDate,
@@ -120,7 +110,7 @@ pub enum Held {
     Fixed,
 }
 
-/// How far the sign of a pin reaches each side of the edge it is on
+/// How far a pin's sign reaches each side of its edge
 pub fn sign_reach(held: Held) -> (f64, f64) {
     match held {
         Held::Earliest => (4.0, 34.0),
@@ -129,56 +119,52 @@ pub fn sign_reach(held: Held) -> (f64, f64) {
     }
 }
 
-/// A pin as it is drawn: the edge of the day that is held, by the item's row, the day's cell in
-/// the header and how far down the chart goes
 #[derive(Clone, Copy, Debug)]
 pub struct PinView {
+    /// The held edge of the day
     pub x: f64,
     pub row: Rect,
+    /// The day's header cell
     pub cell: Rect,
     pub height: f64,
-    /// How far down its sign is, which is put where nothing else is
+    /// Placed where nothing else is
     pub sign_y: f64,
     pub held: Held,
-    /// For an item that is only looked at, not edited
+    /// For an item that is only viewed, not edited
     pub faint: bool,
 }
 
-/// What the chart asks of the plan, which the page answers
+/// The page's answers to what the chart asks of the plan
 #[derive(Clone, Copy)]
 pub struct Editing {
     /// `(node, other, right)`: the other depends on the node for the right edge, else the node on it
     pub link: Callback<(PlanNode, PlanNode, bool)>,
     /// `(selected, other)`: drops the dependency between them, whichever way it goes
     pub unlink: Callback<(PlanNode, PlanNode)>,
-    /// Moves the item into the group of the item it lands on, or out to the top for `None`
+    /// Into the group of the item it lands on, or out to the top for `None`
     pub moved: Callback<(PlanNode, Option<PlanNode>)>,
-    /// Whether the item has started, so dragging it sideways changes the days it really ran
+    /// Whether it has started, so dragging it sideways changes the days it actually ran
     pub dated: Callback<PlanNode, bool>,
-    /// Whether it has an end that is dragged where it is while it is edited: the day a task
-    /// really ended, or the last day of a buffer whose start is set
+    /// Whether it has an end draggable while edited: the day a task actually ended, or the last
+    /// day of a buffer whose start is set
     pub ended: Callback<PlanNode, bool>,
-    /// Moves the days the item really ran by `days`
+    /// Moves the days it actually ran
     pub shift_dates: Callback<(PlanNode, i32)>,
-    /// The day the item is held to in the plan
     pub pin: Callback<PlanNode, Option<Pin>>,
-    /// `(node, end, day)`: holds the first day of the item to a day, or its last for `end`
+    /// `(node, end, day)`: holds the first day to `day`, or the last for `end`
     pub constrain: Callback<(PlanNode, bool, NaiveDate)>,
-    /// While the day an item is held to is picked, the day the pointer is on
+    /// The day under the pointer while picking a held day
     pub aim: Callback<(PlanNode, NaiveDate)>,
-    /// How the item is held to its day
     pub hold: Callback<(PlanNode, Held)>,
     /// A click on the held day, after which a click on another day moves it there
     pub daying: Callback<PlanNode>,
-    /// Moves the day the item really started by `days`
+    /// Moves the day it actually started
     pub restart: Callback<(PlanNode, i32)>,
-    /// Gives the item `days` more days, or fewer when negative
+    /// Days more, or fewer when negative
     pub resize: Callback<(PlanNode, i32)>,
-    /// The days an item runs for
     pub duration: Callback<PlanNode, u32>,
-    /// `(node, right)`: a click on the dot off an edge of the item, with no drag
+    /// `(node, right)`: a click on an edge's dot, with no drag
     pub pick: Callback<(PlanNode, bool)>,
-    /// The links along the longest chain between two items
     pub chain: Callback<(PlanNode, PlanNode), Vec<Link>>,
 }
 
@@ -205,44 +191,37 @@ impl Editing {
     }
 }
 
-/// The handles an item has, with where each is, and the item they belong to
 #[derive(Clone, Debug, Default)]
 pub struct Grips {
     rect: Rect,
     pub list: Vec<(Handle, (f64, f64))>,
 }
 
-/// What is drawn on top of the chart for the handles and the drag in progress
 pub struct Overlay {
     pub handles: Grips,
     pub pointer: (f64, f64),
     pub drag: Option<DragView>,
-    /// What to say above an item, when nothing is dragged
+    /// Text above an item, when nothing is dragged
     pub note: Option<(Rect, String)>,
-    /// The dot that clicks on items answer to: the right one, or the left
+    /// Which edge's dot clicks on items answer to: true for the right
     pub picked: Option<bool>,
-    /// The day the item is held to
     pub pin: Option<Pin>,
 }
 
 pub enum DragView {
-    /// A line from the edge grabbed, and the item it would land on
     Link {
         from: (f64, f64),
         over: Option<Rect>,
         right: bool,
     },
-    /// A ghost of the item following the pointer, its outline left where it was, and the group or
-    /// item it would land in
+    /// A ghost following the pointer, with an outline left where it was
     Move {
         over: Option<Rect>,
         origin: Rect,
         by: (f64, f64),
         name: String,
     },
-    /// The pin where it would be dropped
     Flag(PinView),
-    /// A ghost of the item where it would run, its outline left as it was
     Resize {
         label: String,
         origin: Rect,
@@ -273,7 +252,7 @@ impl Pin {
 }
 
 impl Grips {
-    /// `started` is for what has really started, which has a grip for that day in its left edge
+    /// `started` adds a grip in the left edge for the day it actually started
     pub fn of(kind: Kind, rect: Rect, started: bool) -> Self {
         let middle = rect.y + rect.h / 2.0;
         let mut list = Vec::new();
@@ -292,8 +271,8 @@ impl Grips {
         Self { rect, list }
     }
 
-    /// The grips of an item being edited, with no others: one in its left edge for the day a
-    /// task really started, and one in its right for the day it ended or a set buffer ends
+    /// Only the date grips of an item being edited: the left edge for the day a task actually
+    /// started, the right for the day it ended or a set buffer ends
     pub fn dates(rect: Rect, started: bool, ended: bool) -> Self {
         let middle = rect.y + rect.h / 2.0;
         let start = started.then_some((Handle::Start, (rect.x + 6.0, middle)));
@@ -304,8 +283,7 @@ impl Grips {
         }
     }
 
-    /// The handle at a point, if there is one. The duration grip and the dots come first, and the
-    /// move handle is everywhere else on the item.
+    /// The other handles take precedence; the move handle is everywhere else on the item.
     pub fn at(&self, x: f64, y: f64) -> Option<Handle> {
         self.list
             .iter()
@@ -321,7 +299,6 @@ impl Grips {
 // }}}
 
 // helpers {{{
-/// Whether a point is near enough to a rectangle for its handles to show
 pub fn near(rect: Rect, x: f64, y: f64) -> bool {
     Rect {
         x: rect.x - REACH,
@@ -332,15 +309,15 @@ pub fn near(rect: Rect, x: f64, y: f64) -> bool {
     .contains(x, y)
 }
 
-/// The change in days and the new duration for dragging the end to the day offset `day`, snapped
-/// to the whole day under it. A duration is never under a day.
+/// The change in days and the new duration for dragging the end to `day`, snapped to the day
+/// under it. A duration is never under a day.
 pub fn resized(day: f64, last_day: i64, duration: u32) -> (i32, u32) {
     let wanted = i64::from(duration) + day.floor() as i64 - last_day;
     let new = wanted.clamp(1, i64::from(u32::MAX)) as u32;
     (new as i32 - duration as i32, new)
 }
 
-/// How a resize reads above the bar: `+2 (6d)`
+/// Like `+2 (6d)`
 pub fn resize_label(delta: i32, duration: u32) -> String {
     if delta == 0 {
         format!("({duration}d)")
@@ -354,16 +331,15 @@ pub fn resize_label(delta: i32, duration: u32) -> String {
 pub fn paint(ctx: &Pen, overlay: &Overlay) {
     ctx.save();
     let dragging = overlay.drag.is_some();
-    let ways: Vec<(f64, f64)> = overlay
+    let hold_buttons: Vec<(f64, f64)> = overlay
         .handles
         .list
         .iter()
         .filter(|(h, _)| matches!(h, Handle::Hold(_)) && !dragging)
         .map(|(_, at)| *at)
         .collect();
-    hold_bar(ctx, &ways);
+    hold_bar(ctx, &hold_buttons);
     for (handle, (x, y)) in &overlay.handles.list {
-        // only the grabbed one stays while dragging, drawn where the pointer is
         let lit = overlay.handles.at(overlay.pointer.0, overlay.pointer.1) == Some(*handle);
         if dragging {
             continue;
@@ -378,8 +354,6 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
             }
             Handle::Move => grip(ctx, *x, *y, lit),
             Handle::Link { right } => {
-                // a dot is grey until it is taken, then it takes the colour of its direction
-                // and the one that is picked keeps it
                 let picked = overlay.picked == Some(*right);
                 ctx.set_fill_style_str(DARK);
                 ctx.set_stroke_style_str(if lit || picked {
@@ -445,7 +419,6 @@ pub fn paint(ctx: &Pen, overlay: &Overlay) {
 // }}}
 
 // helpers {{{
-/// A line with an open head, from `from` to `to` at the height `y`
 fn arrow(ctx: &Pen, from: f64, to: f64, y: f64, head: f64) {
     let back = if to > from { -head } else { head };
     ctx.begin_path();
@@ -457,14 +430,12 @@ fn arrow(ctx: &Pen, from: f64, to: f64, y: f64, head: f64) {
     ctx.stroke();
 }
 
-/// How an item is held to a day. No earlier: an arrow on from a tick. No later: an arrow up to a
-/// tick. Exactly: a lock.
+/// Earliest: an arrow away from a tick. Latest: an arrow up to a tick. Fixed: a padlock.
 fn held_sign(ctx: &Pen, x: f64, y: f64, held: Held, scale: f64) {
     let (tick, near, far, head) = (7.0 * scale, 6.0 * scale, 30.0 * scale, 7.0 * scale);
     ctx.set_line_cap("round");
     ctx.set_line_join("round");
     if held == Held::Fixed {
-        // a body with a bow over it that stands clear of it, and a keyhole
         let (wide, top, bow) = (8.0 * scale, y - scale, 5.0 * scale);
         ctx.begin_path();
         ctx.move_to(x - bow, top);
@@ -489,14 +460,13 @@ fn held_sign(ctx: &Pen, x: f64, y: f64, held: Held, scale: f64) {
     }
 }
 
-/// The mark of an item that is held to a day: a top corner of its border in the colour of that,
-/// the left corner when it is its first day that is held, the right when it is its last
+/// The pinned mark: the top left corner of the border when the first day is held, the top right
+/// when the last is
 pub fn paint_tag(ctx: &Pen, rect: Rect, end: bool) {
     let (x, into) = match end {
         true => (rect.x + rect.w, -1.0),
         false => (rect.x, 1.0),
     };
-    // strongest in the corner, and gone by the ends of it
     let fade = ctx.create_linear_gradient(x, rect.y, x + into * TAG * 0.5, rect.y + TAG * 0.5);
     let _ = fade.add_color_stop(0.0, PIN);
     let _ = fade.add_color_stop(0.35, PIN);
@@ -511,7 +481,7 @@ pub fn paint_tag(ctx: &Pen, rect: Rect, end: bool) {
     ctx.stroke();
 }
 
-/// The mark of a milestone that is held to a day: a small dot off its top right
+/// A pinned milestone's mark
 pub fn paint_dot(ctx: &Pen, rect: Rect) {
     ctx.set_fill_style_str(PIN);
     ctx.begin_path();
@@ -525,14 +495,12 @@ pub fn paint_dot(ctx: &Pen, rect: Rect) {
     ctx.fill();
 }
 
-/// The day an item is held to: a band down the chart like the one for today, and by the item's
-/// row the sign of how it is held, on the edge of the day that is
 pub fn paint_pin(ctx: &Pen, pin: &PinView) {
     ctx.save();
     ctx.set_global_alpha(if pin.faint { 0.45 } else { 1.0 });
     ctx.set_fill_style_str(PIN_BAND);
     ctx.fill_rect(pin.cell.x, pin.cell.y, pin.cell.w, pin.height - pin.cell.y);
-    // the one being edited has buttons that say how it is held, the others this sign
+    // the item being edited shows hold buttons instead of the sign
     if pin.faint {
         ctx.set_stroke_style_str(PIN);
         ctx.set_line_width(2.5);
@@ -541,7 +509,6 @@ pub fn paint_pin(ctx: &Pen, pin: &PinView) {
     ctx.restore();
 }
 
-/// A rectangle with round corners, as a path
 fn round(ctx: &Pen, r: Rect, radius: f64) {
     let (x, y, right, bottom) = (r.x, r.y, r.x + r.w, r.y + r.h);
     ctx.begin_path();
@@ -553,7 +520,6 @@ fn round(ctx: &Pen, r: Rect, radius: f64) {
     ctx.close_path();
 }
 
-/// The bar the ways to hold a day are on, like the bar of buttons under an item
 fn hold_bar(ctx: &Pen, buttons: &[(f64, f64)]) {
     let (Some(first), Some(last)) = (buttons.first(), buttons.last()) else {
         return;
@@ -573,7 +539,6 @@ fn hold_bar(ctx: &Pen, buttons: &[(f64, f64)]) {
     ctx.stroke();
 }
 
-/// A button for a way to hold a day, like the buttons of the bar under an item
 fn hold_button(ctx: &Pen, x: f64, y: f64, held: Held, active: bool, lit: bool) {
     let half = HOLD_BUTTON / 2.0 - 2.0;
     let colour = match (active, lit) {
@@ -595,14 +560,13 @@ fn hold_button(ctx: &Pen, x: f64, y: f64, held: Held, active: bool, lit: bool) {
     ctx.set_line_width(2.0);
     ctx.set_line_cap("round");
     match held {
-        // the sign sits in the middle of the button, which its arrows are to one side of
+        // offset so the arrow, not the tick, is centred
         Held::Earliest => held_sign(ctx, x - 9.0, y, held, 0.6),
         Held::Latest => held_sign(ctx, x + 9.0, y, held, 0.6),
         Held::Fixed => held_sign(ctx, x, y + 1.0, held, 0.85),
     }
 }
 
-/// Words above an item, centred on `x`
 fn said(ctx: &Pen, text: &str, x: f64, y: f64) {
     ctx.set_font("bold 13px sans-serif");
     ctx.set_text_align("center");
@@ -611,7 +575,6 @@ fn said(ctx: &Pen, text: &str, x: f64, y: f64) {
     let _ = ctx.fill_text(text, x, y);
 }
 
-/// The dashed outline left where an item was while a ghost of it is dragged
 fn leave_outline(ctx: &Pen, r: Rect) {
     ctx.set_stroke_style_str(COLOUR);
     ctx.set_line_width(1.5);
@@ -620,7 +583,6 @@ fn leave_outline(ctx: &Pen, r: Rect) {
     let _ = ctx.set_line_dash(&js_sys::Array::new());
 }
 
-/// A see-through copy of an item
 fn ghost(ctx: &Pen, r: Rect, name: &str) {
     ctx.set_fill_style_str("rgba(30,136,229,0.45)");
     ctx.fill_rect(r.x, r.y, r.w, r.h);
@@ -641,7 +603,7 @@ fn ghost(ctx: &Pen, r: Rect, name: &str) {
     }
 }
 
-/// The move handle: three dark lines
+/// The move handle
 fn grip(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.set_stroke_style_str(if lit { LIT } else { DARK });
     ctx.set_line_width(2.5);
@@ -654,7 +616,7 @@ fn grip(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.stroke();
 }
 
-/// The duration handle: one dark vertical line
+/// The duration handle
 fn slot(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.set_stroke_style_str(if lit { LIT } else { DARK });
     ctx.set_line_width(3.0);
@@ -665,7 +627,7 @@ fn slot(ctx: &Pen, x: f64, y: f64, lit: bool) {
     ctx.stroke();
 }
 
-/// The ends of an item that the keys are moving: a bar of light in each, start and or end
+/// Marks the ends the keys are moving
 pub fn paint_moving(ctx: &Pen, rect: Rect, start: bool, end: bool) {
     ctx.save();
     ctx.set_stroke_style_str(COLOUR);
@@ -716,7 +678,7 @@ mod tests {
 
     #[test]
     fn dragging_the_end_snaps_to_days_and_shows_the_change() {
-        // four days ending on a friday, the 5th day offset, dragged into the sunday two days on
+        // four days ending on day 4, dragged two days on
         assert_eq!(resized(6.4, 4, 4), (2, 6));
         assert_eq!(resized(4.9, 4, 4), (0, 4));
         assert_eq!(resized(2.0, 4, 4), (-2, 2));
@@ -742,7 +704,7 @@ mod tests {
     #[test]
     fn the_whole_item_moves_except_the_right_edge_and_the_dots() {
         let grips = Grips::of(Kind::Task, rect(), false);
-        // the item is x 100 to 220, y 50 to 74, the duration grip is inside its right edge
+        // the item is x 100 to 220, y 50 to 74
         assert_eq!(grips.at(214.0, 62.0), Some(Handle::Resize));
         assert_eq!(grips.at(110.0, 52.0), Some(Handle::Move));
         assert_eq!(grips.at(160.0, 70.0), Some(Handle::Move));

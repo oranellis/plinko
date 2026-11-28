@@ -4,12 +4,12 @@ use std::fmt::Debug;
 use crate::availability::workload::Workload;
 // }}}
 
-/// What a rule set decides for each day: hours of availability, or whether a day is allowed
+/// Hours of availability, or whether a day is allowed
 pub trait DayValue: Copy + Debug + Default + PartialEq + 'static {
-    /// Whether a day counts as a working day for finite workday runs
+    /// Counts toward finite workday runs
     fn is_working(&self) -> bool;
 
-    /// The weekly schedule in use until a rule replaces it, Monday first
+    /// Monday first
     fn default_week() -> [Self; 7];
 }
 

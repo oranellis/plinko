@@ -1,5 +1,4 @@
-//! The actor of a tenant. It is the only thing that changes the tenant, so updates have an order,
-//! which is the order they are logged in and sent to clients in.
+//! The only thing that changes a tenant, so updates are logged and sent in one order.
 
 // modules {{{
 use std::{collections::HashMap, sync::Arc};
@@ -23,8 +22,7 @@ use crate::{
 // }}}
 
 pub enum Command {
-    /// A client connected as `user` with the session `token`. The answer is `None` if there is no
-    /// such user.
+    /// Answers `None` if there is no such user
     Subscribe {
         user: Uuid,
         token: String,
@@ -32,9 +30,7 @@ pub enum Command {
         reply: oneshot::Sender<Option<Subscriber>>,
     },
     Unsubscribe(Subscriber),
-    /// A session ended, so its connections close
     SessionEnded(String),
-    /// Every session of a user ended, so all their connections close
     SessionsOfEnded(Uuid),
     Update {
         subscriber: Subscriber,
@@ -49,10 +45,9 @@ pub enum Command {
         user: Uuid,
         reply: oneshot::Sender<Option<Profile>>,
     },
-    /// Time to see whether the day has changed
+    /// Checks whether the day has changed
     Tick,
-    /// From the scheduling thread: the schedule as of update `seq`, and what was decided to
-    /// get it unless that is already saved
+    /// From the scheduling thread, as of update `seq`. `solution` is `None` when already saved.
     Scheduled {
         seq: u64,
         schedule: TenantVolatileState,
@@ -63,7 +58,6 @@ pub enum Command {
 // Command supporting types {{{
 pub type Subscriber = u64;
 
-/// How to reach the actor
 #[derive(Clone)]
 pub struct Handle {
     pub commands: mpsc::UnboundedSender<Command>,
@@ -118,14 +112,13 @@ struct Actor {
     seq: u64,
     connections: HashMap<Subscriber, Connection>,
     next_connection: Subscriber,
-    /// The last schedule and the update it is for, which trails the tenant
+    /// The update it is for, which trails the tenant
     schedule: Option<(u64, TenantVolatileState)>,
     scheduler: worker::Scheduler,
 }
 // }}}
 
 // start {{{
-/// Starts the actor for a tenant that has been saved in the store
 pub fn start(store: Arc<Store>) -> crate::common::error::PlinkoResult<Handle> {
     let (tenant, seq) = store.load()?;
     let (scheduler_copy, _) = store.load()?;
@@ -143,7 +136,7 @@ pub fn start(store: Arc<Store>) -> crate::common::error::PlinkoResult<Handle> {
     };
     tokio::spawn(actor.run(receiver));
     let ticks = commands.clone();
-    // the day is brought up to date as soon as the server starts, not a minute after
+    // bring the day up to date at startup, not a minute after
     let _ = ticks.send(Command::Tick);
     tokio::spawn(async move {
         let minute = std::time::Duration::from_secs(60);
@@ -271,7 +264,6 @@ impl Actor {
         let _ = out.send(answer);
     }
 
-    /// Makes an update as `actor`: stages it, saves it, and tells everyone who may see it
     fn apply(
         &mut self,
         actor: Uuid,
@@ -292,7 +284,6 @@ impl Actor {
             .commit(&mut self.tenant, self.seq, staged)
             .map_err(|e| e.to_string())?;
         self.seq = seq;
-        // someone removed is logged out everywhere
         if let TenantUpdateType::User(Crud::Remove(removed)) = copy.update_type {
             if let Err(error) = self.store.end_sessions_of(removed) {
                 eprintln!("the sessions of a removed user did not end: {error}");
@@ -313,7 +304,7 @@ impl Actor {
             };
             let _ = connection.out.send(message);
         }
-        // a new dependency can make others redundant, which go as updates of their own
+        // a new dependency can make others redundant; those go as updates of their own
         let extras = self.tenant.simplifications(&copy.update_type);
         let _ = self.scheduler.send(Applied { seq, update: copy });
         for extra in extras {
@@ -324,8 +315,7 @@ impl Actor {
         Ok((seq, created))
     }
 
-    /// Sets the tenant's clock to today when it is not, as the first admin. Only the server does
-    /// this, a client cannot set the date.
+    /// Only the server moves the date, acting as the first admin
     fn tick(&mut self) {
         let today = Utc::now().date_naive();
         let users = self.tenant.users().iter();
@@ -354,7 +344,7 @@ impl Actor {
 // }}}
 
 // plan_of {{{
-/// The plan an update is about, `None` for the tenant as a whole
+/// `None` for an update to the tenant as a whole
 fn plan_of(update: &TenantUpdate) -> Option<ShortId> {
     match &update.update_type {
         TenantUpdateType::Plan(PlanTenantUpdate::Add(new)) => Some(new.id),

@@ -16,39 +16,42 @@ use crate::scheduler::{
 // }}}
 
 // constants {{{
-/// Placements a search may make for each arc that takes people's hours
+/// Placements a search may make per contended arc
 const BUDGET: usize = 30;
 
-/// A search stops after this long whatever is left of its budget, which is the only way two
-/// runs over the same tenant can differ
+/// Stops a search whatever is left of its budget, which is the only way two runs over the same
+/// tenant can differ
 const TIME_LIMIT: Duration = Duration::from_secs(1);
 
-/// How many flips are tried at once, the best of which is kept
+/// Flips tried in parallel per round, the best of which is kept
 const TRIED_TOGETHER: usize = 3;
 
-/// How many flips are looked at from one schedule
+/// Flips looked at from one schedule
 const MOST_FLIPS: usize = 12;
 // }}}
 
-/// A choice to make the other way
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Flip {
     /// `first` took hours `then` was waiting for, so it waits until `then` is placed
-    After { first: ArcId, then: ArcId },
-    /// A slot goes to another of the people who could take it
-    Person { arc: ArcId, slot: usize, row: RowId },
+    After {
+        first: ArcId,
+        then: ArcId,
+    },
+    Person {
+        arc: ArcId,
+        slot: usize,
+        row: RowId,
+    },
 }
 
 // Flip supporting types {{{
-/// A schedule with the overrides that gave it
 pub struct Found {
     pub pass: Pass,
     pub score: Score,
     pub overrides: Overrides,
 }
 
-/// One schedule tried: the first pass with its snapshots, and the better of it and what
-/// justifying it gives
+/// `best` is the better of `first` and its justified version
 struct Trial {
     overrides: Overrides,
     first: Pass,
@@ -61,9 +64,9 @@ struct Trial {
 // }}}
 
 // search {{{
-/// The best schedule found by placing everything, then in rounds trying contested choices the
-/// other way and missed hard dates as more pressing, keeping the best of a round if it is
-/// better. It starts from the overrides of the last search if they still help.
+/// Places everything, then in rounds tries contested choices the other way and missed hard
+/// dates as more pressing, keeping the best of a round if it is better. Starts from the last
+/// search's overrides if they still help.
 pub fn search(ctx: &Context, earliest: &Pass, hints: Overrides) -> Found {
     let stop = Instant::now() + TIME_LIMIT;
     let contended = ctx.net.arc_ids().filter(|a| ctx.contended(*a)).count();
@@ -71,7 +74,6 @@ pub fn search(ctx: &Context, earliest: &Pass, hints: Overrides) -> Found {
     let plain = trial(ctx, earliest, Overrides::default(), None);
     let mut spent = plain.cost;
     let mut base = plain;
-    // what the last search found is only kept if it still gives something better
     if hints != Overrides::default() {
         let hinted = trial(ctx, earliest, hints, None);
         spent += hinted.cost;
@@ -127,8 +129,8 @@ pub fn search(ctx: &Context, earliest: &Pass, hints: Overrides) -> Found {
 // }}}
 
 // trial {{{
-/// Schedules with the overrides. A trial that differs from `from` by one flip starts from the
-/// last snapshot of it that the flip cannot have changed.
+/// A trial that differs from `from` by one flip resumes from the last snapshot of it that the
+/// flip cannot have changed
 fn trial(
     ctx: &Context,
     earliest: &Pass,
@@ -178,9 +180,8 @@ fn trial(
     }
 }
 
-/// The overrides of a schedule with every hard date it misses counted sooner by the days it is
-/// missed by, on top of what it already is, so the work that leads to it goes earlier. `None`
-/// if it misses none.
+/// Every missed hard date counted sooner by the days it is missed by, on top of what it already
+/// is, so the work that leads to it goes earlier
 fn sooner(ctx: &Context, trial: &Trial) -> Option<Overrides> {
     (trial.score.objective.missed > 0).then_some(())?;
     let mut overrides = trial.overrides.clone();
@@ -200,9 +201,8 @@ fn with(mut overrides: Overrides, flip: Flip) -> Overrides {
 // }}}
 
 // flips {{{
-/// The flips worth trying on a schedule, the most promising first. They are found by walking
-/// back from what is late over whatever decided each start: the vertex an arc waited for, or
-/// the arc that held the hours it wanted.
+/// Most promising first. Found by walking back from what is late over whatever decided each
+/// start: the vertex an arc waited for, or the arc that held the hours it wanted.
 fn flips(ctx: &Context, trial: &Trial) -> Vec<Flip> {
     let (net, pass) = (ctx.net, &trial.best);
     let mut found: Vec<(i64, Flip)> = Vec::new();
@@ -257,7 +257,7 @@ fn flips(ctx: &Context, trial: &Trial) -> Vec<Flip> {
     found.into_iter().map(|(_, flip)| flip).collect()
 }
 
-/// A fixed order of flips, for ones that promise the same
+/// Tie-break for flips that promise the same
 fn flip_key(flip: &Flip) -> (u8, u32, u32, u32) {
     match flip {
         Flip::After { first, then } => (0, first.0, then.0, 0),

@@ -1,5 +1,5 @@
-//! Logins: password hashes and sessions. They are kept apart from the tenant, so no secret is in
-//! an update, a snapshot or anything sent to a client.
+//! Password hashes and sessions, kept apart from the tenant so no secret reaches an update, a
+//! snapshot or a client.
 
 // modules {{{
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -19,7 +19,6 @@ use crate::{
 // }}}
 
 // constants {{{
-/// How long a session lasts after it is made
 pub const SESSION_LIFETIME: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 // }}}
 
@@ -39,7 +38,6 @@ fn token_hash(token: &str) -> Vec<u8> {
 
 // impl Store {{{
 impl Store {
-    /// Sets the user's password, replacing any other
     pub fn set_password(&self, user: Uuid, password: &str) -> PlinkoResult<()> {
         let salt = SaltString::encode_b64(Uuid::new_v4().as_bytes())
             .map_err(|e| PlinkoError::Store(e.to_string()))?;
@@ -54,7 +52,7 @@ impl Store {
         Ok(())
     }
 
-    /// Whether the password is the user's. A user with no password never matches.
+    /// A user with no password never matches
     pub fn check_password(&self, user: Uuid, password: &str) -> PlinkoResult<bool> {
         let hash: Option<String> = self
             .db()
@@ -65,7 +63,7 @@ impl Store {
             )
             .optional()?;
         let Some(hash) = hash else {
-            // take as long as for a real user, so the time does not say who has an account
+            // hash anyway, so the timing does not reveal who has an account
             let salt = SaltString::encode_b64(Uuid::nil().as_bytes())
                 .map_err(|e| PlinkoError::Store(e.to_string()))?;
             let _ = Argon2::default().hash_password(password.as_bytes(), &salt);
@@ -77,7 +75,7 @@ impl Store {
             .is_ok())
     }
 
-    /// Starts a session for the user and returns its token, the only time it is known
+    /// The only time the token is known, as just its hash is stored
     pub fn start_session(&self, user: Uuid) -> PlinkoResult<String> {
         let token = format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
         let expires = now() + i64::try_from(SESSION_LIFETIME.as_secs()).unwrap_or(i64::MAX);
@@ -88,7 +86,6 @@ impl Store {
         Ok(token)
     }
 
-    /// The user a session token belongs to, if it is a live one
     pub fn session_user(&self, token: &str) -> PlinkoResult<Option<Uuid>> {
         let user: Option<Vec<u8>> = self
             .db()
@@ -111,7 +108,6 @@ impl Store {
         Ok(())
     }
 
-    /// Ends every session of a user, for when they are removed or their password changes
     pub fn end_sessions_of(&self, user: Uuid) -> PlinkoResult<()> {
         self.db().execute(
             "DELETE FROM sessions WHERE user_id = ?1",

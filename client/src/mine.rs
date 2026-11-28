@@ -1,4 +1,4 @@
-//! The tasks the person signed in is down to do, across every plan they can see.
+//! A person's scheduled tasks across every plan.
 
 // modules {{{
 use std::collections::BTreeMap;
@@ -23,28 +23,27 @@ pub struct MyTask {
     pub name: String,
     pub status: Status,
     pub start: NaiveDate,
-    /// The last day it runs
+    /// Inclusive
     pub end: NaiveDate,
-    /// Hours worked on each day it runs
+    /// Hours on each day
     pub days: BTreeMap<NaiveDate, u8>,
 }
 
 // use_my_tasks {{{
-/// Every task scheduled with the person signed in on it, soonest first
 pub fn use_my_tasks() -> Memo<Vec<MyTask>> {
     use_tasks_of(None)
 }
 // }}}
 
 // use_tasks_of {{{
-/// Every task scheduled with `who` on it, or the person signed in, soonest first
+/// Tasks scheduled for `who`, or the signed-in person when `None`, soonest first
 pub fn use_tasks_of(who: Option<Uuid>) -> Memo<Vec<MyTask>> {
     let sync = use_sync();
     Memo::new(move |_| {
-        let Some(me) = who.or_else(|| sync.me.with(|m| m.as_ref().map(|m| m.id))) else {
+        let Some(person) = who.or_else(|| sync.me.with(|m| m.as_ref().map(|m| m.id))) else {
             return Vec::new();
         };
-        let mut mine = sync.schedule.with(|schedule| {
+        let mut tasks = sync.schedule.with(|schedule| {
             let Some((_, schedule)) = schedule.as_ref() else {
                 return Vec::new();
             };
@@ -52,20 +51,20 @@ pub fn use_tasks_of(who: Option<Uuid>) -> Memo<Vec<MyTask>> {
                 let Some(t) = t.as_ref() else {
                     return Vec::new();
                 };
-                let mut mine = Vec::new();
+                let mut tasks = Vec::new();
                 for (plan_id, state) in &schedule.plans {
                     let Some(plan) = t.plans().get(plan_id) else {
                         continue;
                     };
                     for (id, volatile) in &state.tasks {
-                        let Some(days) = volatile.assignments.get(&Assignee::User(me)) else {
+                        let Some(days) = volatile.assignments.get(&Assignee::User(person)) else {
                             continue;
                         };
                         let Some(task) = plan.tasks().get(id) else {
                             continue;
                         };
                         let range = volatile.date_range;
-                        mine.push(MyTask {
+                        tasks.push(MyTask {
                             plan: *plan_id,
                             plan_name: plan.name().to_string(),
                             task: *id,
@@ -77,24 +76,24 @@ pub fn use_tasks_of(who: Option<Uuid>) -> Memo<Vec<MyTask>> {
                         });
                     }
                 }
-                mine
+                tasks
             })
         });
-        mine.sort_by(|a, b| {
+        tasks.sort_by(|a, b| {
             (a.start, a.end, &a.name, a.task).cmp(&(b.start, b.end, &b.name, b.task))
         });
-        mine
+        tasks
     })
 }
 // }}}
 
 // set_status {{{
-/// Moves a task to a new status, the server fills in the dates that goes with it
+/// The server fills in the dates that go with the new status
 pub fn set_status(plan: ShortId, task: Uuid, status: Status) {
     set_status_with(use_sync(), plan, task, status);
 }
 
-/// The same from where there is no page to ask for the connection, like a key that is pressed
+/// For callers outside a component, such as a key handler
 pub fn set_status_with(sync: crate::sync::Sync, plan: ShortId, task: Uuid, status: Status) {
     let Some(was) = sync.tenant.with_untracked(|t| {
         Some(

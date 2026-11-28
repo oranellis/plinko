@@ -1,4 +1,4 @@
-//! Small pieces the pages share.
+//! Small components the pages share.
 
 // modules {{{
 use leptos::{html, prelude::*};
@@ -15,7 +15,7 @@ pub fn use_sync() -> Sync {
     expect_context::<Sync>()
 }
 
-/// The tenant's today, which moves on at midnight while the page is open
+/// Moves on at midnight while the page is open
 pub fn use_today() -> Memo<chrono::NaiveDate> {
     let sync = use_sync();
     Memo::new(move |_| {
@@ -27,7 +27,6 @@ pub fn use_today() -> Memo<chrono::NaiveDate> {
 // }}}
 
 // Back {{{
-/// The way back from a page that is not one of the main ones, at its top left
 #[component]
 pub fn Back(to: Route) -> impl IntoView {
     view! {
@@ -41,7 +40,6 @@ pub fn Back(to: Route) -> impl IntoView {
 // }}}
 
 // IconButton {{{
-/// A small button that is only an icon
 #[component]
 pub fn IconButton(
     kind: IconKind,
@@ -57,30 +55,27 @@ pub fn IconButton(
 // }}}
 
 // Modal {{{
-/// A panel over the page, a sheet from the bottom on a phone
+/// A sheet from the bottom on a phone
 #[component]
 pub fn Modal(
     #[prop(into)] title: Signal<String>,
     on_close: Callback<()>,
-    /// A big window, for a calendar
-    #[prop(optional)]
-    wide: bool,
-    /// Without the title bar, for what has a top and a close button of its own
+    #[prop(optional)] wide: bool,
+    /// No title bar, for content with its own close button
     #[prop(optional)]
     bare: bool,
     children: Children,
 ) -> impl IntoView {
     let label = move || title.get();
     crate::escape::on_escape(|| true, on_close);
-    // a press that starts in a field and lets go over the backdrop is not a click off it
-    let pressed = StoredValue::new(false);
+    // a press that starts in a field and is released over the backdrop must not close it
+    let pressed_on_backdrop = StoredValue::new(false);
     let on_backdrop =
         |ev: &web_sys::Event| ev.target().is_some() && ev.target() == ev.current_target();
-    // the keyboard goes into the window, unless something in it took it already, and back to
-    // where it was when the window closes
+    // focus moves into the window unless something in it has it, and is restored on close
     let modal = NodeRef::<html::Div>::new();
     let focused = || web_sys::window()?.document()?.active_element();
-    let before = StoredValue::new_local(focused());
+    let focused_before = StoredValue::new_local(focused());
     Effect::new(move |_| {
         if modal.get().is_none() {
             return;
@@ -100,7 +95,7 @@ pub fn Modal(
     });
     on_cleanup(move || {
         use wasm_bindgen::JsCast;
-        let back = before.try_get_value().flatten();
+        let back = focused_before.try_get_value().flatten();
         if let Some(back) = back.and_then(|b| b.dyn_into::<web_sys::HtmlElement>().ok())
             && back.is_connected()
         {
@@ -110,9 +105,9 @@ pub fn Modal(
     view! {
         <div
             class="backdrop"
-            on:pointerdown=move |ev| pressed.set_value(on_backdrop(&ev))
+            on:pointerdown=move |ev| pressed_on_backdrop.set_value(on_backdrop(&ev))
             on:click=move |ev| {
-                if pressed.get_value() && on_backdrop(&ev) {
+                if pressed_on_backdrop.get_value() && on_backdrop(&ev) {
                     on_close.run(());
                 }
             }
@@ -154,13 +149,11 @@ pub fn Field(#[prop(into)] label: Signal<String>, children: Children) -> impl In
 // }}}
 
 // Block {{{
-/// A labelled group of controls, for the ones a label cannot wrap
+/// For controls a `<label>` cannot wrap
 #[component]
 pub fn Block(
     #[prop(into)] label: String,
-    /// What the label means, shown when the pointer rests on it
-    #[prop(optional, into)]
-    hint: String,
+    #[prop(optional, into)] hint: String,
     children: Children,
 ) -> impl IntoView {
     view! {
@@ -173,7 +166,7 @@ pub fn Block(
 // }}}
 
 // Choice {{{
-/// One thing a `Picker` can pick. `tone` is a CSS class that colours it: `start` or `target`.
+/// `tone` is a CSS class that colours it: `start` or `target`
 #[derive(Clone, Debug, PartialEq)]
 pub struct Choice {
     pub value: String,
@@ -193,20 +186,19 @@ impl Choice {
 // }}}
 
 // Picker {{{
-/// A button that opens a searchable list of `choices`, holding the value that is picked
+/// A button that opens a searchable list of `choices`
 #[component]
 pub fn Picker(
     #[prop(into)] value: Signal<String>,
     #[prop(into)] choices: Signal<Vec<Choice>>,
     on_change: Callback<String>,
     #[prop(optional, into)] placeholder: String,
-    /// Opens the list when it becomes true, as a click on the button does
+    /// Opens the list when it becomes true
     #[prop(optional, into)]
     opener: Option<Signal<bool>>,
 ) -> impl IntoView {
     let open = RwSignal::new(false);
-    // the choice that enter takes, which the arrows move
-    let at = RwSignal::new(0usize);
+    let highlighted = RwSignal::new(0usize);
     crate::escape::on_escape(move || open.get(), Callback::new(move |()| open.set(false)));
     let filter = RwSignal::new(String::new());
     let anchor = RwSignal::new((0.0, 0.0, 0.0));
@@ -222,7 +214,7 @@ pub fn Picker(
             anchor.set((r.left(), r.bottom() + 2.0, r.width()));
         }
         filter.set(String::new());
-        at.set(0);
+        highlighted.set(0);
         open.set(true);
         set_timeout(
             move || {
@@ -240,7 +232,6 @@ pub fn Picker(
             }
         });
     }
-    // the best matches first, as in the search of a plan
     let shown = Memo::new(move |_| {
         let wanted = filter.get();
         choices.with(|all| {
@@ -282,7 +273,7 @@ pub fn Picker(
                     placeholder="Search…"
                     prop:value=move || filter.get()
                     on:input=move |ev| {
-                        at.set(0);
+                        highlighted.set(0);
                         filter.set(event_target_value(&ev));
                     }
                     on:keydown=move |ev| {
@@ -291,16 +282,16 @@ pub fn Picker(
                             "Escape" => open.set(false),
                             "ArrowDown" if count > 0 => {
                                 ev.prevent_default();
-                                at.update(|a| *a = (*a + 1).min(count - 1));
+                                highlighted.update(|h| *h = (*h + 1).min(count - 1));
                             }
                             "ArrowUp" => {
                                 ev.prevent_default();
-                                at.update(|a| *a = a.saturating_sub(1));
+                                highlighted.update(|h| *h = h.saturating_sub(1));
                             }
                             "Enter" => {
                                 ev.prevent_default();
                                 ev.stop_propagation();
-                                if let Some(c) = shown.with(|s| s.get(at.get_untracked()).cloned()) {
+                                if let Some(c) = shown.with(|s| s.get(highlighted.get_untracked()).cloned()) {
                                     take(c.value);
                                 }
                             }
@@ -315,9 +306,9 @@ pub fn Picker(
                             <li><button
                                 type="button"
                                 class=c.tone
-                                class:at=move || at.get() == i
+                                class:at=move || highlighted.get() == i
                                 on:click=move |_| take(pick.clone())
-                                on:pointerenter=move |_| at.set(i)
+                                on:pointerenter=move |_| highlighted.set(i)
                             >{c.label}</button></li>
                         }
                     } />
@@ -330,7 +321,7 @@ pub fn Picker(
 // }}}
 
 // Hours {{{
-/// A level out of `max`: a thin cell for none, then a cell for each step, lit from the left
+/// A level out of `max`: a thin cell for zero, then one cell per step, lit from the left
 #[component]
 pub fn Hours(
     #[prop(into)] value: Signal<i64>,
@@ -367,7 +358,6 @@ pub fn Hours(
 // }}}
 
 // List {{{
-/// A bordered list of rows with an add button under it
 #[component]
 pub fn List(
     #[prop(into)] label: String,
@@ -375,7 +365,7 @@ pub fn List(
     #[prop(into)] add: String,
     #[prop(into)] count: Signal<usize>,
     on_add: Callback<()>,
-    /// A second way to add, as an icon beside the add button
+    /// An icon button beside the add button
     #[prop(optional)]
     extra: Option<(IconKind, &'static str, Callback<()>)>,
     children: Children,
@@ -399,7 +389,6 @@ pub fn List(
 // }}}
 
 // Actions {{{
-/// The buttons under a form: an optional delete on the left, then cancel and save
 #[component]
 pub fn Actions(
     on_cancel: Callback<()>,
@@ -417,7 +406,6 @@ pub fn Actions(
 // }}}
 
 // Text {{{
-/// A text box that tells its owner when it changes
 #[component]
 pub fn Text(
     #[prop(into)] value: Signal<String>,
@@ -442,7 +430,6 @@ pub fn Text(
 // }}}
 
 // Number {{{
-/// A box for a whole number
 #[component]
 pub fn Number(
     #[prop(into)] value: Signal<i64>,
@@ -468,7 +455,7 @@ pub fn Number(
 // }}}
 
 // Select {{{
-/// A choice of `options` (value and label), holding the value that is picked
+/// `options` are (value, label) pairs
 #[component]
 pub fn Select(
     #[prop(into)] value: Signal<String>,
@@ -504,7 +491,6 @@ pub fn options<const N: usize>(pairs: [(&str, &str); N]) -> Signal<Vec<(String, 
 // }}}
 
 // Status {{{
-/// How the connection and the schedule are doing
 #[component]
 pub fn Status() -> impl IntoView {
     let sync = use_sync();
@@ -522,7 +508,7 @@ pub fn Status() -> impl IntoView {
 // }}}
 
 // window_listener {{{
-/// Listens to `event` on the window until the current owner is cleaned up
+/// Removed when the current owner is cleaned up
 pub fn window_listener<E>(event: &'static str, handler: impl FnMut(E) + 'static)
 where
     E: wasm_bindgen::convert::FromWasmAbi + 'static,
@@ -530,7 +516,6 @@ where
     listen(event, false, handler);
 }
 
-/// As `window_listener`, but heard before anything on the page is
 pub fn window_capture<E>(event: &'static str, handler: impl FnMut(E) + 'static)
 where
     E: wasm_bindgen::convert::FromWasmAbi + 'static,
@@ -563,7 +548,7 @@ where
 // }}}
 
 // hashed {{{
-/// A cheap key for a list entry that is drawn again whenever anything in it changes
+/// A list key that changes whenever anything in the entry does, so it is redrawn
 pub fn hashed<T: std::hash::Hash>(item: &T) -> u64 {
     use std::hash::Hasher;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();

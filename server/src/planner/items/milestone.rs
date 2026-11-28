@@ -111,14 +111,14 @@ pub struct PersistentState {
     pub actual_date: Option<NaiveDate>,
 }
 
-/// Written by the scheduler for every milestone it could schedule
+/// Absent when the scheduler could not place the milestone
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub derived_status: DerivedStatus,
     pub date: NaiveDate,
 }
 
-/// Milestones have no status of their own, it comes from what they depend on
+/// Derived from what the milestone depends on
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DerivedStatus {
     #[default]
@@ -147,8 +147,7 @@ pub struct MilestonePatch {
 
 // impl VolatileState {{{
 impl VolatileState {
-    /// The exclusive end of the one day the milestone lands on, so dependents treat it like any
-    /// other node
+    /// Exclusive, so dependents treat it like any other node
     pub fn end(&self) -> NaiveDate {
         self.date + chrono::Days::new(1)
     }

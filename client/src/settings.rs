@@ -1,5 +1,4 @@
-//! A plan's settings: what new items start from, its targets, who is in it and how they are tagged, the days
-//! work may be done on, and removing it.
+//! A plan's settings page.
 
 // modules {{{
 use std::collections::HashSet;
@@ -112,7 +111,6 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
             <People plan=plan />
             <Tags plan=plan />
             <Affinities plan=plan />
-            // only an admin may delete a plan
             <Show when=move || sync.me.with(|m| m.as_ref().is_some_and(|m| m.admin))>
                 <section>
                     <h2>"Plan Management"</h2>
@@ -125,17 +123,17 @@ pub fn PlanSettings(plan: ShortId) -> impl IntoView {
                 });
                 let keep = Callback::new(move |()| deleting.set(false));
                 window_listener("keydown", move |ev: web_sys::KeyboardEvent| {
-                    // a button of the window that has the keyboard does its own thing
-                    let taken = ev
+                    // a focused button in the dialog handles Enter itself
+                    let on_button = ev
                         .target()
                         .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
                         .is_some_and(|t| t.closest(".modal button").ok().flatten().is_some());
-                    if ev.key() == "Enter" && !ev.default_prevented() && !taken {
+                    if ev.key() == "Enter" && !ev.default_prevented() && !on_button {
                         ev.prevent_default();
                         remove.run(());
                     }
                 });
-                // a click off it, or escape, is to keep it, as for an item of the plan
+                // closing the dialog any other way keeps the plan
                 view! {
                     <Modal title=format!("Delete {}?", name.unwrap_or_default()) on_close=keep>
                         <div class="choices">

@@ -115,7 +115,7 @@ impl Plan {
         &self.affinities
     }
 
-    /// Nodes the scheduler brings forward, none means the whole plan end
+    /// No targets means the whole plan's end is the target
     pub fn targets(&self) -> &HashMap<Uuid, Target> {
         &self.targets
     }
@@ -129,7 +129,6 @@ impl Plan {
         &self.default_availability
     }
 
-    /// Gives the plan's placeholders these rules, as a new plan starts from the tenant's default
     pub(crate) fn set_default_availability(&mut self, rules: RuleSet<Workload>) {
         self.default_availability = rules;
     }
@@ -138,7 +137,6 @@ impl Plan {
         &self.scheduler_data
     }
 
-    /// Whether every affinity linked to the task allows `day`, `None` if there is no such task
     pub fn task_allows_day(&self, task: &Uuid, day: NaiveDate) -> Option<bool> {
         let task = self.tasks.get(task)?;
         let mut affinities = task
@@ -173,8 +171,6 @@ impl Plan {
             .ok_or(PlinkoError::ItemDoesNotExist(*id))
     }
 
-    /// The parent must be an existing group and must not be the item itself or one of its
-    /// descendants.
     fn validate_parent(&self, id: Uuid, parent: Parent) -> PlinkoResult<()> {
         let mut next = parent;
         while let Parent::Node(group) = next {
@@ -190,7 +186,6 @@ impl Plan {
         Ok(())
     }
 
-    /// Checks everything an item refers to exists and that it introduces no dependency cycle
     pub(super) fn validate_item<T: PlanItem>(&self, id: Uuid) -> PlinkoResult<()> {
         let item = T::entities(self)
             .get(&id)
@@ -218,10 +213,9 @@ impl Plan {
     }
 
     fn node_depended_on<T: PlanItem>(&self, node: PlanNode) -> bool {
-        let target = node;
         T::entities(self)
             .values()
-            .any(|i| i.dependencies().contains(&target))
+            .any(|i| i.dependencies().contains(&node))
     }
 
     fn has_members<T: PlanItem>(&self, group: Uuid) -> bool {
@@ -229,7 +223,6 @@ impl Plan {
         T::entities(self).values().any(|i| i.parent() == parent)
     }
 
-    /// Whether anything still refers to the node: a dependency, a group member or the scheduler
     pub(super) fn node_in_use(&self, node: PlanNode) -> bool {
         let is_group_with_members = match node {
             PlanNode::TaskGroup(id) => {
@@ -251,7 +244,7 @@ impl Plan {
             || self.node_depended_on::<TaskGroup>(node)
     }
 
-    /// Whether a task records the person as having done work, which keeps them from being removed
+    /// Recorded work keeps a person from being removed
     pub(crate) fn recorded_in_use(&self, who: Assignee) -> bool {
         let recorded = |t: &Task| t.actual_workers().values().any(|a| *a == who);
         self.tasks.values().any(recorded)
@@ -263,8 +256,7 @@ impl Plan {
             .any(|t| t.allocations().contains_key(&worker))
     }
 
-    /// The updates that cut the dependencies down to what is needed after `update`, which are
-    /// the ones it made redundant, see `graph::simplified`
+    /// Updates dropping the dependencies that `update` made redundant
     pub fn simplifications(&self, update: &PlanUpdate) -> Vec<PlanUpdate> {
         let Some(touched) = update.rewires() else {
             return Vec::new();
@@ -310,7 +302,6 @@ impl Plan {
             }
             PlanUpdate::Describe(node, text) => {
                 let missing = || PlinkoError::ItemDoesNotExist(node.id());
-                // an empty description is no description
                 let text = text.filter(|t| !t.is_empty());
                 match node {
                     PlanNode::Task(id) => {
@@ -367,7 +358,7 @@ impl Plan {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanSchedulerData {
     priority: i32,
-    /// What new top level items depend on to begin with, set by clients for convenience
+    /// What new top level items depend on by default
     #[serde(default)]
     default_start: Option<PlanNode>,
 }
@@ -406,7 +397,7 @@ impl Patchable<PlanSchedulerDataPatch> for PlanSchedulerData {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlanSchedulerDataPatch {
     pub priority: Option<i32>,
-    /// The node new top level items depend on, `Some(None)` to have none
+    /// `Some(None)` clears it
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

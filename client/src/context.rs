@@ -1,6 +1,4 @@
-//! The bar of buttons under the item selected on the chart: its status, its data and editing it.
-//! While the item is edited the bar is at the bottom of the chart with the item's name, who works
-//! on it and saving, leaving and deleting it, which the card of a new item has too.
+//! The button bar and info panel for the item selected or edited on the chart.
 
 // modules {{{
 use leptos::{html, prelude::*};
@@ -32,7 +30,7 @@ use crate::{
 // }}}
 
 // constants {{{
-/// Every status in the order the column lists them, with its icon and the colour it lights up in
+/// (status, label, icon, colour), in the order they are listed
 const STATUSES: [(Status, &str, IconKind, &str); 5] = [
     (
         Status::NotStarted,
@@ -48,7 +46,7 @@ const STATUSES: [(Status, &str, IconKind, &str); 5] = [
 // }}}
 
 // helpers {{{
-/// Where a click on the status button takes a task: on towards done
+/// The status a click on the status button moves a task to, on towards done
 pub fn next(status: Status) -> Status {
     match status {
         Status::NotStarted | Status::OnHold => Status::InProgress,
@@ -63,13 +61,12 @@ fn position(status: Status) -> usize {
 // }}}
 
 // ContextBar {{{
-/// The bar of an item of the plan, put where `at` says on the chart. While its item is edited,
-/// or for an item that is being created, it is `docked`: at the bottom of the chart, with the
-/// shape of the item over the buttons, beside the `InfoPanel`.
+/// Placed at `at` on the chart, or `docked` at the bottom beside the `InfoPanel` while its item
+/// is edited or created
 #[component]
 pub fn ContextBar(
     plan: ShortId,
-    /// The item of the plan the bar is for, which a new item is not yet
+    /// `None` for an item still being created
     node: Option<PlanNode>,
     at: Memo<Option<(f64, f64)>>,
     docked: Memo<bool>,
@@ -78,7 +75,7 @@ pub fn ContextBar(
     spot: RwSignal<Option<PlanNode>>,
     typing: RwSignal<bool>,
     on_change: Callback<()>,
-    /// Whether the statuses of a task are listed, which a key can make them too
+    /// Whether the status list is open; a key can open it too
     statuses: RwSignal<bool>,
     on_edit: Callback<()>,
     on_data: Callback<()>,
@@ -90,7 +87,7 @@ pub fn ContextBar(
         <div
             class="contextbar"
             class:docked=move || docked.get()
-            // nothing waits for it: a little blue in its top right corner
+            // nothing waits for it
             class:leaf=move || docked.get() && draft.with(|d| d.as_ref().is_some_and(|d| d.dependents.is_empty()))
             class:fadein=node.is_none()
             style=move || match (docked.get(), at.get()) {
@@ -113,7 +110,6 @@ pub fn ContextBar(
                     <Icon kind=IconKind::Data size=20 />
                 </button>
             })}
-            // the pencil starts the edit, and is then what ends it
             <Show
                 when=move || docked.get()
                 fallback=move || view! {
@@ -135,9 +131,8 @@ pub fn ContextBar(
 // }}}
 
 // InfoPanel {{{
-/// What there is to say of an item: its name over its facts. It is in the corner of the chart
-/// for the item that is looked at, and slides up beside the docked bar for the one being
-/// created or edited, whose name is then typed over where it stands.
+/// An item's name over its facts: in the chart's corner for the item looked at, or beside the
+/// docked bar for the one being edited, whose name is then editable in place
 #[component]
 pub fn InfoPanel(
     plan: ShortId,
@@ -147,7 +142,6 @@ pub fn InfoPanel(
 ) -> impl IntoView {
     let sync = use_sync();
     let edited = Memo::new(move |_| draft.with(|d| d.as_ref().map(|d| d.node)));
-    // what is looked at, as it is in the plan
     let seen = Memo::new(move |_| {
         let node = looked.get().filter(|_| edited.get().is_none())?;
         sync.tenant
@@ -168,11 +162,11 @@ pub fn InfoPanel(
             class="infopanel"
             class:docked=move || edited.get().is_some()
             class:gone=move || shown.with(Option::is_none)
-            // nothing waits for what is looked at: a little blue in its top right corner
+            // nothing waits for it
             class:leaf=move || seen.with(|d| d.as_ref().is_some_and(|d| d.dependents.is_empty()))
             on:click=|ev| ev.stop_propagation()
         >
-            // made again for each item edited, so the name of a new one is ready to type over
+            // rebuilt for each item edited, so a new one's name is selected to type over
             {move || match edited.get() {
                 Some(_) => view! { <NameBox draft=draft on_save=on_save /> }.into_any(),
                 None => view! { <p class="infoname">{name}</p> }.into_any(),
@@ -184,8 +178,7 @@ pub fn InfoPanel(
 // }}}
 
 // NameBox {{{
-/// The name of the draft, which is typed over where it stands and takes as many lines as it
-/// needs, growing upwards. A buffer has none.
+/// Edited in place, growing upwards to as many lines as it needs. A buffer has no name.
 #[component]
 pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl IntoView {
     let (node, new) = draft.with_untracked(|d| {
@@ -195,15 +188,13 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
         )
     });
     let input = NodeRef::<html::Textarea>::new();
-    // as high as what is in it
     let fit = move || {
         if let Some(input) = input.try_get_untracked().flatten() {
             let _ = input.set_attribute("style", "height:auto");
             let _ = input.set_attribute("style", &format!("height:{}px", input.scroll_height()));
         }
     };
-    // the name of a new item is ready to type over, as soon as it is there: selecting it any
-    // later would be over what has been typed since
+    // a new item's name is selected at once; any later would select what was typed since
     let was = draft.with_untracked(|d| d.as_ref().map(|d| d.name.clone()).unwrap_or_default());
     request_animation_frame(move || {
         fit();
@@ -225,7 +216,7 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
                 placeholder=if matches!(node, PlanNode::PlanDelay(_)) { "Delay" } else { "Name" }
                 prop:value=move || draft.with(|d| d.as_ref().map(|d| d.name.clone()).unwrap_or_default())
                 on:input=move |ev| {
-                    // a name is one line, however many it is shown on
+                    // a name is one line, however many it wraps onto
                     let typed = event_target_value(&ev).replace('\n', " ");
                     draft.update(|d| if let Some(d) = d { d.name = typed });
                     fit();
@@ -235,7 +226,7 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
                         ev.prevent_default();
                         on_save.run(());
                     }
-                    // tab leaves the name for the page, where the keys are
+                    // tab hands the keys back to the page
                     "Tab" => {
                         ev.prevent_default();
                         if let Some(input) = input.get_untracked() {
@@ -252,8 +243,7 @@ pub fn NameBox(draft: RwSignal<Option<Draft>>, on_save: Callback<()>) -> impl In
 // }}}
 
 // Facts {{{
-/// What there is to say of an item under its name: its group, its days, the day it is held to,
-/// who works on it and the data it holds
+/// Group, days, pinned day, workers and data
 #[component]
 fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
     let sync = use_sync();
@@ -335,7 +325,6 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
         <ul class="stripfacts">
             {move || {
                 let (before, workers, after) = lines();
-                // the people on it can be clicked for more about them
                 let workers = (!workers.is_empty()).then(|| {
                     let last = workers.len() - 1;
                     let names = workers.into_iter().enumerate().map(|(i, (person, name, hours))| {
@@ -356,8 +345,7 @@ fn Facts(plan: ShortId, of: Signal<Option<Draft>>) -> impl IntoView {
 // }}}
 
 // hold_next {{{
-/// Goes round which end of the draft's item is held to a day, starting from the days the
-/// schedule has it on
+/// Cycles which end of the draft's item is held to a day, starting from its scheduled days
 pub fn hold_next(sync: Sync, plan: ShortId, draft: RwSignal<Option<Draft>>) {
     let today = sync
         .tenant
@@ -384,7 +372,6 @@ pub fn hold_next(sync: Sync, plan: ShortId, draft: RwSignal<Option<Draft>>) {
 // }}}
 
 // Extras {{{
-/// Which end of an item is held to a day, for the kinds that can be
 #[component]
 pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let sync = use_sync();
@@ -394,7 +381,7 @@ pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
             Some(PlanNode::Task(_) | PlanNode::TaskGroup(_) | PlanNode::Milestone(_))
         )
     });
-    // which end is held: its first day, or its last, which is the only one a milestone has
+    // a milestone only has its last day
     let held = move || draft.with(|d| d.as_ref().and_then(Draft::pin).map(|p| p.end));
     let single = draft.with_untracked(|d| {
         d.as_ref()
@@ -426,8 +413,7 @@ pub fn Extras(plan: ShortId, draft: RwSignal<Option<Draft>>) -> impl IntoView {
 // }}}
 
 // EditSwitch {{{
-/// What to do with what is being edited, in place of the pencil: a tick that saves it, with a
-/// cross that leaves it and a bin that deletes it a hover away, like the statuses of a task
+/// Replaces the pencil while editing: save, with leave and delete revealed on hover
 #[component]
 pub fn EditSwitch(
     on_save: Callback<()>,
@@ -454,7 +440,7 @@ pub fn EditSwitch(
 // }}}
 
 // StatusSwitch {{{
-/// One button showing where the task goes next, with the others a hover away
+/// Shows the next status, with the others revealed on hover
 #[component]
 fn StatusSwitch(plan: ShortId, task: Uuid, open: RwSignal<bool>) -> impl IntoView {
     let sync = use_sync();
@@ -502,7 +488,7 @@ fn StatusSwitch(plan: ShortId, task: Uuid, open: RwSignal<bool>) -> impl IntoVie
 // }}}
 
 // toggle_pin {{{
-/// Pins the start of a buffer to where it is scheduled, or lets go of one that is pinned
+/// Pins a buffer's start to where it is scheduled, or unpins it
 pub fn toggle_pin(sync: Sync, plan: ShortId, buffer: Uuid) {
     let set = sync.tenant.with_untracked(|t| {
         let buffer = t
@@ -535,11 +521,10 @@ pub fn toggle_pin(sync: Sync, plan: ShortId, buffer: Uuid) {
 // }}}
 
 // SetStart {{{
-/// The buffer's set start: pinned to where it is scheduled, or let go
 #[component]
 fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
     let sync = use_sync();
-    // the set start and the scheduled start
+    // (set start, scheduled start)
     let days = Memo::new(move |_| {
         let state = sync
             .schedule
@@ -561,8 +546,7 @@ fn SetStart(plan: ShortId, buffer: Uuid) -> impl IntoView {
         false => "Pin its start where it is",
     };
     let toggle = move || toggle_pin(sync, plan, buffer);
-    // the button shows how it is, and under the pointer how a click would leave it: an empty
-    // pin becomes a full one, and a full one is struck through
+    // on hover it previews the click: an empty pin fills, a full one is struck through
     view! {
         <button type="button" class="ctx swap" title=label aria-label=label on:click=move |_| toggle()>
             {move || {

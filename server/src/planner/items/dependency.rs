@@ -5,10 +5,8 @@ use std::hash::Hash;
 use uuid::Uuid;
 // }}}
 
-/// A schedulable node. A task group is a single node that ends when all of its members end.
-///
-/// An item's dependencies are the nodes whose end it waits for. Besides them every item waits
-/// for the start of the group it is in, or for today at the top level, which is never listed.
+/// An item's dependencies are the nodes whose end it waits for. It also waits, implicitly, for
+/// its group's start, or for today at the top level. A task group ends when all members end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PlanNode {
     Task(Uuid),
@@ -19,7 +17,6 @@ pub enum PlanNode {
 }
 
 // PlanNode supporting types {{{
-/// The kind of a node, without which one it is
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PlanNodeType {
     Task,
@@ -52,7 +49,7 @@ impl PlanNode {
         }
     }
 
-    /// Each node once, in the order first given
+    /// Deduplicates, keeping first-seen order
     pub fn merged(nodes: Vec<PlanNode>) -> Vec<PlanNode> {
         let mut out: Vec<PlanNode> = Vec::new();
         for node in nodes {

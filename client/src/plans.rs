@@ -1,5 +1,3 @@
-//! The plans you can see, with how they are doing.
-
 // modules {{{
 use chrono::NaiveDate;
 use leptos::prelude::*;
@@ -24,15 +22,14 @@ pub struct Card {
     pub name: String,
     /// Tasks, groups, milestones, buffers and delays
     items: usize,
-    /// When the last of the plan's targets is forecast to land, if it has any
+    /// Latest forecast among the plan's targets
     last_target: Option<NaiveDate>,
     problems: usize,
-    /// Starred by the person signed in
+    /// Starred by the signed-in person
     pub favourite: bool,
 }
 
 // use_cards {{{
-/// The plans the person signed in can see, by name
 pub fn use_cards() -> Memo<Vec<Card>> {
     let sync = use_sync();
     Memo::new(move |_| {
@@ -77,7 +74,6 @@ pub fn use_cards() -> Memo<Vec<Card>> {
 // }}}
 
 // PlanCards {{{
-/// Plans as cards, each with a star to favourite it
 #[component]
 pub fn PlanCards(
     #[prop(into)] cards: Signal<Vec<Card>>,

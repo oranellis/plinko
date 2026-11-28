@@ -20,8 +20,7 @@ use crate::{
 };
 // }}}
 
-/// Everything a scheduler run writes. It is derived from the tenant's state and rebuilt by the
-/// next run, never saved or part of an update.
+/// Everything a scheduler run writes. Rebuilt by every run, never saved or part of an update.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct TenantVolatileState {
     pub plans: HashMap<ShortId, PlanVolatileState>,
@@ -30,8 +29,8 @@ pub struct TenantVolatileState {
 
 // impl TenantVolatileState{{{
 impl TenantVolatileState {
-    /// The part of the schedule for a user who may see the given plans. Work on the others still
-    /// takes people's hours, so it stays in their schedules with no plan or task named.
+    /// Work on hidden plans still takes people's hours, so it stays in their schedules with no
+    /// plan or task named
     pub fn visible_to(&self, plans: &HashSet<ShortId>) -> Self {
         let mut users = self.users.clone();
         for schedule in users.values_mut() {
@@ -53,8 +52,7 @@ impl TenantVolatileState {
         }
     }
 
-    /// Builds the result from each plan's, deriving every user's schedule across plans from the
-    /// task assignments so the two cannot disagree
+    /// User schedules are derived from the task assignments so the two cannot disagree
     pub fn from_plans(plans: HashMap<ShortId, PlanVolatileState>) -> Self {
         let mut users: HashMap<Uuid, UserSchedule> = HashMap::new();
         for (plan, state) in &plans {
@@ -88,8 +86,7 @@ impl TenantVolatileState {
 // }}}
 
 // TenantVolatileState supporting types {{{
-/// One plan's schedule. Items it could schedule are in the maps for their kind, the rest are in
-/// `unscheduled` with the reason.
+/// Items that could not be scheduled are in `unscheduled` instead of the map for their kind
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanVolatileState {
     pub tasks: HashMap<Uuid, task::VolatileState>,
@@ -98,16 +95,13 @@ pub struct PlanVolatileState {
     pub plan_buffers: HashMap<Uuid, plan_buffer::VolatileState>,
     pub plan_delays: HashMap<Uuid, plan_delay::VolatileState>,
     pub unscheduled: HashMap<PlanNode, UnscheduledReason>,
-    /// Forecast of each of the plan's targets
     pub targets: HashMap<Uuid, TargetForecast>,
-    /// Forecast of the plan's last day, the target of a plan that has none of its own
+    /// The target of a plan that has none of its own
     pub plan_end: Option<TargetForecast>,
-    /// Tasks and milestones that landed on a date their time constraint does not allow
     pub constraint_violations: HashMap<PlanNode, ConstraintViolation>,
 }
 
-/// When a target lands as scheduled, against the earliest it could if nobody ever ran out of
-/// hours
+/// `baseline` is the earliest it could land if nobody ever ran out of hours
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TargetForecast {
     pub forecast: NaiveDate,
@@ -116,38 +110,33 @@ pub struct TargetForecast {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum UnscheduledReason {
-    /// The task was dropped, so it is out of the plan
     Dropped,
-    /// The workers the task asks for resolve to nobody, like a tag no one has or an empty group
+    /// The workers resolve to nobody, like a tag no one has or an empty group
     NoEligibleWorkers,
-    /// Every dependency of the item could not be scheduled, so there is nothing to start it from
+    /// No dependency could be scheduled, so there is nothing to start it from
     DependsOnUnscheduled,
-    /// A task group none of whose members could be scheduled
     NoScheduledMembers,
-    /// The workers exist but cannot provide the allocation within the scheduling horizon, from a
-    /// lack of availability or allowed days
+    /// The workers exist but lack availability or allowed days within the horizon
     NoCapacity,
 }
 
-/// The constraint is not met, so the item was pushed to the closest date it could take
+/// The item was pushed to the closest date it could take
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConstraintViolation {
     pub constraint: TimeConstraint,
     /// Whether the constraint and `scheduled` are about the first or the last day of the item
     pub end: NodeEnd,
     pub scheduled: NaiveDate,
-    /// The earliest that day could be however free people are, if worked out. Being later than
-    /// the date but no later than this is not something scheduling could have avoided.
+    /// The earliest that day could be however free people are. Lateness up to this was not
+    /// avoidable by scheduling.
     pub earliest: Option<NaiveDate>,
 }
 
-/// A person's work across every plan, to see what they are assigned on past, present and
-/// upcoming days and how booked they are
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct UserSchedule {
     pub assignments: BTreeMap<NaiveDate, Vec<UserAssignment>>,
-    /// Booked hours as a share of available hours from their first to last assigned day, set by
-    /// the solver which knows availability. Near 1 or above marks a bottleneck.
+    /// Booked hours as a share of available hours from their first to last assigned day. Near 1
+    /// or above marks a bottleneck.
     pub bottleneck: f32,
 }
 
@@ -161,7 +150,7 @@ pub struct UserAssignment {
 
 // impl PlanVolatileState {{{
 impl PlanVolatileState {
-    /// The day after the last day anything in the plan is scheduled, `None` if nothing is
+    /// The day after the last scheduled day
     pub fn end(&self) -> Option<NaiveDate> {
         let tasks = self.tasks.values().map(|t| t.date_range.end());
         let groups = self.task_groups.values().map(|g| g.date_range.end());
@@ -180,7 +169,6 @@ impl PlanVolatileState {
 
 // impl TargetForecast {{{
 impl TargetForecast {
-    /// Days the target is later than the earliest it could be, never negative
     pub fn delay(&self) -> i64 {
         (self.forecast - self.baseline).num_days().max(0)
     }
@@ -189,7 +177,7 @@ impl TargetForecast {
 
 // impl ConstraintViolation {{{
 impl ConstraintViolation {
-    /// Days the node starts later than the date and than it had to
+    /// Days later than both the date and than it had to be
     pub fn avoidable(&self) -> i64 {
         let (TimeConstraint::Fixed(date) | TimeConstraint::Latest(date)) = self.constraint else {
             return 0;

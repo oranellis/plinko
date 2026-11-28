@@ -13,7 +13,7 @@ use crate::{
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arc {
     pub node: PlanNode,
-    /// The position of its plan in `Network::plans`
+    /// Index into `Network::plans`
     pub plan: u32,
     pub start: VertexId,
     pub end: VertexId,
@@ -21,19 +21,17 @@ pub struct Arc {
 }
 
 // Arc supporting types {{{
-/// An arc in `Network::arcs`
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ArcId(pub u32);
 
-/// Arcs differ by how their days are worked out
 #[derive(Clone, Debug, PartialEq)]
 pub enum ArcKind {
     Work(Work),
     Buffer(Buffer),
 }
 
-/// A number of days that every slot has its hours on and the mask allows, in one run that other
-/// work does not break up. A delay is work with no slots on the full calendar.
+/// `days` days that every slot has its hours on and the mask allows, in one unbroken run.
+/// A delay is work with no slots.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Work {
     pub days: u32,
@@ -42,21 +40,16 @@ pub struct Work {
     /// Whose working days count when no slot asks for hours
     pub calendar: RowId,
     pub progress: Progress,
-    /// Not started before this day
     pub floor_start: Option<Day>,
-    /// Not ended before this day
     pub floor_end: Option<Day>,
-    /// A hard date for its start
     pub latest_start: Option<Day>,
-    /// A hard date for its end
     pub latest_end: Option<Day>,
 }
 
-/// What has happened to work, which decides what the scheduler can move
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Progress {
     Open,
-    /// Started, working its hours through today and then what is left of its days
+    /// Works its hours through today, then what is left of its days
     Active {
         begun: Day,
     },
@@ -67,7 +60,6 @@ pub enum Progress {
     },
 }
 
-/// One worker a task asks for and the rows of the people who could be it
 #[derive(Clone, Debug, PartialEq)]
 pub struct Slot {
     pub worker: Worker,
@@ -76,8 +68,8 @@ pub struct Slot {
     pub candidates: Vec<RowId>,
 }
 
-/// A plan buffer: it ends `until` but never before it starts, and no later than `shrink_to`,
-/// the hard dates of what depends on it directly
+/// Ends at `until`, but never before it starts and no later than `shrink_to`, the hard dates of
+/// what depends on it directly
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Buffer {
     pub until: Until,
@@ -85,12 +77,11 @@ pub struct Buffer {
     pub shrink_to: Option<Day>,
 }
 
-/// Where a buffer ends when nothing shrinks it
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Until {
-    /// This many working days of its calendar after it starts, an unset buffer
+    /// Working days of its calendar after it starts, an unset buffer
     Days(u32),
-    /// A fixed day, a set buffer whose start floats
+    /// A set buffer, whose start floats
     Day(Day),
 }
 // }}}
@@ -108,7 +99,6 @@ impl Arc {
 
 // impl Work {{{
 impl Work {
-    /// A delay of calendar days, or of the working days of `calendar`
     pub fn wait(days: u32, calendar: RowId) -> Self {
         Self {
             days,
@@ -131,8 +121,7 @@ impl Work {
 
 // impl Buffer {{{
 impl Buffer {
-    /// The end of the buffer when it starts on `start`, given the day its calendar puts the end
-    /// of an unset one
+    /// `after_days` gives the day its calendar puts the end of an unset buffer
     pub fn end(&self, start: Day, after_days: impl Fn(u32) -> Option<Day>) -> Option<Day> {
         let nominal = match self.until {
             Until::Days(days) => after_days(days)?,

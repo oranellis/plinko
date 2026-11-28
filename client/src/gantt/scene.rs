@@ -1,5 +1,4 @@
-//! A plan turned into what the chart needs: its items arranged in lanes, and the ones that could
-//! not be placed because the scheduler gave them no dates.
+//! Plans turned into lanes for the chart, plus the items the scheduler gave no dates.
 
 // modules {{{
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -22,7 +21,7 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene {
-    /// The day the chart counts from: today, or the first day of anything before it
+    /// Day 0: today, or the first day of anything earlier
     pub origin: NaiveDate,
     pub arrangement: Arrangement,
     pub unplaced: Vec<Unplaced>,
@@ -36,7 +35,6 @@ pub struct Scene {
 }
 
 // Scene supporting types {{{
-/// An item with no place on the chart
 #[derive(Clone, Debug, PartialEq)]
 pub struct Unplaced {
     pub node: PlanNode,
@@ -51,10 +49,10 @@ pub struct Section {
     pub name: String,
     pub lane: usize,
     pub lanes: usize,
-    /// (booked, capacity) for each day from `from`
     pub from: NaiveDate,
+    /// (booked, capacity) for each day from `from`
     pub days: Vec<(u32, u8)>,
-    /// Runs end on the day after their last
+    /// The lane and runs of work on plans not shown; runs end on the day after their last
     pub other: Option<(usize, Vec<(NaiveDate, NaiveDate)>)>,
 }
 
@@ -73,7 +71,7 @@ pub struct Options<'a> {
     pub load: &'a dyn Fn(Uuid, NaiveDate, NaiveDate) -> Vec<(u32, u8)>,
 }
 
-/// Days past the last item that the pies are worked out for
+/// Days past the last item that the pies cover
 const LOAD_AHEAD: u64 = 120;
 
 struct Context<'a> {
@@ -87,7 +85,6 @@ struct Context<'a> {
 
 // impl Scene {{{
 impl Scene {
-    /// A scene with nothing in it
     pub fn empty(origin: NaiveDate) -> Self {
         Self {
             origin,
@@ -251,7 +248,7 @@ fn lay_out(
     let mut lane = 0;
     for (who, name, inner) in drafts {
         let days = (options.load)(who, origin, to);
-        // whatever they are booked for beyond the plans shown is on plans the viewer cannot see
+        // hours booked beyond the plans shown are on plans not shown
         let mut shown_hours: BTreeMap<NaiveDate, u32> = BTreeMap::new();
         for shown in plans {
             for task in shown.state.into_iter().flat_map(|s| s.tasks.values()) {
@@ -265,7 +262,7 @@ fn lay_out(
                 }
             }
         }
-        let other: Vec<u32> = days
+        let other_hours: Vec<u32> = days
             .iter()
             .enumerate()
             .map(|(i, (booked, _))| {
@@ -273,7 +270,7 @@ fn lay_out(
                 booked.saturating_sub(shown_hours.get(&day).copied().unwrap_or(0))
             })
             .collect();
-        let runs = runs_of(&other, origin);
+        let runs = runs_of(&other_hours, origin);
         let other_lane = (!runs.is_empty()).then_some(lane + 1);
         let first_inner = lane + 1 + usize::from(other_lane.is_some());
         let lanes = first_inner - lane + inner.lanes;
@@ -320,8 +317,8 @@ fn runs_of(hours: &[u32], from: NaiveDate) -> Vec<(NaiveDate, NaiveDate)> {
 // }}}
 
 // related {{{
-/// The tasks the schedule books someone on, the milestones directly before or after any of them,
-/// and every group above those
+/// The tasks someone is booked on, the milestones directly before or after them, and every
+/// group above those
 pub fn related(plan: &Plan, state: Option<&PlanVolatileState>, who: Uuid) -> HashSet<PlanNode> {
     let Some(state) = state else {
         return HashSet::new();
@@ -359,7 +356,7 @@ pub fn related(plan: &Plan, state: Option<&PlanVolatileState>, who: Uuid) -> Has
 // }}}
 
 // plan_mark {{{
-/// A made-up id for a plan's box that no item can have
+/// A fake id for a plan's box that no item can have
 pub fn plan_mark(plan: ShortId) -> Uuid {
     let mut bytes = [0u8; 16];
     bytes[0] = 0xb0;
@@ -449,7 +446,7 @@ impl Context<'_> {
                 };
                 let (name, span) = match node {
                     PlanNode::PlanBuffer(id) => self.buffer(id, span),
-                    // a delay with no name is told from a buffer by its shape, so only its days
+                    // an unnamed delay's shape tells it from a buffer, so it shows only its days
                     PlanNode::PlanDelay(id) => match self.plan.plan_delays().get(&id) {
                         Some(delay) if delay.name().is_none() => {
                             (format!("{}d", delay.duration()), span)
@@ -477,8 +474,8 @@ impl Context<'_> {
 }
 
 impl Context<'_> {
-    /// What a buffer reads as on the chart, its working days now and what it was given when they
-    /// differ, and the span it gets: a buffer with no days left still takes a day to click on
+    /// Its label is the working days left, and the days given when they differ. A buffer with no
+    /// days left still spans a day, to be clickable
     fn buffer(&self, id: Uuid, span: (NaiveDate, NaiveDate)) -> (String, (NaiveDate, NaiveDate)) {
         let availability = self.plan.default_availability();
         let now = span

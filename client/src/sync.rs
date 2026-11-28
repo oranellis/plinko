@@ -1,6 +1,4 @@
-//! The client's copy of the tenant, kept up to date over the WebSocket. The server sends a
-//! snapshot of what this user may see, then every update to it in order, which are applied with
-//! the same code the server runs, and the schedule when it has one.
+//! The client's copy of the tenant, kept in step with the server over the WebSocket.
 
 // modules {{{
 use std::collections::HashMap;
@@ -43,21 +41,20 @@ type Then = Box<dyn FnOnce(Option<Created>)>;
 #[derive(Clone, Copy)]
 pub struct Sync {
     pub tenant: RwSignal<Option<Tenant>>,
-    /// The schedule and the update it is for, which can trail `seq`
+    /// The seq is the update the schedule is for, which can trail `seq`
     pub schedule: RwSignal<Option<(u64, TenantVolatileState)>>,
     pub seq: RwSignal<u64>,
     pub me: RwSignal<Option<Profile>>,
     pub link: RwSignal<Link>,
-    /// The last thing that went wrong, for a banner
     pub notice: RwSignal<Option<String>>,
     outbox: StoredValue<Option<UnboundedSender<ClientMessage>>>,
     pending: StoredValue<HashMap<u32, Then>, LocalStorage>,
     next_request: StoredValue<u32>,
-    /// Set to drop the connection and start again from a snapshot
+    /// Drops the connection and starts again from a snapshot
     resync: StoredValue<bool>,
-    /// Which connection loop is the current one; any other stops
+    /// Identifies the current connection loop; any other one stops
     epoch: StoredValue<u64>,
-    /// Dropped to close the open socket
+    /// Dropping it closes the open socket
     stop: StoredValue<Option<oneshot::Sender<()>>>,
 }
 // }}}
@@ -81,7 +78,6 @@ impl Sync {
         }
     }
 
-    /// Closes the connection for good and forgets the session, on logging out
     pub fn end(&self) {
         self.halt();
         self.tenant.set(None);
@@ -92,7 +88,7 @@ impl Sync {
         self.notice.set(None);
     }
 
-    /// Stops the connection loop and closes its socket, returning the epoch for a new one
+    /// Returns the epoch for a new connection loop
     fn halt(&self) -> u64 {
         let epoch = self.epoch.get_value() + 1;
         self.epoch.set_value(epoch);
@@ -103,7 +99,6 @@ impl Sync {
         epoch
     }
 
-    /// Tells everything waiting on an answer that it will not come
     fn fail_pending(&self) {
         let pending = self.pending.try_update_value(std::mem::take);
         for (_, then) in pending.into_iter().flatten() {
@@ -111,14 +106,12 @@ impl Sync {
         }
     }
 
-    /// Whether the schedule is behind the latest update
     pub fn recalculating(&self) -> bool {
         let scheduled = self.schedule.with(|s| s.as_ref().map(|(seq, _)| *seq));
         scheduled.is_none_or(|scheduled| scheduled < self.seq.get())
     }
 
-    /// Asks the server to make a change. `then` is called with what it created, or `None` if
-    /// it made nothing or was refused.
+    /// `then` gets `None` if the server made nothing or refused
     pub fn send_then(
         &self,
         update: TenantUpdateType,
@@ -152,7 +145,6 @@ impl Sync {
         self.send_then(update, |_| {});
     }
 
-    /// A change to a plan
     pub fn plan(&self, plan: ShortId, update: PlanUpdate) {
         self.send(TenantUpdateType::Plan(PlanTenantUpdate::Update(
             plan,
@@ -178,7 +170,7 @@ impl Sync {
                     .users()
                     .get(&user)
                     .is_some_and(|u| u.role() == Role::Admin);
-                // someone removed has nothing more to see
+                // the user was removed
                 let Some(name) = name else {
                     self.end();
                     return;
@@ -229,8 +221,7 @@ impl Sync {
         }
     }
 
-    /// Keeps a connection open, starting again from a snapshot whenever it drops. Any loop
-    /// already running stops, so there is only ever one.
+    /// Reconnects from a snapshot whenever the link drops; stops any loop already running
     pub fn connect(&self) {
         let sync = *self;
         let epoch = sync.halt();
@@ -247,8 +238,7 @@ impl Sync {
                 sync.link.set(Link::Down);
                 sync.outbox.set_value(None);
                 sync.fail_pending();
-                // a session that has ended means logging in again, not trying again, but a
-                // server that cannot be reached is tried again
+                // an ended session needs a new login; an unreachable server is retried
                 let ended = matches!(crate::api::me().await, Ok(None));
                 if !current() {
                     return;

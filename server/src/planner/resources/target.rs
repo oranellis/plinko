@@ -8,8 +8,8 @@ use crate::{
 };
 // }}}
 
-/// A node the scheduler brings as far forward as it can. It has no due date, the scheduler
-/// forecasts when it lands. `priority` is added to the plan's and breaks contention for people.
+/// A node the scheduler brings as far forward as it can, with no due date. `priority` is added
+/// to the plan's and breaks contention for people.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Target {
     id: Uuid,

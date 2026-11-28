@@ -15,11 +15,10 @@ use uuid::Uuid;
 // }}}
 
 #[derive(Clone, Serialize, Deserialize)]
-/// The deterministic boundary for mutating a tenant. Every change to tenant state is a
-/// `TenantUpdate`, and `time` is the only source of "now" for anything it touches.
+/// Every change to tenant state is one of these, and `time` is the only source of "now" for
+/// anything it touches, so replaying is deterministic
 pub struct TenantUpdate {
     pub time: DateTime<Utc>,
-    /// The login user making the change, who must be allowed to
     pub actor: Uuid,
     pub update_type: TenantUpdateType,
 }
@@ -29,13 +28,12 @@ pub struct TenantUpdate {
 pub enum TenantUpdateType {
     User(Crud<NewTenantLoginUser, TenantLoginUserPatch>),
     UserGroup(Crud<NewTenantUserGroup, TenantUserGroupPatch>),
-    /// Change one user's availability, which only they or an admin may do
     Availability(Uuid, RuleSetUpdate<Workload>),
-    /// Change the availability new users and new plans start with, which only an admin may do
+    /// The availability new users and new plans start with
     DefaultSchedule(RuleSetUpdate<Workload>),
-    /// Moves the tenant's clock, which only admins (the server runner) may do
+    /// Sent by the server runner each day
     SetToday(NaiveDate),
-    /// Stars a plan for the person making the update, or takes the star off
+    /// Stars or unstars a plan for the actor
     Favourite(ShortId, bool),
     Plan(PlanTenantUpdate),
 }
@@ -44,15 +42,13 @@ pub enum TenantUpdateType {
 pub enum PlanTenantUpdate {
     Add(NewPlan),
     Remove(ShortId),
-    /// Mutate the contents of an existing plan
     Update(ShortId, Box<PlanUpdate>),
 }
 // }}}
 
 // impl TenantUpdateType {{{
 impl TenantUpdateType {
-    /// Gives everything the update creates a fresh id, replacing whatever a client sent. A server
-    /// handler calls this before building the `TenantUpdate` it applies and logs.
+    /// Replaces whatever ids a client sent for new items
     pub fn assign_ids(&mut self) {
         match self {
             TenantUpdateType::User(update) => update.assign_id(),

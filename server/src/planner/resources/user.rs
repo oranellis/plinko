@@ -7,7 +7,6 @@ use uuid::Uuid;
 use crate::{common::error::PlinkoResult, traits::patch::Patchable};
 // }}}
 
-/// A tenant user's place in a plan, with the plan's tags they hold
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanUserData {
     tags: HashSet<Uuid>,
@@ -37,7 +36,7 @@ impl Patchable<PlanUserDataPatch> for PlanUserData {
 // }}}
 
 // PlanUserData supporting types {{{
-/// A tenant user group assigned to a plan, so anyone in it can be allocated tasks
+/// Lets anyone in the tenant group be allocated tasks
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PlanUserGroupData;
 

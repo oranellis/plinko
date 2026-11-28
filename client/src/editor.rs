@@ -1,6 +1,5 @@
-//! Saving the item being created or edited: only what was changed is sent, so two people
-//! editing different fields of an item do not undo each other. And the window for who works on
-//! a task.
+//! Saving a draft, and the workers card. Only changed fields are sent, so two people editing
+//! different fields of an item do not undo each other.
 
 // modules {{{
 use std::collections::{HashMap, HashSet};
@@ -32,7 +31,6 @@ use crate::{
 // }}}
 
 // helpers {{{
-/// What a plan holds right now, or `None` if it is gone
 fn read<R>(plan: ShortId, f: impl FnOnce(&Plan) -> Option<R>) -> Option<R> {
     let sync = use_sync();
     sync.tenant.with(|t| f(t.as_ref()?.plans().get(&plan)?))
@@ -42,7 +40,6 @@ fn changed<T: PartialEq>(old: &T, new: T) -> Option<T> {
     (*old != new).then_some(new)
 }
 
-/// An update to an item, for the item with another id
 fn retarget(update: PlanUpdate, id: Uuid) -> PlanUpdate {
     match update {
         PlanUpdate::Task(Crud::Update(p)) => PlanUpdate::Task(Crud::Update(TaskPatch { id, ..p })),
@@ -62,8 +59,8 @@ fn retarget(update: PlanUpdate, id: Uuid) -> PlanUpdate {
     }
 }
 
-/// What a draft changes of its item: the one in the plan, or for a new one what adding it gives.
-/// What waits for the item is not the item's to say, see `Draft::dependent_updates`.
+/// For a new item, compared against what adding it gives. Dependents are not the item's to
+/// change; see `Draft::dependent_updates`.
 fn patch(plan: &Plan, draft: &Draft) -> Option<PlanUpdate> {
     let (id, parent, name) = (draft.node.id(), draft.parent, draft.name.clone());
     let dependencies = draft.dependencies.clone();
@@ -79,7 +76,7 @@ fn patch(plan: &Plan, draft: &Draft) -> Option<PlanUpdate> {
                 .iter()
                 .filter_map(|(w, h)| Some((*w, Workload::new(*h).ok()?)))
                 .collect();
-            // who did the work is whoever was asked for, so what is kept is only for those still asked
+            // actual workers are kept only for those still allocated
             let kept: HashMap<Worker, Assignee> = old
                 .actual_workers()
                 .iter()
@@ -169,8 +166,7 @@ fn patch(plan: &Plan, draft: &Draft) -> Option<PlanUpdate> {
     })
 }
 
-/// Saves a draft: what it changes of its item, and of the items that wait for it. A new item is
-/// added first, and the rest then goes to the id it was given.
+/// A new item is added first, and the rest is retargeted to the id it was given
 pub fn save(sync: Sync, plan: ShortId, draft: &Draft) {
     let found = sync
         .tenant
@@ -200,7 +196,7 @@ pub fn save(sync: Sync, plan: ShortId, draft: &Draft) {
     }
 }
 
-/// Takes an item out of its plan, joining what was around it back together
+/// Rejoins what was around the item once it is gone
 pub fn remove_item(sync: Sync, plan: ShortId, node: PlanNode) {
     let updates = sync
         .tenant
@@ -213,15 +209,14 @@ pub fn remove_item(sync: Sync, plan: ShortId, node: PlanNode) {
 // }}}
 
 // WorkersWindow {{{
-/// Who works on the task of the draft and for how long a day, and the days it can be worked on:
-/// a card at the right of the chart for as long as the task is created or edited
+/// The draft task's workers, hours and affinities
 #[component]
 pub fn WorkersWindow(
     plan: ShortId,
     draft: RwSignal<Option<Draft>>,
-    /// The row the keys are on, while they are on the card
+    /// The keyboard row, while the keys are on the card
     cursor: RwSignal<Option<usize>>,
-    /// A row whose list of who it can be is to open
+    /// A row whose worker list should open
     open_row: RwSignal<Option<usize>>,
 ) -> impl IntoView {
     let start = draft.get_untracked();
@@ -232,14 +227,13 @@ pub fn WorkersWindow(
             .unwrap_or_default(),
     );
     let affinities = RwSignal::new(start.map(|d| d.affinities).unwrap_or_default());
-    // what the keys change of the draft is shown here
+    // keyboard changes to the draft flow in, and changes made here flow back
     Effect::new(move |_| {
         let asked = draft.with(|d| d.as_ref().map(|d| d.allocations.clone()));
         if let Some(asked) = asked.filter(|a| allocations.with_untracked(|was| was != a)) {
             allocations.set(asked);
         }
     });
-    // what is picked here is the draft's
     Effect::new(move |_| {
         let (asked, allowed) = (allocations.get(), affinities.get());
         let same = draft.with_untracked(|d| {
@@ -262,8 +256,7 @@ pub fn WorkersWindow(
     }
 }
 
-/// Who to ask next for work on a task asking `asked`: yourself when you are in the plan, then
-/// the first person, tag or group not asked yet
+/// Yourself when you are in the plan, then the first person, tag or group not yet allocated
 pub fn next_worker(sync: Sync, plan: ShortId, asked: &[(Worker, u8)]) -> Option<Worker> {
     let me = sync.me.get_untracked().map(|m| Worker::User(m.id));
     let options = sync
@@ -282,7 +275,6 @@ pub fn next_worker(sync: Sync, plan: ShortId, asked: &[(Worker, u8)]) -> Option<
         .find(|w| !taken(w))
 }
 
-/// The people and groups work can be asked of in this plan
 fn worker_options(plan: ShortId) -> Signal<Vec<(String, String)>> {
     let sync = use_sync();
     Signal::derive(move || {
@@ -292,7 +284,7 @@ fn worker_options(plan: ShortId) -> Signal<Vec<(String, String)>> {
     })
 }
 
-/// The same from the tenant, read once
+/// Untracked
 fn worker_options_of(
     t: &plinko::multitenancy::tenant::Tenant,
     plan: ShortId,
@@ -334,7 +326,7 @@ fn Workers(
     let named = worker_options(plan);
     let open_person = crate::person::use_open_person();
     let sync = use_sync();
-    // a row asked to open has done so once its list has seen it
+    // clear the request once the row's list has had time to see it
     Effect::new(move |_| {
         if open_row.get().is_some() {
             set_timeout(
@@ -350,7 +342,6 @@ fn Workers(
             .get()
             .into_iter()
             .map(|(v, l)| {
-                // the placeholder is not a person, so it is shown greyed out
                 let tone = if v == "placeholder" { "ghost" } else { "" };
                 Choice::new(v, l, tone)
             })
@@ -387,7 +378,7 @@ fn Workers(
                 let hours = Signal::derive(move || {
                     allocations.with(|a| a.get(i).map_or(0, |(_, h)| i64::from(*h)))
                 });
-                // who is asked for on the other rows is not listed again
+                // workers on other rows are not offered again
                 let open = Signal::derive(move || {
                     let taken: Vec<String> = allocations.with(|a| {
                         a.iter()
@@ -400,7 +391,6 @@ fn Workers(
                         all.iter().filter(|c| !taken.contains(&c.value)).cloned().collect::<Vec<_>>()
                     })
                 });
-                // a person on the row, whose face opens more about them
                 let person = Signal::derive(move || {
                     let id = allocations.with(|a| match a.get(i) {
                         Some((Worker::User(id), _)) => Some(*id),

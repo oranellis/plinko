@@ -1,7 +1,6 @@
-//! The scheduler. A tenant is lowered to one network: vertices are day boundaries ("these
-//! things are done") and arcs are what takes days between them. Arcs are placed one at a time
-//! as early as they fit, the most urgent first, then contested choices are tried the other way
-//! and the best schedule is kept. See `docs/scheduler.md`.
+//! A tenant is lowered to one network: vertices are day boundaries ("these things are done") and
+//! arcs take days between them. Arcs are placed as early as they fit, most urgent first, then
+//! contested choices are tried the other way and the best schedule kept. See `docs/scheduler.md`.
 
 // modules {{{
 use chrono::{Days, NaiveDate};
@@ -42,14 +41,13 @@ pub mod table;
 pub mod write;
 
 // constants {{{
-/// The table covers the work in the tenant end to end this many times over past today
+/// Days past today the table covers, as a multiple of all the tenant's work end to end
 const HORIZON_FACTOR: u32 = 4;
 
 /// The fewest and the most days past today a table covers
 const HORIZON: (u32, u32) = (120, 3650);
 // }}}
 
-/// A schedule and what the search decided to get it
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Solved {
     pub state: TenantVolatileState,
@@ -57,25 +55,20 @@ pub struct Solved {
 }
 
 // Solved supporting types {{{
-/// What a search found better done differently, by the ids of what it is about so it outlives
-/// the run
+/// What a search found better done differently, keyed by ids so it outlives the run
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Hints {
     /// The first waits until the second is placed
     pub after: Vec<(Item, Item)>,
-    /// The person a worker of a task resolves to
     pub people: Vec<(Item, Worker, Uuid)>,
-    /// The hard date of a node counts as this many days sooner when deciding what goes first
+    /// The node's hard date counts this many days sooner when deciding what goes first
     pub sooner: Vec<(Item, i64)>,
 }
 
-/// A node of a plan
 pub type Item = (ShortId, PlanNode);
 // }}}
 
 // schedule {{{
-/// Schedules the tenant and keeps the result on it, for `Tenant::schedule`. The search starts
-/// from the hints the last schedule left.
 pub fn schedule(tenant: &mut Tenant) -> Solution {
     let hints = tenant.hints().clone();
     let solved = solve(tenant, &hints);
@@ -84,7 +77,7 @@ pub fn schedule(tenant: &mut Tenant) -> Solution {
     solved.solution
 }
 
-/// Puts the schedule a stored solution gives on the tenant, without searching
+/// Without searching
 pub fn restore(tenant: &mut Tenant, solution: &Solution) {
     let solved = expand(tenant, solution);
     tenant.store_schedule(solved.state);
@@ -93,7 +86,6 @@ pub fn restore(tenant: &mut Tenant, solution: &Solution) {
 // }}}
 
 // solve {{{
-/// Schedules the tenant, starting from the hints of the last schedule
 pub fn solve(tenant: &mut Tenant, hints: &Hints) -> Solved {
     over(tenant, |ctx, earliest| {
         let found = search::search(ctx, earliest, overrides(ctx.net, ctx.table, hints));
@@ -102,9 +94,8 @@ pub fn solve(tenant: &mut Tenant, hints: &Hints) -> Solved {
     })
 }
 
-/// The schedule a solution gives for the tenant it was found for. Every task is put where the
-/// solution has it and the rest follows, so nothing is searched for and the result is the same
-/// every time.
+/// Every task goes where the solution has it and the rest follows, so nothing is searched and the
+/// result is the same every time
 pub fn expand(tenant: &mut Tenant, solution: &Solution) -> Solved {
     over(tenant, |ctx, _| {
         let overrides = solution.overrides(ctx.net, ctx.table);
@@ -118,8 +109,8 @@ pub fn expand(tenant: &mut Tenant, solution: &Solution) -> Solved {
     })
 }
 
-/// Builds what a pass runs on and writes the schedule of the pass `place` gives. If work runs
-/// past the days looked at, more are looked at.
+/// Builds the context, runs `place` and writes its schedule, widening the horizon while work runs
+/// past it
 fn over(tenant: &mut Tenant, place: impl Fn(&Context, &Pass) -> (Pass, Hints)) -> Solved {
     let today = tenant.today();
     let tasks = || tenant.plans().values().flat_map(|p| p.tasks().values());
@@ -151,7 +142,6 @@ fn over(tenant: &mut Tenant, place: impl Fn(&Context, &Pass) -> (Pass, Hints)) -
         let earliest = bound::earliest(&ctx);
         bound::prioritise(&mut ctx, &earliest);
         let (pass, hints) = place(&ctx, &earliest);
-        // whether work ran out of days that more days could give it
         if (pass.overflow || earliest.overflow) && ahead < HORIZON.1 {
             ahead = (ahead * 2).min(HORIZON.1);
             continue;
@@ -163,7 +153,6 @@ fn over(tenant: &mut Tenant, place: impl Fn(&Context, &Pass) -> (Pass, Hints)) -
     }
 }
 
-/// The latest dates of every task, group and milestone
 fn hard_dates(tenant: &Tenant) -> impl Iterator<Item = NaiveDate> + '_ {
     tenant.plans().values().flat_map(|p| {
         let tasks = p.tasks().values().map(|t| t.time_constraint().constraint);
@@ -191,7 +180,7 @@ fn item_of(net: &Network, arc: ArcId) -> Item {
     (net.plans[arc.plan as usize].id, arc.node)
 }
 
-/// The hints that still mean something in this network, as overrides
+/// Hints that no longer match anything in this network are dropped
 fn overrides(net: &Network, table: &Table, hints: &Hints) -> Overrides {
     let mut overrides = Overrides::default();
     for (first, then) in &hints.after {

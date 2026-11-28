@@ -11,7 +11,6 @@ use crate::{
 };
 // }}}
 
-/// Optional extra information attached to a task or milestone
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DataBlocks {
     blocks: HashMap<Uuid, DataBlock>,
@@ -103,7 +102,7 @@ pub struct Link {
     pub url: String,
 }
 
-/// Money in minor units (like cents) of a single currency
+/// Minor units (like cents) of a single currency
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Budget {
     pub planned: i64,

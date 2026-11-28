@@ -1,4 +1,4 @@
-//! A date picker: a button that opens a calendar, with the date written in the chosen format.
+//! A button that opens a calendar to pick a date.
 
 // modules {{{
 use chrono::{Datelike, NaiveDate};
@@ -12,13 +12,13 @@ use crate::{
 // }}}
 
 // helpers {{{
-/// The first day of the month `months` away from `day`'s
+/// The first of the month `months` away from `day`'s
 fn month_shifted(day: NaiveDate, months: i32) -> NaiveDate {
     let index = day.year() * 12 + day.month0() as i32 + months;
     NaiveDate::from_ymd_opt(index.div_euclid(12), index.rem_euclid(12) as u32 + 1, 1).unwrap_or(day)
 }
 
-/// The days of the month `first` starts, a week to a row, with blanks to line them up
+/// A week to a row, with `None` blanks to line the days up
 fn month_cells(first: NaiveDate, week: WeekStart) -> Vec<Option<NaiveDate>> {
     let blanks = week.offset(first);
     let days = month_shifted(first, 1)
@@ -31,7 +31,6 @@ fn month_cells(first: NaiveDate, week: WeekStart) -> Vec<Option<NaiveDate>> {
 // }}}
 
 // DatePicker {{{
-/// A date that is picked from a calendar. With `clearable` it can be taken away again.
 #[component]
 pub fn DatePicker(
     #[prop(into)] value: Signal<Option<NaiveDate>>,
@@ -147,7 +146,7 @@ pub fn DatePicker(
 // }}}
 
 // DateInput {{{
-/// A date that is always there
+/// A non-optional date
 #[component]
 pub fn DateInput(
     day: RwSignal<NaiveDate>,

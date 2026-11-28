@@ -1,5 +1,4 @@
-//! Momentum for scrolling sideways by wheel or touchpad: the scroll follows the gesture at once,
-//! and when it lets go the speed it had carries on and fades.
+//! Momentum for sideways wheel and touchpad scrolling.
 
 // modules {{{
 use std::{cell::Cell, rc::Rc};
@@ -8,16 +7,16 @@ use leptos::prelude::request_animation_frame;
 // }}}
 
 // constants {{{
-/// How long without a wheel event counts as having let go, in milliseconds
+/// Milliseconds without a wheel event that count as the gesture letting go
 const RELEASE_MS: f64 = 70.0;
-/// What is left of the speed after a frame of 1/60th of a second
+/// Fraction of the speed kept per 1/60 s frame
 const KEPT: f64 = 0.93;
-/// Pixels per millisecond under which it stops, and under which a release does not carry on
+/// Pixels per millisecond below which the glide stops
 const STOP: f64 = 0.03;
 // }}}
 
 // helpers {{{
-/// The speed after another wheel event of `delta` pixels, `dt` milliseconds after the last
+/// `dt` is milliseconds since the last wheel event
 fn speed(before: f64, delta: f64, dt: f64) -> f64 {
     // a long pause is a new gesture
     if dt > 100.0 {
@@ -27,7 +26,6 @@ fn speed(before: f64, delta: f64, dt: f64) -> f64 {
     0.5 * now + 0.5 * before
 }
 
-/// The speed a frame of `dt` milliseconds later
 fn fade(speed: f64, dt: f64) -> f64 {
     speed * KEPT.powf(dt.clamp(1.0, 50.0) / (1000.0 / 60.0))
 }
@@ -35,13 +33,13 @@ fn fade(speed: f64, dt: f64) -> f64 {
 
 #[derive(Clone)]
 pub struct Glide {
-    /// Pixels per millisecond, and when the last event came
+    /// Pixels per millisecond
     speed: Rc<Cell<f64>>,
     last: Rc<Cell<f64>>,
-    /// Less than a pixel that has not been passed on yet
+    /// The sub-pixel remainder not yet applied
     carry: Rc<Cell<f64>>,
     running: Rc<Cell<bool>>,
-    /// Moves the thing scrolled by whole pixels, and says whether it is still there to move
+    /// Scrolls by whole pixels; returns false once the target is gone
     apply: Rc<dyn Fn(f64) -> bool>,
 }
 
@@ -57,7 +55,6 @@ impl Glide {
         }
     }
 
-    /// Moves by `amount`, in whole pixels with the rest kept for next time
     fn move_by(&self, amount: f64) -> bool {
         let total = self.carry.get() + amount;
         let whole = total.round();
@@ -65,7 +62,6 @@ impl Glide {
         whole == 0.0 || (self.apply)(whole)
     }
 
-    /// A wheel event of `delta` pixels, which is followed at once
     pub fn push(&self, delta: f64) {
         let now = js_sys::Date::now();
         let before = self.last.get();
@@ -80,7 +76,6 @@ impl Glide {
     fn frame(&self, before: f64) {
         let now = js_sys::Date::now();
         let mut alive = true;
-        // once the gesture has let go, what speed it had carries on
         if now - self.last.get() >= RELEASE_MS {
             let moving = self.speed.get();
             if moving.abs() < STOP {
@@ -114,7 +109,6 @@ mod tests {
         for _ in 0..10 {
             v = speed(v, 16.0, 16.0);
         }
-        // 16 pixels every 16 milliseconds
         assert!((v - 1.0).abs() < 0.01);
         assert_eq!(speed(v, 16.0, 500.0), 0.0);
     }
@@ -130,7 +124,6 @@ mod tests {
             frames += 1;
             assert!(v < 0.0 && frames < 300);
         }
-        // a flick at 1.5 px/ms carries on a few hundred pixels
         assert!(travelled < -150.0 && travelled > -600.0, "{travelled}");
     }
 }

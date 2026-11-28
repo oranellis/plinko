@@ -18,9 +18,8 @@ use crate::{
 };
 // }}}
 
-/// What a search decided, which is all of a schedule that cannot be worked out again without
-/// searching: where each task that takes people's hours starts and who works it. The rest of
-/// the schedule follows from it and the tenant, see `scheduler::expand`.
+/// The part of a schedule that cannot be worked out again without searching: where each task
+/// that takes people's hours starts and who works it. The rest follows, see `scheduler::expand`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Solution {
     pub tasks: BTreeMap<TaskKey, Placing>,
@@ -29,18 +28,16 @@ pub struct Solution {
 }
 
 // Solution supporting types {{{
-/// A task of a plan
 pub type TaskKey = (ShortId, Uuid);
 
-/// Where a task was put
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Placing {
     pub start: NaiveDate,
-    /// The person for each worker the task asks for that is a person
+    /// Only the workers that resolved to a person
     pub people: Vec<(Worker, Uuid)>,
 }
 
-/// A solution as stored: whole, or as what changed since the one before it
+/// Whole, or as what changed since the one before it
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Stored {
     Full(Solution),
@@ -54,7 +51,6 @@ pub enum Stored {
 
 // impl Solution {{{
 impl Solution {
-    /// What a finished pass decided
     pub fn of(ctx: &Context, pass: &Pass, hints: Hints) -> Self {
         let (net, table) = (ctx.net, ctx.table);
         let mut tasks = BTreeMap::new();
@@ -79,7 +75,6 @@ impl Solution {
         Self { tasks, hints }
     }
 
-    /// The overrides that make a pass put every task where the solution has it
     pub fn overrides(&self, net: &Network, table: &Table) -> Overrides {
         let mut overrides = Overrides::default();
         for ((plan, task), placing) in &self.tasks {
@@ -102,7 +97,7 @@ impl Solution {
         overrides
     }
 
-    /// How to store the solution after `previous`: as what changed, unless that is most of it
+    /// As what changed since `previous`, unless that is most of it
     pub fn stored_after(&self, previous: Option<&Solution>) -> Stored {
         let Some(previous) = previous else {
             return Stored::Full(self.clone());
@@ -130,7 +125,7 @@ impl Solution {
         }
     }
 
-    /// The solution a stored record gives after this one
+    /// Applies a stored record that came after this one
     pub fn then(mut self, stored: Stored) -> Solution {
         match stored {
             Stored::Full(solution) => solution,

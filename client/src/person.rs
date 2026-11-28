@@ -1,6 +1,4 @@
-//! A person: who they are, what they are booked for over the next two weeks and when they work.
-//! Shown at the top of the people page for whoever is signed in, and in a window over any page
-//! for anyone, opened by clicking them wherever they are named.
+//! A person's details, bookings and hours, on the people page or in a window over any page.
 
 // modules {{{
 use chrono::{Datelike, Days, NaiveDate, Weekday};
@@ -24,39 +22,36 @@ use crate::{
 // }}}
 
 // constants {{{
-/// The days the person view looks ahead, today first
+/// Days the person view looks ahead, including today
 pub const AHEAD: u64 = 14;
-/// The weeks of hours shown, from the start of this one
+/// Weeks of hours shown, from the start of this week
 const HOUR_WEEKS: u64 = 4;
-/// The most lanes of tasks shown before the rest are left to the full allocations
+/// Task lanes shown before the rest are summarised
 const MOST_LANES: usize = 6;
-/// Colours of the circles people are shown as, one each, the same every time
+/// Avatar colours, picked by user id
 const FACES: [&str; 8] = [
     "#5b7fbf", "#4f9a78", "#b07a3c", "#9a5bb0", "#3f9aa6", "#b05b6e", "#7a8f3c", "#6b6bb8",
 ];
 // }}}
 
 // PersonWindow {{{
-/// Who the window over the page is showing, if anyone
 #[derive(Clone, Copy)]
 pub struct PersonWindow(pub RwSignal<Option<Uuid>>);
 
-/// Sets up the window for the pages under it to open
 pub fn provide_person_window() -> RwSignal<Option<Uuid>> {
     let open = RwSignal::new(None);
     provide_context(PersonWindow(open));
     open
 }
 
-/// Opens a person's window, made while a page is being built so a click can use it later
+/// Call while building a view; the callback can then run from a click
 pub fn use_open_person() -> Callback<Uuid> {
     let open = expect_context::<PersonWindow>().0;
     Callback::new(move |id| open.set(Some(id)))
 }
 
-/// Lets go of the keyboard after a click on what opened a window, so it is not given back to it
-/// when the window closes, where enter would open the window again rather than reach the page.
-/// Pressed from the keyboard, it keeps it.
+/// Blurs a clicked opener so focus does not return to it when the window closes, where Enter
+/// would reopen the window. A keyboard press (detail 0) keeps focus.
 pub fn let_go(ev: &web_sys::MouseEvent) {
     use wasm_bindgen::JsCast;
     if ev.detail() == 0 {
@@ -72,7 +67,6 @@ pub fn let_go(ev: &web_sys::MouseEvent) {
 // }}}
 
 // helpers {{{
-/// The first letters of the first two words of a name
 pub fn initials(name: &str) -> String {
     let letters: String = name
         .split_whitespace()
@@ -91,7 +85,7 @@ pub fn face_of(id: Uuid) -> &'static str {
     FACES[(id.as_u128() % FACES.len() as u128) as usize]
 }
 
-/// A day of someone's: the hours they are booked for and the hours they have
+/// Hours booked and available on a day
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Load {
     pub day: NaiveDate,
@@ -99,7 +93,7 @@ pub struct Load {
     pub capacity: u8,
 }
 
-/// How booked someone is over `days` from today, with what is booked on plans you cannot see
+/// Includes hours booked on plans the viewer cannot see
 pub fn use_load(who: Uuid, days: u64) -> Memo<Vec<Load>> {
     let sync = use_sync();
     let today = use_today();
@@ -127,7 +121,7 @@ pub fn use_load(who: Uuid, days: u64) -> Memo<Vec<Load>> {
     })
 }
 
-/// How booked the days are said in a word or two, and whether that is too much
+/// A short label for how booked the days are, and its tone class
 pub fn busy(days: &[Load]) -> (String, &'static str) {
     let booked: u32 = days.iter().map(|d| d.booked).sum();
     let capacity: u32 = days.iter().map(|d| u32::from(d.capacity)).sum();
@@ -146,7 +140,7 @@ pub fn busy(days: &[Load]) -> (String, &'static str) {
     (format!("{share}% booked"), tone)
 }
 
-/// The run of days a task is on within the days shown, as grid columns from 1
+/// The task's days within `first..=last` as grid columns from 1, end exclusive
 fn span(task: &MyTask, first: NaiveDate, last: NaiveDate) -> Option<(i64, i64)> {
     if task.end < first || task.start > last {
         return None;
@@ -156,29 +150,30 @@ fn span(task: &MyTask, first: NaiveDate, last: NaiveDate) -> Option<(i64, i64)> 
     Some((from, to))
 }
 
-/// Packs runs of grid columns into lanes, each in the first lane where it leaves at least a day
-/// empty either side of what is already there, as the Gantt does. Gives each its lane, and how
-/// many lanes there are.
+/// Puts each span in the first lane where it leaves a free day either side, as the Gantt does.
+/// Returns each span's lane and the number of lanes.
 fn lanes(spans: &[(i64, i64)]) -> (Vec<usize>, usize) {
     let mut order: Vec<usize> = (0..spans.len()).collect();
     order.sort_by_key(|i| spans[*i]);
-    // the column after the last day taken in each lane
-    let mut free: Vec<i64> = Vec::new();
+    let mut lane_ends: Vec<i64> = Vec::new();
     let mut lane_of = vec![0; spans.len()];
     for i in order {
         let (from, to) = spans[i];
-        let lane = free.iter().position(|f| from > *f).unwrap_or(free.len());
-        if lane == free.len() {
-            free.push(to);
+        let lane = lane_ends
+            .iter()
+            .position(|end| from > *end)
+            .unwrap_or(lane_ends.len());
+        if lane == lane_ends.len() {
+            lane_ends.push(to);
         } else {
-            free[lane] = to;
+            lane_ends[lane] = to;
         }
         lane_of[i] = lane;
     }
-    (lane_of, free.len())
+    (lane_of, lane_ends.len())
 }
 
-/// Runs of days with something on them, as grid columns from 1, for work that is not named
+/// Runs of days with hours, as grid columns from 1, end exclusive
 fn runs(hours: &[u32]) -> Vec<(usize, usize)> {
     let mut runs = Vec::new();
     let mut start = None;
@@ -195,7 +190,7 @@ fn runs(hours: &[u32]) -> Vec<(usize, usize)> {
     runs
 }
 
-/// Someone's hours on each day of the weeks shown, and whether a rule starts there
+/// Hours on each day of the weeks shown, and whether a rule starts that day
 fn hour_weeks(set: &RuleSet<Workload>, from: NaiveDate) -> Vec<(NaiveDate, u8, bool)> {
     let to = from + Days::new(HOUR_WEEKS * 7 - 1);
     let calendar = set.calendar(from, to);
@@ -219,12 +214,11 @@ fn hour_weeks(set: &RuleSet<Workload>, from: NaiveDate) -> Vec<(NaiveDate, u8, b
 // }}}
 
 // Face {{{
-/// A person as a coloured circle with their initials
 #[component]
 pub fn Face(
     id: Uuid,
     #[prop(into)] name: Signal<String>,
-    /// How wide, in pixels
+    /// Pixels
     #[prop(default = 28)]
     size: u32,
 ) -> impl IntoView {
@@ -241,7 +235,6 @@ pub fn Face(
 // }}}
 
 // PersonButton {{{
-/// A person's name that opens their window
 #[component]
 pub fn PersonButton(id: Uuid, #[prop(into)] name: String) -> impl IntoView {
     let open = use_open_person();
@@ -264,12 +257,10 @@ pub fn PersonButton(id: Uuid, #[prop(into)] name: String) -> impl IntoView {
 // }}}
 
 // PersonView {{{
-/// Who someone is, what they are booked for over the next two weeks and when they work, with
-/// what an admin, or the person themselves, can change about them
 #[component]
 pub fn PersonView(
     who: Uuid,
-    /// Set in a window, which it closes
+    /// Set when shown in a window, which it closes
     #[prop(optional)]
     on_close: Option<Callback<()>>,
 ) -> impl IntoView {
@@ -363,7 +354,6 @@ pub fn PersonView(
 // }}}
 
 // Booked {{{
-/// The next two weeks: a pie of each day's hours, and the tasks as bars under them
 #[component]
 fn Booked(who: Uuid) -> impl IntoView {
     let load = use_load(who, AHEAD);
@@ -379,9 +369,9 @@ fn Booked(who: Uuid) -> impl IntoView {
                 .collect::<Vec<_>>()
         })
     });
-    // what is booked on plans that cannot be seen from here: hours with no task shown for them
-    let other = Memo::new(move |_| {
-        let named = |day: NaiveDate| -> u32 {
+    // hours booked on plans not visible here
+    let unseen = Memo::new(move |_| {
+        let visible_hours = |day: NaiveDate| -> u32 {
             tasks.with(|t| {
                 t.iter()
                     .map(|t| u32::from(t.days.get(&day).copied().unwrap_or(0)))
@@ -390,19 +380,19 @@ fn Booked(who: Uuid) -> impl IntoView {
         };
         load.with(|l| {
             l.iter()
-                .map(|d| d.booked.saturating_sub(named(d.day)))
+                .map(|d| d.booked.saturating_sub(visible_hours(d.day)))
                 .collect::<Vec<_>>()
         })
     });
-    let said = Memo::new(move |_| load.with(|l| busy(l)));
-    let nothing = move || shown.with(Vec::is_empty) && other.with(|o| o.iter().all(|h| *h == 0));
+    let summary = Memo::new(move |_| load.with(|l| busy(l)));
+    let nothing = move || shown.with(Vec::is_empty) && unseen.with(|o| o.iter().all(|h| *h == 0));
     view! {
         <section class="person-part">
             <div class="person-part-head">
                 <h3>"Next two weeks"</h3>
-                <span class=move || format!("busy {}", said.get().1)>{move || said.get().0}</span>
+                <span class=move || format!("busy {}", summary.get().1)>{move || summary.get().0}</span>
             </div>
-            // a row each, every one the same columns, a column a day, the tasks packed into lanes
+            // a grid column per day; tasks packed into lanes
             <div class="nextdays" style=format!("--days:{AHEAD}") class:none=nothing>
                 <div class="brow">
                     {move || load.get().into_iter().enumerate().map(|(i, d)| {
@@ -454,7 +444,7 @@ fn Booked(who: Uuid) -> impl IntoView {
                     (rows, more)
                 }}
                 {move || {
-                    let runs = runs(&other.get());
+                    let runs = runs(&unseen.get());
                     (!runs.is_empty()).then(|| view! {
                         <div class="brow">
                             {runs.into_iter().map(|(from, to)| view! {
@@ -474,7 +464,6 @@ fn Booked(who: Uuid) -> impl IntoView {
 // }}}
 
 // HoursStrip {{{
-/// A few weeks of someone's hours, each day shaded by how many, a dot where a rule starts
 #[component]
 fn HoursStrip(who: Uuid, editable: Signal<bool>) -> impl IntoView {
     let sync = use_sync();
@@ -510,8 +499,6 @@ fn HoursStrip(who: Uuid, editable: Signal<bool>) -> impl IntoView {
     }
 }
 
-/// Weeks of days in rows, shaded by their hours, each with its day of the month, and the month's
-/// name too where one begins
 #[component]
 pub fn HourCells(
     #[prop(into)] days: Signal<Vec<(NaiveDate, u8, bool)>>,
@@ -541,14 +528,12 @@ pub fn HourCells(
     }
 }
 
-/// The hours of the weeks shown from a set of rules, for the default hours
 pub fn hours_from(set: &RuleSet<Workload>, from: NaiveDate) -> Vec<(NaiveDate, u8, bool)> {
     hour_weeks(set, from)
 }
 // }}}
 
 // PersonWindowView {{{
-/// The window over the page for whoever was clicked, which goes when the page changes
 #[component]
 pub fn PersonWindowView() -> impl IntoView {
     let open = expect_context::<PersonWindow>().0;

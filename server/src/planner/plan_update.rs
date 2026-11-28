@@ -49,12 +49,10 @@ pub enum PlanUpdate {
 
 // impl PlanUpdate {{{
 impl PlanUpdate {
-    /// Replaces the dependencies of an item and changes nothing else
     pub fn set_dependencies(node: PlanNode, dependencies: Vec<PlanNode>) -> Self {
         Self::rewire(node, None, Some(dependencies))
     }
 
-    /// Changes the group and the dependencies of an item, whichever are given, and nothing else
     pub fn rewire(
         node: PlanNode,
         parent: Option<Parent>,
@@ -105,7 +103,7 @@ impl PlanUpdate {
         }
     }
 
-    /// Takes the item out of the plan, once nothing refers to it
+    /// Only applies once nothing refers to the item, see `Plan::removal`
     pub fn remove(node: PlanNode) -> Self {
         match node {
             PlanNode::Task(id) => PlanUpdate::Task(Crud::Remove(id)),
@@ -116,7 +114,6 @@ impl PlanUpdate {
         }
     }
 
-    /// The item whose dependencies or place in a group the update changes, if it does
     pub fn rewires(&self) -> Option<PlanNode> {
         match self {
             PlanUpdate::Task(Crud::Update(p)) if p.dependencies.is_some() || p.parent.is_some() => {
@@ -146,8 +143,7 @@ impl PlanUpdate {
         }
     }
 
-    /// Gives everything the update creates a fresh id, replacing whatever a client sent. Users and
-    /// user groups added to a plan are existing tenant ones, so keep their ids.
+    /// Users and user groups keep their ids, as they are existing tenant ones
     pub fn assign_ids(&mut self) {
         match self {
             PlanUpdate::Task(update) => update.assign_id(),

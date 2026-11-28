@@ -1,4 +1,4 @@
-//! The eye button's view options, kept in this browser for each plan and for all plans.
+//! The eye button's view options, kept in local storage per chart.
 
 // modules {{{
 use std::collections::HashMap;
@@ -74,7 +74,7 @@ pub fn provide_views() {
     provide_context(Views(views));
 }
 
-/// The options of one chart, `key` being `plan:<id>` or `all`
+/// `key` is `plan:<id>` or `all`
 pub fn use_view(key: String) -> (Signal<ViewOptions>, Callback<ViewOptions>) {
     let views = expect_context::<Views>().0;
     let read_key = key.clone();
@@ -90,7 +90,7 @@ pub fn use_view(key: String) -> (Signal<ViewOptions>, Callback<ViewOptions>) {
 // }}}
 
 // people {{{
-/// Who gets a band: you first, then the others by name. With only your items that is just you.
+/// Who gets a band: the viewer first, then the others by name
 pub fn people(
     tenant: &Tenant,
     plans: &[Shown],

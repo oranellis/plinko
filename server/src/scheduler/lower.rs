@@ -31,7 +31,7 @@ use crate::{
 // }}}
 
 // lower {{{
-/// Every plan of the tenant as one network, in plan then node id order so runs are deterministic
+/// In plan then node id order so runs are deterministic
 pub fn lower(tenant: &Tenant, table: &mut Table) -> Network {
     let mut net = Network::default();
     net.root = net.add_vertex(Vertex {
@@ -62,24 +62,22 @@ pub fn lower(tenant: &Tenant, table: &mut Table) -> Network {
 }
 // }}}
 
-/// One plan going into the network
 struct Lowering<'a> {
     tenant: &'a Tenant,
     plan: &'a Plan,
     index: u32,
     table: &'a mut Table,
     net: &'a mut Network,
-    /// The vertex for each set of several vertices that something waits on together
+    /// Keyed by group anchor and the vertices waited on together
     joins: &'a mut HashMap<(Option<VertexId>, Vec<VertexId>), VertexId>,
     statuses: HashMap<Uuid, DerivedStatus>,
     items: HashMap<PlanNode, Item>,
     starts: HashMap<PlanNode, VertexId>,
     ends: HashMap<PlanNode, VertexId>,
-    /// What is being resolved, so a cycle ends instead of recursing for ever
+    /// So a dependency cycle ends instead of recursing for ever
     visiting: HashSet<PlanNode>,
 }
 
-/// A plan node with what places it
 #[derive(Clone)]
 struct Item {
     parent: Parent,
@@ -152,14 +150,12 @@ impl Lowering<'_> {
         Day::of(date, self.table.origin)
     }
 
-    /// The first day work that has not started can be on, today
     fn now(&self) -> Day {
         self.table.today
     }
 
-    /// The vertex for something in a group that has started (`anchor`, none at the top level)
-    /// and the vertices of what it depends on being done, shared by everything that waits on the
-    /// same. With nothing to depend on that is the start of the group, or of the plan.
+    /// `anchor` is the start of the enclosing group, none at the top level. Shared by everything
+    /// that waits on the same; with nothing to wait on it is the group's or plan's start.
     fn join(&mut self, anchor: Option<VertexId>, mut after: Vec<VertexId>) -> VertexId {
         after.sort();
         after.dedup();
@@ -183,7 +179,6 @@ impl Lowering<'_> {
         }
     }
 
-    /// The vertex a node starts on: everything it depends on is done
     fn start_of(&mut self, node: PlanNode) -> VertexId {
         if let Some(start) = self.starts.get(&node) {
             return *start;
@@ -194,7 +189,6 @@ impl Lowering<'_> {
         if !self.visiting.insert(node) {
             return self.net.root;
         }
-        // besides what it depends on, an item in a group waits for the group to start
         let anchor = match item.parent {
             Parent::Node(group) => Some(self.start_of(PlanNode::TaskGroup(group))),
             Parent::Plan => None,
@@ -206,8 +200,7 @@ impl Lowering<'_> {
             }
         }
         let mut start = self.join(anchor, after);
-        // a group that may not start before a day starts on a vertex of its own, as the day is
-        // not for whatever else waits on the same things
+        // a vertex of its own, as the earliest day is not for whatever else shares the join
         if let PlanNode::TaskGroup(id) = node {
             let constraint = self.plan.task_groups()[&id].time_constraint();
             if let Some(date) = constraint.bounds_on(NodeEnd::Start).0 {
@@ -267,8 +260,8 @@ impl Lowering<'_> {
         self.net.lowered.insert((self.index, node), lowered);
     }
 
-    /// A milestone is the vertex after what it depends on, never before the start of today unless
-    /// it has already happened. The day it is shown on is worked out in `write`.
+    /// Never before today unless it has already happened. The day it is shown on is worked out in
+    /// `write`.
     fn milestone(&mut self, milestone: &Milestone, start: VertexId, end: VertexId) {
         let happened = self.statuses[milestone.id()] == DerivedStatus::Completed;
         let now = (!happened || start == self.net.root).then_some(self.now());
@@ -281,10 +274,9 @@ impl Lowering<'_> {
         vertex.deadline = deadline;
     }
 
-    /// A group ends when its members do. With none it lasts `EMPTY_DAYS` calendar days, and with
-    /// only dropped ones it has nothing to end on, so it is unscheduled. A latest date is a
-    /// hard date on the vertex it starts or ends at. An earliest start is on its start vertex
-    /// (see `start_of`), an earliest end is put on its last members once they exist.
+    /// With no members it lasts `EMPTY_DAYS`; with only dropped ones it has nothing to end on, so
+    /// it is unscheduled. An earliest start is handled in `start_of`, an earliest end in
+    /// `end_not_before`.
     fn group(&mut self, id: Uuid, start: VertexId, end: VertexId) -> Option<ArcKind> {
         let constraint = self.plan.task_groups()[&id].time_constraint();
         let by = constraint.bounds_on(NodeEnd::Start).1.map(|d| self.day(d));
@@ -309,8 +301,7 @@ impl Lowering<'_> {
         None
     }
 
-    /// Keeps the last members of a group from ending before a day: the members nothing else in
-    /// the group depends on, and for a group among them its own last members
+    /// Applies to the members nothing else in the group depends on, recursing into subgroups
     fn end_not_before(&mut self, group: Uuid, day: Day) {
         let inside = |item: &Item| item.parent == Parent::Node(group) && !item.dropped;
         let members: Vec<PlanNode> = self
@@ -365,7 +356,7 @@ impl Lowering<'_> {
         }
     }
 
-    /// The earliest hard date of the tasks and milestones that depend on a buffer directly
+    /// Earliest hard date of the tasks and milestones that depend on the buffer directly
     fn shrink_to(&self, buffer: PlanNode) -> Option<Day> {
         let depends = |dependencies: &[PlanNode]| dependencies.contains(&buffer);
         let tasks = self.plan.tasks().values();
@@ -428,9 +419,6 @@ impl Lowering<'_> {
         Some(work)
     }
 
-    /// A slot for each worker in a fixed order. A worker that resolves to nobody leaves the task
-    /// with no eligible workers, and one person asked for more than a day's hours with no
-    /// capacity.
     fn slots(&self, task: &Task) -> Result<Vec<Slot>, UnscheduledReason> {
         let mut asked: Vec<(Worker, u8)> = task
             .allocations()
@@ -439,7 +427,7 @@ impl Lowering<'_> {
             .collect();
         asked.sort_by_key(|(w, _)| worker_key(w));
         let mut slots = Vec::new();
-        let mut named: HashMap<RowId, u8> = HashMap::new();
+        let mut fixed_hours: HashMap<RowId, u8> = HashMap::new();
         for (worker, hours) in asked {
             let recorded = task.actual_workers().get(&worker);
             let candidates: Vec<RowId> = match (recorded, worker) {
@@ -457,7 +445,7 @@ impl Lowering<'_> {
             match candidates.as_slice() {
                 [] => return Err(UnscheduledReason::NoEligibleWorkers),
                 [one] => {
-                    let total = named.entry(*one).or_insert(0);
+                    let total = fixed_hours.entry(*one).or_insert(0);
                     *total += hours;
                     if *total > 8 {
                         return Err(UnscheduledReason::NoCapacity);
@@ -486,7 +474,6 @@ impl Lowering<'_> {
         self.table.row(&key).expect("every plan has a row")
     }
 
-    /// The people who may work a tag or group slot
     fn eligible(&self, worker: &Worker) -> Vec<Uuid> {
         match worker {
             Worker::Tag(tag) => {
@@ -518,7 +505,7 @@ fn items<T: PlanItem>(plan: &Plan) -> Vec<(PlanNode, Item)> {
     items
 }
 
-/// A fixed order of workers, so choices do not depend on map order
+/// So choices do not depend on map order
 fn worker_key(worker: &Worker) -> (u8, Uuid) {
     match worker {
         Worker::User(id) => (0, *id),

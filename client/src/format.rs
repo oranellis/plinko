@@ -12,7 +12,6 @@ const MONTHS: [&str; 12] = [
 pub const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 // }}}
 
-/// How dates are written where they are typed or picked
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum DateFormat {
     #[default]
@@ -49,7 +48,6 @@ impl DateFormat {
 // }}}
 
 // DateFormat supporting types {{{
-/// The day calendars start their weeks on
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WeekStart {
     #[default]
@@ -57,7 +55,7 @@ pub enum WeekStart {
     Sunday,
 }
 
-/// What a person has chosen for how things look, kept in this browser between visits
+/// Kept in this browser's storage
 #[derive(Clone, Copy)]
 pub struct Preferences {
     pub date_format: RwSignal<DateFormat>,
@@ -76,7 +74,7 @@ impl WeekStart {
         }
     }
 
-    /// How many days after the start of the week a day falls
+    /// Days since the start of the week
     pub fn offset(self, date: NaiveDate) -> usize {
         match self {
             WeekStart::Monday => date.weekday().num_days_from_monday() as usize,
@@ -84,7 +82,6 @@ impl WeekStart {
         }
     }
 
-    /// The weekday names in the order a calendar shows them
     pub fn weekdays(self) -> [&'static str; 7] {
         let mut names = WEEKDAYS;
         if self == WeekStart::Sunday {
@@ -101,7 +98,7 @@ const WEEK_START: &str = "plinko.week_start";
 // }}}
 
 // provide_preferences {{{
-/// Reads the saved choices and keeps saving them. Call once, above everything that shows dates.
+/// Call once, above everything that shows dates
 pub fn provide_preferences() {
     let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
     let saved = |key: &str| {
@@ -154,7 +151,7 @@ pub fn day(date: NaiveDate) -> String {
     format!("{} {} {}", weekday(date), date.day(), month(date))
 }
 
-/// `2024-03-04`, which is what a date input holds
+/// `2024-03-04`, as a date input holds it
 pub fn iso(date: NaiveDate) -> String {
     date.format("%Y-%m-%d").to_string()
 }

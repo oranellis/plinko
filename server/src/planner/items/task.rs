@@ -22,19 +22,16 @@ pub struct Task {
     id: Uuid,
     name: String,
     parent: Parent,
-    /// Days of work, each with every worker's hours, in one run that other work does not break up
+    /// Working days, in one unbroken run
     duration: u32,
-    /// A date for its first or its last day
     time_constraint: NodeConstraint,
     dependencies: Vec<PlanNode>,
-    /// Hours per day each worker spends on the task for its duration
+    /// Hours per day
     allocations: HashMap<Worker, Workload>,
-    /// Linked affinities, the task is only worked on days that every one of them allows
+    /// Only worked on days every one of them allows
     affinities: HashSet<Uuid>,
-    /// Who actually does the work for a requested worker, which can be a different person (or the
-    /// placeholder). It starts empty, is filled in as the task starts (by default with the people
-    /// last scheduled for it) and is edited by updates. Slots without an entry use the scheduler's
-    /// choice for tags and groups and the named person for users.
+    /// Filled in when the task starts, by default with whoever was last scheduled. Slots without
+    /// an entry fall back to the scheduler's choice, or the named user.
     actual_workers: HashMap<Worker, Assignee>,
     description: Option<String>,
     data: DataBlocks,
@@ -55,7 +52,7 @@ impl Task {
         self.description = description;
     }
 
-    /// Days, at least 1
+    /// At least 1
     pub fn duration(&self) -> u32 {
         self.duration
     }
@@ -160,8 +157,7 @@ impl Patchable<TaskPatch> for Task {
 // }}}
 
 // Task supporting types {{{
-/// What users record as a task goes: its status and the days it really started and ended. A task
-/// put on hold ends on the day that happens (see `Plan::apply_update`).
+/// Recorded by users. A task put on hold ends that day (see `Plan::apply_update`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct PersistentState {
     pub status: Status,
@@ -169,19 +165,16 @@ pub struct PersistentState {
     pub actual_end_date: Option<NaiveDate>,
 }
 
-/// Written by the scheduler for every task it could schedule, the others are unscheduled
+/// Absent when the scheduler could not place the task
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub date_range: DateRange,
-    /// Hours per day each person works on the task, including days before today for work already
-    /// done and for in progress tasks that overran their duration
+    /// Includes past days of work already done, and overruns of in-progress tasks
     pub assignments: HashMap<Assignee, BTreeMap<NaiveDate, Workload>>,
-    /// The person resolved for each worker the task asks for
     pub workers: HashMap<Worker, Assignee>,
 }
 
-/// Who actually does the work, as opposed to the `Worker` a task asks for, which can be a tag or
-/// a user group that the scheduler resolves to people
+/// A `Worker` resolved to a person
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Assignee {
     User(Uuid),
@@ -204,8 +197,7 @@ pub enum Worker {
     Tag(Uuid),
     User(Uuid),
     UserGroup(Uuid),
-    /// An unnamed stand in for whoever will do the work, always free and available per the plan
-    /// default availability
+    /// Always free, available per the plan's default availability
     Placeholder,
 }
 

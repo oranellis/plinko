@@ -1,8 +1,4 @@
-//! Scheduling runs on its own thread with its own copy of the tenant, kept up to date with the
-//! same updates. Updates that arrive while it works are applied together before the next run, so
-//! a busy tenant is scheduled as often as it can be and no more. Every run schedules everything,
-//! starting from what the last one found. What a run decides goes back to the actor to be saved,
-//! and a tenant whose last update already has a saved solution starts from that with no run.
+//! Scheduling on its own thread, with its own copy of the tenant fed the same updates.
 
 // modules {{{
 use std::sync::mpsc::{Receiver, Sender};
@@ -16,14 +12,12 @@ use crate::{
 };
 // }}}
 
-/// An update the actor accepted, as update `seq`
 pub struct Applied {
     pub seq: u64,
     pub update: TenantUpdate,
 }
 
 // Applied supporting types {{{
-/// Where to send updates for the scheduler
 pub struct Scheduler(Sender<Applied>);
 // }}}
 
@@ -36,8 +30,7 @@ impl Scheduler {
 // }}}
 
 // start {{{
-/// Starts scheduling `tenant`, which is as of update `seq`. `saved` is the last solution saved
-/// for it and the update that was for.
+/// `saved` is the last solution saved and the update it was for
 pub fn start(
     mut tenant: Tenant,
     mut seq: u64,
@@ -48,7 +41,7 @@ pub fn start(
     std::thread::spawn(move || {
         let mut saved = saved;
         loop {
-            // nothing new is decided for a tenant that has not changed since its solution
+            // a solution saved for the current update is restored instead of run again
             let solution = match saved.take() {
                 Some((at, solution)) if at == seq => {
                     scheduler::restore(&mut tenant, &solution);
@@ -73,8 +66,9 @@ pub fn start(
             let Ok(first) = receiver.recv() else {
                 return;
             };
+            // everything that arrived during the run is applied before the next one, so a busy
+            // tenant is scheduled as often as it can be and no more
             for applied in std::iter::once(first).chain(receiver.try_iter()) {
-                // the actor accepted it, so it applies here unless the copies have diverged
                 if let Err(error) = tenant.apply_logged(applied.update) {
                     let seq = applied.seq;
                     eprintln!("update {seq} did not apply to the scheduler's copy: {error}");

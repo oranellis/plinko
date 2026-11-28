@@ -1,9 +1,8 @@
-//! Matching what is typed against names loosely: the letters typed in order, not necessarily
-//! side by side, with names where they are together or start words ranked first.
+//! Fuzzy name matching: the typed letters in order, not necessarily adjacent.
 
 // score {{{
-/// How well `name` matches what was typed, higher being better, or `None` when the letters of
-/// `typed` are not all in `name` in their order. Case and spaces in what is typed are ignored.
+/// Higher is better; `None` when `typed`'s letters are not all in `name` in order. Case and
+/// spaces in `typed` are ignored.
 pub fn score(typed: &str, name: &str) -> Option<i32> {
     let wanted: Vec<char> = typed
         .chars()

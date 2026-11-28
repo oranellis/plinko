@@ -11,8 +11,8 @@ use crate::scheduler::{
 // }}}
 
 // earliest {{{
-/// Everything as early as it could be if nobody ever ran out of hours: each person's calendar
-/// and each task's affinities still count, other work does not. What goals are measured against.
+/// Everything as early as it could be if nobody ran out of hours: calendars and affinities still
+/// count, other work does not. Goals are measured against this.
 pub fn earliest(ctx: &Context) -> Pass {
     let rules = Rules {
         unlimited: true,
@@ -25,9 +25,8 @@ pub fn earliest(ctx: &Context) -> Pass {
 // }}}
 
 // prioritise {{{
-/// Fills in how late each arc may start and how much room it has, from the earliest schedule.
-/// Hard dates are taken as they are. A target is due when it could be reached at the earliest,
-/// and so is the end of each plan, each sooner by its priority in days.
+/// Fills in `ctx.latest` and `ctx.room` from the earliest schedule. Targets and plan ends are due
+/// when they could be reached at the earliest, less their priority in days.
 pub fn prioritise(ctx: &mut Context, earliest: &Pass) {
     let net = ctx.net;
     let none = || vec![i64::MAX; net.vertices.len()];
@@ -66,8 +65,8 @@ pub fn prioritise(ctx: &mut Context, earliest: &Pass) {
 // }}}
 
 // hard_starts {{{
-/// The latest each arc may start for the hard dates it leads to, each counted `sooner` by the
-/// days given for it
+/// The latest each arc may start for the hard dates it leads to, each brought forward by the
+/// days `sooner` gives it
 pub fn hard_starts(ctx: &Context, earliest: &Pass, sooner: &HashMap<Late, i64>) -> Vec<i64> {
     let vertices = ctx.net.vertices.iter().enumerate();
     let limit = vertices.map(|(i, vertex)| {
@@ -81,9 +80,8 @@ pub fn hard_starts(ctx: &Context, earliest: &Pass, sooner: &HashMap<Late, i64>) 
 // }}}
 
 // latest {{{
-/// The latest each arc may start so that no vertex passes the day `limit` gives it, working
-/// back with the spans of the earliest schedule. `dated` adds the hard dates arcs carry, less
-/// the days it gives for each.
+/// The latest each arc may start so no vertex passes its `limit`, working back with the spans of
+/// the earliest schedule. `dated` adds the arcs' own hard dates, less the days it gives each.
 fn latest(
     ctx: &Context,
     earliest: &Pass,

@@ -1,7 +1,5 @@
-//! The chart is drawn in layers that are kept as images: what is behind the items (the days,
-//! today, groups) and the items themselves. They do not change when the pointer moves, so hovering
-//! only draws the lines, outlines and names over them. They are drawn bigger than the screen, so
-//! scrolling just moves them until the screen is about to run off their edge.
+//! Cached background and item layers, so hovering only redraws the overlay. They are drawn larger
+//! than the screen, so scrolling just moves them until the screen nears their edge.
 
 // modules {{{
 use std::rc::Rc;
@@ -22,29 +20,29 @@ pub struct Layers {
     back: Image,
     nodes: Image,
     key: Key,
-    /// The size of what is drawn on them, in chart pixels, which can be less than they hold
+    /// The drawn area in chart pixels, which can be less than the canvas holds
     size: (f64, f64),
     ratio: f64,
-    /// The size they were made for
+    /// The size the canvases were allocated for
     room: (f64, f64),
-    /// Where the top left of what was drawn is in the chart, in pixels
+    /// The drawn area's top left in chart pixels
     origin: (f64, f64),
-    /// The names to draw over the layers, positioned in them
+    /// Positioned relative to the layers
     pub labels: Vec<Label>,
 }
 
 // constants {{{
-/// How much is drawn past each side of the screen, as a share of the screen up to a limit
+/// Margin drawn past each side of the screen, as a share of it, capped
 const SPARE: f64 = 0.5;
 const SPARE_X: f64 = 600.0;
 const SPARE_Y: f64 = 400.0;
 // }}}
 
 // Layers supporting types {{{
-/// What the layers were drawn from. They are drawn again when any of it changes.
+/// The layers are redrawn when any of this changes
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
-    /// The screen's size in pixels
+    /// The screen's size in device pixels
     pixels: (u32, u32),
     day_width: f64,
     generation: u64,
@@ -84,7 +82,7 @@ impl Image {
 
 // impl Layers {{{
 impl Layers {
-    /// Where the layers' top left is on the screen for the chart scrolled to `viewport`
+    /// The layers' top left on screen
     pub fn at(&self, viewport: Viewport) -> (f64, f64) {
         (
             self.origin.0 - viewport.scroll_x,
@@ -92,7 +90,7 @@ impl Layers {
         )
     }
 
-    /// Whether they still show the chart as it is and cover the screen
+    /// Whether they are up to date and still cover the screen
     pub fn serve(
         &self,
         viewport: Viewport,
@@ -144,8 +142,7 @@ fn key(
 // }}}
 
 // render {{{
-/// Draws the layers for the screen as it is now, using the images already made if they are the
-/// right size
+/// Reuses the old canvases when they are the right size
 pub fn render(
     old: Option<Layers>,
     (width, height): (f64, f64),
@@ -159,7 +156,7 @@ pub fn render(
         width + 2.0 * (width * SPARE).min(SPARE_X).round(),
         height + 2.0 * (height * SPARE).min(SPARE_Y).round(),
     );
-    // while zooming everything moves at every step, so only a little more than the screen is drawn
+    // while zooming every step redraws anyway, so only a small margin is drawn
     let zooming = old
         .as_ref()
         .is_some_and(|l| l.key.day_width != viewport.day_width);
@@ -181,7 +178,6 @@ pub fn render(
         ),
     };
     let origin = (viewport.scroll_x - spare_x, viewport.scroll_y - spare_y);
-    // the chart as seen from the layers' top left
     let window = Viewport {
         scroll_x: origin.0,
         scroll_y: origin.1,
@@ -205,7 +201,7 @@ pub fn render(
     };
     let mut found = Found::default();
     paint_back(&back.pen, &frame, &mut found);
-    // what was drawn before on this layer is wiped, as it has no colour of its own
+    // this layer is transparent, so the old drawing must be wiped
     nodes.pen.clear_rect(0.0, 0.0, room.0, room.1);
     paint_nodes(&nodes.pen, &frame, &mut found);
     let labels = std::mem::take(&mut found.labels);

@@ -1,20 +1,16 @@
-//! Where things are on the chart, as numbers, the way Plinko 1 laid it out: day 0 is the day the
-//! chart starts, and everything is a day offset from it. Drawing and the pointer both go through
-//! here, so what is drawn is what is hit.
+//! Chart geometry. Days are offsets from day 0, the chart's first day. Drawing and hit-testing
+//! both go through here, so what is drawn is what is hit.
 
 // constants {{{
 pub const ROW_HEIGHT: f64 = 40.0;
 pub const HEADER_HEIGHT: f64 = 56.0;
-/// Where the first lane starts: under the header, with a little room
 pub const LANES_TOP: f64 = HEADER_HEIGHT + 8.0;
-/// The month row of the header, the day row is the rest
+/// The header's month row; the day row is the rest
 pub const MONTH_HEIGHT: f64 = 22.0;
 pub const DAY_WIDTH: f64 = 38.0;
 pub const MIN_DAY_WIDTH: f64 = 8.0;
 pub const MAX_DAY_WIDTH: f64 = 80.0;
-/// Room above and below a bar in its row
 pub const BAR_INSET_Y: f64 = 6.0;
-/// The thinnest a bar is drawn
 pub const MIN_BAR_WIDTH: f64 = 4.0;
 // }}}
 
@@ -35,7 +31,6 @@ impl Rect {
 // }}}
 
 // Rect supporting types {{{
-/// The size of the canvas and how much there is to scroll over
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Bounds {
     pub width: f64,
@@ -45,12 +40,10 @@ pub struct Bounds {
     pub last_day: f64,
 }
 
-/// Where the chart is scrolled to and how far it is zoomed
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Viewport {
-    /// Pixels the days are scrolled left of day 0
+    /// Pixels from day 0 to the left edge
     pub scroll_x: f64,
-    /// Pixels the lanes are scrolled up
     pub scroll_y: f64,
     pub day_width: f64,
 }
@@ -68,12 +61,11 @@ impl Default for Viewport {
 }
 
 impl Viewport {
-    /// The left edge of a day offset
+    /// The left edge of a day
     pub fn x(&self, day: f64) -> f64 {
         day * self.day_width - self.scroll_x
     }
 
-    /// The day offset at a pixel
     pub fn day_at(&self, x: f64) -> f64 {
         (self.scroll_x + x) / self.day_width
     }
@@ -82,15 +74,13 @@ impl Viewport {
         LANES_TOP + lane as f64 * ROW_HEIGHT - self.scroll_y
     }
 
-    /// The days shown across `width` pixels, the first and the last, for drawing the header
     pub fn visible_days(&self, width: f64) -> (i64, i64) {
         let first = (self.scroll_x / self.day_width).floor() as i64;
         let last = ((self.scroll_x + width) / self.day_width).ceil() as i64;
         (first, last)
     }
 
-    /// Keeps the chart in range: half a screen before the chart starts, half a screen after the last
-    /// day, and no further than the last lane
+    /// Allows half a screen before day 0 and after the last day, and no further than the last lane
     pub fn clamp(&mut self, b: Bounds) {
         let right = (b.last_day * self.day_width + b.width / 2.0).max(0.0);
         self.scroll_x = self
@@ -98,24 +88,23 @@ impl Viewport {
             .clamp(-b.width / 2.0, right.max(-b.width / 2.0));
         let down = (b.lanes as f64 * ROW_HEIGHT - (b.height - LANES_TOP)).max(0.0);
         self.scroll_y = self.scroll_y.clamp(0.0, down);
-        // whole pixels, so layers drawn earlier can be moved to where the chart is now exactly
+        // whole pixels, so cached layers line up exactly
         self.scroll_x = self.scroll_x.round();
         self.scroll_y = self.scroll_y.round();
     }
 
-    /// Drags the chart by `dx`, `dy` pixels of pointer movement
+    /// By pointer movement, which runs opposite to scrolling
     pub fn drag(&mut self, dx: f64, dy: f64, b: Bounds) {
         self.scroll(-dx, -dy, b);
     }
 
-    /// Scrolls it by `dx`, `dy` pixels, as the wheel does
     pub fn scroll(&mut self, dx: f64, dy: f64, b: Bounds) {
         self.scroll_x += dx;
         self.scroll_y += dy;
         self.clamp(b);
     }
 
-    /// Zooms by `factor` keeping the day under the pixel `x` where it is
+    /// Keeps the day under pixel `x` in place
     pub fn zoom(&mut self, x: f64, factor: f64, b: Bounds) {
         let day = self.day_at(x);
         self.day_width = (self.day_width * factor).clamp(MIN_DAY_WIDTH, MAX_DAY_WIDTH);
@@ -123,13 +112,11 @@ impl Viewport {
         self.clamp(b);
     }
 
-    /// Puts a day in the middle of the chart
     pub fn centre_on_day(&mut self, day: f64, b: Bounds) {
         self.scroll_x = day * self.day_width - b.width / 2.0;
         self.clamp(b);
     }
 
-    /// Puts a lane in the middle of the rows
     pub fn centre_on_lane(&mut self, lane: usize, b: Bounds) {
         let middle = lane as f64 * ROW_HEIGHT + ROW_HEIGHT / 2.0;
         self.scroll_y = middle - (b.height - LANES_TOP) / 2.0;
@@ -140,7 +127,7 @@ impl Viewport {
         self.day_width * 0.12
     }
 
-    /// The rounded bar of something from day offset `start` to the day offset after its last
+    /// `end` is the day after the last
     pub fn bar(&self, start: f64, end: f64, lane: usize) -> Rect {
         let inset = self.inset_x();
         Rect {
@@ -151,7 +138,6 @@ impl Viewport {
         }
     }
 
-    /// The middle of the first day, for a diamond or where a line starts
     pub fn start_centre(&self, start: f64, lane: usize) -> (f64, f64) {
         (
             self.x(start) + self.day_width / 2.0,
@@ -159,7 +145,7 @@ impl Viewport {
         )
     }
 
-    /// The middle of the last day of something that ends on the day offset `end`
+    /// The middle of the last day; `end` is the day after it
     pub fn end_centre(&self, end: f64, lane: usize) -> (f64, f64) {
         self.start_centre(end - 1.0, lane)
     }
@@ -239,7 +225,6 @@ mod tests {
     fn bars_are_inset_rounded_boxes_and_never_too_thin() {
         let view = Viewport::default();
         let bar = view.bar(2.0, 5.0, 1);
-        // three days wide less the inset either side, and a row high less the inset above and below
         assert!((bar.w - (3.0 * DAY_WIDTH - 2.0 * 0.12 * DAY_WIDTH)).abs() < 1e-9);
         assert_eq!(bar.h, ROW_HEIGHT - 2.0 * BAR_INSET_Y);
         assert_eq!(bar.y, LANES_TOP + ROW_HEIGHT + BAR_INSET_Y);

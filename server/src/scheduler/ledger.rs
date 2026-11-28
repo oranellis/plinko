@@ -7,21 +7,20 @@ use crate::scheduler::{
 };
 // }}}
 
-/// The hours people still have free from today on, which work claims as it is placed. Days
-/// before today are history and cost nothing.
+/// Free hours from today on, which work claims as it is placed. Days before today are history
+/// and cost nothing.
 #[derive(Clone, Debug)]
 pub struct Ledger {
     today: Day,
-    /// Free hours per day for each row people's hours are taken from, empty for the others
+    /// Per claimable row, empty for the others
     free: Vec<Vec<u8>>,
-    /// For each such row, the days with fewer than 1 to 8 hours free
+    /// Per claimable row, index `h - 1` marks the days with fewer than `h` hours free
     short: Vec<Vec<Bits>>,
-    /// What holds hours of each row, as the span it holds them over
+    /// Per row, the span each arc holds hours over
     held: Vec<Vec<(Day, Day, ArcId)>>,
 }
 
 // Ledger supporting types {{{
-/// Where a run of days fits
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Window {
     pub start: Day,
@@ -82,7 +81,6 @@ impl Ledger {
         }
     }
 
-    /// Takes the hours asked on each of the days, for `arc`
     pub fn claim(&mut self, asks: &[Ask], days: &[Day], arc: ArcId) {
         self.change(asks, days, None);
         let (Some(first), Some(last)) = (days.first(), days.last()) else {
@@ -94,7 +92,6 @@ impl Ledger {
         }
     }
 
-    /// Gives back what `claim` took
     pub fn release(&mut self, table: &Table, asks: &[Ask], days: &[Day], arc: ArcId) {
         self.change(asks, days, Some(table));
         for ask in asks {
@@ -102,14 +99,13 @@ impl Ledger {
         }
     }
 
-    /// What holds hours of the row over a day
     pub fn holder(&self, row: RowId, day: Day) -> Option<ArcId> {
         let held = self.held[row.0 as usize].iter();
         let mut over = held.filter(|(start, end, _)| *start <= day && day < *end);
         over.next().map(|(_, _, arc)| *arc)
     }
 
-    /// A valid day in `from..to` that other work leaves too few hours on, the last or the first
+    /// The last or first valid day in `from..to` that other work leaves too few hours on
     fn blocked(
         &self,
         valid: &Valid,
@@ -133,9 +129,8 @@ impl Ledger {
         }
     }
 
-    /// The first run of `n` valid days from `from` on that no other work breaks up, `None` if
-    /// the table ends first. Days that are not valid may fall inside it, days other work holds
-    /// may not.
+    /// The first run of `n` valid days from `from`. Days that are not valid may fall inside it,
+    /// days other work holds may not.
     pub fn window(&self, valid: &Valid, asks: &[Ask], from: Day, n: u32) -> Option<Window> {
         let (mut from, mut blocker) = (from, None);
         if n == 0 {
@@ -190,8 +185,7 @@ impl Ledger {
         }
     }
 
-    /// Booked hours as a share of the hours the row has from its first to last booked day, 0 if
-    /// nothing is booked
+    /// Booked share of the row's hours from its first to last booked day
     pub fn load(&self, table: &Table, row: RowId) -> f32 {
         let (free, hours) = (&self.free[row.0 as usize], table.row_hours(row));
         let booked = |i: usize| u32::from(hours[i] - free[i]);
@@ -213,7 +207,7 @@ mod tests {
     use chrono::{Datelike, NaiveDate};
     use uuid::Uuid;
 
-    /// One person on full weekdays over four weeks from Monday the 1st, today being that Monday
+    /// One person on full weekdays over four weeks from Monday the 1st, which is today
     fn setup() -> (Table, RowId, Ledger) {
         let origin = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
         let mut table = Table::new(origin, 28, origin);

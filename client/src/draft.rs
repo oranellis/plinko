@@ -1,5 +1,4 @@
-//! An item being created or edited. Everything that is changed about it is kept here and only
-//! reaches the plan when it is saved, so it can be discarded as a whole.
+//! An item's unsaved edits, applied to the plan only on save so they can be discarded whole.
 
 // modules {{{
 use std::collections::HashSet;
@@ -34,43 +33,38 @@ use crate::{
 // }}}
 
 // constants {{{
-/// The days a new task, buffer or delay starts with
 pub const NEW_DAYS: u32 = 3;
 // }}}
 
-/// An item as it would be once it is saved
 #[derive(Clone, Debug, PartialEq)]
 pub struct Draft {
     pub node: PlanNode,
     /// Not in the plan yet, so saving adds it
     pub new: bool,
-    /// Empty for a buffer, which has none, and for a delay that goes by its days
+    /// Empty for a buffer, and for a delay shown by its days
     pub name: String,
-    /// The date it is held to, of which a milestone has no end to choose
+    /// A milestone has no end to choose
     pub constraint: NodeConstraint,
-    /// The day it was last held to by choice, and how: the one it had in the plan, or the one
-    /// it has been moved to since. It is what holding it again goes back to.
+    /// The last pin chosen (from the plan or moved since), which holding it again goes back to
     pub chosen: Option<Pin>,
-    /// Who a task asks for and for how many hours a day
+    /// Workers and their hours a day
     pub allocations: Vec<(Worker, u8)>,
-    /// The affinities of a task
     pub affinities: HashSet<Uuid>,
     pub parent: Parent,
     pub dependencies: Vec<PlanNode>,
-    /// What waits for it
     pub dependents: Vec<PlanNode>,
-    /// Its days, for the kinds that have them
+    /// `None` for kinds without days
     pub duration: Option<u32>,
-    /// The days the day it really started and the day it really ended are moved by
+    /// Days the actual start and actual end are shifted by
     pub moved: (i32, i32),
-    /// The handle of the card that is lit, which clicks on the chart then answer to
+    /// The lit card handle, which chart clicks then answer to
     pub pick: Option<Pick>,
-    /// While its day is picked, the day it would be put on, when that is not where it is
+    /// While its day is picked, where it would go, if not where it is
     pub aim: Option<NaiveDate>,
 }
 
 // Draft supporting types {{{
-/// A handle of the card that can be lit
+/// What a chart click does while a card handle is lit
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Pick {
     /// The item waits for what is clicked
@@ -87,7 +81,6 @@ pub enum Pick {
 
 // impl Draft {{{
 impl Draft {
-    /// The draft of an item that is in the plan, as it is
     pub fn of(plan: &Plan, node: PlanNode) -> Option<Self> {
         let duration = match node {
             PlanNode::Task(id) => Some(plan.tasks().get(&id)?.duration()),
@@ -147,8 +140,7 @@ impl Draft {
         })
     }
 
-    /// The draft of an item that is not in the plan yet. At the top level it starts from the
-    /// plan's default start, if it has one.
+    /// At the top level it starts from the plan's default start, if it has one
     pub fn new(plan: &Plan, node: PlanNode, parent: Parent) -> Self {
         let start = plan.scheduler_data().default_start();
         let duration = match node {
@@ -182,9 +174,9 @@ impl Draft {
         }
     }
 
-    /// The draft for the item that is opened: one being added to `new`, or one in the plan
+    /// `new` is the parent of an item being added; `None` opens one in the plan
     pub fn open(sync: Sync, plan: ShortId, node: PlanNode, new: Option<Parent>) -> Option<Self> {
-        // whoever adds a task does it for half a day, unless they say otherwise
+        // whoever adds a task is allocated half a day by default
         let me = sync.me.get_untracked().map(|m| (Worker::User(m.id), 4));
         sync.tenant.with_untracked(|t| {
             let plan = t.as_ref()?.plans().get(&plan)?;
@@ -201,8 +193,8 @@ impl Draft {
         })
     }
 
-    /// Links the item to another, or takes the link away if it is there: the other is waited for
-    /// (`Pick::Before`) or waits (`Pick::After`). Nothing changes if it would make a loop.
+    /// Toggles a link: the other is waited for (`Pick::Before`) or waits (`Pick::After`).
+    /// Refused if it would make a loop.
     pub fn toggle(&mut self, plan: &Plan, side: Pick, other: PlanNode) -> Result<(), String> {
         let mut next = self.clone();
         let list = match side {
@@ -218,7 +210,7 @@ impl Draft {
         Ok(())
     }
 
-    /// Links the item to another if it is not already, see `toggle`
+    /// Like `toggle`, but never unlinks
     pub fn link(&mut self, plan: &Plan, side: Pick, other: PlanNode) -> Result<(), String> {
         let linked = match side {
             Pick::After => self.dependents.contains(&other),
@@ -230,8 +222,7 @@ impl Draft {
         }
     }
 
-    /// Puts the item in the group dropped on, the group of an item dropped on, or at the top
-    /// level for nothing
+    /// Into the group dropped on, the group of the item dropped on, or the top level for nothing
     pub fn place(&mut self, plan: &Plan, over: Option<PlanNode>) -> Result<(), String> {
         let parent = match over {
             Some(PlanNode::TaskGroup(id)) => Parent::Node(id),
@@ -245,7 +236,7 @@ impl Draft {
         Ok(())
     }
 
-    /// Whether the plan would take the draft, which it does not if it makes a loop
+    /// Refuses a draft that makes a loop
     fn checked(&self, plan: &Plan) -> Result<(), String> {
         if self.dependencies.contains(&self.node) || self.dependents.contains(&self.node) {
             return Err("An item cannot wait for itself".to_string());
@@ -258,17 +249,15 @@ impl Draft {
         Ok(())
     }
 
-    /// The day it is held to. A milestone is a day, held by its end.
+    /// A milestone is held by its end
     pub fn pin(&self) -> Option<Pin> {
         let end =
             self.constraint.end == NodeEnd::End || matches!(self.node, PlanNode::Milestone(_));
         Pin::of(self.constraint.constraint, end)
     }
 
-    /// Goes round what of the item is held to a day: nothing, its first day, then its last. A
-    /// milestone is one day, held or not. `first` and `last` are the days it is scheduled on,
-    /// which is where the day is until one is chosen: after that it is that day, held as it
-    /// was, and only the end changes.
+    /// Cycles nothing held, first day held, last day held (a milestone: held or not). Until a
+    /// day is chosen it uses the scheduled `first` and `last`; after that only the end changes.
     pub fn hold_next(&mut self, first: NaiveDate, last: NaiveDate) {
         let (start, end) = (
             Pin {
@@ -304,7 +293,7 @@ impl Draft {
         });
     }
 
-    /// Changes how it is held to its day, which is remembered with a day that was chosen
+    /// Also remembered in `chosen`
     pub fn hold_as(&mut self, held: Held) {
         if let Some(pin) = self.pin() {
             self.hold(Some(Pin { held, ..pin }));
@@ -312,13 +301,13 @@ impl Draft {
         }
     }
 
-    /// Lights a handle for clicks to answer to, or puts it out if it is the one that is lit
+    /// Toggles the lit handle
     pub fn pick(&mut self, pick: Pick) {
         self.pick = Some(pick).filter(|p| self.pick != Some(*p));
         self.aim = None;
     }
 
-    /// Moves the day that would be picked by `days`, from where it was or where it is
+    /// From the current aim, or from the pinned day if there is none
     pub fn aim_by(&mut self, days: i64) {
         if let Some(pin) = self.pin() {
             let from = self.aim.unwrap_or(pin.day);
@@ -326,7 +315,7 @@ impl Draft {
         }
     }
 
-    /// Puts the day it is held to where it was picked to be, which ends the picking
+    /// Moves the pin to the aim and ends the picking
     pub fn aimed(&mut self) {
         if let Some(pin) = self.pin() {
             let day = self.aim.unwrap_or(pin.day);
@@ -337,7 +326,7 @@ impl Draft {
         self.aim = None;
     }
 
-    /// Holds it to a day, or to none, which leaves no day to pick
+    /// `None` also ends any day picking
     pub fn hold(&mut self, pin: Option<Pin>) {
         if pin.is_none() {
             self.pick = self.pick.filter(|p| *p != Pick::Day);
@@ -355,8 +344,7 @@ impl Draft {
         };
     }
 
-    /// The days a task really ran once they are moved as the draft says, never ending before
-    /// they start
+    /// The actual dates shifted by `moved`, never ending before they start
     pub fn dates(&self, state: PersistentState) -> PersistentState {
         let by = |day: NaiveDate, days: i32| day.checked_add_signed(Duration::days(days.into()));
         let start = state.actual_start_date.and_then(|d| by(d, self.moved.0));
@@ -368,7 +356,6 @@ impl Draft {
         }
     }
 
-    /// The update that adds the item, for one that is new
     pub fn adding(&self) -> PlanUpdate {
         let name = self.name.clone();
         let (id, parent) = (self.node.id(), self.parent);
@@ -394,8 +381,7 @@ impl Draft {
         }
     }
 
-    /// The updates that make the links and the place of the item in the plan what the draft
-    /// says, adding it first if it is new. Its other fields are the form's to save.
+    /// Links and placement only, adding the item first if new; the form saves the other fields
     fn updates(&self, plan: &Plan) -> Vec<PlanUpdate> {
         let mut updates = Vec::new();
         if self.new {
@@ -408,9 +394,8 @@ impl Draft {
         updates
     }
 
-    /// The draft as `self` changed `was` (as it was opened), on top of `now` (the item as it is
-    /// now), so what someone else changed meanwhile stays: a field is the one asked for only if
-    /// it was changed, and a list keeps what others added or took away
+    /// Replays the changes `self` made to `was` (as opened) onto `now`, so concurrent edits by
+    /// others survive: only changed fields are taken, and lists keep others' additions and removals
     pub fn onto(&self, was: &Draft, now: Draft) -> Draft {
         fn pick<T: PartialEq + Clone>(mine: &T, was: &T, now: T) -> T {
             if mine == was { now } else { mine.clone() }
@@ -439,8 +424,7 @@ impl Draft {
         }
     }
 
-    /// The updates to what waits for the item, or no longer does, once the item is `node` in
-    /// the plan
+    /// Updates to items that start or stop waiting for it, once it is `node` in the plan
     pub fn dependent_updates(&self, plan: &Plan, node: PlanNode) -> Vec<PlanUpdate> {
         let before = match self.new {
             true => Vec::new(),

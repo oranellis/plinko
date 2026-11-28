@@ -24,7 +24,6 @@ use crate::{
 };
 // }}}
 
-/// Update payloads that name the item they apply to
 pub trait Identified {
     fn id(&self) -> Uuid;
     fn set_id(&mut self, id: Uuid);

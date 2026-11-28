@@ -2,7 +2,6 @@
 use crate::scheduler::day::Day;
 // }}}
 
-/// A set of days as bits, one word for every 64 days
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Bits {
     words: Vec<u64>,
@@ -50,7 +49,6 @@ impl Bits {
         }
     }
 
-    /// The days in both
     pub fn and(&self, other: &Bits) -> Bits {
         let words = self.words.iter().zip(&other.words);
         Bits {
@@ -59,7 +57,6 @@ impl Bits {
         }
     }
 
-    /// The days in either
     pub fn or(&self, other: &Bits) -> Bits {
         let words = self.words.iter().zip(&other.words);
         Bits {
@@ -68,7 +65,7 @@ impl Bits {
         }
     }
 
-    /// The word at `i` of the days in both that fall in `from..to`
+    /// Word `i` of the intersection, clipped to `from..to`
     fn masked(&self, other: &Bits, i: usize, from: usize, to: usize) -> u64 {
         let mut word = self.words[i] & other.words[i];
         let base = i * 64;
@@ -81,7 +78,6 @@ impl Bits {
         word
     }
 
-    /// The first day in `from..to` that is in both
     pub fn first_common(&self, other: &Bits, from: Day, to: Day) -> Option<Day> {
         let (from, to) = (from.index(), to.index().min(self.len).min(other.len));
         (from < to).then_some(())?;
@@ -91,7 +87,6 @@ impl Bits {
         })
     }
 
-    /// The last day in `from..to` that is in both
     pub fn last_common(&self, other: &Bits, from: Day, to: Day) -> Option<Day> {
         let (from, to) = (from.index(), to.index().min(self.len).min(other.len));
         (from < to).then_some(())?;
@@ -107,7 +102,7 @@ impl Bits {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Valid {
     bits: Bits,
-    /// How many days are set before each word
+    /// Set days before each word
     before: Vec<u32>,
 }
 
@@ -135,12 +130,11 @@ impl Valid {
         self.bits.get(day)
     }
 
-    /// How many days are set at all
     pub fn count(&self) -> u32 {
         self.rank(Day(self.bits.len as u32))
     }
 
-    /// How many set days come before `day`
+    /// Set days before `day`
     pub fn rank(&self, day: Day) -> u32 {
         let i = day.index().min(self.bits.len);
         if i / 64 >= self.bits.words.len() {
@@ -165,27 +159,26 @@ impl Valid {
         Some(Day((word * 64) as u32 + bits.trailing_zeros()))
     }
 
-    /// The first set day on or after `from`
+    /// On or after `from`
     pub fn next(&self, from: Day) -> Option<Day> {
         self.select(self.rank(from))
     }
 
-    /// The last set day before `to`
+    /// Before `to`
     pub fn previous(&self, to: Day) -> Option<Day> {
         self.select(self.rank(to).checked_sub(1)?)
     }
 
-    /// The `n`-th set day counting from `from`, itself included, `n` at least 1
+    /// Counting `from` itself, `n` at least 1
     pub fn nth_from(&self, from: Day, n: u32) -> Option<Day> {
         self.select(self.rank(from).checked_add(n.checked_sub(1)?)?)
     }
 
-    /// The `n`-th set day counting back from the last before `to`, `n` at least 1
+    /// Counting back from the last before `to`, `n` at least 1
     pub fn nth_back(&self, to: Day, n: u32) -> Option<Day> {
         self.select(self.rank(to).checked_sub(n)?)
     }
 
-    /// The set days in `from..to`
     pub fn days(&self, from: Day, to: Day) -> impl Iterator<Item = Day> + '_ {
         (self.rank(from)..self.rank(to)).filter_map(|k| self.select(k))
     }
@@ -197,7 +190,6 @@ impl Valid {
 mod tests {
     use super::*;
 
-    /// Weekdays of weeks that start on day 0, over 200 days
     fn weekdays() -> Valid {
         Valid::new(Bits::from_fn(200, |i| i % 7 < 5))
     }

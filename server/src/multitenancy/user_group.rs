@@ -10,8 +10,7 @@ use crate::{
 };
 // }}}
 
-/// A team of users. A group's parent makes teams hierarchical, so anyone in a subgroup is also
-/// in every group above it.
+/// Anyone in a subgroup is also in every group above it
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TenantUserGroup {
     id: Uuid,

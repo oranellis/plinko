@@ -12,8 +12,8 @@ use crate::{
 // }}}
 
 // milestone_statuses {{{
-/// The derived status of every milestone in the plan. It follows what the milestone depends on,
-/// not the schedule, so it is known before anything is placed.
+/// Follows what each milestone depends on, not the schedule, so it is known before anything is
+/// placed
 pub fn milestone_statuses(plan: &Plan) -> HashMap<Uuid, DerivedStatus> {
     let mut derive = Derive {
         plan,
@@ -68,7 +68,6 @@ impl Derive<'_> {
         }
     }
 
-    /// The items inside a group
     fn members(&self, group: Uuid) -> Vec<PlanNode> {
         let plan = self.plan;
         let parent = Parent::Node(group);
@@ -89,8 +88,7 @@ impl Derive<'_> {
             .collect()
     }
 
-    /// What the start of an item's parent waits for: the dependencies of the group around it,
-    /// if it is in one
+    /// The dependencies of the enclosing group, if any
     fn parent_start(&self, parent: Parent) -> Option<(Vec<PlanNode>, Parent)> {
         let Parent::Node(group) = parent else {
             return None;
@@ -99,8 +97,7 @@ impl Derive<'_> {
         Some((own.to_vec(), grandparent))
     }
 
-    /// Whether everything an item waits for is done: what it depends on, and what its parent's
-    /// start waits for
+    /// Its parent's start waits count too
     fn all_done(&mut self, deps: &[PlanNode], parent: Parent) -> bool {
         let before = self.parent_start(parent);
         deps.iter().all(|n| self.is_done(*n))
@@ -136,8 +133,8 @@ impl Derive<'_> {
         done
     }
 
-    /// Whether a task in progress is reached directly or through buffers and groups, milestones
-    /// do not pass it on
+    /// A task in progress reached directly or through buffers and groups; milestones do not pass
+    /// it on
     fn is_active(&mut self, node: PlanNode) -> bool {
         if let Some(known) = self.active.get(&node) {
             return *known;

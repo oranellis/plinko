@@ -11,7 +11,6 @@ use crate::{
 };
 // }}}
 
-/// Somewhere the search goes to
 #[derive(Clone, PartialEq)]
 struct Place {
     name: String,
@@ -20,7 +19,7 @@ struct Place {
 }
 
 // Finder {{{
-/// Opens the search on control-k from anywhere, even a box being typed in, and closes it again
+/// Control-k toggles it from anywhere, even inside a text box
 #[component]
 pub fn Finder() -> impl IntoView {
     let open = RwSignal::new(false);
@@ -39,8 +38,7 @@ pub fn Finder() -> impl IntoView {
 // }}}
 
 // FinderWindow {{{
-/// The pages and plans that match what is typed, best first. Each is a link, so leaving an edit
-/// with changes asks first, and enter clicks the one the arrows are on.
+/// Each result is a link, so leaving unsaved edits still asks first
 #[component]
 fn FinderWindow(on_close: Callback<()>) -> impl IntoView {
     let sync = use_sync();

@@ -1,15 +1,10 @@
-//! The icons, drawn as small inline SVG on a 16 by 16 grid in the colour of the text, the way
-//! Plinko 1 drew them.
+//! Inline SVG icons on a 16 by 16 grid, drawn in the text colour.
 
 use leptos::prelude::*;
 
 // Icon {{{
 #[component]
-pub fn Icon(
-    /// Which icon
-    kind: IconKind,
-    #[prop(default = 24)] size: u32,
-) -> impl IntoView {
+pub fn Icon(kind: IconKind, #[prop(default = 24)] size: u32) -> impl IntoView {
     let body = match kind {
         IconKind::Home => view! {
             <path d="M2.8,7.4 L8,3 L13.2,7.4 M4.4,6.2 V13 H11.6 V6.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />

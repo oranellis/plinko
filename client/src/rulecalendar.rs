@@ -1,6 +1,5 @@
-//! A calendar of availability that rules are edited from. Days are shaded by what the rules give
-//! them, a click on a day lists the rules in effect there, and a pane beside it edits them. It
-//! works on the rules of a person or plan (hours) and on those of an affinity (days allowed).
+//! A calendar for editing availability rules: hours for people and plans, allowed days for
+//! affinities.
 
 // modules {{{
 use std::collections::HashMap;
@@ -28,14 +27,14 @@ use crate::{
 };
 // }}}
 
-/// What a rule can give a day, as a level from nothing up to `MAX`
+/// What a rule gives a day, as a level from 0 to `MAX`
 pub trait Value: DayValue + Send + Sync {
     const MAX: u8;
     fn level(&self) -> u8;
     fn from_level(level: u8) -> Self;
-    /// The level said in full, as in `4 h`
+    /// As in `4 h`
     fn level_text(level: u8) -> String;
-    /// What a holiday rule means
+    /// The label for a holiday rule
     fn off_text() -> &'static str;
 }
 
@@ -90,7 +89,6 @@ fn unit_name(unit: Unit) -> &'static str {
     UNITS.iter().find(|u| u.0 == unit).map_or("day", |u| u.1)
 }
 
-/// What a rule is called: the name it was given, or its kind
 fn title<V: Value>(rule: &Rule<V>, off: &str) -> String {
     if *rule.id() == DEFAULT_RULE {
         return "Default week".to_string();
@@ -107,7 +105,6 @@ fn title<V: Value>(rule: &Rule<V>, off: &str) -> String {
     .to_string()
 }
 
-/// When a rule starts, with when it ends if it does
 fn when<V>(rule: &Rule<V>) -> String {
     if *rule.id() == DEFAULT_RULE {
         return String::new();
@@ -123,8 +120,8 @@ fn when<V>(rule: &Rule<V>) -> String {
 }
 
 // for_day {{{
-/// The rules to list for a day, latest first and the default week last. Only the latest change of
-/// weekly schedule is listed, the earlier ones are replaced by it.
+/// Latest first and the default week last. Only the latest weekly change is listed, since it
+/// replaces the earlier ones.
 fn for_day<V: Value>(set: &RuleSet<V>, day: Option<NaiveDate>) -> Vec<&Rule<V>> {
     let weekly = |r: &Rule<V>| matches!(r.kind(), RuleKind::Weekly(_) | RuleKind::ResetWeekly);
     let mut rules: Vec<&Rule<V>> = match day {
@@ -152,12 +149,10 @@ fn for_day<V: Value>(set: &RuleSet<V>, day: Option<NaiveDate>) -> Vec<&Rule<V>> 
 // }}}
 
 // Value supporting types {{{
-/// The fields of a rule being written, before it is saved
 #[derive(Clone, Copy)]
 struct Draft {
-    /// The rule being changed, `None` for a new one
+    /// `None` for a new rule
     rule: Option<Uuid>,
-    /// The day the rule starts on, which is the day that was picked
     start: NaiveDate,
     kind: RwSignal<String>,
     name: RwSignal<String>,
@@ -288,10 +283,9 @@ impl Draft {
 // }}}
 
 // helpers {{{
-/// Every month has room for six rows of weeks, so months sit at a fixed height and only the ones
-/// in view need drawing
+/// Room for six weeks, so months have a fixed height and only those in view are drawn
 const MONTH_HEIGHT: f64 = 310.0;
-/// How many months past what could matter the calendar keeps going
+/// Months the calendar extends past the ones that matter
 const SLACK: i32 = 6;
 
 fn month_index(day: NaiveDate) -> i32 {
@@ -305,13 +299,12 @@ fn month_start(index: i32) -> NaiveDate {
 // }}}
 
 // RuleCalendar {{{
-/// The calendar and the pane beside it. `send` makes a change to the rules.
 #[component]
 pub fn RuleCalendar<V: Value>(
     #[prop(into)] rules: Signal<Option<RuleSet<V>>>,
     send: Callback<RuleSetUpdate<V>>,
 ) -> impl IntoView {
-    // a draft outlives the part of the page that was showing when it was made
+    // a draft outlives the view that was showing when it was made
     let owner = StoredValue::new(Owner::current());
     let make = move |day, rule: Option<&Rule<V>>| match owner.get_value() {
         Some(owner) => owner.with(|| Draft::new::<V>(day, rule)),
@@ -324,8 +317,7 @@ pub fn RuleCalendar<V: Value>(
     let scroller = NodeRef::<html::Div>::new();
     let scrolled = RwSignal::new(0.0);
     let height = RwSignal::new(600.0);
-    // from a little before the earliest day that matters: the default schedule starts long before
-    // any of that so it is left out
+    // the default rule starts long before anything that matters, so it is left out
     let first = Memo::new(move |_| {
         let earliest = rules.with(|set| {
             set.as_ref()
@@ -339,9 +331,8 @@ pub fn RuleCalendar<V: Value>(
             month_index(e.min(today.get()))
         }) - SLACK / 3
     });
-    // the calendar goes on past the last rule and past wherever has been scrolled to, and shrinks
-    // back when scrolled back
-    let seen = move || ((scrolled.get() + height.get()) / MONTH_HEIGHT) as i32 + first.get();
+    // extends past the last rule and the scroll position, and shrinks back when scrolled back
+    let last_seen = move || ((scrolled.get() + height.get()) / MONTH_HEIGHT) as i32 + first.get();
     let last = Memo::new(move |_| {
         let latest = rules.with(|set| {
             set.as_ref()
@@ -352,14 +343,13 @@ pub fn RuleCalendar<V: Value>(
                 .max()
         });
         let wanted = latest.map_or(0, month_index).max(month_index(today.get())) + 12;
-        wanted.max(seen() + SLACK)
+        wanted.max(last_seen() + SLACK)
     });
     let in_view = Memo::new(move |_| {
         let top = (scrolled.get() / MONTH_HEIGHT).floor() as i32 + first.get();
         let bottom = ((scrolled.get() + height.get()) / MONTH_HEIGHT).floor() as i32 + first.get();
         (top.max(first.get()), bottom.min(last.get()))
     });
-    // what every shown day is worth
     let levels = Memo::new(move |_| {
         let Some(set) = rules.get() else {
             return HashMap::new();
@@ -372,8 +362,7 @@ pub fn RuleCalendar<V: Value>(
             .filter_map(|d| Some((d, calendar.on(d)?.level())))
             .collect::<HashMap<_, _>>()
     });
-    // the day each rule was made on
-    let marked = Memo::new(move |_| {
+    let rule_starts = Memo::new(move |_| {
         rules.with(|set| {
             set.iter()
                 .flat_map(|s| s.rules().values())
@@ -382,7 +371,6 @@ pub fn RuleCalendar<V: Value>(
                 .collect::<std::collections::HashSet<_>>()
         })
     });
-    // the rules to list, latest first
     let listed = Memo::new(move |_| {
         let Some(set) = rules.get() else {
             return Vec::new();
@@ -446,7 +434,7 @@ pub fn RuleCalendar<V: Value>(
                                         <div class="days">
                                             {move || week_start.get().weekdays().into_iter().map(|n| view! { <span class="head">{n}</span> }).collect_view()}
                                             {move || (0..blanks()).map(|_| view! { <span></span> }).collect_view()}
-                                            {days.into_iter().map(|day| day_cell::<V>(day, today, levels, marked, selected, editing)).collect_view()}
+                                            {days.into_iter().map(|day| day_cell::<V>(day, today, levels, rule_starts, selected, editing)).collect_view()}
                                         </div>
                                     </section>
                                 }
@@ -512,19 +500,18 @@ pub fn RuleCalendar<V: Value>(
 // }}}
 
 // day_cell {{{
-/// A day of the calendar: shaded by what it is worth, with a dot on the day a rule was made
 fn day_cell<V: Value>(
     day: NaiveDate,
     today: Memo<NaiveDate>,
     levels: Memo<HashMap<NaiveDate, u8>>,
-    marked: Memo<std::collections::HashSet<NaiveDate>>,
+    rule_starts: Memo<std::collections::HashSet<NaiveDate>>,
     selected: RwSignal<Option<NaiveDate>>,
     editing: RwSignal<Option<Draft>>,
 ) -> impl IntoView {
-    // each day only changes when its own value does, not whenever any day's does
+    // so a day re-renders only when its own value changes
     let level = Memo::new(move |_| levels.with(|l| l.get(&day).copied()).unwrap_or(0));
     let picked = Memo::new(move |_| selected.get() == Some(day));
-    let mark = Memo::new(move |_| marked.with(|m| m.contains(&day)));
+    let starts_rule = Memo::new(move |_| rule_starts.with(|m| m.contains(&day)));
     view! {
         <button
             type="button"
@@ -532,7 +519,7 @@ fn day_cell<V: Value>(
             style=move || format!("--shade:{}", f32::from(level.get()) / f32::from(V::MAX))
             class:today=move || day == today.get()
             class:picked=move || picked.get()
-            class:marked=move || mark.get()
+            class:marked=move || starts_rule.get()
             title=move || format!("{}: {}", format::day(day), V::level_text(level.get()))
             on:click=move |_| { selected.set(Some(day)); editing.set(None); }
         >
@@ -546,9 +533,7 @@ fn day_cell<V: Value>(
 #[component]
 fn RuleForm(
     draft: Draft,
-    /// The most a day can be given
     max: u8,
-    /// What a rule that takes days away is called
     off: &'static str,
     on_save: Callback<()>,
     on_cancel: Callback<()>,

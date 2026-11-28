@@ -26,8 +26,7 @@ impl Entity<Tenant> for TenantLoginUser {
     fn entities_mut(tenant: &mut Tenant) -> &mut HashMap<Uuid, Self> {
         &mut tenant.users
     }
-    /// The tenant always keeps an admin, so a role change cannot demote the last one. An email
-    /// logs one user in, so no two have the same.
+    /// The tenant always keeps an admin, and an email logs in one user only
     fn validate(tenant: &Tenant, id: Uuid) -> PlinkoResult<()> {
         if tenant.admins().next().is_none() {
             return Err(PlinkoError::LastAdmin);
@@ -66,7 +65,6 @@ impl Entity<Tenant> for TenantUserGroup {
         &mut tenant.user_groups
     }
 
-    /// Members must be tenant users and the parent chain must exist and not loop back
     fn validate(tenant: &Tenant, id: Uuid) -> PlinkoResult<()> {
         let group = &tenant.user_groups[&id];
         if let Some(missing) = group.users().iter().find(|u| !tenant.users.contains_key(u)) {

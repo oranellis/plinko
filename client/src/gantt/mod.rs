@@ -1,6 +1,4 @@
-//! The Gantt chart, one canvas as in Plinko 1. Dragging pans it with momentum, the wheel scrolls
-//! it, shift and the wheel (or a pinch) zooms, hovering shows an item's dependencies and a panel
-//! about it, and tapping opens it.
+//! The Gantt chart canvas and its pointer, wheel and touch handling.
 
 // modules {{{
 pub mod arrange;
@@ -32,34 +30,32 @@ use crate::gantt::{
 // }}}
 
 // constants {{{
-/// Movement under this many pixels is a tap, not a drag (more for a finger)
+/// Movement under this many pixels is a tap, not a drag
 const TAP_MOUSE: f64 = 4.0;
 const TAP_TOUCH: f64 = 10.0;
-/// What is left of a flick each frame
+/// Fraction of a flick's speed kept each frame
 const FRICTION: f64 = 0.85;
 // }}}
 
-/// An item whose handles show, and the dot of it that is picked: the right one, or the left
+/// An item whose handles show, and its picked dot: true for the right
 pub type Gripped = (Mark, Option<bool>);
 
-/// What is not saved yet of the item being created or edited
+/// The unsaved state of the item being created or edited
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Staged {
-    /// What it waits for and what waits for it
     pub before: Vec<Mark>,
     pub after: Vec<Mark>,
-    /// The group it is in
     pub group: Option<Mark>,
-    /// The item itself, which has no place on the chart while it is new
+    /// Not on the chart while it is new
     pub item: Option<Mark>,
-    /// How far the days it really ran are moved, as `start -1  end +2`
+    /// How far the days it actually ran are moved, as `start -1  end +2`
     pub days: Option<String>,
-    /// The day it is held to, whether it is being picked, and while it is the day it would be
-    /// put on, which the pointer or the keys move
     pub pin: Option<Pin>,
+    /// Whether the held day is being picked
     pub daying: bool,
+    /// While picking, the day it would go on, moved by the pointer or the keys
     pub aim: Option<chrono::NaiveDate>,
-    /// The dot of the item that clicks on others answer to: the right one, or the left
+    /// The dot that clicks on other items answer to: true for the right
     pub pick: Option<bool>,
 }
 
@@ -70,7 +66,7 @@ struct Gesture {
     velocity: (f64, f64),
     last_time: f64,
     touch: bool,
-    /// Changes with every new gesture, so a flick left over from an old one stops
+    /// Bumped by every new gesture, so a flick left over from an old one stops
     generation: u32,
 }
 
@@ -85,64 +81,55 @@ fn now() -> f64 {
 pub fn Gantt(
     scene: Signal<Scene>,
     today: Signal<NaiveDate>,
-    /// Where the chart is scrolled, `None` until it has been put on today
+    /// `None` until it has been centred on today
     viewport: RwSignal<Option<Viewport>>,
     links: Callback<Mark, Vec<Link>>,
-    /// Set to the item the pointer is on
-    #[prop(optional)]
-    hovered: Option<RwSignal<Option<Mark>>>,
-    /// An item whose handles show as they do with shift, and the dot of it that clicks on
-    /// items answer to: the right one, or the left
+    #[prop(optional)] hovered: Option<RwSignal<Option<Mark>>>,
+    /// An item whose handles show as with shift
     #[prop(optional, into)]
     gripped: Option<Signal<Option<Gripped>>>,
     /// An item whose days the keys are moving, and whether its start and its end move
     #[prop(optional, into)]
     moving: Option<Signal<Option<(Mark, bool, bool)>>>,
-    /// What went wrong for an item that misses its date
     violation: Callback<Mark, Vec<String>>,
     on_open: Callback<PlanNode>,
-    /// Double clicking an item
+    /// On double click
     on_edit: Callback<PlanNode>,
-    /// What dragging handles with shift held does to the plan
     editing: Editing,
-    /// The item selected, whose dependency lines stay on show
+    /// Its dependency lines stay on show
     selected: Signal<Option<Mark>>,
     on_toggle: Callback<PlanNode>,
     /// A tap on nothing
     #[prop(optional)]
     on_blank: Option<Callback<()>>,
-    /// Counts up each time to jump to today
+    /// Each increment jumps to today
     jump: RwSignal<u32>,
-    /// An item to put in the middle
+    /// An item to centre
     focus: RwSignal<Option<Mark>>,
-    /// An item to put in the middle, with a light outline that fades away
+    /// An item to centre, with an outline that fades away
     #[prop(optional)]
     reveal: Option<RwSignal<Option<Mark>>>,
-    /// What an item being edited waits for and what waits for it, outlined in place of the links
-    /// of what is selected
-    #[prop(optional, into)]
-    staged: Option<Signal<Option<Staged>>>,
-    /// An item to outline as if the pointer were on it, for a drag that began off the chart
+    #[prop(optional, into)] staged: Option<Signal<Option<Staged>>>,
+    /// Outlined as if hovered, for a drag that began off the chart
     #[prop(optional, into)]
     spot: Option<Signal<Option<Mark>>>,
-    /// Set to a way of asking what item is at a point of the window, while the chart is there
+    /// Set to a hit test by window position while the chart exists
     #[prop(optional)]
     probe: Option<crate::card::Probe>,
     #[prop(optional)] readonly: bool,
 ) -> impl IntoView {
     let canvas = NodeRef::<html::Canvas>::new();
-    let held_out = gripped;
+    let gripped_by_page = gripped;
     let size = RwSignal::new((800.0, 600.0));
     let hover = RwSignal::new(None::<Mark>);
     let pointer = RwSignal::new((0.0, 0.0));
     let flash = RwSignal::new(None::<(Mark, f64, &'static str)>);
     let hits = StoredValue::new_local(Hits::default());
     let gesture = StoredValue::new_local(Gesture::default());
-    // shift editing: whether shift is held, the item whose handles show, and the handle being dragged
     let shift = RwSignal::new(false);
     let nearby = RwSignal::new(None::<PlanNode>);
     let drag = RwSignal::new(None::<Drag>);
-    // where a handle was taken, so letting go without moving counts as a click
+    // so letting go without moving counts as a click
     let grabbed_at = StoredValue::new_local((0.0, 0.0));
     let grabbed_day = StoredValue::new_local(0.0);
 
@@ -195,7 +182,7 @@ pub fn Gantt(
             let watch = Closure::<dyn FnMut()>::new(measure);
             if let Ok(observer) = web_sys::ResizeObserver::new(watch.as_ref().unchecked_ref()) {
                 observer.observe(element.as_ref());
-                // it stops watching when the chart goes, and the closure goes with it
+                // keeps the closure alive until the chart goes
                 let kept = StoredValue::new_local((observer, watch));
                 on_cleanup(move || kept.try_with_value(|(o, _)| o.disconnect()).unwrap_or(()));
             }
@@ -205,7 +192,6 @@ pub fn Gantt(
         }
     });
 
-    // the first time, put today in the middle, as the button for today does
     Effect::new(move |_| {
         let (width, _) = size.get();
         if viewport.get_untracked().is_none() && canvas.get().is_some() && width > 0.0 {
@@ -224,7 +210,6 @@ pub fn Gantt(
         count
     });
 
-    // search: put the item in the middle
     Effect::new(move |_| {
         let Some(mark) = focus.get() else {
             return;
@@ -243,7 +228,7 @@ pub fn Gantt(
         viewport.set(Some(vp));
     });
 
-    // coming from elsewhere: once the chart has its size, centre the item and fade an outline
+    // delayed until the chart has its size
     Effect::new(move |_| {
         let Some(mark) = reveal.and_then(|r| r.get()) else {
             return;
@@ -276,7 +261,6 @@ pub fn Gantt(
         );
     });
 
-    // what is under the pointer
     let hit = move |x: f64, y: f64| hits.with_value(|h| h.hit(x, y));
     if let Some(probe) = probe {
         probe.set(Some(Callback::new(move |(x, y): (f64, f64)| {
@@ -291,7 +275,7 @@ pub fn Gantt(
             let _ = probe.try_set(None);
         });
     }
-    // where an item is drawn, a group by its name strip
+    // a group by its name strip
     let rect_of = move |mark: Mark| -> Option<Rect> {
         hits.with_value(|h| {
             h.items()
@@ -300,9 +284,8 @@ pub fn Gantt(
                 .or_else(|| h.headers().find(|(m, ..)| *m == mark).map(|(_, r, _)| r))
         })
     };
-    // where a pin of an item is drawn
     let pin_view = move |node: PlanNode, pin: Pin, faint: bool| -> Option<PinView> {
-        // an item that is not on the chart yet has a day it is held to all the same
+        // a new item is not on the chart yet but can still be pinned
         let row = rect_of(node).unwrap_or_default();
         let vp = viewport.get_untracked().unwrap_or_default();
         let day = scene.with_untracked(|s| (pin.day - s.origin).num_days()) as f64;
@@ -321,17 +304,15 @@ pub fn Gantt(
             faint,
         })
     };
-    // what is staged of the item being edited, if it is the one
     let staged_of = move |node: PlanNode| {
         staged.and_then(|s| s.with_untracked(|s| s.clone().filter(|s| s.item == Some(node))))
     };
-    // the handles of an item: its grips, which show with shift for the item the pointer is near,
-    // and for the one being edited the ways to hold its day, on the day's band
+    // its grips, plus the hold buttons on the held day's band for the item being edited
     let handles_of = move |node: PlanNode, gripped: bool| {
         let kind = scene.with_untracked(|s| s.placed(node).map(|p| p.kind));
         let mut grips = match (kind, rect_of(node)) {
             (Some(kind), Some(rect)) if gripped => Grips::of(kind, rect, editing.dated.run(node)),
-            // the days a task being edited really ran are still dragged on it, where it is
+            // the item being edited keeps its date grips without shift
             (Some(_), Some(rect)) => {
                 let (started, ended) = (editing.dated.run(node), editing.ended.run(node));
                 Grips::dates(rect, started, ended)
@@ -341,7 +322,7 @@ pub fn Gantt(
         let staged = staged_of(node);
         let held = staged.as_ref().and_then(|s| s.pin);
         if let Some(view) = held.and_then(|p| pin_view(node, p, false)) {
-            // in a row on the band, half way down the chart, kept on the chart at its edges
+            // a row on the band, half way down, kept inside the chart
             let (wide, high) = size.get_untracked();
             let reach = shift::HOLD_BUTTON * 1.5;
             let x = (view.cell.x + view.cell.w / 2.0).clamp(reach, (wide - reach).max(reach));
@@ -356,8 +337,8 @@ pub fn Gantt(
         }
         grips
     };
-    // the pin a flag being dragged would leave on the day under the pointer, of the kind the
-    // item has, or for a first one not before the day for a start and not after it for an end
+    // the pin on the day under `x`, keeping the item's kind of hold, or for a first pin earliest
+    // for a start and latest for an end
     let flagged = move |node: PlanNode, end: bool, x: f64| -> Pin {
         let offset = viewport
             .get_untracked()
@@ -370,7 +351,7 @@ pub fn Gantt(
         Pin { day, held, end }
     };
 
-    // the items that are held to a day in the plan, and by which end
+    // pinned items, and by which end
     let tags = Memo::new(move |_| {
         scene.with(|s| {
             let held = |p: &arrange::Placed| Some((p.mark, editing.pin.run(p.mark)?.end));
@@ -381,18 +362,16 @@ pub fn Gantt(
                 .collect::<Vec<_>>()
         })
     });
-    // what the lines and the panel say about what is under the pointer, which only changes with
-    // that, so drawing again for a pan or a nudge of the pointer does not work it out again
+    // memoised so a pan or a pointer nudge does not recompute it
     let linked = Memo::new(move |_| {
         let (hovered, picked) = (hover.get(), selected.get());
-        // with something selected, the chain to what is under the pointer shows instead
+        // with something selected, the chain to the hovered item shows instead
         let chain = match (picked, hovered) {
             (Some(a), Some(b)) if a != b => editing.chain.run((a, b)),
             _ => Vec::new(),
         };
         let looked = hovered.or(picked);
-        // the item being edited has its links as they would be once it is saved, from where it
-        // is now, and keeps those to the end of a group it ends
+        // the edited item shows its links as they would be once saved, plus its group links
         let staged = staged
             .and_then(|s| s.get())
             .and_then(|s| Some((s.item.filter(|item| Some(*item) == looked)?, s)));
@@ -418,14 +397,13 @@ pub fn Gantt(
             (true, None) => looked.map(|m| links.run(m)).unwrap_or_default(),
         }
     });
-    // what the pointer is on, for the page to say more about
     if let Some(out) = hovered {
         Effect::new(move |_| out.set(hover.get()));
     }
 
     let layers = StoredValue::new_local(None::<layers::Layers>);
     let scene_gen = StoredValue::new_local(0u64);
-    // the layers are only drawn again for a scene that has something different on it
+    // bumps the generation only when the scene's drawing actually changes
     let drawn = StoredValue::new_local(None::<(NaiveDate, Arrangement)>);
     Effect::new(move |_| {
         scene.with(|s| {
@@ -441,7 +419,6 @@ pub fn Gantt(
         });
     });
     let surface = StoredValue::new_local(None::<((u32, u32), std::rc::Rc<pen::Pen>)>);
-    // draws what is on the chart, once a frame however many things changed since the last
     let draw = move || {
         let Some((width, height)) = size.try_get_untracked() else {
             return;
@@ -454,12 +431,11 @@ pub fn Gantt(
             flash.get(),
             today.get(),
         );
-        let at = pointer.get();
-        let pointer_at = at;
+        let pointer_at = pointer.get();
         let (editing_shift, near, dragged) = (shift.get(), nearby.get(), drag.get());
-        // the item being edited keeps its handles, shift shows those of the item the pointer is near
+        // the edited item keeps its handles; shift shows those of the item near the pointer
         let pinned = staged.as_ref().and_then(|s| s.item);
-        let live = held_out.and_then(|h| h.get());
+        let live = gripped_by_page.and_then(|h| h.get());
         let gripped = near
             .filter(|_| editing_shift)
             .or(live.map(|l| l.0))
@@ -469,8 +445,8 @@ pub fn Gantt(
         };
         let ratio = web_sys::window().map_or(1.0, |w| w.device_pixel_ratio());
         let pixels = ((width * ratio) as u32, (height * ratio) as u32);
-        // resizing a canvas throws its surface away and resets what was set on it, so that only
-        // happens when the size changes and the drawing carries on with what it remembers
+        // resizing a canvas clears it and resets its settings, so only resize when the size
+        // changes and the pen's remembered settings stay valid
         let kept = surface.with_value(|s| {
             s.as_ref()
                 .filter(|(size, _)| *size == pixels)
@@ -498,7 +474,6 @@ pub fn Gantt(
         let ctx: &pen::Pen = &ctx;
         let linked = linked.get();
         let generation = scene_gen.get_value();
-        // the layers are drawn again only when the chart itself changes or it is scrolled far
         let fresh = layers.with_value(|l| {
             l.as_ref()
                 .is_some_and(|l| l.serve(vp, (width, height), ratio, generation, today))
@@ -543,8 +518,7 @@ pub fn Gantt(
                     flash: flashed,
                     tip: tip.as_deref().map(|lines| (lines, pointer_at)),
                 };
-                // behind the items, what the pointer is on shows its lines, then the items over
-                // them, then the outlines and names the pointer changes, then the header
+                // the links go between the background and the items
                 layers.blit(ctx, at, true);
                 paint_links(ctx, &frame);
                 layers.blit(ctx, at, false);
@@ -554,7 +528,7 @@ pub fn Gantt(
                 paint_notes(ctx, &frame);
             });
         });
-        // where things are on the chart: the items, the names of groups and the words by them
+        // space a pin's sign must avoid
         let mut taken: Vec<Rect> = hits.with_value(|h| {
             let strips = h.headers().map(|(_, strip, _)| strip);
             h.items().map(|(_, r)| r).chain(strips).collect()
@@ -575,7 +549,7 @@ pub fn Gantt(
                 });
             }
         });
-        // the sign of a pin goes in the row nearest its item where none of that is in its way
+        // in the free row nearest its item
         let signed = |view: PinView| -> PinView {
             let (left, right) = shift::sign_reach(view.held);
             let free = |y: f64| {
@@ -593,11 +567,9 @@ pub fn Gantt(
                 ..view
             }
         };
-        // a corner of every item that is held to a day is marked: the left for its first day,
-        // the right for its last. The item being edited is marked as it would be once saved.
+        // the edited item is marked as it would be once saved
         let staged_end = staged.as_ref().and_then(|s| s.pin).map(|p| p.end);
         let tag = |mark: Mark, end: bool| {
-            // a milestone has no corner to speak of, and is marked with a dot by it
             let dot = scene.with_untracked(|s| {
                 s.placed(mark)
                     .is_some_and(|p| p.kind == arrange::Kind::Milestone)
@@ -616,7 +588,7 @@ pub fn Gantt(
         if let Some((node, end)) = pinned.zip(staged_end) {
             tag(node, end);
         }
-        // the day what is looked at is held to, faintly, and that of the item being edited
+        // the hovered or selected item's pin faintly, then the edited item's
         if let Some(looked) = hovered.or(picked).filter(|n| Some(*n) != pinned) {
             let pin = editing
                 .pin
@@ -632,8 +604,7 @@ pub fn Gantt(
             .as_ref()
             .and_then(|s| s.pin)
             .filter(|_| !flag_dragged);
-        // while the day is being picked the band goes with the pointer, to the day a click
-        // would put it on
+        // while picking, the band follows the aimed day
         let aim = staged.as_ref().and_then(|s| s.aim.filter(|_| s.daying));
         let held = held.map(|pin| Pin {
             day: aim.unwrap_or(pin.day),
@@ -655,7 +626,7 @@ pub fn Gantt(
                 .as_ref()
                 .and_then(|s| Some((rect_of(s.item?)?, s.days.clone()?)));
             let target = |own: PlanNode| {
-                hit(at.0, at.1)
+                hit(pointer_at.0, pointer_at.1)
                     .map(|(m, _)| m)
                     .filter(|m| *m != own)
                     .and_then(rect_of)
@@ -668,7 +639,7 @@ pub fn Gantt(
                             .list
                             .iter()
                             .find(|(h, _)| *h == Handle::Link { right })
-                            .map_or(at, |(_, p)| *p),
+                            .map_or(pointer_at, |(_, p)| *p),
                         over: target(node),
                         right,
                     },
@@ -684,20 +655,20 @@ pub fn Gantt(
                         });
                         let sideways = editing.dated.run(node) && target(node).is_none();
                         let by = if sideways {
-                            let days = day_shift(viewport, at.0, grabbed_day.get_value());
+                            let days = day_shift(viewport, pointer_at.0, grabbed_day.get_value());
                             (
                                 f64::from(days)
                                     * viewport.get_untracked().unwrap_or_default().day_width,
                                 0.0,
                             )
                         } else {
-                            (at.0 - from_x, at.1 - from_y)
+                            (pointer_at.0 - from_x, pointer_at.1 - from_y)
                         };
                         DragView::Move {
                             over: target(node),
                             origin: rect_of(node).unwrap_or(Rect {
-                                x: at.0,
-                                y: at.1,
+                                x: pointer_at.0,
+                                y: pointer_at.1,
                                 w: 0.0,
                                 h: 0.0,
                             }),
@@ -711,10 +682,11 @@ pub fn Gantt(
                         duration,
                     } => {
                         let vp = viewport.get_untracked().unwrap_or_default();
-                        let (delta, new) = shift::resized(vp.day_at(at.0), last_day, duration);
+                        let (delta, new) =
+                            shift::resized(vp.day_at(pointer_at.0), last_day, duration);
                         let origin = rect_of(node).unwrap_or(Rect {
-                            x: at.0,
-                            y: at.1,
+                            x: pointer_at.0,
+                            y: pointer_at.1,
                             w: 0.0,
                             h: 0.0,
                         });
@@ -729,10 +701,10 @@ pub fn Gantt(
                         }
                     }
                     Drag::Flag { node, end } => {
-                        match pin_view(node, flagged(node, end, at.0), false) {
+                        match pin_view(node, flagged(node, end, pointer_at.0), false) {
                             Some(pin) => DragView::Flag(signed(pin)),
                             None => DragView::Link {
-                                from: at,
+                                from: pointer_at,
                                 over: None,
                                 right: end,
                             },
@@ -740,16 +712,19 @@ pub fn Gantt(
                     }
                     Drag::Start { node, first_day } => {
                         let vp = viewport.get_untracked().unwrap_or_default();
-                        let by =
-                            f64::from(day_shift(viewport, at.0, first_day as f64)) * vp.day_width;
+                        let by = f64::from(day_shift(viewport, pointer_at.0, first_day as f64))
+                            * vp.day_width;
                         let origin = rect_of(node).unwrap_or(Rect {
-                            x: at.0,
-                            y: at.1,
+                            x: pointer_at.0,
+                            y: pointer_at.1,
                             w: 0.0,
                             h: 0.0,
                         });
                         DragView::Resize {
-                            label: format!("{:+}", day_shift(viewport, at.0, first_day as f64)),
+                            label: format!(
+                                "{:+}",
+                                day_shift(viewport, pointer_at.0, first_day as f64)
+                            ),
                             origin,
                             grown: Rect {
                                 x: origin.x + by.min(origin.w - layout::MIN_BAR_WIDTH),
@@ -764,7 +739,7 @@ pub fn Gantt(
                 ctx,
                 &Overlay {
                     handles,
-                    pointer: at,
+                    pointer: pointer_at,
                     drag: view,
                     note,
                     pin: staged.as_ref().and_then(|s| s.pin),
@@ -778,7 +753,7 @@ pub fn Gantt(
     let pinned = move || staged.and_then(|s| s.with_untracked(|s| s.as_ref()?.item));
     let due = StoredValue::new_local(false);
     Effect::new(move |_| {
-        // the things a drawing depends on, and a drawing is asked for when any of them changes
+        // any change to these asks for one draw on the next frame
         let hovered = hover.get();
         let (dragging, shifted) = (drag.get().is_some(), shift.get());
         let _ = (
@@ -794,10 +769,10 @@ pub fn Gantt(
             tags.track(),
             staged.map(|s| s.track()),
             spot.map(|s| s.track()),
-            held_out.map(|h| h.track()),
+            gripped_by_page.map(|h| h.track()),
             moving.map(|m| m.track()),
         );
-        // the pointer matters while something follows it: a drag, the handles, a note on a warning
+        // the pointer only matters while something follows it
         let warns = hovered
             .is_some_and(|m| scene.with_untracked(|s| s.placed(m).is_some_and(|p| p.violated)));
         if dragging || shifted || warns || pinned().is_some() {
@@ -813,8 +788,7 @@ pub fn Gantt(
         }
     });
 
-    // the held day of the item being edited is taken from anywhere on its band that is not on
-    // something else, where the pointer shows it can be
+    // the edited item's held day can be grabbed anywhere free on its band
     let band_at = move |x: f64, y: f64| {
         let node = pinned()?;
         let view = pin_view(node, staged_of(node)?.pin?, false)?;
@@ -824,10 +798,10 @@ pub fn Gantt(
     };
     let banded = RwSignal::new(false);
     let down = move |ev: PointerEvent| {
-        // a handle starts editing instead of panning: with shift, or of the item being edited
+        // a handle edits instead of panning
         if ev.pointer_type() == "mouse" {
             let (x, y) = (f64::from(ev.offset_x()), f64::from(ev.offset_y()));
-            let held = held_out.and_then(|h| h.get_untracked()).map(|h| h.0);
+            let held = gripped_by_page.and_then(|h| h.get_untracked()).map(|h| h.0);
             let gripped = nearby
                 .get_untracked()
                 .filter(|_| ev.shift_key() && !readonly)
@@ -920,7 +894,6 @@ pub fn Gantt(
         if drag.get_untracked().is_some() {
             return;
         }
-        // while the day of the item being edited is picked, moving the pointer aims it
         let aiming = pinned().and_then(|node| {
             let staged = staged_of(node).filter(|s| s.daying)?;
             Some((node, staged.pin?))
@@ -933,7 +906,7 @@ pub fn Gantt(
             banded.set(on_band);
         }
         if ev.shift_key() && !readonly {
-            // handles show for the item the pointer is near, and stay while it is on one
+            // the handles stay while the pointer is on one
             let on_handle = nearby
                 .get_untracked()
                 .is_some_and(|n| handles_of(n, true).at(x, y).is_some());
@@ -981,7 +954,7 @@ pub fn Gantt(
                     };
                 }
                 Some(other) => {
-                    // two fingers: how far apart they are is the zoom
+                    // pinch zoom
                     let old = (before.0 - other.0).hypot(before.1 - other.1);
                     let new = (here.0 - other.0).hypot(here.1 - other.1);
                     if old > 1.0 {
@@ -1001,9 +974,9 @@ pub fn Gantt(
         });
     };
 
-    // a tap on an item selects it, with shift on one linked to the selected item cuts the link
+    // shift-tapping an item linked to the selected one cuts the link
     let tap = move |x: f64, y: f64, shifted: bool| {
-        // with the held day of the item being edited picked, a click anywhere is on a day for it
+        // while picking the held day, a click anywhere sets it
         let picking = pinned().and_then(staged_of).filter(|s| s.daying);
         if let Some((node, pin)) = picking.and_then(|s| s.item.zip(s.pin)) {
             editing
@@ -1058,7 +1031,7 @@ pub fn Gantt(
                     }
                 }
                 Drag::Move(node) => {
-                    // something started goes sideways in its dates, unless dropped on another item
+                    // a started item shifts its dates, unless dropped on another item
                     let by = day_shift(viewport, x, grabbed_day.get_value());
                     if editing.dated.run(node) && over.is_none() {
                         if by != 0 {
@@ -1152,8 +1125,7 @@ pub fn Gantt(
             viewport.set(Some(vp));
             return;
         }
-        // sideways follows the gesture and carries on when it lets go, which moves the chart
-        // itself, so up and down is applied to the chart as it is after that
+        // the glide scrolls sideways itself, so read the viewport again after it
         slide.with_value(|s| s.push(ev.delta_x()));
         let mut vp = viewport.get_untracked().unwrap_or_default();
         vp.scroll(0.0, ev.delta_y(), b);
@@ -1190,7 +1162,6 @@ pub fn Gantt(
 // }}}
 
 // helpers {{{
-/// The whole days the pointer at `x` is from the day that was grabbed
 fn day_shift(viewport: RwSignal<Option<Viewport>>, x: f64, grabbed: f64) -> i32 {
     (viewport
         .get_untracked()
@@ -1200,7 +1171,6 @@ fn day_shift(viewport: RwSignal<Option<Viewport>>, x: f64, grabbed: f64) -> i32 
         - grabbed) as i32
 }
 
-/// Whether the item has a dependency line to or from the selected one
 fn linked_to(links: Callback<Mark, Vec<Link>>, selected: Mark, node: PlanNode) -> bool {
     links.run(selected).iter().any(|l| {
         matches!(l.role, Role::Before | Role::After)
@@ -1212,7 +1182,7 @@ fn linked_to(links: Callback<Mark, Vec<Link>>, selected: Mark, node: PlanNode) -
 // }}}
 
 // edge_scroll {{{
-/// Scrolls the chart while a handle is dragged to its edge
+/// Scrolls while a handle is dragged near the chart's edge
 fn edge_scroll(
     viewport: RwSignal<Option<Viewport>>,
     bounds: Signal<Bounds>,
@@ -1249,7 +1219,6 @@ fn edge_scroll(
 // }}}
 
 // flick {{{
-/// Keeps the chart moving after a flick, slowing down each frame
 fn flick(
     viewport: RwSignal<Option<Viewport>>,
     bounds: Signal<Bounds>,
@@ -1276,7 +1245,7 @@ fn flick(
 // }}}
 
 // constants {{{
-/// The colour of an outline that fades, as red green blue
+/// `r,g,b` of the fading reveal outline
 const LIGHT: &str = "200,200,205";
 // }}}
 
@@ -1285,7 +1254,6 @@ type Flash = RwSignal<Option<(Mark, f64, &'static str)>>;
 // }}}
 
 // helpers {{{
-/// Lets an outline fade away
 fn fade_item(flash: Flash, mark: Mark, rgb: &'static str) {
     fn fade(flash: Flash, mark: Mark, rgb: &'static str, alpha: f64) {
         if alpha <= 0.0 {

@@ -21,69 +21,60 @@ use crate::{
 // constants {{{
 type Reason = UnscheduledReason;
 
-/// What decides which ready arc goes next, lowest first
+/// Lowest goes first
 pub type Key = [i64; 5];
 
-/// Where a run of days starts and ends, and the row and day of other work that pushed it later
+/// Start, end, and the row and day of other work that pushed it later
 type Fit = (Day, Day, Option<(RowId, Day)>);
 
-/// How many snapshots a pass leaves behind for later passes to start from
 const SNAPSHOTS: usize = 8;
 // }}}
 
-/// What every pass over a tenant reads and none changes
 pub struct Context<'a> {
     pub net: &'a Network,
     pub table: &'a Table,
-    /// The asks and valid days of work whose people are all known up front
+    /// For work whose people are all known up front
     fixed: Vec<Option<(Vec<Ask>, Valid)>>,
-    /// The latest each arc may start for hard dates, for targets and for its plan's end, in that
-    /// order, `i64::MAX` where nothing limits it. Empty until `bound` is worked out.
+    /// Latest start for hard dates, targets and the plan's end, in that order, `i64::MAX` where
+    /// unlimited. Empty until `bound` is worked out.
     pub latest: Vec<[i64; 3]>,
-    /// How many days each arc could be worked on at all, fewer being harder to place
+    /// Days each arc could be worked on at all, fewer being harder to place
     pub room: Vec<i64>,
 }
 
 // Context supporting types {{{
-/// How a pass picks what goes next and what it is told to keep
 #[derive(Clone, Copy, Default)]
 pub struct Rules<'a> {
-    /// Place in order of these starts instead of by how urgent each arc is
+    /// Place in order of these starts instead of by urgency
     pub starts: Option<&'a [i64]>,
     /// Keep the people these placements chose
     pub people: Option<&'a [Option<Placed>]>,
     pub overrides: Option<&'a Overrides>,
-    /// The latest each arc may start for hard dates, in place of the context's, for overrides
-    /// that make dates more pressing
+    /// Replaces the context's hard-date latest starts
     pub hard: Option<&'a [i64]>,
     /// Nobody runs out of hours, which gives the earliest everything could be
     pub unlimited: bool,
 }
 
-/// Choices a pass is told to make differently
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Overrides {
     /// Arcs that wait until others are placed
     pub after: HashMap<ArcId, Vec<ArcId>>,
-    /// The person for a slot of an arc
     pub people: HashMap<(ArcId, usize), RowId>,
-    /// Arcs put on exactly these days, for a schedule that is already known
+    /// For a schedule that is already known
     pub starts: HashMap<ArcId, Day>,
-    /// Hard dates counted as this many days sooner when deciding what goes first, for dates
-    /// that were missed
+    /// Missed hard dates counted as this many days sooner when ordering
     pub sooner: HashMap<Late, i64>,
 }
 
-/// Where an arc was put
 #[derive(Clone, Debug, PartialEq)]
 pub struct Placed {
     pub start: Day,
     pub end: Day,
     /// The first day it could have started on
     pub ready: Day,
-    /// The row of each slot
+    /// One per slot
     pub rows: Vec<RowId>,
-    /// The days it is worked on
     pub days: Vec<Day>,
     /// The arc whose hours kept it from starting sooner, and whose hours they were
     pub blocker: Option<(RowId, ArcId)>,
@@ -119,7 +110,6 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// The hours asked of each row and the days work can be done on with these people
     pub fn valid(
         &self,
         arc: ArcId,
@@ -136,8 +126,7 @@ impl<'a> Context<'a> {
         }
     }
 
-    /// Whether placing the arc takes hours people can run out of, so its place depends on what
-    /// went before it
+    /// Whether the arc takes hours people can run out of, so its place depends on what went before
     pub fn contended(&self, arc: ArcId) -> bool {
         let Some(work) = self.net.arc(arc).work() else {
             return false;
@@ -160,7 +149,7 @@ impl<'a> Context<'a> {
 }
 // }}}
 
-/// The hours asked of each row by the slots given these people, one ask for each row
+/// One ask per row
 pub fn asks(work: &Work, rows: &[RowId]) -> Vec<Ask> {
     let mut asks: Vec<Ask> = Vec::new();
     for (slot, row) in work.slots.iter().zip(rows).filter(|(s, _)| s.hours > 0) {
@@ -172,34 +161,33 @@ pub fn asks(work: &Work, rows: &[RowId]) -> Vec<Ask> {
     asks
 }
 
-/// One schedule of the network being built: arcs are placed one at a time as early as they fit,
-/// once everything they wait on is settled
+/// Arcs are placed one at a time as early as they fit, once everything they wait on is settled
 #[derive(Clone)]
 pub struct Pass {
     pub ledger: Ledger,
-    /// The time of each vertex, `None` if it is not settled or nothing it waits on is scheduled
+    /// `None` if not settled or nothing it waits on is scheduled
     pub time: Vec<Option<Day>>,
     settled: Vec<bool>,
-    /// How many of the things each vertex waits on are not settled yet
+    /// Unsettled inputs per vertex
     waiting: Vec<u32>,
     pub placed: Vec<Option<Placed>>,
-    /// Arcs that are placed or never will be
+    /// Placed or never will be
     done: Vec<bool>,
     pub failed: Vec<Option<Reason>>,
     ready: BTreeSet<(Key, ArcId)>,
     /// Ready arcs held back by an override
     deferred: Vec<ArcId>,
-    /// Work not yet placed that each row may be asked for, shared between who could do it
+    /// Unplaced work each row may be asked for, split between its candidates
     demand: Vec<u64>,
-    /// The arcs that took people's hours, in the order they were placed
+    /// Arcs that took people's hours, in placement order
     pub steps: Vec<ArcId>,
-    /// Whether something did not fit before the table ended though it has days it could go on
+    /// Something did not fit before the table ended though it has days it could go on
     pub overflow: bool,
 }
 
 // impl Pass {{{
 impl Pass {
-    /// A pass with what has happened in place and everything that follows from that settled
+    /// With history in place and everything that follows from it settled
     pub fn new(ctx: &Context, rules: &Rules) -> Self {
         let net = ctx.net;
         let mut pass = Self {
@@ -241,8 +229,7 @@ impl Pass {
         pass
     }
 
-    /// Places every arc that is left. Snapshots are taken on the way if asked for, as the number
-    /// of arcs placed so far and the pass as it was then.
+    /// Snapshots are the number of arcs placed so far and the pass as it was then
     pub fn run(
         &mut self,
         ctx: &Context,
@@ -269,14 +256,12 @@ impl Pass {
         }
     }
 
-    /// The next arc to place: the first ready one that no override holds back. If only held back
-    /// ones are left, the overrides cannot all be kept, so the first of those goes.
+    /// If only held-back arcs are left the overrides cannot all be kept, so the first of those goes
     fn pick(&mut self, ctx: &Context, rules: &Rules) -> Option<ArcId> {
         let held = |pass: &Self, arc: &ArcId| {
             let after = rules.overrides.and_then(|o| o.after.get(arc));
             after.is_some_and(|others| others.iter().any(|b| !pass.done[b.0 as usize]))
         };
-        // what is no longer held back is ready like the rest
         let (free, still): (Vec<ArcId>, Vec<ArcId>) = std::mem::take(&mut self.deferred)
             .into_iter()
             .partition(|arc| !held(self, arc));
@@ -294,7 +279,6 @@ impl Pass {
         Some(first)
     }
 
-    /// Adds or takes away what an arc may ask of each row it could use
     fn want(&mut self, ctx: &Context, arc: ArcId, add: bool) {
         let Some(work) = ctx.net.arc(arc).work() else {
             return;
@@ -311,8 +295,8 @@ impl Pass {
         }
     }
 
-    /// Settles vertices whose inputs are all settled, and through them everything that follows
-    /// without taking people's hours. Arcs that do take them become ready.
+    /// Settles everything that follows without taking people's hours; arcs that do take them
+    /// become ready
     fn settle(&mut self, ctx: &Context, rules: &Rules, mut stack: Vec<VertexId>) {
         while let Some(v) = stack.pop() {
             let i = v.0 as usize;
@@ -351,7 +335,6 @@ impl Pass {
         }
     }
 
-    /// One input of the vertex is settled
     fn arrive(&mut self, v: VertexId, stack: &mut Vec<VertexId>) {
         let waiting = &mut self.waiting[v.0 as usize];
         *waiting = waiting.saturating_sub(1);
@@ -360,7 +343,6 @@ impl Pass {
         }
     }
 
-    /// Places the arc, or gives up on it, and tells its end vertex
     fn settle_arc(&mut self, ctx: &Context, rules: &Rules, arc: ArcId, stack: &mut Vec<VertexId>) {
         let i = arc.0 as usize;
         if std::mem::replace(&mut self.done[i], true) {
@@ -418,8 +400,7 @@ impl Pass {
         }
     }
 
-    /// The first day work can start on from `from`, which is later if it may not end before a
-    /// day
+    /// Later than `from` if the work may not end before a day
     fn floor(work: &Work, valid: &Valid, from: Day) -> Day {
         let Some(not_before) = work.floor_end.filter(|_| work.days > 0) else {
             return from;
@@ -430,8 +411,7 @@ impl Pass {
         from.max(start.unwrap_or(from))
     }
 
-    /// Where the run of days goes from `from` for these people, without taking anything, none
-    /// if it does not fit before the table ends
+    /// Takes nothing; none if it does not fit before the table ends
     fn fit(
         &self,
         rules: &Rules,
@@ -449,15 +429,14 @@ impl Pass {
         window.map(|w| (w.start, w.end, w.blocker))
     }
 
-    /// Work did not fit, which more days might change if it has days it could go on at all
+    /// More days might help if it has days it could go on at all
     fn short(&mut self, valid: &Valid) -> Reason {
         self.overflow |= valid.count() > 0;
         Reason::NoCapacity
     }
 
-    /// The person for each slot. A slot with one candidate has that one. For the others it is
-    /// whoever the rules name, or whoever ends the work soonest from `from`, the one less asked
-    /// for by other work where two end together. Never someone already on the work.
+    /// For slots with several candidates: whoever the rules name, else whoever ends the work
+    /// soonest, ties going to the one less in demand. Never someone already on the work.
     fn people(
         &mut self,
         ctx: &Context,
@@ -488,8 +467,7 @@ impl Pass {
                 (false, None) => {
                     let free = slot.candidates.iter().filter(|row| !used(row));
                     let mut ends: Vec<(Day, u64, RowId)> = Vec::new();
-                    // whether someone ran out of days that more days could give them
-                    let mut short = false;
+                    let mut more_days_would_help = false;
                     for row in free {
                         // finished work holds no hours, so anyone will do
                         if slot.hours == 0 || matches!(work.progress, Progress::Done { .. }) {
@@ -512,7 +490,7 @@ impl Pass {
                             Some((_, end, _)) => {
                                 ends.push((end, self.demand[row.0 as usize], *row))
                             }
-                            None => short |= valid.count() > 0,
+                            None => more_days_would_help |= valid.count() > 0,
                         }
                     }
                     ends.sort();
@@ -520,7 +498,7 @@ impl Pass {
                         *other = Some((i, second.2));
                     }
                     let Some(first) = ends.first() else {
-                        self.overflow |= short;
+                        self.overflow |= more_days_would_help;
                         return Err(Reason::NoCapacity);
                     };
                     first.2
@@ -564,9 +542,8 @@ impl Pass {
         })
     }
 
-    /// Work in progress has its hours on every day it could be worked from when it began up to
-    /// today, today (or the day it began, if later) too if that is free, and then what is left of
-    /// its days in one run
+    /// Hours on every workable day from when it began up to today, then today (or the day it
+    /// began, if later) if free, then what is left of its days in one run
     fn active(
         &mut self,
         ctx: &Context,
@@ -581,7 +558,6 @@ impl Pass {
         let (asks, valid) = ctx.valid(id, work, &rows);
         let mut days: Vec<Day> = valid.days(begun, today).collect();
         let left = work.days.saturating_sub(days.len() as u32);
-        // it lasts through today, or the day it began if that is later
         let mut end = from.next();
         if left > 0 {
             let Some((start, to, _)) = self.fit(rules, work, &asks, &valid, from, left) else {
@@ -631,7 +607,7 @@ mod tests {
         },
     };
 
-    /// A pass over one task that alice or bob can work, bob only for the first two of 30 days
+    /// Alice or bob can work it, bob only for the first two of 30 days
     fn one_task(progress: Progress, days: u32) -> Pass {
         let origin = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
         let mut table = Table::new(origin, 30, origin);

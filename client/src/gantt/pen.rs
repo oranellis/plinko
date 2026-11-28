@@ -1,6 +1,5 @@
-//! The canvas context with the settings it already has remembered, so the chart does not pay for a
-//! call across to JavaScript (and a font parse) to set what is already set. Every method here
-//! shadows the one of the same name on the context, which the rest is reached through.
+//! A canvas context that skips setting what is already set, saving a JavaScript call and a font
+//! parse. Its methods shadow the context's own; the rest are reached through `Deref`.
 
 // modules {{{
 use std::{cell::RefCell, ops::Deref};
@@ -10,7 +9,6 @@ use web_sys::{CanvasGradient, CanvasRenderingContext2d};
 // }}}
 
 // changed {{{
-/// Set the field to `value` and say whether that is a change
 fn changed<T: PartialEq + Clone>(field: &mut Option<T>, value: &T) -> bool {
     if field.as_ref() == Some(value) {
         return false;
@@ -24,7 +22,7 @@ pub struct Pen {
     ctx: CanvasRenderingContext2d,
     state: RefCell<State>,
     saved: RefCell<Vec<State>>,
-    /// How wide names are in the current font, which does not change between drawings
+    /// Text widths by font and text
     widths: RefCell<std::collections::HashMap<(String, String), f64>>,
 }
 
@@ -49,7 +47,7 @@ impl Deref for Pen {
 }
 
 impl Pen {
-    /// For a context whose settings are the defaults, as after the canvas is resized
+    /// The context's settings must be the defaults, as after the canvas is resized
     pub fn new(ctx: CanvasRenderingContext2d) -> Self {
         Self {
             ctx,
@@ -100,12 +98,10 @@ impl Pen {
         }
     }
 
-    /// Draws text, with the string kept on the JavaScript side after the first time
     pub fn fill_text(&self, text: &str, x: f64, y: f64) -> Result<(), JsValue> {
         self.ctx.fill_text(intern(text), x, y)
     }
 
-    /// How wide some text is in the font that is set
     pub fn text_width(&self, text: &str) -> f64 {
         let font = self.state.borrow().font.clone().unwrap_or_default();
         let key = (font, text.to_string());

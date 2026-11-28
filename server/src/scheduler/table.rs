@@ -16,10 +16,9 @@ use crate::{
 };
 // }}}
 
-/// Whose hours a row holds
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RowKey {
-    /// A person, the only rows work takes hours from
+    /// The only rows work takes hours from
     User(Uuid),
     /// A plan's default availability, for its placeholder, its buffers and work nobody is on
     Plan(ShortId),
@@ -28,7 +27,6 @@ pub enum RowKey {
 }
 
 // RowKey supporting types {{{
-/// A row in the table
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RowId(pub u32);
 
@@ -36,12 +34,12 @@ pub struct RowId(pub u32);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MaskId(pub u32);
 
-/// One row's worth of hours asked of it each day
+/// Hours asked of a row each day
 pub type Ask = (RowId, u8);
 // }}}
 
-/// The hours of every person and plan default over the days of a run, and the days each
-/// combination of task affinities allows, indexed by `Day`. Days past the end have no hours.
+/// Hours of every person and plan default over the run, and the days each set of task
+/// affinities allows. Days past the end have no hours.
 #[derive(Debug, Clone)]
 pub struct Table {
     pub origin: NaiveDate,
@@ -51,7 +49,7 @@ pub struct Table {
     keys: Vec<RowKey>,
     row_of: HashMap<RowKey, RowId>,
     hours: Vec<Vec<u8>>,
-    /// For each row, the days it has at least 1 to 8 hours
+    /// Per row, `[h - 1]` is the days with at least `h` hours
     at_least: Vec<[Bits; 8]>,
     masks: Vec<Bits>,
     mask_of: HashMap<(ShortId, BTreeSet<Uuid>), MaskId>,
@@ -75,8 +73,7 @@ impl Table {
         table
     }
 
-    /// Every tenant user and plan default in id order, from the calendars
-    /// `Tenant::refresh_calendars` cached
+    /// Reads the calendars `Tenant::refresh_calendars` cached
     pub fn from_tenant(tenant: &Tenant, origin: NaiveDate, days: usize) -> Self {
         let mut table = Self::new(origin, days, tenant.today());
         let mut users: Vec<_> = tenant.users().keys().copied().collect();
@@ -128,12 +125,11 @@ impl Table {
         self.keys.len()
     }
 
-    /// Whether work takes the row's hours, which only people run out of
+    /// Only people run out of hours
     pub fn claimable(&self, row: RowId) -> bool {
         matches!(self.key(row), RowKey::User(_))
     }
 
-    /// The row's hours on a day, none past the end
     pub fn hours(&self, row: RowId, day: Day) -> u8 {
         let row = &self.hours[row.0 as usize];
         row.get(day.index()).copied().unwrap_or(0)
@@ -143,13 +139,12 @@ impl Table {
         &self.hours[row.0 as usize]
     }
 
-    /// The days the row has at least `hours`, which is 1 to 8
+    /// `hours` is clamped to 1 to 8
     pub fn at_least(&self, row: RowId, hours: u8) -> &Bits {
         &self.at_least[row.0 as usize][usize::from(hours.clamp(1, 8)) - 1]
     }
 
-    /// The mask for the days every affinity of a task allows, shared by tasks with the same set.
-    /// `None` for a task with no affinities, which may be worked any day.
+    /// Shared by tasks with the same set. `None` when there are no affinities, so any day goes.
     pub fn mask(&mut self, plan: &Plan, affinities: BTreeSet<Uuid>) -> Option<MaskId> {
         if affinities.is_empty() {
             return None;
@@ -171,8 +166,8 @@ impl Table {
         Some(id)
     }
 
-    /// The days work asking these hours of these rows can be done on: every row has its hours
-    /// and the mask allows the day. Work that asks nothing takes the days `calendar` works.
+    /// Days every row has its hours and the mask allows. Work that asks nothing takes the days
+    /// `calendar` works.
     pub fn valid(&self, asks: &[Ask], mask: Option<MaskId>, calendar: RowId) -> Valid {
         let mut rows = asks.iter().map(|(row, hours)| self.at_least(*row, *hours));
         let mut bits = match rows.next() {
@@ -193,7 +188,7 @@ mod tests {
     use super::*;
     use chrono::Datelike;
 
-    /// January 2024 starts on a Monday, the user works weekdays with a half day on Fridays
+    /// January 2024 starts on a Monday; the user works weekdays with a half day on Fridays
     fn table() -> (Table, RowId) {
         let origin = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
         let mut table = Table::new(origin, 14, origin);

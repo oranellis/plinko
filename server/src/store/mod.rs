@@ -1,8 +1,6 @@
-//! A tenant's SQLite file: the log of updates applied to it, a snapshot of the tenant for each
-//! day so loading does not replay everything, what the scheduler decided after updates, and the
-//! logins (see `auth`). Rows are written once and nothing is rewritten or dropped, which makes
-//! the file an incremental backup of every change, and the tenant and its schedule as of any
-//! update can be read back.
+//! A tenant's SQLite file: the update log, a daily snapshot so loading need not replay
+//! everything, the schedules, and logins (see `auth`). Rows are append-only, so the tenant and
+//! its schedule as of any update can be read back.
 
 // modules {{{
 pub mod auth;
@@ -34,8 +32,7 @@ impl From<rusqlite::Error> for PlinkoError {
 // }}}
 
 // tenant_dir {{{
-/// Where a tenant keeps its files: `data/<name>` under the directory the server runs from. The
-/// name is a folder name, so it is only letters, digits, `-` and `_`.
+/// Relative to the directory the server runs from
 pub fn tenant_dir(name: &str) -> PlinkoResult<PathBuf> {
     let plain = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
     if name.is_empty() || name.len() > 64 || !name.chars().all(plain) {
@@ -50,7 +47,7 @@ pub fn tenant_dir(name: &str) -> PlinkoResult<PathBuf> {
 
 pub struct Store {
     pub(crate) db: Mutex<Connection>,
-    /// The last solution saved and the update it is for, which the next is stored against
+    /// The next solution is stored as a diff against this one
     last: Mutex<Option<(u64, Solution)>>,
 }
 
@@ -88,7 +85,6 @@ impl Store {
         self.db.lock().expect("a store call does not panic")
     }
 
-    /// Whether anything has been saved
     pub fn is_empty(&self) -> PlinkoResult<bool> {
         let any = self
             .db()
@@ -96,19 +92,17 @@ impl Store {
         Ok(any.optional()?.is_none())
     }
 
-    /// Saves the first state of a tenant, as update 0
+    /// Saved as update 0
     pub fn create(&self, tenant: &Tenant) -> PlinkoResult<()> {
         self.snapshot(0, tenant)
     }
 
-    /// The tenant as of the last update, and that update's number. It has no schedule, see
-    /// `schedule_at` and `scheduler::restore`.
+    /// With no schedule, see `schedule_at` and `scheduler::restore`
     pub fn load(&self) -> PlinkoResult<(Tenant, u64)> {
         self.load_at(u64::MAX)
     }
 
-    /// The tenant as of update `at`, or the last one before it, and that update's number: the
-    /// last snapshot by then with the updates after it
+    /// Returns the last update number at or before `at`
     pub fn load_at(&self, at: u64) -> PlinkoResult<(Tenant, u64)> {
         let at = at.min(i64::MAX as u64);
         let newest = self.db().query_row(
@@ -137,9 +131,8 @@ impl Store {
         Ok((tenant, seq))
     }
 
-    /// What the scheduler decided as of update `at`, with the update it was decided for, which is
-    /// an earlier one if nothing was scheduled since. It is the last solution stored whole by
-    /// then with the changes stored after it.
+    /// Returns the update the solution was made for, earlier than `at` if nothing was scheduled
+    /// since
     pub fn schedule_at(&self, at: u64) -> PlinkoResult<Option<(u64, Solution)>> {
         let at = at.min(i64::MAX as u64);
         let records = {
@@ -163,9 +156,8 @@ impl Store {
         Ok(found)
     }
 
-    /// Saves what the scheduler decided for the tenant as of update `seq`. It is stored as what
-    /// changed since the last, or whole if that is most of it or a snapshot of the tenant was
-    /// taken since, so each day's snapshot has a whole schedule to go with it.
+    /// Stored as a diff, or whole if most of it changed or a snapshot was taken since, so each
+    /// day's snapshot has a whole schedule to go with it
     pub fn save_schedule(&self, seq: u64, solution: &Solution) -> PlinkoResult<()> {
         let mut last = self.last.lock().expect("a store call does not panic");
         let snapshot: Option<u64> =
@@ -184,9 +176,7 @@ impl Store {
         Ok(())
     }
 
-    /// Applies the update to the tenant and, only if it is allowed, saves it as the next update,
-    /// returning its number. A snapshot follows the update that moves the tenant to a new day.
-    /// The tenant only changes once that is saved, so on any failure it is as it was.
+    /// On any failure the tenant is left as it was. A new day also takes a snapshot.
     pub fn commit(&self, tenant: &mut Tenant, seq: u64, update: TenantUpdate) -> PlinkoResult<u64> {
         let bytes = codec::encode(&update)?;
         let new_day = matches!(update.update_type, TenantUpdateType::SetToday(_));
@@ -207,7 +197,6 @@ impl Store {
         Ok(seq)
     }
 
-    /// The updates after `seq`, for a client that has the tenant as of `seq`
     pub fn since(&self, seq: u64) -> PlinkoResult<Vec<(u64, TenantUpdate)>> {
         let db = self.db();
         let mut query =

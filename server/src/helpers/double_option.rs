@@ -1,5 +1,4 @@
-//! Serde for patch fields that can leave a value alone (`None`), clear it (`Some(None)`) or set it
-//! (`Some(Some(value))`), which formats without a marker of their own cannot tell apart.
+//! Serde for patch fields that tell leaving (`None`), clearing (`Some(None)`) and setting apart.
 //! Use as `#[serde(default, skip_serializing_if = "Option::is_none", with = "double_option")]`.
 
 // modules {{{

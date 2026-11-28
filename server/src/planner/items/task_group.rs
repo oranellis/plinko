@@ -15,22 +15,18 @@ use crate::{
 // }}}
 
 // constants {{{
-/// A single node around the items whose `parent` is this group (tasks, milestones, buffers and
-/// nested groups). Its dependencies decide the day members can start (`ParentStart`). The group
-/// then covers the first member's start to the last member's end, so it begins with its first
-/// task and ends on the last day a member runs. With no members it lasts `EMPTY_DAYS` calendar
-/// days instead, and that stops applying as soon as a member is added.
-/// How many calendar days a group with no members lasts
+/// Calendar days a group with no members lasts
 pub const EMPTY_DAYS: i64 = 3;
 // }}}
 
+/// Its dependencies decide when members can start; it then spans the first member's start to the
+/// last member's end
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TaskGroup {
     id: Uuid,
     name: String,
     dependencies: Vec<PlanNode>,
     parent: Parent,
-    /// A date for the first day of its first member or the last day of its last
     time_constraint: NodeConstraint,
     description: Option<String>,
     data: DataBlocks,
@@ -126,7 +122,7 @@ pub struct TaskGroupPatch {
     pub time_constraint: Option<NodeConstraint>,
 }
 
-/// Written by the scheduler for every group it could schedule
+/// Absent when the scheduler could not place the group
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VolatileState {
     pub date_range: DateRange,
