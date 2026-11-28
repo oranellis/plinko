@@ -28,8 +28,8 @@ use crate::{
 pub const AHEAD: u64 = 14;
 /// The weeks of hours shown, from the start of this one
 const HOUR_WEEKS: u64 = 4;
-/// The most tasks listed before the rest are left to the full allocations
-const MOST_TASKS: usize = 8;
+/// The most lanes of tasks shown before the rest are left to the full allocations
+const MOST_LANES: usize = 6;
 /// Colours of the circles people are shown as, one each, the same every time
 const FACES: [&str; 8] = [
     "#5b7fbf", "#4f9a78", "#b07a3c", "#9a5bb0", "#3f9aa6", "#b05b6e", "#7a8f3c", "#6b6bb8",
@@ -52,6 +52,22 @@ pub fn provide_person_window() -> RwSignal<Option<Uuid>> {
 pub fn use_open_person() -> Callback<Uuid> {
     let open = expect_context::<PersonWindow>().0;
     Callback::new(move |id| open.set(Some(id)))
+}
+
+/// Lets go of the keyboard after a click on what opened a window, so it is not given back to it
+/// when the window closes, where enter would open the window again rather than reach the page.
+/// Pressed from the keyboard, it keeps it.
+pub fn let_go(ev: &web_sys::MouseEvent) {
+    use wasm_bindgen::JsCast;
+    if ev.detail() == 0 {
+        return;
+    }
+    if let Some(button) = ev
+        .current_target()
+        .and_then(|t| t.dyn_into::<web_sys::HtmlElement>().ok())
+    {
+        let _ = button.blur();
+    }
 }
 // }}}
 
@@ -140,6 +156,28 @@ fn span(task: &MyTask, first: NaiveDate, last: NaiveDate) -> Option<(i64, i64)> 
     Some((from, to))
 }
 
+/// Packs runs of grid columns into lanes, each in the first lane where it leaves at least a day
+/// empty either side of what is already there, as the Gantt does. Gives each its lane, and how
+/// many lanes there are.
+fn lanes(spans: &[(i64, i64)]) -> (Vec<usize>, usize) {
+    let mut order: Vec<usize> = (0..spans.len()).collect();
+    order.sort_by_key(|i| spans[*i]);
+    // the column after the last day taken in each lane
+    let mut free: Vec<i64> = Vec::new();
+    let mut lane_of = vec![0; spans.len()];
+    for i in order {
+        let (from, to) = spans[i];
+        let lane = free.iter().position(|f| from > *f).unwrap_or(free.len());
+        if lane == free.len() {
+            free.push(to);
+        } else {
+            free[lane] = to;
+        }
+        lane_of[i] = lane;
+    }
+    (lane_of, free.len())
+}
+
 /// Runs of days with something on them, as grid columns from 1, for work that is not named
 fn runs(hours: &[u32]) -> Vec<(usize, usize)> {
     let mut runs = Vec::new();
@@ -215,6 +253,7 @@ pub fn PersonButton(id: Uuid, #[prop(into)] name: String) -> impl IntoView {
             title=title
             on:click=move |ev| {
                 ev.stop_propagation();
+                let_go(&ev);
                 open.run(id);
             }
         >
@@ -363,13 +402,13 @@ fn Booked(who: Uuid) -> impl IntoView {
                 <h3>"Next two weeks"</h3>
                 <span class=move || format!("busy {}", said.get().1)>{move || said.get().0}</span>
             </div>
-            // a row each, every one the same columns: the names, then a column a day
+            // a row each, every one the same columns, a column a day, the tasks packed into lanes
             <div class="booked" style=format!("--days:{AHEAD}") class:none=nothing>
                 <div class="brow">
                     {move || load.get().into_iter().enumerate().map(|(i, d)| {
                         let weekend = matches!(d.day.weekday(), Weekday::Sat | Weekday::Sun);
                         view! {
-                            <span class="bday" class:off=weekend class:today=i == 0 style=format!("grid-column:{}", i + 2) title=format::day(d.day)>
+                            <span class="bday" class:off=weekend class:today=i == 0 style=format!("grid-column:{}", i + 1) title=format::day(d.day)>
                                 {format::weekday(d.day).chars().next().unwrap_or(' ').to_string()}
                             </span>
                         }
@@ -377,7 +416,7 @@ fn Booked(who: Uuid) -> impl IntoView {
                 </div>
                 <div class="brow pies">
                     {move || load.get().into_iter().enumerate().map(|(i, d)| view! {
-                        <span class="bpie" style=format!("grid-column:{}", i + 2)>
+                        <span class="bpie" style=format!("grid-column:{}", i + 1)>
                             {(d.booked > 0).then(|| view! {
                                 <HourPie booked=d.booked capacity=d.capacity title=format!("{}: {} of {} hours booked", format::day(d.day), d.booked, d.capacity) />
                             })}
@@ -386,41 +425,40 @@ fn Booked(who: Uuid) -> impl IntoView {
                 </div>
                 {move || {
                     let rows = shown.get();
-                    let hidden = rows.len().saturating_sub(MOST_TASKS);
-                    let bars = rows.into_iter().take(MOST_TASKS).map(|(task, (from, to))| {
+                    let spans: Vec<(i64, i64)> = rows.iter().map(|(_, s)| *s).collect();
+                    let (lane_of, count) = lanes(&spans);
+                    let hidden = lane_of.iter().filter(|l| **l >= MOST_LANES).count();
+                    let mut bars: Vec<Vec<AnyView>> = (0..count.min(MOST_LANES)).map(|_| Vec::new()).collect();
+                    for ((task, (from, to)), lane) in rows.into_iter().zip(lane_of) {
+                        let Some(lane) = bars.get_mut(lane) else { continue };
                         let (plan, id) = (task.plan, task.task);
                         let go = move |_| {
                             reveal.set(Some((plan, id)));
                             navigate(Route::Plan(plan, PlanTab::Gantt, None));
                         };
-                        view! {
-                            <div class="brow">
-                                <button type="button" class="blabel" title=format!("{} · {}", task.name, task.plan_name) on:click=go>
-                                    {task.name.clone()}
-                                </button>
-                                <button
-                                    type="button"
-                                    class="bbar"
-                                    aria-label=task.name.clone()
-                                    title=format!("{} · {}\n{} to {}", task.name, task.plan_name, format::day(task.start), format::day(task.end))
-                                    style=format!("grid-column:{} / {};background:{}", from + 1, to + 1, colour_of(id))
-                                    on:click=go
-                                ></button>
-                            </div>
-                        }
-                    }).collect_view();
+                        lane.push(view! {
+                            <button
+                                type="button"
+                                class="bbar"
+                                aria-label=task.name.clone()
+                                title=format!("{} · {}\n{} to {}", task.name, task.plan_name, format::day(task.start), format::day(task.end))
+                                style=format!("grid-column:{} / {};background:{}", from, to, colour_of(id))
+                                on:click=go
+                            ></button>
+                        }.into_any());
+                    }
+                    let rows = bars.into_iter().map(|lane| view! { <div class="brow">{lane}</div> }).collect_view();
                     let more = (hidden > 0).then(|| view! {
-                        <div class="brow"><span class="blabel more">{format!("and {hidden} more…")}</span></div>
+                        <div class="brow"><span class="bmore">{format!("and {hidden} more…")}</span></div>
                     });
-                    (bars, more)
+                    (rows, more)
                 }}
                 {move || {
                     let runs = runs(&other.get());
                     (!runs.is_empty()).then(|| view! {
                         <div class="brow">
-                            <span class="blabel ghost" title="Work on plans you are not in">"Other work"</span>
                             {runs.into_iter().map(|(from, to)| view! {
-                                <span class="bbar ghost" style=format!("grid-column:{} / {}", from + 1, to + 1)></span>
+                                <span class="bbar ghost" title="Other work, on plans you are not in" style=format!("grid-column:{} / {}", from, to)></span>
                             }).collect_view()}
                         </div>
                     })
@@ -472,7 +510,7 @@ fn HoursStrip(who: Uuid, editable: Signal<bool>) -> impl IntoView {
     }
 }
 
-/// Weeks of days in rows, shaded by their hours
+/// Weeks of days in rows, shaded by their hours, each row headed by the day its week begins
 #[component]
 pub fn HourCells(
     #[prop(into)] days: Signal<Vec<(NaiveDate, u8, bool)>>,
@@ -481,17 +519,26 @@ pub fn HourCells(
     let week_start = use_preferences().week_start;
     view! {
         <div class="hourcells">
+            <span class="hhead"></span>
             {move || week_start.get().weekdays().into_iter().map(|w| view! {
                 <span class="hhead">{w.chars().next().unwrap_or(' ').to_string()}</span>
             }).collect_view()}
-            {move || days.get().into_iter().map(|(d, hours, rule)| view! {
-                <span
-                    class="hcell"
-                    class:today=d == today.get()
-                    class:marked=rule
-                    style=format!("--shade:{}", f64::from(hours) / 8.0)
-                    title=format!("{}: {hours} h", format::day(d))
-                ></span>
+            {move || days.get().chunks(7).map(|week| {
+                let begins = week.first().map(|(d, _, _)| *d);
+                view! {
+                    <span class="hweek" title=begins.map(|d| format!("Week beginning {}", format::day(d)))>
+                        {begins.map(|d| format!("w/b {} {}", d.day(), format::month(d)))}
+                    </span>
+                    {week.iter().map(|(d, hours, rule)| view! {
+                        <span
+                            class="hcell"
+                            class:today=*d == today.get()
+                            class:marked=*rule
+                            style=format!("--shade:{}", f64::from(*hours) / 8.0)
+                            title=format!("{}: {hours} h", format::day(*d))
+                        ></span>
+                    }).collect_view()}
+                }
             }).collect_view()}
         </div>
     }
@@ -566,6 +613,14 @@ mod tests {
         assert_eq!(busy(&[load(8, 8)]).1, "full");
         assert_eq!(busy(&[load(9, 8)]).1, "over");
         assert_eq!(busy(&[load(2, 0)]).1, "over");
+    }
+
+    #[test]
+    fn tasks_share_lanes_with_a_day_either_side() {
+        // 1-3 and 5-6 leave day 4 empty so share; 4-5 would touch 1-3, so goes under
+        assert_eq!(lanes(&[(1, 4), (5, 7), (4, 6)]), (vec![0, 0, 1], 2));
+        assert_eq!(lanes(&[(1, 4), (4, 6)]), (vec![0, 1], 2));
+        assert_eq!(lanes(&[]), (vec![], 0));
     }
 
     #[test]

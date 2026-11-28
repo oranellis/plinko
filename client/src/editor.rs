@@ -415,7 +415,7 @@ fn Workers(
                             Some((id, name)) => {
                                 let title = format!("About {name}");
                                 view! {
-                                <button type="button" class="facebtn" title=title on:click=move |_| open_person.run(id)>
+                                <button type="button" class="facebtn" title=title on:click=move |ev| { crate::person::let_go(&ev); open_person.run(id); }>
                                     <crate::person::Face id=id name=name size=26 />
                                 </button>
                                 }.into_any()

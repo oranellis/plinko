@@ -250,9 +250,9 @@ a.quiet:hover { color: var(--accent-hover); }
 .person-part-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .person-part-head h3 { margin: 0; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .more-link { justify-self: end; }
-.booked { --names: minmax(70px, 28%); display: grid; gap: 4px; min-width: 0; }
+.booked { display: grid; gap: 4px; min-width: 0; }
 .booked.none { display: none; }
-.brow { display: grid; grid-template-columns: var(--names) repeat(var(--days), minmax(0, 1fr)); column-gap: 2px; align-items: center; min-width: 0; }
+.brow { display: grid; grid-template-columns: repeat(var(--days), minmax(0, 1fr)); column-gap: 2px; align-items: center; min-width: 0; }
 .brow > * { grid-row: 1; }
 .brow.pies { min-height: 26px; }
 .bday { text-align: center; font-size: 11px; color: var(--muted); }
@@ -260,13 +260,12 @@ a.quiet:hover { color: var(--accent-hover); }
 .bday.today { color: var(--accent-hover); font-weight: 700; }
 .bpie { display: grid; place-items: center; min-width: 0; }
 .bpie svg { width: 100%; max-width: 26px; height: auto; }
-.blabel { grid-column: 1; min-width: 0; padding: 0 8px 0 0; min-height: 0; background: none; border: none; text-align: left; font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-button.blabel:hover { color: var(--accent-hover); }
-.blabel.ghost, .blabel.more { color: var(--muted); font-style: italic; }
+.bmore { grid-column: 1 / -1; font-size: 13px; color: var(--muted); font-style: italic; }
 .bbar { height: 12px; min-height: 0; padding: 0; border: none; border-radius: 6px; opacity: 0.85; }
 button.bbar:hover { opacity: 1; box-shadow: 0 0 0 2px var(--text); }
 .bbar.ghost { background: repeating-linear-gradient(135deg, #555 0 4px, #3a3a3c 4px 8px); }
-.hourcells { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; max-width: 360px; }
+.hourcells { display: grid; grid-template-columns: auto repeat(7, minmax(0, 1fr)); gap: 3px; align-items: center; max-width: 420px; }
+.hweek { font-size: 10px; color: var(--muted); white-space: nowrap; padding-right: 4px; }
 .hhead { text-align: center; font-size: 10px; color: var(--muted); }
 .hcell { position: relative; height: 14px; border-radius: 3px; background: color-mix(in srgb, var(--accent) calc(var(--shade, 0) * 70%), var(--soft)); }
 .hcell.today { box-shadow: inset 0 0 0 1.5px #fff; }
