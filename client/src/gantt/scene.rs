@@ -47,6 +47,8 @@ pub struct Unplaced {
 pub struct Section {
     pub who: Uuid,
     pub name: String,
+    /// Shown with their face, rather than the name alone
+    pub face: bool,
     pub lane: usize,
     pub lanes: usize,
     pub from: NaiveDate,
@@ -72,6 +74,7 @@ pub struct Options<'a> {
     pub boxed: bool,
     pub only: Option<Uuid>,
     pub split: Option<Vec<(Uuid, String)>>,
+    pub faces: bool,
     /// (booked, capacity) for each day from the first to the last, inclusive
     pub load: &'a dyn Fn(Uuid, NaiveDate, NaiveDate) -> Vec<(u32, u8)>,
 }
@@ -143,6 +146,7 @@ pub fn build(
         boxed: false,
         only: None,
         split: None,
+        faces: false,
         load: &|_, _, _| Vec::new(),
     };
     compose(&[shown], &options, collapsed, today)
@@ -293,6 +297,7 @@ fn lay_out(
         sections.push(Section {
             who,
             name,
+            face: options.faces,
             lane,
             lanes,
             from,
@@ -684,6 +689,7 @@ mod tests {
             boxed: false,
             only: None,
             split: Some(vec![(who, "Me".to_string()), (id(98), "You".to_string())]),
+            faces: true,
             load: &load,
         };
         let scene = compose(&shown, &options, &HashSet::new(), d(1));

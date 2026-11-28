@@ -24,7 +24,7 @@ use crate::gantt::{
     draw::{Frame, Hits, paint_header, paint_links, paint_marks, paint_names, paint_notes},
     layout::{Bounds, Rect, Viewport},
     links::{Anchor, Link, Role},
-    scene::Scene,
+    scene::{Scene, Section},
     shift::{Drag, DragView, Editing, Grips, Handle, Held, Overlay, Pin, PinView},
 };
 // }}}
@@ -404,16 +404,16 @@ pub fn Gantt(
     let layers = StoredValue::new_local(None::<layers::Layers>);
     let scene_gen = StoredValue::new_local(0u64);
     // bumps the generation only when the scene's drawing actually changes
-    let drawn = StoredValue::new_local(None::<(NaiveDate, Arrangement)>);
+    let drawn = StoredValue::new_local(None::<(NaiveDate, Arrangement, Vec<Section>)>);
     Effect::new(move |_| {
         scene.with(|s| {
             let same = drawn.with_value(|d| {
-                d.as_ref().is_some_and(|(origin, arrangement)| {
-                    *origin == s.origin && *arrangement == s.arrangement
+                d.as_ref().is_some_and(|(origin, arrangement, sections)| {
+                    *origin == s.origin && *arrangement == s.arrangement && *sections == s.sections
                 })
             });
             if !same {
-                drawn.set_value(Some((s.origin, s.arrangement.clone())));
+                drawn.set_value(Some((s.origin, s.arrangement.clone(), s.sections.clone())));
                 scene_gen.update_value(|g| *g += 1);
             }
         });

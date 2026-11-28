@@ -503,7 +503,7 @@ pub fn paint_names(ctx: &Pen, frame: &Frame) {
         let pill = Rect {
             x: 6.0,
             y: y + 6.0,
-            w: width + 44.0,
+            w: width + if section.face { 44.0 } else { 24.0 },
             h: ROW_HEIGHT - 12.0,
         };
         path_round(ctx, pill, pill.h / 2.0);
@@ -512,6 +512,17 @@ pub fn paint_names(ctx: &Pen, frame: &Frame) {
         ctx.set_stroke_style_str(BAND_LINE);
         ctx.stroke();
         let (cx, cy) = (pill.x + pill.h / 2.0, pill.y + pill.h / 2.0);
+        if !section.face {
+            text(
+                ctx,
+                "#ddd",
+                "bold 13px sans-serif",
+                &section.name,
+                pill.x + 12.0,
+                cy + 0.5,
+            );
+            continue;
+        }
         ctx.begin_path();
         let _ = ctx.arc(cx, cy, pill.h / 2.0 - 3.0, 0.0, std::f64::consts::TAU);
         ctx.set_fill_style_str(crate::person::face_of(section.who));

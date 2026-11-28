@@ -127,6 +127,27 @@ pub fn people(
     people
 }
 
+/// A band for each person when split, or one of your own when only your items show
+pub fn bands(
+    tenant: &Tenant,
+    plans: &[Shown],
+    me: Option<Uuid>,
+    options: ViewOptions,
+    everyone: bool,
+) -> Option<Vec<(Uuid, String)>> {
+    if options.split {
+        Some(people(tenant, plans, me, everyone))
+    } else if options.mine {
+        Some(
+            me.into_iter()
+                .map(|id| (id, "My Items".to_string()))
+                .collect(),
+        )
+    } else {
+        None
+    }
+}
+
 /// Booked hours count every plan, including ones the viewer cannot see
 pub fn load_of<'a>(
     tenant: &'a Tenant,

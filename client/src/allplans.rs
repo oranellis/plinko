@@ -23,7 +23,7 @@ use crate::{
     icons::{Icon, IconKind},
     nav::{PlanTab, Reveal, Route, navigate},
     ui::use_sync,
-    views::{ViewButton, load_of, people, use_view},
+    views::{ViewButton, bands, load_of, use_view},
 };
 // }}}
 
@@ -56,12 +56,13 @@ pub fn AllPlans() -> impl IntoView {
                         })
                         .collect();
                     shown.sort_by(|a, b| (a.plan.name(), a.id).cmp(&(b.plan.name(), b.id)));
-                    let split = options.split.then(|| people(t, &shown, me.get(), true));
+                    let split = bands(t, &shown, me.get(), options, true);
                     let load = load_of(t, schedule);
                     let options = scene::Options {
                         boxed: true,
                         only: me.get().filter(|_| options.mine),
                         split,
+                        faces: options.split,
                         load: &load,
                     };
                     scene::compose(&shown, &options, collapsed, t.today())
