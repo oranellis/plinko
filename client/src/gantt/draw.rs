@@ -411,12 +411,14 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
         std::cmp::Ordering::Less => "#c98a3c",
     };
     let over = booked.saturating_sub(8).min(8);
-    let inner = if over > 0 { radius * 0.78 } else { radius };
+    let inner = radius;
     let angle = |hours: u32| TAU * f64::from(hours.min(8)) / 8.0 - FRAC_PI_2;
-    let sector = |from: u32, to: u32| {
+    let gap = 2.0;
+    let outline = inner + gap;
+    let sector = |from: u32, to: u32, radius: f64| {
         ctx.begin_path();
         ctx.move_to(cx, cy);
-        let _ = ctx.arc(cx, cy, inner, angle(from), angle(to));
+        let _ = ctx.arc(cx, cy, radius, angle(from), angle(to));
         ctx.close_path();
     };
     // sectors over a backing rather than a slice an hour, so no seams show between hours. Hours
@@ -426,59 +428,58 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
         ctx.begin_path();
         let _ = ctx.arc(cx, cy, inner, 0.0, TAU);
     } else {
-        sector(0, fillable);
+        sector(0, fillable, inner);
     }
     ctx.set_fill_style_str("#2f2f31");
     ctx.fill();
-    // this chart's hours first in colour, then those on other plans hatched grey
+    // this chart's hours first in colour, then those on other plans hatched grey, which reach out
+    // to the border
     if shown > 0 {
-        sector(0, shown);
+        sector(0, shown, inner);
         ctx.set_fill_style_str(colour);
         ctx.fill();
     }
     if booked > shown && shown < 8 {
         ctx.save();
-        sector(shown, booked);
+        sector(shown, booked, outline - 0.5);
         ctx.set_fill_style_str("#3e3e42");
         ctx.fill();
         ctx.clip();
         ctx.set_stroke_style_str("#a0a0a6");
         ctx.set_line_width(1.6);
         ctx.begin_path();
-        let mut x = cx - 2.0 * inner;
-        while x < cx + inner {
-            ctx.move_to(x, cy + inner);
-            ctx.line_to(x + 2.0 * inner, cy - inner);
+        let mut x = cx - 2.0 * outline;
+        while x < cx + outline {
+            ctx.move_to(x, cy + outline);
+            ctx.line_to(x + 2.0 * outline, cy - outline);
             x += 4.5;
         }
         ctx.stroke();
         ctx.restore();
     }
-    // a day of fewer than eight hours is outlined round the hours there are, cutting in to the
-    // centre where the rest of the pie could never be filled
-    if (1..8).contains(&capacity) {
-        // the fillable sector grown by `gap` on every side: the arc further out, and each straight
-        // edge moved outwards, meeting at a corner pushed back from the centre
-        let gap = 2.0;
-        let outline = inner + gap;
-        let (from, to) = (angle(0), angle(u32::from(capacity)));
+    // a border round every pie; a day of fewer than eight hours has it round the hours there are,
+    // cutting in to the centre, each edge `gap` out from the sector's
+    ctx.set_line_width(1.0);
+    ctx.set_stroke_style_str("#9a9a9e");
+    ctx.begin_path();
+    if fillable == 8 {
+        let _ = ctx.arc(cx, cy, outline, 0.0, TAU);
+    } else if fillable > 0 {
+        let (from, to) = (angle(0), angle(fillable));
         let half = (to - from) / 2.0;
         let bisector = from + half;
         let back = gap / half.sin();
         let reach = (gap / outline).asin();
-        ctx.set_line_width(1.0);
-        ctx.set_stroke_style_str("#9a9a9e");
-        ctx.begin_path();
         ctx.move_to(cx - back * bisector.cos(), cy - back * bisector.sin());
         let _ = ctx.arc(cx, cy, outline, from - reach, to + reach);
         ctx.close_path();
-        ctx.stroke();
     }
+    ctx.stroke();
     if over > 0 {
         ctx.set_line_width(1.5);
         ctx.set_stroke_style_str(colour);
         ctx.begin_path();
-        let _ = ctx.arc(cx, cy, radius - 0.75, -FRAC_PI_2, angle(over));
+        let _ = ctx.arc(cx, cy, outline + 2.5, -FRAC_PI_2, angle(over));
         ctx.stroke();
     }
     ctx.set_line_width(1.0);
