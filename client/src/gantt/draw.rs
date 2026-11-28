@@ -419,9 +419,15 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
         let _ = ctx.arc(cx, cy, inner, angle(from), angle(to));
         ctx.close_path();
     };
-    // sectors over a disc rather than a slice an hour, so no seams show between hours
-    ctx.begin_path();
-    let _ = ctx.arc(cx, cy, inner, 0.0, TAU);
+    // sectors over a backing rather than a slice an hour, so no seams show between hours. Hours
+    // the person does not have are left clear.
+    let fillable = u32::from(capacity).min(8);
+    if fillable == 8 {
+        ctx.begin_path();
+        let _ = ctx.arc(cx, cy, inner, 0.0, TAU);
+    } else {
+        sector(0, fillable);
+    }
     ctx.set_fill_style_str("#2f2f31");
     ctx.fill();
     // this chart's hours first in colour, then those on other plans hatched grey
@@ -451,13 +457,20 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
     // a day of fewer than eight hours is outlined round the hours there are, cutting in to the
     // centre where the rest of the pie could never be filled
     if (1..8).contains(&capacity) {
-        let outline = inner + 2.0;
+        // the fillable sector grown by `gap` on every side: the arc further out, and each straight
+        // edge moved outwards, meeting at a corner pushed back from the centre
+        let gap = 2.0;
+        let outline = inner + gap;
+        let (from, to) = (angle(0), angle(u32::from(capacity)));
+        let half = (to - from) / 2.0;
+        let bisector = from + half;
+        let back = gap / half.sin();
+        let reach = (gap / outline).asin();
         ctx.set_line_width(1.0);
         ctx.set_stroke_style_str("#9a9a9e");
         ctx.begin_path();
-        ctx.move_to(cx, cy);
-        ctx.line_to(cx, cy - outline);
-        let _ = ctx.arc(cx, cy, outline, -FRAC_PI_2, angle(u32::from(capacity)));
+        ctx.move_to(cx - back * bisector.cos(), cy - back * bisector.sin());
+        let _ = ctx.arc(cx, cy, outline, from - reach, to + reach);
         ctx.close_path();
         ctx.stroke();
     }
