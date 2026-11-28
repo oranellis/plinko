@@ -96,12 +96,9 @@ pub fn people(
     plans: &[Shown],
     me: Option<Uuid>,
     everyone: bool,
-    mine: bool,
 ) -> Vec<(Uuid, String)> {
     let users = tenant.users();
-    let mut ids: Vec<Uuid> = if mine {
-        me.into_iter().collect()
-    } else if everyone {
+    let mut ids: Vec<Uuid> = if everyone {
         users.keys().copied().collect()
     } else {
         let mut ids: Vec<Uuid> = plans
@@ -163,18 +160,20 @@ pub fn ViewButton(options: Signal<ViewOptions>, on_change: Callback<ViewOptions>
                        get: fn(ViewOptions) -> bool,
                        set: fn(&mut ViewOptions, bool)| {
         view! {
-            <label class="viewopt">
-                <input
-                    type="checkbox"
-                    prop:checked=move || get(options.get())
-                    on:change=move |ev| {
-                        let mut o = options.get_untracked();
-                        set(&mut o, event_target_checked(&ev));
-                        on_change.run(o);
-                    }
-                />
-                <span>{label}</span>
-            </label>
+            <button
+                type="button"
+                class="viewopt"
+                class:on=move || get(options.get())
+                aria-pressed=move || get(options.get()).to_string()
+                on:click=move |_| {
+                    let mut o = options.get_untracked();
+                    let on = !get(o);
+                    set(&mut o, on);
+                    on_change.run(o);
+                }
+            >
+                {label}
+            </button>
         }
     };
     let filtered = move || options.get() != ViewOptions::default();
@@ -195,8 +194,8 @@ pub fn ViewButton(options: Signal<ViewOptions>, on_change: Callback<ViewOptions>
             <Show when=move || open.get()>
                 <div class="menu-backdrop" on:click=move |_| open.set(false)></div>
                 <div class="viewpop">
-                    {toggle("My items", |o| o.mine, |o, on| o.mine = on)}
-                    {toggle("Split by person", |o| o.split, |o, on| o.split = on)}
+                    {toggle("My items", |o| o.mine, |o, on| *o = ViewOptions { mine: on, split: o.split && !on })}
+                    {toggle("Split by person", |o| o.split, |o, on| *o = ViewOptions { split: on, mine: o.mine && !on })}
                 </div>
             </Show>
         </div>

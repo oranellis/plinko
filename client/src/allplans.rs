@@ -56,9 +56,7 @@ pub fn AllPlans() -> impl IntoView {
                         })
                         .collect();
                     shown.sort_by(|a, b| (a.plan.name(), a.id).cmp(&(b.plan.name(), b.id)));
-                    let split = options
-                        .split
-                        .then(|| people(t, &shown, me.get(), true, options.mine));
+                    let split = options.split.then(|| people(t, &shown, me.get(), true));
                     let load = load_of(t, schedule);
                     let options = scene::Options {
                         boxed: true,

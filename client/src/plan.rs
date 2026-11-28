@@ -153,9 +153,9 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
                             plan: t.plans().get(&plan)?,
                             state: schedule.and_then(|s| s.plans.get(&plan)),
                         }];
-                        let split = options.split.then(|| {
-                            crate::views::people(t, &shown, me.get(), false, options.mine)
-                        });
+                        let split = options
+                            .split
+                            .then(|| crate::views::people(t, &shown, me.get(), false));
                         let load = crate::views::load_of(t, schedule);
                         let options = scene::Options {
                             boxed: false,

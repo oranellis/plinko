@@ -542,8 +542,10 @@ button.day.today { box-shadow: inset 0 0 0 2px var(--accent); font-weight: 700; 
 .viewmenu { position: relative; display: flex; }
 .viewmenu .menu-backdrop { z-index: 41; }
 .viewpop { position: absolute; top: 100%; right: 0; z-index: 42; min-width: 180px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); display: grid; gap: 2px; }
-.viewopt { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; white-space: nowrap; }
-.viewopt:hover { background: var(--soft); }
+.viewpop { gap: 4px; }
+button.viewopt { justify-content: flex-start; padding: 8px 12px; min-height: 0; font-size: 14px; background: var(--soft); color: var(--text); border-radius: 4px; white-space: nowrap; }
+button.viewopt:hover { background: var(--raised); }
+button.viewopt.on { outline: 2px solid #fff; outline-offset: -2px; color: var(--title); }
 .toolbar-btn.lit { color: var(--accent-hover); }
 .additem { display: flex; align-items: center; gap: 10px; justify-content: flex-start; background: none; padding: 6px 10px; min-height: 0; font-size: 14px; color: var(--text); }
 .additem:hover { background: var(--raised); }
