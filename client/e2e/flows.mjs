@@ -79,7 +79,7 @@ expect(panned !== zoomed, "ctrl and the wheel zoom");
 // a second window of the same person sees changes live
 const b = await session();
 await login(b, "admin@example.com", "password123");
-await b.evaluate(() => document.querySelector("a.card").click());
+await b.evaluate(() => document.querySelector("a.card:not(.allcard)").click());
 await b.waitForSelector(".plan");
 await click(b, "Show a list");
 await b.waitForFunction(() => document.body.innerText.includes("Design"), { timeout: 5000 }).catch(() => {});
@@ -101,7 +101,7 @@ const m = await session(390, 780);
 await login(m, "mia@example.com", "mia-password-1");
 expect((await text(m)).includes("not in any plans"), "a member with no plans sees none");
 await a.evaluate(() => document.querySelector("a[href='#/']").click()); await sleep(400);
-await a.evaluate(() => document.querySelector("a.card").click()); await a.waitForSelector(".plan");
+await a.evaluate(() => document.querySelector("a.card:not(.allcard)").click()); await a.waitForSelector(".plan");
 await click(a, "Plan settings"); await sleep(500);
 await a.evaluate(() => {
   const sel = [...document.querySelectorAll("section select")].find((s) => [...s.options].some((o) => o.textContent === "Mia Member"));
@@ -137,7 +137,7 @@ for (let i = 1; i <= 6; i++) { await phone.touchscreen.touchMove(grip.x + 12 * i
 await phone.touchscreen.touchEnd(); await sleep(200);
 expect((await widthOf()) > narrow + 40, "the names edge drags freely by touch");
 await phone.goto(`${base}/#/plans`); await sleep(500);
-await phone.evaluate(() => document.querySelector("a.card").click()); await phone.waitForSelector(".plan");
+await phone.evaluate(() => document.querySelector("a.card:not(.allcard)").click()); await phone.waitForSelector(".plan");
 await phone.tap("button[aria-label=Add]"); await sleep(300);
 expect(!!(await phone.$(".addpop")), "the add menu opens on a tap");
 await phone.touchscreen.tap(200, 500); await sleep(300);
