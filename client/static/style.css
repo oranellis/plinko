@@ -259,6 +259,10 @@ a.quiet:hover { color: var(--accent-hover); }
 .brow { display: grid; grid-template-columns: repeat(var(--days), minmax(0, 1fr)); column-gap: 2px; align-items: center; min-width: 0; }
 .brow > * { grid-row: 1; }
 .brow.pies { min-height: 26px; }
+.hday { position: relative; height: 38px; min-width: 0; border-radius: 4px; display: grid; place-items: center; overflow: hidden; white-space: nowrap; font-size: 12px; color: var(--muted); background: color-mix(in srgb, var(--accent) calc(var(--shade, 0) * 55%), var(--soft)); }
+.hday.hashours { color: #fff; }
+.hday.today { box-shadow: inset 0 0 0 1.5px #fff; }
+.hday.marked::after { content: ""; position: absolute; right: 3px; top: 3px; width: 5px; height: 5px; border-radius: 50%; background: #ffd600; }
 .bday { text-align: center; font-size: 11px; color: var(--muted); }
 .bday.off { opacity: 0.5; }
 .bday.today { color: var(--accent-hover); font-weight: 700; }

@@ -191,8 +191,8 @@ fn runs(hours: &[u32]) -> Vec<(usize, usize)> {
 }
 
 /// Hours on each day of the weeks shown, and whether a rule starts that day
-fn hour_weeks(set: &RuleSet<Workload>, from: NaiveDate) -> Vec<(NaiveDate, u8, bool)> {
-    let to = from + Days::new(HOUR_WEEKS * 7 - 1);
+fn hour_days(set: &RuleSet<Workload>, from: NaiveDate, count: u64) -> Vec<(NaiveDate, u8, bool)> {
+    let to = from + Days::new(count - 1);
     let calendar = set.calendar(from, to);
     let starts: std::collections::HashSet<NaiveDate> = set
         .rules()
@@ -468,17 +468,13 @@ fn Booked(who: Uuid) -> impl IntoView {
 fn HoursStrip(who: Uuid, editable: Signal<bool>) -> impl IntoView {
     let sync = use_sync();
     let today = use_today();
-    let week_start = use_preferences().week_start;
-    let from = Memo::new(move |_| {
-        let today = today.get();
-        today - Days::new(week_start.get().offset(today) as u64)
-    });
+    // the same days and columns as the two weeks booked above
     let days = Memo::new(move |_| {
-        let from = from.get();
+        let from = today.get();
         sync.tenant.with(|t| {
             t.as_ref()
                 .and_then(|t| t.users().get(&who))
-                .map(|u| hour_weeks(u.availability(), from))
+                .map(|u| hour_days(u.availability(), from, AHEAD))
                 .unwrap_or_default()
         })
     });
@@ -487,11 +483,30 @@ fn HoursStrip(who: Uuid, editable: Signal<bool>) -> impl IntoView {
             <div class="person-part-head">
                 <h3>"Hours"</h3>
                 <span class="busy">{move || {
-                    let week: u32 = days.with(|d| d.iter().take(7).map(|(_, h, _)| u32::from(*h)).sum());
-                    format!("{week} h this week")
+                    let total: u32 = days.with(|d| d.iter().map(|(_, h, _)| u32::from(*h)).sum());
+                    format!("{total} h in the next two weeks")
                 }}</span>
             </div>
-            <HourCells days=days today=today />
+            <div class="brow hourstrip" style=format!("--days:{AHEAD}")>
+                {move || days.get().into_iter().enumerate().map(|(i, (d, hours, rule))| {
+                    let weekend = matches!(d.weekday(), Weekday::Sat | Weekday::Sun);
+                    view! {
+                        <span
+                            class=format!(
+                                "hday{}{}{}{}",
+                                if i == 0 { " today" } else { "" },
+                                if weekend { " off" } else { "" },
+                                if rule { " marked" } else { "" },
+                                if hours > 0 { " hashours" } else { "" },
+                            )
+                            style=format!("grid-column:{};--shade:{}", i + 1, f64::from(hours) / 8.0)
+                            title=format!("{}: {hours} h", format::day(d))
+                        >
+                            {if d.day() == 1 { format!("{} {}", d.day(), format::month(d)) } else { d.day().to_string() }}
+                        </span>
+                    }
+                }).collect_view()}
+            </div>
             <Show when=move || editable.get()>
                 <a class="quiet more-link" href=Route::Availability(Availability::User(who)).path()>"Edit hours ›"</a>
             </Show>
@@ -529,7 +544,7 @@ pub fn HourCells(
 }
 
 pub fn hours_from(set: &RuleSet<Workload>, from: NaiveDate) -> Vec<(NaiveDate, u8, bool)> {
-    hour_weeks(set, from)
+    hour_days(set, from, HOUR_WEEKS * 7)
 }
 // }}}
 
