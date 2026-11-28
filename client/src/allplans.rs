@@ -30,7 +30,7 @@ use crate::{
 #[component]
 pub fn AllPlans() -> impl IntoView {
     let sync = use_sync();
-    let (view, set_view) = use_view("all".to_string());
+    let (view, set_view) = use_view();
     let me = Memo::new(move |_| sync.me.with(|m| m.as_ref().map(|m| m.id)));
     let collapsed = RwSignal::new(HashSet::<Uuid>::new());
     let today = Signal::derive(move || {

@@ -1,8 +1,6 @@
-//! The eye button's view options, kept in local storage per chart.
+//! The eye button's view options.
 
 // modules {{{
-use std::collections::HashMap;
-
 use chrono::NaiveDate;
 use leptos::prelude::*;
 use plinko::{multitenancy::tenant::Tenant, scheduler::state::TenantVolatileState};
@@ -14,78 +12,17 @@ use crate::{
 };
 // }}}
 
-const STORAGE: &str = "plinko.views";
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ViewOptions {
     pub mine: bool,
     pub split: bool,
 }
 
-#[derive(Clone, Copy)]
-struct Views(RwSignal<HashMap<String, ViewOptions>>);
-
-// storage {{{
-fn parse(saved: &str) -> HashMap<String, ViewOptions> {
-    saved
-        .split(';')
-        .filter_map(|pair| {
-            let (key, flags) = pair.split_once('=')?;
-            let options = ViewOptions {
-                mine: flags.contains('m'),
-                split: flags.contains('s'),
-            };
-            Some((key.to_string(), options))
-        })
-        .collect()
-}
-
-fn write(views: &HashMap<String, ViewOptions>) -> String {
-    let mut pairs: Vec<String> = views
-        .iter()
-        .filter(|(_, o)| **o != ViewOptions::default())
-        .map(|(key, o)| {
-            let flags = [(o.mine, "m"), (o.split, "s")]
-                .iter()
-                .filter(|(on, _)| *on)
-                .map(|(_, f)| *f)
-                .collect::<String>();
-            format!("{key}={flags}")
-        })
-        .collect();
-    pairs.sort();
-    pairs.join(";")
-}
-// }}}
-
-// provide_views {{{
-pub fn provide_views() {
-    let storage = web_sys::window().and_then(|w| w.local_storage().ok().flatten());
-    let saved = storage
-        .as_ref()
-        .and_then(|s| s.get_item(STORAGE).ok().flatten())
-        .unwrap_or_default();
-    let views = RwSignal::new(parse(&saved));
-    Effect::new(move |_| {
-        if let Some(s) = &storage {
-            let _ = s.set_item(STORAGE, &views.with(write));
-        }
-    });
-    provide_context(Views(views));
-}
-
-/// `key` is `plan:<id>` or `all`
-pub fn use_view(key: String) -> (Signal<ViewOptions>, Callback<ViewOptions>) {
-    let views = expect_context::<Views>().0;
-    let read_key = key.clone();
-    let options =
-        Signal::derive(move || views.with(|v| v.get(&read_key).copied().unwrap_or_default()));
-    let set = Callback::new(move |o: ViewOptions| {
-        views.update(|v| {
-            v.insert(key.clone(), o);
-        })
-    });
-    (options, set)
+// use_view {{{
+/// Options for the page being built, which start afresh each time it is opened
+pub fn use_view() -> (Signal<ViewOptions>, Callback<ViewOptions>) {
+    let options = RwSignal::new(ViewOptions::default());
+    (options.into(), Callback::new(move |o| options.set(o)))
 }
 // }}}
 
@@ -243,37 +180,6 @@ pub fn ViewButton(
                 </div>
             </Show>
         </div>
-    }
-}
-// }}}
-
-// tests {{{
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn options_are_kept_as_text_and_read_back() {
-        let mut views = HashMap::new();
-        views.insert(
-            "plan:abc".to_string(),
-            ViewOptions {
-                mine: true,
-                split: true,
-            },
-        );
-        views.insert(
-            "all".to_string(),
-            ViewOptions {
-                mine: false,
-                split: true,
-            },
-        );
-        views.insert("plan:off".to_string(), ViewOptions::default());
-        let text = write(&views);
-        assert_eq!(text, "all=s;plan:abc=ms");
-        views.remove("plan:off");
-        assert_eq!(parse(&text), views);
     }
 }
 // }}}

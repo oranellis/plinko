@@ -117,7 +117,7 @@ pub fn PlanPage(plan: ShortId) -> impl IntoView {
         sync.schedule
             .with(|s| f(s.as_ref().and_then(|(_, s)| s.plans.get(&plan))))
     };
-    let (view, set_view) = crate::views::use_view(format!("plan:{plan}"));
+    let (view, set_view) = crate::views::use_view();
     let me = Memo::new(move |_| sync.me.with(|m| m.as_ref().map(|m| m.id)));
     let rows = Memo::new(move |_| {
         let mut rows = Vec::new();
