@@ -11,7 +11,7 @@ use crate::{
         arrange::{Kind, Mark, Placed},
         layout::{HEADER_HEIGHT, MONTH_HEIGHT, ROW_HEIGHT, Rect, Viewport},
         links::{Anchor, Link, Role},
-        scene::Scene,
+        scene::{Load, Scene},
     },
     model::Look,
 };
@@ -384,38 +384,27 @@ fn paint_bands(ctx: &Pen, frame: &Frame) {
         let radius = (vp.day_width.min(ROW_HEIGHT) / 2.0 - 4.0).min(11.0);
         if radius >= 3.0 {
             for offset in first.max(skip)..=last {
-                let Some((booked, capacity)) = section.days.get((offset - skip) as usize) else {
+                let Some(load) = section.days.get((offset - skip) as usize) else {
                     continue;
                 };
-                if *booked == 0 {
+                if load.booked == 0 {
                     continue;
                 }
                 let cx = vp.x(offset as f64) + vp.day_width / 2.0;
-                paint_pie(
-                    ctx,
-                    (cx, top + ROW_HEIGHT / 2.0),
-                    radius,
-                    *booked,
-                    *capacity,
-                );
-            }
-        }
-        if let Some((lane, runs)) = &section.other {
-            for (from, to) in runs {
-                let offset = |d: &NaiveDate| (*d - start).num_days() as f64;
-                let rect = vp.bar(offset(from), offset(to), *lane);
-                if rect.x + rect.w < 0.0 || rect.x > frame.width {
-                    continue;
-                }
-                paint_hatched(ctx, rect);
+                paint_pie(ctx, (cx, top + ROW_HEIGHT / 2.0), radius, *load);
             }
         }
     }
 }
 
 /// Green when booked for exactly their hours, orange under, red over; hours past eight go round a ring
-fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, booked: u32, capacity: u8) {
+fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, load: Load) {
     use std::f64::consts::{FRAC_PI_2, TAU};
+    let Load {
+        booked,
+        shown,
+        capacity,
+    } = load;
     let colour = match booked.cmp(&u32::from(capacity)) {
         std::cmp::Ordering::Greater => "#e57373",
         std::cmp::Ordering::Equal => "#43c463",
@@ -423,51 +412,63 @@ fn paint_pie(ctx: &Pen, (cx, cy): (f64, f64), radius: f64, booked: u32, capacity
     };
     let over = booked.saturating_sub(8).min(8);
     let inner = if over > 0 { radius * 0.78 } else { radius };
-    // one sector over a disc, so no seams show between hours
+    let angle = |hours: u32| TAU * f64::from(hours.min(8)) / 8.0 - FRAC_PI_2;
+    let sector = |from: u32, to: u32| {
+        ctx.begin_path();
+        ctx.move_to(cx, cy);
+        let _ = ctx.arc(cx, cy, inner, angle(from), angle(to));
+        ctx.close_path();
+    };
+    // sectors over a disc rather than a slice an hour, so no seams show between hours
     ctx.begin_path();
     let _ = ctx.arc(cx, cy, inner, 0.0, TAU);
     ctx.set_fill_style_str("#2f2f31");
     ctx.fill();
-    ctx.begin_path();
-    ctx.move_to(cx, cy);
-    let share = f64::from(booked.min(8)) / 8.0;
-    let _ = ctx.arc(cx, cy, inner, -FRAC_PI_2, TAU * share - FRAC_PI_2);
-    ctx.close_path();
-    ctx.set_fill_style_str(colour);
-    ctx.fill();
+    // hours on plans not on the chart come first, hatched grey, then the chart's own
+    let elsewhere = booked - shown;
+    if elsewhere > 0 {
+        ctx.save();
+        sector(0, elsewhere);
+        ctx.set_fill_style_str("#4a4a4c");
+        ctx.fill();
+        ctx.clip();
+        ctx.set_stroke_style_str("#7a7a7e");
+        ctx.set_line_width(1.2);
+        ctx.begin_path();
+        let mut x = cx - 2.0 * inner;
+        while x < cx + inner {
+            ctx.move_to(x, cy + inner);
+            ctx.line_to(x + 2.0 * inner, cy - inner);
+            x += 3.0;
+        }
+        ctx.stroke();
+        ctx.restore();
+    }
+    if elsewhere < 8 && shown > 0 {
+        sector(elsewhere, booked);
+        ctx.set_fill_style_str(colour);
+        ctx.fill();
+    }
+    // a day of fewer than eight hours is outlined round the hours there are, cutting in to the
+    // centre where the rest of the pie could never be filled
+    if (1..8).contains(&capacity) {
+        let outline = inner + 2.0;
+        ctx.set_line_width(1.0);
+        ctx.set_stroke_style_str("#9a9a9e");
+        ctx.begin_path();
+        ctx.move_to(cx, cy);
+        ctx.line_to(cx, cy - outline);
+        let _ = ctx.arc(cx, cy, outline, -FRAC_PI_2, angle(u32::from(capacity)));
+        ctx.close_path();
+        ctx.stroke();
+    }
     if over > 0 {
         ctx.set_line_width(1.5);
         ctx.set_stroke_style_str(colour);
         ctx.begin_path();
-        let _ = ctx.arc(
-            cx,
-            cy,
-            radius - 0.75,
-            -FRAC_PI_2,
-            TAU * f64::from(over) / 8.0 - FRAC_PI_2,
-        );
+        let _ = ctx.arc(cx, cy, radius - 0.75, -FRAC_PI_2, angle(over));
         ctx.stroke();
-        ctx.set_line_width(1.0);
     }
-}
-
-fn paint_hatched(ctx: &Pen, rect: Rect) {
-    ctx.save();
-    path_round(ctx, rect, RADIUS);
-    ctx.set_fill_style_str("#3a3a3c");
-    ctx.fill();
-    ctx.clip();
-    ctx.set_stroke_style_str("#555");
-    ctx.set_line_width(4.0);
-    ctx.begin_path();
-    let mut x = rect.x - rect.h;
-    while x < rect.x + rect.w {
-        ctx.move_to(x, rect.y + rect.h);
-        ctx.line_to(x + rect.h, rect.y);
-        x += 8.0;
-    }
-    ctx.stroke();
-    ctx.restore();
     ctx.set_line_width(1.0);
 }
 // }}}

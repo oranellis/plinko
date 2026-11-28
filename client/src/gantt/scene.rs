@@ -50,10 +50,15 @@ pub struct Section {
     pub lane: usize,
     pub lanes: usize,
     pub from: NaiveDate,
-    /// (booked, capacity) for each day from `from`
-    pub days: Vec<(u32, u8)>,
-    /// The lane and runs of work on plans not shown; runs end on the day after their last
-    pub other: Option<(usize, Vec<(NaiveDate, NaiveDate)>)>,
+    pub days: Vec<Load>,
+}
+
+/// A day of a person's: `shown` of the hours `booked` are on the plans on the chart
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Load {
+    pub booked: u32,
+    pub shown: u32,
+    pub capacity: u8,
 }
 
 #[derive(Clone, Copy)]
@@ -71,8 +76,9 @@ pub struct Options<'a> {
     pub load: &'a dyn Fn(Uuid, NaiveDate, NaiveDate) -> Vec<(u32, u8)>,
 }
 
-/// Days past the last item that the pies cover
+/// Days either side of the items that the pies cover
 const LOAD_AHEAD: u64 = 120;
+const LOAD_BEHIND: u64 = 90;
 
 struct Context<'a> {
     plan: &'a Plan,
@@ -242,6 +248,7 @@ fn lay_out(
     origin: NaiveDate,
     last: NaiveDate,
 ) -> (Arrangement, Vec<Section>) {
+    let from = origin - Days::new(LOAD_BEHIND);
     let to = last + Days::new(LOAD_AHEAD);
     let mut placed = Vec::new();
     let mut sections = Vec::new();
@@ -251,8 +258,6 @@ fn lay_out(
         if !sections.is_empty() {
             lane += 1;
         }
-        let days = (options.load)(who, origin, to);
-        // hours booked beyond the plans shown are on plans not shown
         let mut shown_hours: BTreeMap<NaiveDate, u32> = BTreeMap::new();
         for shown in plans {
             for task in shown.state.into_iter().flat_map(|s| s.tasks.values()) {
@@ -266,18 +271,21 @@ fn lay_out(
                 }
             }
         }
-        let other_hours: Vec<u32> = days
-            .iter()
+        let days = (options.load)(who, from, to)
+            .into_iter()
             .enumerate()
-            .map(|(i, (booked, _))| {
-                let day = origin + Days::new(i as u64);
-                booked.saturating_sub(shown_hours.get(&day).copied().unwrap_or(0))
+            .map(|(i, (booked, capacity))| {
+                let day = from + Days::new(i as u64);
+                let shown = shown_hours.get(&day).copied().unwrap_or(0).min(booked);
+                Load {
+                    booked,
+                    shown,
+                    capacity,
+                }
             })
             .collect();
-        let runs = runs_of(&other_hours, origin);
-        let other_lane = (!runs.is_empty()).then_some(lane + 1);
-        let first_inner = lane + 1 + usize::from(other_lane.is_some());
-        let lanes = first_inner - lane + inner.lanes;
+        let first_inner = lane + 1;
+        let lanes = 1 + inner.lanes;
         placed.extend(inner.placed.into_iter().map(|mut p| {
             p.lane += first_inner;
             p
@@ -287,9 +295,8 @@ fn lay_out(
             name,
             lane,
             lanes,
-            from: origin,
+            from,
             days,
-            other: other_lane.map(|l| (l, runs)),
         });
         lane += lanes;
     }
@@ -302,22 +309,6 @@ fn lay_out(
     )
 }
 
-fn runs_of(hours: &[u32], from: NaiveDate) -> Vec<(NaiveDate, NaiveDate)> {
-    let mut runs = Vec::new();
-    let mut start = None;
-    for (i, h) in hours.iter().chain(std::iter::once(&0)).enumerate() {
-        let day = from + Days::new(i as u64);
-        match (start, *h > 0) {
-            (None, true) => start = Some(day),
-            (Some(s), false) => {
-                runs.push((s, day));
-                start = None;
-            }
-            _ => {}
-        }
-    }
-    runs
-}
 // }}}
 
 // related {{{
@@ -697,11 +688,13 @@ mod tests {
         };
         let scene = compose(&shown, &options, &HashSet::new(), d(1));
         let lanes: Vec<(usize, usize)> = scene.sections.iter().map(|s| (s.lane, s.lanes)).collect();
-        assert_eq!(lanes, vec![(0, 4), (5, 1)]);
-        let other = scene.sections[0].other.as_ref().unwrap();
-        assert_eq!(other, &(1, vec![(d(8), d(9))]));
-        assert_eq!(scene.placed(PlanNode::TaskGroup(id(10))).unwrap().lane, 2);
-        assert_eq!(scene.placed(PlanNode::Task(id(1))).unwrap().lane, 3);
+        assert_eq!(lanes, vec![(0, 3), (4, 1)]);
+        let me = &scene.sections[0];
+        let on = |day: NaiveDate| me.days[(day - me.from).num_days() as usize];
+        assert_eq!((on(d(4)).booked, on(d(4)).shown), (8, 8));
+        assert_eq!((on(d(8)).booked, on(d(8)).shown), (8, 0));
+        assert_eq!(scene.placed(PlanNode::TaskGroup(id(10))).unwrap().lane, 1);
+        assert_eq!(scene.placed(PlanNode::Task(id(1))).unwrap().lane, 2);
         assert!(scene.placed(PlanNode::Task(id(2))).is_none());
     }
 }
