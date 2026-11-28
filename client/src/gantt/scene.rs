@@ -379,13 +379,15 @@ fn lay_out(
 // }}}
 
 // related {{{
-/// The tasks someone is booked on, the milestones directly before or after them, and every
-/// group above those
+/// What of a plan is about someone: the tasks the schedule books them on and the groups those
+/// are in, then whatever is linked to those by dependencies in either direction, chained on
+/// through milestones, buffers and delays. The chain stops at other people's tasks and at groups
+/// with none of theirs in them. Every group above what is kept is kept too.
 pub fn related(plan: &Plan, state: Option<&PlanVolatileState>, who: Uuid) -> HashSet<PlanNode> {
     let Some(state) = state else {
         return HashSet::new();
     };
-    let tasks: HashSet<PlanNode> = state
+    let mine: Vec<PlanNode> = state
         .tasks
         .iter()
         .filter(|(id, t)| {
@@ -393,25 +395,42 @@ pub fn related(plan: &Plan, state: Option<&PlanVolatileState>, who: Uuid) -> Has
         })
         .map(|(id, _)| PlanNode::Task(*id))
         .collect();
-    let mut keep = tasks.clone();
-    for (id, milestone) in plan.milestones() {
-        let node = PlanNode::Milestone(*id);
-        let after = milestone.dependencies().iter().any(|d| tasks.contains(d));
-        let before = tasks
-            .iter()
-            .any(|t| model::dependencies(plan, *t).contains(&node));
-        if after || before {
-            keep.insert(node);
+    let groups_above = |node: PlanNode| {
+        let mut groups = Vec::new();
+        let mut at = model::parent_of(plan, node);
+        while let Parent::Node(group) = at {
+            groups.push(PlanNode::TaskGroup(group));
+            at = model::parent_of(plan, PlanNode::TaskGroup(group));
+        }
+        groups
+    };
+    let mut keep: HashSet<PlanNode> = mine.iter().copied().collect();
+    keep.extend(mine.iter().flat_map(|t| groups_above(*t)));
+
+    let mut dependents: HashMap<PlanNode, Vec<PlanNode>> = HashMap::new();
+    for node in model::nodes(plan) {
+        for before in model::dependencies(plan, node) {
+            dependents.entry(before).or_default().push(node);
+        }
+    }
+    let mut queue: Vec<PlanNode> = keep.iter().copied().collect();
+    while let Some(node) = queue.pop() {
+        let next = model::dependencies(plan, node)
+            .into_iter()
+            .chain(dependents.get(&node).into_iter().flatten().copied());
+        for other in next {
+            // tasks and groups are only kept when they are the person's, which they already are
+            let passes = matches!(
+                other,
+                PlanNode::Milestone(_) | PlanNode::PlanBuffer(_) | PlanNode::PlanDelay(_)
+            );
+            if passes && keep.insert(other) {
+                queue.push(other);
+            }
         }
     }
     for node in keep.clone() {
-        let mut at = model::parent_of(plan, node);
-        while let Parent::Node(group) = at {
-            if !keep.insert(PlanNode::TaskGroup(group)) {
-                break;
-            }
-            at = model::parent_of(plan, PlanNode::TaskGroup(group));
-        }
+        keep.extend(groups_above(node));
     }
     keep
 }
@@ -647,7 +666,14 @@ mod tests {
             };
             plan.apply_update(PlanUpdate::Task(Crud::Add(new))).unwrap();
         }
-        for (n, after) in [(20, 1), (21, 2)] {
+        // M20 follows my task, M21 someone else's, M22 my group and M23 follows M22
+        let after_of = |n: u128| match n {
+            20 => PlanNode::Task(id(1)),
+            21 => PlanNode::Task(id(2)),
+            22 => PlanNode::TaskGroup(id(10)),
+            _ => PlanNode::Milestone(id(22)),
+        };
+        for n in [20, 21, 22, 23] {
             let new = NewMilestone {
                 id: id(n),
                 name: format!("M{n}"),
@@ -660,7 +686,7 @@ mod tests {
                 name: None,
                 parent: None,
                 time_constraint: None,
-                dependencies: Some(vec![PlanNode::Task(id(after))]),
+                dependencies: Some(vec![after_of(n)]),
                 persistent_state: None,
             };
             plan.apply_update(PlanUpdate::Milestone(Crud::Update(patch)))
@@ -690,6 +716,8 @@ mod tests {
         let expected: HashSet<PlanNode> = [
             PlanNode::Task(id(1)),
             PlanNode::Milestone(id(20)),
+            PlanNode::Milestone(id(22)),
+            PlanNode::Milestone(id(23)),
             PlanNode::TaskGroup(id(10)),
         ]
         .into_iter()
