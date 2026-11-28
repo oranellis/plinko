@@ -510,7 +510,8 @@ fn HoursStrip(who: Uuid, editable: Signal<bool>) -> impl IntoView {
     }
 }
 
-/// Weeks of days in rows, shaded by their hours, each row headed by the day its week begins
+/// Weeks of days in rows, shaded by their hours, each with its day of the month, and the month's
+/// name too where one begins
 #[component]
 pub fn HourCells(
     #[prop(into)] days: Signal<Vec<(NaiveDate, u8, bool)>>,
@@ -519,26 +520,22 @@ pub fn HourCells(
     let week_start = use_preferences().week_start;
     view! {
         <div class="hourcells">
-            <span class="hhead"></span>
             {move || week_start.get().weekdays().into_iter().map(|w| view! {
                 <span class="hhead">{w.chars().next().unwrap_or(' ').to_string()}</span>
             }).collect_view()}
-            {move || days.get().chunks(7).map(|week| {
-                let begins = week.first().map(|(d, _, _)| *d);
-                view! {
-                    <span class="hweek" title=begins.map(|d| format!("Week beginning {}", format::day(d)))>
-                        {begins.map(|d| format!("w/b {} {}", d.day(), format::month(d)))}
-                    </span>
-                    {week.iter().map(|(d, hours, rule)| view! {
-                        <span
-                            class="hcell"
-                            class:today=*d == today.get()
-                            class:marked=*rule
-                            style=format!("--shade:{}", f64::from(*hours) / 8.0)
-                            title=format!("{}: {hours} h", format::day(*d))
-                        ></span>
-                    }).collect_view()}
-                }
+            {move || days.get().into_iter().map(|(d, hours, rule)| view! {
+                <span
+                    class=format!(
+                        "hcell{}{}{}",
+                        if d == today.get() { " today" } else { "" },
+                        if rule { " marked" } else { "" },
+                        if hours > 0 { " worked" } else { "" },
+                    )
+                    style=format!("--shade:{}", f64::from(hours) / 8.0)
+                    title=format!("{}: {hours} h", format::day(d))
+                >
+                    {if d.day() == 1 { format!("{} {}", d.day(), format::month(d)) } else { d.day().to_string() }}
+                </span>
             }).collect_view()}
         </div>
     }
