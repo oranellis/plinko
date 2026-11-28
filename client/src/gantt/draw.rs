@@ -380,11 +380,6 @@ fn paint_bands(ctx: &Pen, frame: &Frame) {
         }
         ctx.set_fill_style_str(BAND);
         ctx.fill_rect(0.0, top, frame.width, ROW_HEIGHT);
-        ctx.set_stroke_style_str(BAND_LINE);
-        ctx.begin_path();
-        ctx.move_to(0.0, top + 0.5);
-        ctx.line_to(frame.width, top + 0.5);
-        ctx.stroke();
         let skip = (section.from - start).num_days();
         let radius = (vp.day_width.min(ROW_HEIGHT) / 2.0 - 4.0).min(11.0);
         if radius >= 3.0 {

@@ -247,6 +247,10 @@ fn lay_out(
     let mut sections = Vec::new();
     let mut lane = 0;
     for (who, name, inner) in drafts {
+        // an empty lane between people
+        if !sections.is_empty() {
+            lane += 1;
+        }
         let days = (options.load)(who, origin, to);
         // hours booked beyond the plans shown are on plans not shown
         let mut shown_hours: BTreeMap<NaiveDate, u32> = BTreeMap::new();
@@ -693,7 +697,7 @@ mod tests {
         };
         let scene = compose(&shown, &options, &HashSet::new(), d(1));
         let lanes: Vec<(usize, usize)> = scene.sections.iter().map(|s| (s.lane, s.lanes)).collect();
-        assert_eq!(lanes, vec![(0, 4), (4, 1)]);
+        assert_eq!(lanes, vec![(0, 4), (5, 1)]);
         let other = scene.sections[0].other.as_ref().unwrap();
         assert_eq!(other, &(1, vec![(d(8), d(9))]));
         assert_eq!(scene.placed(PlanNode::TaskGroup(id(10))).unwrap().lane, 2);
