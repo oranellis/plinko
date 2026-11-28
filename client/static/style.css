@@ -592,7 +592,7 @@ button.ctx.swap:hover .over { display: grid; }
 /* who works on the task being created or edited: a card at the right of the chart, standing on
    the middle of it so that it is clear of the bar at the bottom. It is put there without a
    transform, which the lists that drop from its pickers would be placed against. */
-.workerwin { position: absolute; right: 12px; bottom: calc(50% + 12px); z-index: 19; width: 380px; max-width: calc(100% - 24px); max-height: 45%; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
+.workerwin { position: absolute; right: 12px; bottom: calc(50% + 12px); z-index: 19; width: 480px; max-width: calc(100% - 24px); max-height: 45%; overflow: auto; display: grid; gap: 12px; padding: 12px; background: #181818; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); user-select: text; }
 /* the workers card while the keys are on it: lit, with the row they are on marked */
 .workerwin.keys { border-color: var(--accent); }
 .workerwin .row { position: relative; }
